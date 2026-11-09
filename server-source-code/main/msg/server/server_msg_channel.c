@@ -8,17 +8,18 @@
 #include "../../../third-party/rxi-log/log.h"
 
 /**
- * @brief tells a single client that the channel they tried to join is full (used by the capacity gate)
+ * @brief tells a single client that the channel they tried to join is full (used by the capacity
+ *        gate)
  *
  * @param client_t* receiver -> the client to notify
  * @param uint64 channel_id -> the full channel
  *
  * @return void
  */
-void server_msg__channel__send_full_to_single_client(client_t* receiver, uint64 channel_id)
+void server_msg__channel__send_full_to_single_client(client_t *receiver, uint64 channel_id)
 {
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
 
     root = server_msg__delivery__new_message("channel_full", &message);
 
@@ -29,19 +30,20 @@ void server_msg__channel__send_full_to_single_client(client_t* receiver, uint64 
 }
 
 /**
- * @brief This function sends channel list to single client. Called when client sents challenge_response message to server during authentication process.
+ * @brief This function sends channel list to single client. Called when client sents
+ *        challenge_response message to server during authentication process.
  *
  * @param client_t* receiver -> the client that receives it
  *
  * @return void
  */
-void server_msg__channel__send_list_to_single_client(client_t* receiver)
+void server_msg__channel__send_list_to_single_client(client_t *receiver)
 {
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
-    cJSON* json_channel_array = 0;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
+    cJSON *json_channel_array = 0;
     uint64 i = 0;
-    cJSON* single_channel = 0;
+    cJSON *single_channel = 0;
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
@@ -71,17 +73,18 @@ void server_msg__channel__send_list_to_single_client(client_t* receiver)
         cJSON_AddNumberToObject(single_channel, "max_client_count", (double)g_channel_array[i].max_client_count);
         cJSON_AddBoolToObject(single_channel, "has_channel_icon", g_channel_array[i].has_channel_icon);
         cJSON_AddNumberToObject(single_channel, "channel_icon_id", (double)g_channel_array[i].icon_id);
-        cJSON_AddItemToArray(json_channel_array, single_channel);
+        util__json_add_owned_array(json_channel_array, single_channel);
     }
 
-    cJSON_AddItemToObject(message, "channels", json_channel_array);
+    util__json_add_owned_object(message, "channels", json_channel_array);
 
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
 }
 
 /**
- * @brief This function sends the maintainer of the current channel the client just joined. Used when the client joins the server or when it switches channel
+ * @brief This function sends the maintainer of the current channel the client just joined. Used
+ *        when the client joins the server or when it switches channel
  *
  * @param client_t* receiver -> the client to send the maintainer id to
  * @param channel_t* channel -> the channel
@@ -91,10 +94,10 @@ void server_msg__channel__send_list_to_single_client(client_t* receiver)
  *
  * @return void
  */
-void server_msg__channel__send_maintainer_id_to_single_client(client_t* receiver, channel_t* channel, uint64 maintainer_id)
+void server_msg__channel__send_maintainer_id_to_single_client(client_t *receiver, channel_t *channel, uint64 maintainer_id)
 {
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
@@ -119,10 +122,10 @@ void server_msg__channel__send_maintainer_id_to_single_client(client_t* receiver
  *
  * @return void
  */
-void server_msg__channel__send_create_message_to_all_clients(channel_t* channel, client_t* creator)
+void server_msg__channel__send_create_message_to_all_clients(channel_t *channel, client_t *creator)
 {
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
 
     root = server_msg__delivery__new_message("channel_create", &message);
 
@@ -161,10 +164,10 @@ void server_msg__channel__send_create_message_to_all_clients(channel_t* channel,
  *
  * @return void
  */
-void server_msg__channel__send_edit_message_to_all_clients(channel_t* channel, client_t* editor)
+void server_msg__channel__send_edit_message_to_all_clients(channel_t *channel, client_t *editor)
 {
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
 
     root = server_msg__delivery__new_message("channel_edit", &message);
 
@@ -195,24 +198,22 @@ void server_msg__channel__send_edit_message_to_all_clients(channel_t* channel, c
  * @param client_t* subject -> self explanatory
  * @param channel_t* new_channel -> id of server message
  *
- * @attention
- * this function gets called AFTER new channel id is assigned to client struct, not before
- * so this function must assume the client is already in its new channel, if it is going to do any logical operations based on that
+ * @attention this function gets called AFTER new channel id is assigned to client struct, not before so this function must assume the client is already in its new channel, if it is going to do any logical operations based on that
  *
  * @return void
  */
-void server_msg__channel__send_join_message_to_all_clients(client_t* subject, channel_t* new_channel)
+void server_msg__channel__send_join_message_to_all_clients(client_t *subject, channel_t *new_channel, const char *reason)
 {
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
-    cJSON* root_hidden = NULL_POINTER;
-    cJSON* message_hidden = NULL_POINTER;
+    boole is_hide_client_active = FALSE;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
+    cJSON *root_hidden = NULL_POINTER;
+    cJSON *message_hidden = NULL_POINTER;
     uint64 x = 0;
-    char* plaintext = NULL_POINTER;
-    char* plaintext_hidden = NULL_POINTER;
-
-    client_t* client_in_loop = 0;
-    char* song_name = 0;
+    char *plaintext = NULL_POINTER;
+    char *plaintext_hidden = NULL_POINTER;
+    client_t *client_in_loop = 0;
+    char *song_name = 0;
     boole is_streaming_song = FALSE;
     int64 audio_state = 0;
 
@@ -221,6 +222,11 @@ void server_msg__channel__send_join_message_to_all_clients(client_t* subject, ch
     root = server_msg__delivery__new_message("channel_join", &message);
 
     root_hidden = server_msg__delivery__new_message("channel_join", &message_hidden);
+    if (reason != NULL_POINTER)
+    {
+        cJSON_AddStringToObject(message, "reason", reason);
+        cJSON_AddStringToObject(message_hidden, "reason", reason);
+    }
 
     // clients not in same channel will not receive real time microphone usage information from the client that switched the channel
     is_streaming_song = subject->is_streaming_song;
@@ -256,7 +262,7 @@ void server_msg__channel__send_join_message_to_all_clients(client_t* subject, ch
 
     for (x = 0; x < g_server_settings.max_client_count; x++)
     {
-        boole is_hide_client_active = FALSE;
+        is_hide_client_active = FALSE;
 
         client_in_loop = &g_clients_array[x];
 
@@ -287,6 +293,7 @@ void server_msg__channel__send_join_message_to_all_clients(client_t* subject, ch
                 }
             }
         }
+
         // a client that may not see the password protected channel gets the variant without the channel id
         server_msg__delivery__send_text_to_client(client_in_loop, is_hide_client_active == TRUE ? plaintext_hidden : plaintext);
     }
@@ -308,12 +315,11 @@ void server_msg__channel__send_join_message_to_all_clients(client_t* subject, ch
  *
  * @return void
  */
-void server_msg__channel__send_join_message_to_single_client(client_t* receiver, client_t* subject, channel_t* new_channel)
+void server_msg__channel__send_join_message_to_single_client(client_t *receiver, client_t *subject, channel_t *new_channel)
 {
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
-
-    char* song_name = 0;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
+    char *song_name = 0;
     boole is_streaming_song = FALSE;
     int64 audio_state = 0;
 
@@ -357,10 +363,10 @@ void server_msg__channel__send_join_message_to_single_client(client_t* receiver,
  *
  * @return void
  */
-void server_msg__channel__send_maintainer_id_to_clients_in_same_channel(channel_t* channel, uint64 maintainer_id)
+void server_msg__channel__send_maintainer_id_to_clients_in_same_channel(channel_t *channel, uint64 maintainer_id)
 {
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
@@ -388,8 +394,8 @@ void server_msg__channel__send_maintainer_id_to_clients_in_same_channel(channel_
  */
 void server_msg__channel__send_delete_message_to_all_clients(uint64 deleted_channel_id, uint64 channel_deletor_id)
 {
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
@@ -411,7 +417,8 @@ void server_msg__channel__send_delete_message_to_all_clients(uint64 deleted_chan
 }
 
 /**
- * @brief broadcasts a channel's icon change to every authenticated client so their channel row updates live
+ * @brief broadcasts a channel's icon change to every authenticated client so their channel row
+ *        updates live
  *
  * @param uint64 channel_id -> id of the channel whose icon changed
  * @param boole has_channel_icon -> whether the channel now has an icon
@@ -421,15 +428,15 @@ void server_msg__channel__send_delete_message_to_all_clients(uint64 deleted_chan
  */
 void server_msg__channel__send_icon_changed_event_to_all_clients(uint64 channel_id, boole has_channel_icon, uint64 icon_id)
 {
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
     root = server_msg__delivery__new_message("channel_icon_changed", &message);
 
     cJSON_AddNumberToObject(message, "channel_id", (double)channel_id);
-    cJSON_AddItemToObject(message, "has_channel_icon", cJSON_CreateBool(has_channel_icon == TRUE));
+    util__json_add_owned_object(message, "has_channel_icon", cJSON_CreateBool(has_channel_icon == TRUE));
     cJSON_AddNumberToObject(message, "channel_icon_id", (double)icon_id);
 
     server_msg__delivery__send_json_to_all_clients(root, NULL_POINTER);
@@ -445,10 +452,10 @@ void server_msg__channel__send_icon_changed_event_to_all_clients(uint64 channel_
  *
  * @return void
  */
-void server_msg__channel__send_call_event_to_idle_client(client_t* receiver, client_t* caller)
+void server_msg__channel__send_call_event_to_idle_client(client_t *receiver, client_t *caller)
 {
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
@@ -469,10 +476,10 @@ void server_msg__channel__send_call_event_to_idle_client(client_t* receiver, cli
  *
  * @return void
  */
-void server_msg__channel__send_client_going_to_idle_mode_info_to_all_clients(client_t* subject)
+void server_msg__channel__send_client_going_to_idle_mode_info_to_all_clients(client_t *subject)
 {
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
@@ -495,10 +502,10 @@ void server_msg__channel__send_client_going_to_idle_mode_info_to_all_clients(cli
  *
  * @return void
  */
-void server_msg__channel__send_client_coming_back_from_idle_mode_info_to_all_clients(client_t* subject, uint64 channel_the_client_joins)
+void server_msg__channel__send_client_coming_back_from_idle_mode_info_to_all_clients(client_t *subject, uint64 channel_the_client_joins)
 {
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 

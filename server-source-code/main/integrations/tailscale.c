@@ -22,7 +22,7 @@
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
-extern char** environ;
+extern char **environ;
 #endif
 
 #ifndef LEMON_TAILSCALE_TIMEOUT_MS
@@ -36,16 +36,16 @@ static boole g_tailscale_ready = FALSE;
 static char g_tailscale_hostname[256];
 
 // declarations
-static boole _tailscale_internal__find_executable(char* path, uint64 capacity);
-static int _tailscale_internal__run(const char* const* arguments, char* output, uint64 capacity);
-static void _tailscale_internal__print_error(cstring operation, int result, cstring output);
-static cJSON* _tailscale_internal__read_json(const char* const* arguments, cstring operation, boole allow_empty);
-static boole _tailscale_internal__read_hostname(cJSON* status);
-static boole _tailscale_internal__has_foreground_port(cJSON* status, int64 public_port, uint depth);
-static int _tailscale_internal__check_route(cJSON* status, int64 public_port, cstring target);
+static boole _tailscale_internal__find_executable(char *path, uint64 capacity);
+static int64 _tailscale_internal__run(const char *const *arguments, char *output, uint64 capacity);
+static void _tailscale_internal__print_error(cstring operation, int64 result, cstring output);
+static cJSON *_tailscale_internal__read_json(const char *const *arguments, cstring operation, boole allow_empty);
+static boole _tailscale_internal__read_hostname(cJSON *status);
+static boole _tailscale_internal__has_foreground_port(cJSON *status, int64 public_port, uint64 depth);
+static int64 _tailscale_internal__check_route(cJSON *status, int64 public_port, cstring target);
 static boole _tailscale_internal__set_route(int64 public_port, cstring target);
 #if defined(_WIN32) || defined(WIN32)
-static boole _tailscale_internal__append_argument(char* command, uint64 capacity, cstring argument);
+static boole _tailscale_internal__append_argument(char *command, uint64 capacity, cstring argument);
 #elif !defined(__ANDROID__)
 static uint64 _tailscale_internal__milliseconds(void);
 #endif
@@ -56,7 +56,7 @@ static uint64 _tailscale_internal__milliseconds(void);
  * @param uint64 capacity Buffer size in bytes
  * @return boole Whether the executable is installed
  */
-static boole _tailscale_internal__find_executable(char* path, uint64 capacity)
+static boole _tailscale_internal__find_executable(char *path, uint64 capacity)
 {
 #if defined(__ANDROID__)
     (void)path;
@@ -66,17 +66,12 @@ static boole _tailscale_internal__find_executable(char* path, uint64 capacity)
     return util__find_executable(LEMON_TAILSCALE_EXECUTABLE, path, capacity);
 #else
 #if defined(_WIN32) || defined(WIN32)
-    char program_files[768];
-    char installed_path[1024];
-    DWORD length = 0;
+    char program_files[768] = { 0 };
+    char installed_path[1024] = { 0 };
+    uint64 length = 0;
     boole success = FALSE;
     uint64 index = 0;
-    const char* directories[] =
-    {
-        "ProgramFiles",
-        "ProgramW6432",
-        "ProgramFiles(x86)"
-    };
+    const char *directories[] = { "ProgramFiles", "ProgramW6432", "ProgramFiles(x86)" };
 
     for (index = 0; index < sizeof(directories) / sizeof(directories[0]); index++)
     {
@@ -102,7 +97,7 @@ static boole _tailscale_internal__find_executable(char* path, uint64 capacity)
  */
 boole tailscale__is_available(void)
 {
-    char executable[1024];
+    char executable[1024] = { 0 };
 
     return _tailscale_internal__find_executable(executable, sizeof(executable));
 }
@@ -115,12 +110,12 @@ boole tailscale__is_available(void)
  * @param cstring argument argument to append
  * @return boole whether the argument fit
  */
-static boole _tailscale_internal__append_argument(char* command, uint64 capacity, cstring argument)
+static boole _tailscale_internal__append_argument(char *command, uint64 capacity, cstring argument)
 {
     uint64 position = clib__strlen(command);
     uint64 slashes = 0;
     uint64 count = 0;
-    const char* cursor = argument;
+    const char *cursor = argument;
     char current = 0;
 
     if (position + 4 >= capacity)
@@ -173,7 +168,7 @@ static boole _tailscale_internal__append_argument(char* command, uint64 capacity
  */
 static uint64 _tailscale_internal__milliseconds(void)
 {
-    struct timespec current;
+    struct timespec current = { 0 };
 
     clock_gettime(CLOCK_MONOTONIC, &current);
     return (uint64)current.tv_sec * 1000 + (uint64)current.tv_nsec / 1000000;
@@ -185,9 +180,9 @@ static uint64 _tailscale_internal__milliseconds(void)
  * @param const char* const* arguments arguments after the executable name
  * @param char* output combined standard output and error
  * @param uint64 capacity output buffer size in bytes
- * @return int exit code or a negative execution error
+ * @return int64 exit code or a negative execution error
  */
-static int _tailscale_internal__run(const char* const* arguments, char* output, uint64 capacity)
+static int64 _tailscale_internal__run(const char *const *arguments, char *output, uint64 capacity)
 {
 #if defined(__ANDROID__)
     (void)arguments;
@@ -197,34 +192,34 @@ static int _tailscale_internal__run(const char* const* arguments, char* output, 
 #else
     uint64 used = 0;
     uint64 index = 0;
-    int result = -1;
-    char executable[1024];
+    int64 result = -1;
+    char executable[1024] = { 0 };
     boole success = FALSE;
 #if defined(_WIN32) || defined(WIN32)
-    char command[4096];
-    SECURITY_ATTRIBUTES security;
-    STARTUPINFOA startup;
-    PROCESS_INFORMATION process;
+    char command[4096] = { 0 };
+    SECURITY_ATTRIBUTES security = { 0 };
+    STARTUPINFOA startup = { 0 };
+    PROCESS_INFORMATION process = { 0 };
     HANDLE read_pipe = NULL_POINTER;
     HANDLE write_pipe = NULL_POINTER;
     HANDLE input = INVALID_HANDLE_VALUE;
-    DWORD available = 0;
-    DWORD received = 0;
-    DWORD exit_code = 0;
-    ULONGLONG started = 0;
+    DWORD available = 0; // PeekNamedPipe writes a DWORD.
+    DWORD received = 0; // ReadFile writes a DWORD.
+    DWORD exit_code = 0; // GetExitCodeProcess writes a DWORD.
+    uint64 started = 0;
     boole running = FALSE;
 #else
-    char* argv[16];
-    int descriptors[2] = {-1, -1};
-    int status = 0;
-    int spawn_result = 0;
-    int flags = 0;
-    ssize_t received = 0;
+    char *argv[16] = { 0 };
+    int descriptors[2] = { -1, -1 }; // pipe writes native descriptors.
+    int status = 0; // waitpid writes an int.
+    int64 spawn_result = 0;
+    int flags = 0; // fcntl expects an int mask.
+    int64 received = 0;
     pid_t process = 0;
     pid_t waited = 0;
     posix_spawn_file_actions_t actions;
     posix_spawnattr_t attributes;
-    struct timespec pause = {0, 10000000};
+    struct timespec pause = { 0, 10000000 };
     uint64 started = 0;
     boole finished = FALSE;
     char overflow = 0;
@@ -274,8 +269,7 @@ static int _tailscale_internal__run(const char* const* arguments, char* output, 
     startup.hStdInput = input;
     startup.hStdOutput = write_pipe;
     startup.hStdError = write_pipe;
-    if (!CreateProcessA(executable, command, NULL_POINTER, NULL_POINTER, TRUE, CREATE_NO_WINDOW,
-        NULL_POINTER, NULL_POINTER, &startup, &process))
+    if (!CreateProcessA(executable, command, NULL_POINTER, NULL_POINTER, TRUE, CREATE_NO_WINDOW, NULL_POINTER, NULL_POINTER, &startup, &process))
     {
         goto cleanup;
     }
@@ -320,7 +314,7 @@ static int _tailscale_internal__run(const char* const* arguments, char* output, 
         {
             if (GetExitCodeProcess(process.hProcess, &exit_code))
             {
-                result = (int)exit_code;
+                result = exit_code;
             }
             running = FALSE;
             continue;
@@ -354,14 +348,14 @@ cleanup:
         CloseHandle(write_pipe);
     }
 #else
-    argv[0] = (char*)executable;
+    argv[0] = (char *)executable;
     for (index = 0; arguments[index] != NULL_POINTER; index++)
     {
         if (index + 2 >= sizeof(argv) / sizeof(argv[0]))
         {
             return -1;
         }
-        argv[index + 1] = (char*)arguments[index];
+        argv[index + 1] = (char *)arguments[index];
     }
     argv[index + 1] = NULL_POINTER;
     if (pipe(descriptors) != 0)
@@ -381,11 +375,7 @@ cleanup:
         close(descriptors[1]);
         return -1;
     }
-    if (posix_spawn_file_actions_addopen(&actions, STDIN_FILENO, "/dev/null", O_RDONLY, 0) != 0 ||
-        posix_spawn_file_actions_adddup2(&actions, descriptors[1], STDOUT_FILENO) != 0 ||
-        posix_spawn_file_actions_adddup2(&actions, descriptors[1], STDERR_FILENO) != 0 ||
-        posix_spawn_file_actions_addclose(&actions, descriptors[0]) != 0 ||
-        posix_spawn_file_actions_addclose(&actions, descriptors[1]) != 0)
+    if (posix_spawn_file_actions_addopen(&actions, STDIN_FILENO, "/dev/null", O_RDONLY, 0) != 0 || posix_spawn_file_actions_adddup2(&actions, descriptors[1], STDOUT_FILENO) != 0 || posix_spawn_file_actions_adddup2(&actions, descriptors[1], STDERR_FILENO) != 0 || posix_spawn_file_actions_addclose(&actions, descriptors[0]) != 0 || posix_spawn_file_actions_addclose(&actions, descriptors[1]) != 0)
     {
         posix_spawn_file_actions_destroy(&actions);
         close(descriptors[0]);
@@ -485,13 +475,13 @@ cleanup:
 /**
  * @brief Prints a bounded diagnostic without terminal control characters.
  * @param cstring operation operation that failed
- * @param int result process exit code or execution error
+ * @param int64 result process exit code or execution error
  * @param cstring output diagnostic returned by Tailscale
  */
-static void _tailscale_internal__print_error(cstring operation, int result, cstring output)
+static void _tailscale_internal__print_error(cstring operation, int64 result, cstring output)
 {
     uint64 index = 0;
-    unsigned char current = 0;
+    ubyte current = 0;
 
     printf("%s Tailscale %s failed", g_mark_warn, operation);
     if (result == -2)
@@ -512,7 +502,7 @@ static void _tailscale_internal__print_error(cstring operation, int result, cstr
         printf("    ");
         for (index = 0; index < 2048 && output[index] != 0; index++)
         {
-            current = (unsigned char)output[index];
+            current = (ubyte)output[index];
             if (current >= 32 && current < 127)
             {
                 putchar(current);
@@ -533,11 +523,11 @@ static void _tailscale_internal__print_error(cstring operation, int result, cstr
  * @param boole allow_empty whether JSON null means no configured routes
  * @return cJSON* response owned by the caller or NULL_POINTER
  */
-static cJSON* _tailscale_internal__read_json(const char* const* arguments, cstring operation, boole allow_empty)
+static cJSON *_tailscale_internal__read_json(const char *const *arguments, cstring operation, boole allow_empty)
 {
-    char* output = NULL_POINTER;
-    cJSON* document = NULL_POINTER;
-    int result = -1;
+    char *output = NULL_POINTER;
+    cJSON *document = NULL_POINTER;
+    int64 result = -1;
 
     output = malloc(LEMON_TAILSCALE_OUTPUT_LIMIT + 1);
     if (output == NULL_POINTER)
@@ -573,15 +563,15 @@ static cJSON* _tailscale_internal__read_json(const char* const* arguments, cstri
  * @param cJSON* status Tailscale status response
  * @return boole whether a usable hostname was found
  */
-static boole _tailscale_internal__read_hostname(cJSON* status)
+static boole _tailscale_internal__read_hostname(cJSON *status)
 {
-    cJSON* state = cJSON_GetObjectItemCaseSensitive(status, "BackendState");
-    cJSON* self = cJSON_GetObjectItemCaseSensitive(status, "Self");
-    cJSON* name = cJSON_GetObjectItemCaseSensitive(self, "DNSName");
+    cJSON *state = cJSON_GetObjectItemCaseSensitive(status, "BackendState");
+    cJSON *self = cJSON_GetObjectItemCaseSensitive(status, "Self");
+    cJSON *name = cJSON_GetObjectItemCaseSensitive(self, "DNSName");
     uint64 length = 0;
     uint64 index = 0;
     uint64 label = 0;
-    unsigned char current = 0;
+    ubyte current = 0;
 
     if (!cJSON_IsString(state) || clib__strcmp(state->valuestring, "Running") != 0)
     {
@@ -603,7 +593,7 @@ static boole _tailscale_internal__read_hostname(cJSON* status)
     }
     for (index = 0; index < length; index++)
     {
-        current = (unsigned char)name->valuestring[index];
+        current = (ubyte)name->valuestring[index];
         if (current == '.')
         {
             if (label == 0 || name->valuestring[index - 1] == '-')
@@ -614,8 +604,7 @@ static boole _tailscale_internal__read_hostname(cJSON* status)
         }
         else
         {
-            if (!((current >= 'a' && current <= 'z') || (current >= 'A' && current <= 'Z') ||
-                (current >= '0' && current <= '9') || (current == '-' && label != 0)))
+            if (!((current >= 'a' && current <= 'z') || (current >= 'A' && current <= 'Z') || (current >= '0' && current <= '9') || (current == '-' && label != 0)))
             {
                 return FALSE;
             }
@@ -640,18 +629,18 @@ static boole _tailscale_internal__read_hostname(cJSON* status)
  * @brief Checks whether a temporary Tailscale session owns the selected port.
  * @param cJSON* status Funnel configuration
  * @param int64 public_port Port required by Lemon Chat
- * @param uint depth Number of nested configurations already checked
+ * @param uint64 depth Number of nested configurations already checked
  * @return boole Whether the port is occupied or the configuration is invalid
  */
-static boole _tailscale_internal__has_foreground_port(cJSON* status, int64 public_port, uint depth)
+static boole _tailscale_internal__has_foreground_port(cJSON *status, int64 public_port, uint64 depth)
 {
-    cJSON* foreground = cJSON_GetObjectItemCaseSensitive(status, "Foreground");
-    cJSON* child = NULL_POINTER;
-    cJSON* entry = NULL_POINTER;
-    cJSON* tcp = NULL_POINTER;
-    cJSON* web = NULL_POINTER;
-    char port[16];
-    char suffix[20];
+    cJSON *foreground = cJSON_GetObjectItemCaseSensitive(status, "Foreground");
+    cJSON *child = NULL_POINTER;
+    cJSON *entry = NULL_POINTER;
+    cJSON *tcp = NULL_POINTER;
+    cJSON *web = NULL_POINTER;
+    char port[16] = { 0 };
+    char suffix[20] = { 0 };
     uint64 name_length = 0;
     uint64 suffix_length = 0;
     boole has_foreground_port = FALSE;
@@ -675,8 +664,7 @@ static boole _tailscale_internal__has_foreground_port(cJSON* status, int64 publi
         }
         tcp = cJSON_GetObjectItemCaseSensitive(child, "TCP");
         web = cJSON_GetObjectItemCaseSensitive(child, "Web");
-        if ((tcp != NULL_POINTER && !cJSON_IsObject(tcp)) || (web != NULL_POINTER && !cJSON_IsObject(web)) ||
-            cJSON_GetObjectItemCaseSensitive(tcp, port) != NULL_POINTER)
+        if ((tcp != NULL_POINTER && !cJSON_IsObject(tcp)) || (web != NULL_POINTER && !cJSON_IsObject(web)) || cJSON_GetObjectItemCaseSensitive(tcp, port) != NULL_POINTER)
         {
             return TRUE;
         }
@@ -706,24 +694,24 @@ static boole _tailscale_internal__has_foreground_port(cJSON* status, int64 publi
  * @param cJSON* status Funnel configuration
  * @param int64 public_port Public HTTPS port
  * @param cstring target Expected local HTTP address
- * @return int Negative for conflict or zero if ready or one if setup is needed
+ * @return int64 Negative for conflict or zero if ready or one if setup is needed
  */
-static int _tailscale_internal__check_route(cJSON* status, int64 public_port, cstring target)
+static int64 _tailscale_internal__check_route(cJSON *status, int64 public_port, cstring target)
 {
-    char port[16];
-    char endpoint[288];
-    char suffix[20];
+    char port[16] = { 0 };
+    char endpoint[288] = { 0 };
+    char suffix[20] = { 0 };
     uint64 name_length = 0;
     uint64 suffix_length = 0;
-    cJSON* tcp_map = cJSON_GetObjectItemCaseSensitive(status, "TCP");
-    cJSON* web_map = cJSON_GetObjectItemCaseSensitive(status, "Web");
-    cJSON* public_map = cJSON_GetObjectItemCaseSensitive(status, "AllowFunnel");
-    cJSON* tcp = NULL_POINTER;
-    cJSON* web = NULL_POINTER;
-    cJSON* handlers = NULL_POINTER;
-    cJSON* root = NULL_POINTER;
-    cJSON* proxy = NULL_POINTER;
-    cJSON* item = NULL_POINTER;
+    cJSON *tcp_map = cJSON_GetObjectItemCaseSensitive(status, "TCP");
+    cJSON *web_map = cJSON_GetObjectItemCaseSensitive(status, "Web");
+    cJSON *public_map = cJSON_GetObjectItemCaseSensitive(status, "AllowFunnel");
+    cJSON *tcp = NULL_POINTER;
+    cJSON *web = NULL_POINTER;
+    cJSON *handlers = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
+    cJSON *proxy = NULL_POINTER;
+    cJSON *item = NULL_POINTER;
     boole public = FALSE;
     boole root_matches = FALSE;
     boole has_foreground_port = FALSE;
@@ -737,9 +725,7 @@ static int _tailscale_internal__check_route(cJSON* status, int64 public_port, cs
     {
         return -1;
     }
-    if ((tcp_map != NULL_POINTER && !cJSON_IsObject(tcp_map)) ||
-        (web_map != NULL_POINTER && !cJSON_IsObject(web_map)) ||
-        (public_map != NULL_POINTER && !cJSON_IsObject(public_map)))
+    if ((tcp_map != NULL_POINTER && !cJSON_IsObject(tcp_map)) || (web_map != NULL_POINTER && !cJSON_IsObject(web_map)) || (public_map != NULL_POINTER && !cJSON_IsObject(public_map)))
     {
         return -1;
     }
@@ -750,8 +736,7 @@ static int _tailscale_internal__check_route(cJSON* status, int64 public_port, cs
             return -1;
         }
         name_length = clib__strlen(item->string);
-        if (name_length >= suffix_length && clib__strcmp(item->string + name_length - suffix_length, suffix) == 0 &&
-            clib__strcmp(item->string, endpoint) != 0)
+        if (name_length >= suffix_length && clib__strcmp(item->string + name_length - suffix_length, suffix) == 0 && clib__strcmp(item->string, endpoint) != 0)
         {
             return -1;
         }
@@ -760,8 +745,7 @@ static int _tailscale_internal__check_route(cJSON* status, int64 public_port, cs
     web = cJSON_GetObjectItemCaseSensitive(web_map, endpoint);
     handlers = cJSON_GetObjectItemCaseSensitive(web, "Handlers");
     public = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(public_map, endpoint));
-    if (tcp != NULL_POINTER && (!cJSON_IsObject(tcp) || !cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(tcp, "HTTPS")) ||
-        cJSON_GetObjectItemCaseSensitive(tcp, "TCPForward") != NULL_POINTER))
+    if (tcp != NULL_POINTER && (!cJSON_IsObject(tcp) || !cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(tcp, "HTTPS")) || cJSON_GetObjectItemCaseSensitive(tcp, "TCPForward") != NULL_POINTER))
     {
         return -1;
     }
@@ -801,10 +785,10 @@ static int _tailscale_internal__check_route(cJSON* status, int64 public_port, cs
  */
 static boole _tailscale_internal__set_route(int64 public_port, cstring target)
 {
-    char port_argument[32];
-    const char* arguments[] = {"funnel", "--bg", "--yes", port_argument, "--set-path=/", target, NULL_POINTER};
-    char* output = NULL_POINTER;
-    int result = -1;
+    char port_argument[32] = { 0 };
+    const char *arguments[] = { "funnel", "--bg", "--yes", port_argument, "--set-path=/", target, NULL_POINTER };
+    char *output = NULL_POINTER;
+    int64 result = -1;
 
     clib__string_format(port_argument, sizeof(port_argument), "--https=%lld", public_port);
     output = malloc(LEMON_TAILSCALE_OUTPUT_LIMIT + 1);
@@ -827,13 +811,13 @@ static boole _tailscale_internal__set_route(int64 public_port, cstring target)
  */
 boole tailscale__configure(void)
 {
-    const char* status_arguments[] = {"status", "--json", "--peers=false", NULL_POINTER};
-    const char* funnel_arguments[] = {"funnel", "status", "--json", NULL_POINTER};
-    cJSON* status = NULL_POINTER;
-    char page_target[64];
-    char chat_target[64];
-    int page_state = -1;
-    int chat_state = -1;
+    const char *status_arguments[] = { "status", "--json", "--peers=false", NULL_POINTER };
+    const char *funnel_arguments[] = { "funnel", "status", "--json", NULL_POINTER };
+    cJSON *status = NULL_POINTER;
+    char page_target[64] = { 0 };
+    char chat_target[64] = { 0 };
+    int64 page_state = -1;
+    int64 chat_state = -1;
     boole success = FALSE;
 
     g_tailscale_ready = FALSE;
@@ -846,11 +830,9 @@ boole tailscale__configure(void)
     printf("%s Automatic Funnel setup requires the Tailscale command line program, which is not available in the Android app. Direct WS remains available.\n", g_mark_warn);
     return FALSE;
 #endif
-    if (g_server_settings.is_client_http_enabled == FALSE || g_server_settings.http_port < 1 || g_server_settings.http_port > 65535 ||
-        g_server_settings.websocket_port < 1 || g_server_settings.websocket_port > 65535 ||
-        (g_server_settings.wss_port != 8443 && g_server_settings.wss_port != 10000))
+    if (g_server_settings.http_port < 1 || g_server_settings.http_port > 65535 || g_server_settings.websocket_port < 1 || g_server_settings.websocket_port > 65535 || (g_server_settings.wss_port != 8443 && g_server_settings.wss_port != 10000))
     {
-        printf("%s Funnel needs the HTTP server enabled and public WSS port 8443 or 10000. Check server_settings.json.\n", g_mark_warn);
+        printf("%s Funnel needs a valid HTTP backend port and public WSS port 8443 or 10000. Check server_settings.json.\n", g_mark_warn);
         return FALSE;
     }
     status = _tailscale_internal__read_json(status_arguments, "status", FALSE);
@@ -878,8 +860,7 @@ boole tailscale__configure(void)
     cJSON_Delete(status);
     if (page_state < 0 || chat_state < 0)
     {
-        printf("%s Funnel port %lld already has a conflicting service or private paths. Check tailscale funnel status and tailscale serve status. No routes were changed.\n",
-            g_mark_warn, page_state < 0 ? (int64)443 : g_server_settings.wss_port);
+        printf("%s Funnel port %lld already has a conflicting service or private paths. Check tailscale funnel status and tailscale serve status. No routes were changed.\n", g_mark_warn, page_state < 0 ? (int64)443 : g_server_settings.wss_port);
         return FALSE;
     }
     if (page_state > 0 && !_tailscale_internal__set_route(443, page_target))
@@ -894,8 +875,7 @@ boole tailscale__configure(void)
     status = _tailscale_internal__read_json(funnel_arguments, "Funnel verification", TRUE);
     if (status != NULL_POINTER)
     {
-        g_tailscale_ready = _tailscale_internal__check_route(status, 443, page_target) == 0 &&
-            _tailscale_internal__check_route(status, g_server_settings.wss_port, chat_target) == 0;
+        g_tailscale_ready = _tailscale_internal__check_route(status, 443, page_target) == 0 && _tailscale_internal__check_route(status, g_server_settings.wss_port, chat_target) == 0;
         cJSON_Delete(status);
     }
     if (g_tailscale_ready == FALSE)

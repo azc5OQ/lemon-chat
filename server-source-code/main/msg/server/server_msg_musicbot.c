@@ -1,3 +1,4 @@
+#include "../../util.h"
 #include "../../clib/clib.h"
 // This file sends music bot audio keys, song lists and playback notices.
 
@@ -16,10 +17,10 @@
  *
  * @return void
  */
-void server_msg__musicbot__add_keys(cJSON* object, client_t* receiver, client_t* bot)
+void server_msg__musicbot__add_keys(cJSON *object, client_t *receiver, client_t *bot)
 {
-    cJSON* keys = NULL_POINTER;
-    music_bot_audio_keys_t* audio_keys = bot->music_bot_client_extension.audio_keys;
+    cJSON *keys = NULL_POINTER;
+    music_bot_audio_keys_t *audio_keys = bot->music_bot_client_extension.audio_keys;
     char key_hex[65] = { 0 };
     uint64 i = 0;
     uint64 j = 0;
@@ -44,7 +45,7 @@ void server_msg__musicbot__add_keys(cJSON* object, client_t* receiver, client_t*
         {
             clib__string_format(key_hex + j * 2, 3, "%02x", audio_keys->keys[i][j]);
         }
-        cJSON_AddItemToArray(keys, cJSON_CreateString(key_hex));
+        util__json_add_owned_array(keys, cJSON_CreateString(key_hex));
     }
 }
 
@@ -58,11 +59,11 @@ void server_msg__musicbot__add_keys(cJSON* object, client_t* receiver, client_t*
  *
  * @return void
  */
-void server_msg__musicbot__send_key(client_t* receiver, client_t* bot)
+void server_msg__musicbot__send_key(client_t *receiver, client_t *bot)
 {
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
-    char* plaintext = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
+    char *plaintext = NULL_POINTER;
 
     root = server_msg__delivery__new_message("music_bot_key", &message);
     if (message != NULL_POINTER)
@@ -87,12 +88,12 @@ void server_msg__musicbot__send_key(client_t* receiver, client_t* bot)
  *
  * @return void
  */
-void server_msg__musicbot__send_start_song_stream_message_to_clients_in_same_channel(client_t* subject)
+void server_msg__musicbot__send_start_song_stream_message_to_clients_in_same_channel(client_t *subject)
 {
     uint64 i = 0;
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
-    client_t* client = 0;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
+    client_t *client = 0;
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
@@ -140,13 +141,13 @@ void server_msg__musicbot__send_start_song_stream_message_to_clients_in_same_cha
  *
  * @return void
  */
-void server_msg__musicbot__send_stop_song_stream_message_to_clients_in_same_channel(client_t* subject)
+void server_msg__musicbot__send_stop_song_stream_message_to_clients_in_same_channel(client_t *subject)
 {
     uint64 i = 0;
-    char discard_counter[32] = {0};
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
-    client_t* client = 0;
+    char discard_counter[32] = { 0 };
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
+    client_t *client = 0;
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
@@ -155,8 +156,7 @@ void server_msg__musicbot__send_stop_song_stream_message_to_clients_in_same_chan
     cJSON_AddNumberToObject(message, "client_id", subject->client_id);
     if (subject->is_music_bot && subject->music_bot_client_extension.audio_keys != NULL_POINTER)
     {
-        snprintf(discard_counter, sizeof(discard_counter), "%llu",
-            (unsigned long long)subject->music_bot_client_extension.audio_keys->packet_counter);
+        snprintf(discard_counter, sizeof(discard_counter), "%llu", (uint64)subject->music_bot_client_extension.audio_keys->packet_counter);
         cJSON_AddStringToObject(message, "discard_audio_through_counter", discard_counter);
     }
 
@@ -202,12 +202,13 @@ void server_msg__musicbot__send_stop_song_stream_message_to_clients_in_same_chan
  *
  * @return void
  */
-void server_msg__musicbot__send_song_list_to_single_client(client_t* receiver, client_t* music_bot)
+void server_msg__musicbot__send_song_list_to_single_client(client_t *receiver, client_t *music_bot)
 {
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
-    cJSON* json_songs_array = 0;
-    music_bot_single_song_data_t* single_song_in_loop = 0;
+    cJSON *song = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
+    cJSON *json_songs_array = 0;
+    music_bot_single_song_data_t *single_song_in_loop = 0;
     uint64 loop_index = 0;
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
@@ -220,7 +221,7 @@ void server_msg__musicbot__send_song_list_to_single_client(client_t* receiver, c
     // create array of clients
     for (loop_index = 0; loop_index < MUSIC_BOT_MAX_FILE_COUNT; loop_index++)
     {
-        cJSON* song = NULL_POINTER;
+        song = NULL_POINTER;
 
         single_song_in_loop = &music_bot->music_bot_client_extension.songs[loop_index];
 
@@ -233,10 +234,10 @@ void server_msg__musicbot__send_song_list_to_single_client(client_t* receiver, c
         cJSON_AddStringToObject(song, "name", single_song_in_loop->song_name);
         cJSON_AddNumberToObject(song, "id", loop_index);
         cJSON_AddNumberToObject(song, "duration_seconds", single_song_in_loop->length_seconds);
-        cJSON_AddItemToArray(json_songs_array, song);
+        util__json_add_owned_array(json_songs_array, song);
     }
 
-    cJSON_AddItemToObject(message, "songs", json_songs_array);
+    util__json_add_owned_object(message, "songs", json_songs_array);
 
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);

@@ -25,7 +25,8 @@ add_subdirectory("${THIRD}/libdatachannel-0.24.2" datachannel EXCLUDE_FROM_ALL)
 add_subdirectory("${THIRD}/libtom/libtommath" tommath EXCLUDE_FROM_ALL)
 set(OPUS_BUILD_TESTING OFF CACHE BOOL "" FORCE)
 set(OPUS_BUILD_PROGRAMS OFF CACHE BOOL "" FORCE)
-add_subdirectory("${THIRD}/libopus-1.5.2" opus EXCLUDE_FROM_ALL)
+set(OPUS_DISABLE_INTRINSICS OFF CACHE BOOL "" FORCE)
+add_subdirectory("${THIRD}/libopus-1.6.1" opus EXCLUDE_FROM_ALL)
 
 # Violet only contributes option parsing. Share datachannel's libjuice instead
 # of linking two copies of its ICE/STUN implementation into one executable.

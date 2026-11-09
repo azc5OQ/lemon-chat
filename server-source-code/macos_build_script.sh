@@ -43,7 +43,7 @@ CMAKE_C_COMPILER="clang"
 CMAKE_CXX_COMPILER="clang++"
 CMAKE_LINKER="ld"
 CMAKE_C_FLAGS="-Wno-expansion-to-defined -Wno-shadow -Wno-declaration-after-statement -DUSE_LTM -DLTM_DESC"
-CMAKE_C_FLAGS_RELEASE="-DDEBUG -Wno-expansion-to-defined -Wno-shadow -Wno-declaration-after-statement"
+CMAKE_C_FLAGS_RELEASE="-O3 -DNDEBUG -Wno-expansion-to-defined -Wno-shadow -Wno-declaration-after-statement"
 BUILD_CONFIG="Release"
 
 # parallel build jobs (-j); override with: JOBS=8 ./macos_build_script.sh
@@ -92,7 +92,7 @@ then
     rm -fv  "$THIRD_PARTY_DIRECTORY/libtom/libtomcrypt/libtomcrypt.a"
     rm -rfv "$THIRD_PARTY_DIRECTORY/theldus-websocket/CMakeFiles" "$THIRD_PARTY_DIRECTORY/theldus-websocket/CMakeCache.txt"
     rm -rfv "$THIRD_PARTY_DIRECTORY/libviolet-0.5.4/CMakeFiles" "$THIRD_PARTY_DIRECTORY/libviolet-0.5.4/CMakeCache.txt" "$THIRD_PARTY_DIRECTORY/libviolet-0.5.4/libviolet.a"
-    rm -rfv "$THIRD_PARTY_DIRECTORY/libopus-1.5.2/CMakeFiles" "$THIRD_PARTY_DIRECTORY/libopus-1.5.2/CMakeCache.txt"
+    rm -rfv "$THIRD_PARTY_DIRECTORY/libopus-1.6.1/CMakeFiles" "$THIRD_PARTY_DIRECTORY/libopus-1.6.1/CMakeCache.txt"
     rm -rfv "$LINK_DIR"/*
     rm -rfv "$ROOT_DIRECTORY/build/macos"
     rm -rfv "$ROOT_DIRECTORY/main/CMakeFiles" "$ROOT_DIRECTORY/main/CMakeCache.txt" "$ROOT_DIRECTORY/main/cmake_install.cmake" "$ROOT_DIRECTORY/main/build.ninja" "$ROOT_DIRECTORY/main/.ninja_deps" "$ROOT_DIRECTORY/main/.ninja_log"
@@ -214,10 +214,11 @@ cp -v "$THIRD_PARTY_DIRECTORY/libmaxminddb-1.12.2/src/.libs/libmaxminddb.a" "$LI
 # =============================================================================
 
 message "building libopus.a"
-cd "$THIRD_PARTY_DIRECTORY/libopus-1.5.2"
-cmake_lib
+cd "$THIRD_PARTY_DIRECTORY/libopus-1.6.1"
+# Restore upstream CPU detection defaults, including runtime SSE4.1/AVX2 selection.
+cmake_lib -DOPUS_DISABLE_INTRINSICS=OFF "-UOPUS_X86_*"
 cmake --build . -j"$JOBS" --target opus
-cp -v "$THIRD_PARTY_DIRECTORY/libopus-1.5.2/libopus.a" "$LINK_DIR/libopus.a"
+cp -v "$THIRD_PARTY_DIRECTORY/libopus-1.6.1/libopus.a" "$LINK_DIR/libopus.a"
 
 # =============================================================================
 # CLIENT | Generate the browser page
@@ -226,7 +227,7 @@ cp -v "$THIRD_PARTY_DIRECTORY/libopus-1.5.2/libopus.a" "$LINK_DIR/libopus.a"
 if command -v node >/dev/null 2>&1
 then
     message "building the browser client (client.html)"
-    if ! node "$ROOT_DIRECTORY/../client-source-code/client-development/browser/build.cjs"
+    if ! node "$ROOT_DIRECTORY/../client-source-code/client-development/browser/build.cjs" --no-download-tools
     then
         warning "browser client build failed; continuing the server build"
         warning "The existing client-source-code/client.html will be packaged if available; it may be outdated"

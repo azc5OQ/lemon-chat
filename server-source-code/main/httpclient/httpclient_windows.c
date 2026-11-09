@@ -27,68 +27,77 @@ typedef struct https_connection_t
     boole is_https;
     boole public_addresses_only;
     uint64 deadline;
-    uint used;
+    uint64 used;
     ubyte encrypted[TLS_BUFFER_LIMIT];
     WCHAR hostname[256];
-    httpclient_response_t* response;
+    httpclient_response_t *response;
 } https_connection_t;
 
 // declarations
-static httpclient_error_t _httpclient_internal__wait(https_connection_t* connection, boole writing);
-static httpclient_error_t _httpclient_internal__send(https_connection_t* connection, const void* data, uint size);
-static httpclient_error_t _httpclient_internal__receive(https_connection_t* connection, boole* eof);
-static httpclient_error_t _httpclient_internal__handshake(https_connection_t* connection, boole initial);
-static httpclient_error_t _httpclient_internal__encrypt(https_connection_t* connection, const void* data, uint size);
-static httpclient_error_t _httpclient_internal__read(https_connection_t* connection, http_parser_t* parser, boole* closed);
-static httpclient_error_t _httpclient_internal__connect(https_connection_t* connection, const char* host, const char* port, uint timeout);
+static httpclient_error_t _httpclient_internal__wait(https_connection_t *connection, boole writing);
+static httpclient_error_t _httpclient_internal__send(https_connection_t *connection, const void *data, uint64 size);
+static httpclient_error_t _httpclient_internal__receive(https_connection_t *connection, boole *eof);
+static httpclient_error_t _httpclient_internal__handshake(https_connection_t *connection, boole initial);
+static httpclient_error_t _httpclient_internal__encrypt(https_connection_t *connection, const void *data, uint64 size);
+static httpclient_error_t _httpclient_internal__read(https_connection_t *connection, http_parser_t *parser, boole *closed);
+static httpclient_error_t _httpclient_internal__connect(https_connection_t *connection, const char *host, const char *port, uint64 timeout);
 
 /**
- * @brief Waits until a URL preview socket is ready for reading or writing, within its existing time limit.
+ * @brief Waits until a URL preview socket is ready for reading or writing, within its existing time
+ *        limit.
  *
  * @param https_connection_t* connection -> the socket, deadline and response error field to use
  * @param boole writing -> nonzero to wait for writing, or zero to wait for reading
  *
  * @return httpclient_error_t -> HTTPCLIENT_OK when ready, HTTPCLIENT_TIMEOUT when time runs out, or HTTPCLIENT_SOCKET on failure
  */
-static httpclient_error_t _httpclient_internal__wait(https_connection_t* connection, boole writing)
+static httpclient_error_t _httpclient_internal__wait(https_connection_t *connection, boole writing)
 {
     fd_set ready;
     fd_set failed;
     struct timeval timeout;
     uint64 now = 0;
     uint64 remaining = 0;
-    int result = 0;
-    int socket_error = 0;
-    int size = sizeof(socket_error);
+    uint64 wait_ms = 0;
+    int64 result = 0;
+    int socket_error = 0; // getsockopt writes an int.
+    int size = sizeof(socket_error); // getsockopt requires int*.
 
-    now = GetTickCount64();
-    if (now >= connection->deadline)
+    for (;;)
     {
-        return HTTPCLIENT_TIMEOUT;
-    }
-    remaining = connection->deadline - now;
-    timeout.tv_sec = (long)(remaining / 1000);
-    timeout.tv_usec = (long)((remaining % 1000) * 1000);
-    FD_ZERO(&ready);
-    FD_ZERO(&failed);
-    FD_SET(connection->socket, &ready);
-    FD_SET(connection->socket, &failed);
-    result = select(0, writing ? NULL : &ready, writing ? &ready : NULL, &failed, &timeout);
-    if (result == 0)
-    {
-        return HTTPCLIENT_TIMEOUT;
-    }
-    if (result == SOCKET_ERROR || FD_ISSET(connection->socket, &failed))
-    {
-        socket_error = WSAGetLastError();
-        if (result != SOCKET_ERROR && getsockopt(connection->socket, SOL_SOCKET, SO_ERROR, (char*)&socket_error, &size) != 0)
+        // Check shared deadline
+        now = GetTickCount64();
+        if (now >= connection->deadline)
+        {
+            return HTTPCLIENT_TIMEOUT;
+        }
+        remaining = connection->deadline - now;
+        wait_ms = remaining > INT_MAX ? INT_MAX : remaining;
+        timeout.tv_sec = (long)(wait_ms / 1000);
+        timeout.tv_usec = (long)((wait_ms % 1000) * 1000);
+
+        // Prepare socket wait
+        FD_ZERO(&ready);
+        FD_ZERO(&failed);
+        FD_SET(connection->socket, &ready);
+        FD_SET(connection->socket, &failed);
+        result = select(0, writing ? NULL : &ready, writing ? &ready : NULL, &failed, &timeout);
+        if (result == 0)
+        {
+            continue;
+        }
+        if (result == SOCKET_ERROR || FD_ISSET(connection->socket, &failed))
         {
             socket_error = WSAGetLastError();
+            if (result != SOCKET_ERROR && getsockopt(connection->socket, SOL_SOCKET, SO_ERROR, (char *)&socket_error, &size) != 0)
+            {
+                socket_error = WSAGetLastError();
+            }
+            connection->response->native_error = (uint)socket_error;
+            return HTTPCLIENT_SOCKET;
         }
-        connection->response->native_error = (uint)socket_error;
-        return HTTPCLIENT_SOCKET;
+        return HTTPCLIENT_OK;
     }
-    return HTTPCLIENT_OK;
 }
 
 /**
@@ -96,15 +105,16 @@ static httpclient_error_t _httpclient_internal__wait(https_connection_t* connect
  *
  * @param https_connection_t* connection -> the open socket and time limit to use
  * @param const void* data -> the bytes to send; this function does not encrypt them
- * @param uint size -> the number of bytes to send
+ * @param uint64 size -> the number of bytes to send
  *
  * @return httpclient_error_t -> HTTPCLIENT_OK when every byte was sent, or a timeout or socket error
  */
-static httpclient_error_t _httpclient_internal__send(https_connection_t* connection, const void* data, uint size)
+static httpclient_error_t _httpclient_internal__send(https_connection_t *connection, const void *data, uint64 size)
 {
-    uint position = 0;
-    int result = 0;
-    int native = 0;
+    uint64 amount = 0;
+    uint64 position = 0;
+    int64 result = 0;
+    int64 native = 0;
     httpclient_error_t error = HTTPCLIENT_OK;
 
     while (position < size)
@@ -114,7 +124,12 @@ static httpclient_error_t _httpclient_internal__send(https_connection_t* connect
         {
             return error;
         }
-        result = send(connection->socket, (const char*)data + position, (int)(size - position), 0);
+
+        // Limit socket chunk
+        amount = size - position > INT_MAX ? INT_MAX : size - position;
+        result = send(connection->socket, (const char *)data + position, (int)amount, 0);
+
+        // Handle socket errors
         if (result <= 0)
         {
             native = result < 0 ? WSAGetLastError() : WSAECONNRESET;
@@ -125,26 +140,29 @@ static httpclient_error_t _httpclient_internal__send(https_connection_t* connect
             connection->response->native_error = (uint)native;
             return HTTPCLIENT_SOCKET;
         }
-        position += (uint)result;
+        position += (uint64)result;
     }
     return HTTPCLIENT_OK;
 }
 
 /**
- * @brief Reads more socket bytes into the connection buffer without discarding bytes already waiting there.
+ * @brief Reads more socket bytes into the connection buffer without discarding bytes already
+ *        waiting there.
  *
  * @param https_connection_t* connection -> the socket, input buffer and time limit to use
  * @param boole* eof -> set to 1 when the socket closes normally, or 0 while it remains open
  *
  * @return httpclient_error_t -> HTTPCLIENT_OK for a successful read or closure, or a size, timeout or socket error
  */
-static httpclient_error_t _httpclient_internal__receive(https_connection_t* connection, boole* eof)
+static httpclient_error_t _httpclient_internal__receive(https_connection_t *connection, boole *eof)
 {
-    int received = 0;
-    int native = 0;
+    int64 received = 0;
+    int64 native = 0;
     httpclient_error_t error = HTTPCLIENT_OK;
 
     *eof = 0;
+
+    // Check receive capacity
     if (connection->used == TLS_BUFFER_LIMIT)
     {
         return HTTPCLIENT_LIMIT;
@@ -156,11 +174,13 @@ static httpclient_error_t _httpclient_internal__receive(https_connection_t* conn
         {
             return error;
         }
-        received = recv(connection->socket, (char*)connection->encrypted + connection->used, (int)(TLS_BUFFER_LIMIT - connection->used), 0);
+
+        // Append received bytes
+        received = recv(connection->socket, (char *)connection->encrypted + connection->used, (int)(TLS_BUFFER_LIMIT - connection->used), 0);
         if (received >= 0)
         {
             *eof = received == 0;
-            connection->used += (uint)received;
+            connection->used += (uint64)received;
             return HTTPCLIENT_OK;
         }
         native = WSAGetLastError();
@@ -182,7 +202,7 @@ static httpclient_error_t _httpclient_internal__receive(https_connection_t* conn
  *
  * @return httpclient_error_t -> HTTPCLIENT_OK when TLS is ready, or the TLS, socket, timeout or response error
  */
-static httpclient_error_t _httpclient_internal__handshake(https_connection_t* connection, boole initial)
+static httpclient_error_t _httpclient_internal__handshake(https_connection_t *connection, boole initial)
 {
     SecBuffer input[2];
     SecBuffer output[2];
@@ -190,13 +210,12 @@ static httpclient_error_t _httpclient_internal__handshake(https_connection_t* co
     SecBufferDesc outgoing;
     SecPkgContext_ConnectionInfo information;
     TimeStamp expiry;
-    SECURITY_STATUS status = SEC_E_OK;
-    SECURITY_STATUS completed = SEC_E_OK;
-    ULONG attributes = 0;
-    ULONG flags = ISC_REQ_ALLOCATE_MEMORY | ISC_REQ_CONFIDENTIALITY | ISC_REQ_REPLAY_DETECT |
-        ISC_REQ_SEQUENCE_DETECT | ISC_REQ_STREAM | ISC_REQ_EXTENDED_ERROR | ISC_REQ_USE_SUPPLIED_CREDS;
-    uint extra = 0;
-    uint index = 0;
+    int64 status = SEC_E_OK;
+    int64 completed = SEC_E_OK;
+    ULONG attributes = 0; // Schannel writes a ULONG.
+    uint64 flags = ISC_REQ_ALLOCATE_MEMORY | ISC_REQ_CONFIDENTIALITY | ISC_REQ_REPLAY_DETECT | ISC_REQ_SEQUENCE_DETECT | ISC_REQ_STREAM | ISC_REQ_EXTENDED_ERROR | ISC_REQ_USE_SUPPLIED_CREDS;
+    uint64 extra = 0;
+    uint64 index = 0;
     boole first = initial;
     boole eof = 0;
     boole need_more = 0;
@@ -208,6 +227,8 @@ static httpclient_error_t _httpclient_internal__handshake(https_connection_t* co
         {
             return HTTPCLIENT_TIMEOUT;
         }
+
+        // Read handshake bytes
         if (need_more)
         {
             error = _httpclient_internal__receive(connection, &eof);
@@ -216,11 +237,13 @@ static httpclient_error_t _httpclient_internal__handshake(https_connection_t* co
                 return eof ? HTTPCLIENT_TRUNCATED : error;
             }
         }
+
+        // Prepare TLS buffers
         clib__memset(input, 0, sizeof(input));
         clib__memset(output, 0, sizeof(output));
         input[0].BufferType = SECBUFFER_TOKEN;
         input[0].pvBuffer = connection->encrypted;
-        input[0].cbBuffer = connection->used;
+        input[0].cbBuffer = (ULONG)connection->used;
         input[1].BufferType = SECBUFFER_EMPTY;
         output[0].BufferType = SECBUFFER_TOKEN;
         output[1].BufferType = SECBUFFER_ALERT;
@@ -230,9 +253,9 @@ static httpclient_error_t _httpclient_internal__handshake(https_connection_t* co
         outgoing.ulVersion = SECBUFFER_VERSION;
         outgoing.cBuffers = 2;
         outgoing.pBuffers = output;
-        status = InitializeSecurityContextW(&connection->credential, first ? NULL : &connection->context,
-            connection->hostname, flags, 0, 0, first ? NULL : &incoming, 0,
-            &connection->context, &outgoing, &attributes, &expiry);
+
+        // Continue TLS handshake
+        status = InitializeSecurityContextW(&connection->credential, first ? NULL : &connection->context, connection->hostname, (ULONG)flags, 0, 0, first ? NULL : &incoming, 0, &connection->context, &outgoing, &attributes, &expiry);
         connection->has_context = (boole)SecIsValidHandle(&connection->context);
         first = 0;
         if (status == SEC_I_COMPLETE_NEEDED || status == SEC_I_COMPLETE_AND_CONTINUE)
@@ -247,11 +270,14 @@ static httpclient_error_t _httpclient_internal__handshake(https_connection_t* co
                 status = status == SEC_I_COMPLETE_NEEDED ? SEC_E_OK : SEC_I_CONTINUE_NEEDED;
             }
         }
+
         // A successful final handshake can still have a token that must be sent.
         if (output[0].cbBuffer != 0 && output[0].pvBuffer != NULL)
         {
             error = _httpclient_internal__send(connection, output[0].pvBuffer, output[0].cbBuffer);
         }
+
+        // Release TLS output
         for (index = 0; index < 2; index++)
         {
             if (output[index].pvBuffer != NULL)
@@ -273,6 +299,8 @@ static httpclient_error_t _httpclient_internal__handshake(https_connection_t* co
             connection->response->native_error = (uint)status;
             return status == SEC_I_INCOMPLETE_CREDENTIALS ? HTTPCLIENT_UNSUPPORTED : HTTPCLIENT_TLS;
         }
+
+        // Keep unread bytes
         extra = input[1].BufferType == SECBUFFER_EXTRA ? input[1].cbBuffer : 0;
         if (extra > connection->used)
         {
@@ -289,6 +317,8 @@ static httpclient_error_t _httpclient_internal__handshake(https_connection_t* co
             {
                 return HTTPCLIENT_TLS;
             }
+
+            // Read connection settings
             status = QueryContextAttributesW(&connection->context, SECPKG_ATTR_STREAM_SIZES, &connection->sizes);
             if (status == SEC_E_OK)
             {
@@ -300,9 +330,9 @@ static httpclient_error_t _httpclient_internal__handshake(https_connection_t* co
                 return HTTPCLIENT_TLS;
             }
             connection->response->tls_protocol = information.dwProtocol;
-            if ((information.dwProtocol & (SP_PROT_TLS1_2_CLIENT | SP_PROT_TLS1_3_CLIENT)) == 0 ||
-                connection->sizes.cbMaximumMessage == 0 || connection->sizes.cbMaximumMessage > TLS_BUFFER_LIMIT ||
-                connection->sizes.cbHeader > TLS_BUFFER_LIMIT || connection->sizes.cbTrailer > TLS_BUFFER_LIMIT)
+
+            // Check negotiated limits
+            if ((information.dwProtocol & (SP_PROT_TLS1_2_CLIENT | SP_PROT_TLS1_3_CLIENT)) == 0 || connection->sizes.cbMaximumMessage == 0 || connection->sizes.cbMaximumMessage > TLS_BUFFER_LIMIT || connection->sizes.cbHeader > TLS_BUFFER_LIMIT || connection->sizes.cbTrailer > TLS_BUFFER_LIMIT)
             {
                 return HTTPCLIENT_TLS;
             }
@@ -317,50 +347,60 @@ static httpclient_error_t _httpclient_internal__handshake(https_connection_t* co
  *
  * @param https_connection_t* connection -> the established TLS connection and its time limit
  * @param const void* data -> the unencrypted request bytes to send
- * @param uint size -> the number of request bytes
+ * @param uint64 size -> the number of request bytes
  *
  * @return httpclient_error_t -> HTTPCLIENT_OK when all bytes were sent, or an allocation, TLS, socket or timeout error
  */
-static httpclient_error_t _httpclient_internal__encrypt(https_connection_t* connection, const void* data, uint size)
+static httpclient_error_t _httpclient_internal__encrypt(https_connection_t *connection, const void *data, uint64 size)
 {
-    ubyte* record = NULL;
+    ubyte *record = NULL;
     SecBuffer buffers[4];
     SecBufferDesc message;
-    SECURITY_STATUS status = SEC_E_OK;
-    uint amount = 0;
-    uint position = 0;
-    uint index = 0;
-    uint capacity = 0;
+    int64 status = SEC_E_OK;
+    uint64 amount = 0;
+    uint64 position = 0;
+    uint64 index = 0;
+    uint64 capacity = 0;
     httpclient_error_t error = HTTPCLIENT_OK;
 
-    capacity = connection->sizes.cbHeader + connection->sizes.cbMaximumMessage + connection->sizes.cbTrailer;
-    record = (ubyte*)malloc(capacity);
+    // Allocate TLS record
+    capacity = (uint64)connection->sizes.cbHeader + connection->sizes.cbMaximumMessage + connection->sizes.cbTrailer;
+    if (capacity > SIZE_MAX)
+    {
+        return HTTPCLIENT_LIMIT;
+    }
+    record = (ubyte *)malloc(capacity);
     if (record == NULL)
     {
         return HTTPCLIENT_MEMORY;
     }
     while (position < size && error == HTTPCLIENT_OK)
     {
+        // Split request bytes
         amount = size - position;
         if (amount > connection->sizes.cbMaximumMessage)
         {
             amount = connection->sizes.cbMaximumMessage;
         }
+
+        // Prepare TLS record
         clib__memset(buffers, 0, sizeof(buffers));
         buffers[0].BufferType = SECBUFFER_STREAM_HEADER;
         buffers[0].pvBuffer = record;
         buffers[0].cbBuffer = connection->sizes.cbHeader;
         buffers[1].BufferType = SECBUFFER_DATA;
         buffers[1].pvBuffer = record + connection->sizes.cbHeader;
-        buffers[1].cbBuffer = amount;
+        buffers[1].cbBuffer = (ULONG)amount;
         buffers[2].BufferType = SECBUFFER_STREAM_TRAILER;
         buffers[2].pvBuffer = record + connection->sizes.cbHeader + amount;
         buffers[2].cbBuffer = connection->sizes.cbTrailer;
         buffers[3].BufferType = SECBUFFER_EMPTY;
-        clib__memcpy(buffers[1].pvBuffer, (const ubyte*)data + position, amount);
+        clib__memcpy(buffers[1].pvBuffer, (const ubyte *)data + position, amount);
         message.ulVersion = SECBUFFER_VERSION;
         message.cBuffers = 4;
         message.pBuffers = buffers;
+
+        // Encrypt request bytes
         status = EncryptMessage(&connection->context, 0, &message, 0);
         if (status != SEC_E_OK)
         {
@@ -368,6 +408,8 @@ static httpclient_error_t _httpclient_internal__encrypt(https_connection_t* conn
             error = HTTPCLIENT_TLS;
             break;
         }
+
+        // Send encrypted record
         for (index = 0; index < 3 && error == HTTPCLIENT_OK; index++)
         {
             error = _httpclient_internal__send(connection, buffers[index].pvBuffer, buffers[index].cbBuffer);
@@ -389,13 +431,13 @@ static httpclient_error_t _httpclient_internal__encrypt(https_connection_t* conn
  *
  * @return httpclient_error_t -> HTTPCLIENT_OK after processing available TLS data, or the connection, TLS or HTTP error
  */
-static httpclient_error_t _httpclient_internal__read(https_connection_t* connection, http_parser_t* parser, boole* closed)
+static httpclient_error_t _httpclient_internal__read(https_connection_t *connection, http_parser_t *parser, boole *closed)
 {
     SecBuffer buffers[4];
     SecBufferDesc message;
-    SECURITY_STATUS status = SEC_E_OK;
-    uint index = 0;
-    uint extra = 0;
+    int64 status = SEC_E_OK;
+    uint64 index = 0;
+    uint64 extra = 0;
     boole eof = 0;
     boole need_more = 0;
     httpclient_error_t error = HTTPCLIENT_OK;
@@ -408,6 +450,8 @@ static httpclient_error_t _httpclient_internal__read(https_connection_t* connect
         {
             return HTTPCLIENT_TIMEOUT;
         }
+
+        // Read encrypted bytes
         if (need_more)
         {
             error = _httpclient_internal__receive(connection, &eof);
@@ -416,14 +460,20 @@ static httpclient_error_t _httpclient_internal__read(https_connection_t* connect
                 return eof ? HTTPCLIENT_TRUNCATED : error;
             }
         }
+
+        // Prepare TLS buffers
         clib__memset(buffers, 0, sizeof(buffers));
         buffers[0].BufferType = SECBUFFER_DATA;
         buffers[0].pvBuffer = connection->encrypted;
-        buffers[0].cbBuffer = connection->used;
+        buffers[0].cbBuffer = (ULONG)connection->used;
         message.ulVersion = SECBUFFER_VERSION;
         message.cBuffers = 4;
         message.pBuffers = buffers;
+
+        // Decrypt response bytes
         status = DecryptMessage(&connection->context, &message, 0, NULL);
+
+        // Await complete record
         if (status == SEC_E_INCOMPLETE_MESSAGE)
         {
             need_more = 1;
@@ -434,19 +484,21 @@ static httpclient_error_t _httpclient_internal__read(https_connection_t* connect
             connection->response->native_error = (uint)status;
             return HTTPCLIENT_TLS;
         }
+
         // A shutdown/control status does not promise application plaintext in the input DATA slot.
         if (status == SEC_I_CONTEXT_EXPIRED)
         {
             *closed = 1;
             return HTTPCLIENT_OK;
         }
+
+        // Parse decrypted bytes
         extra = 0;
         for (index = 0; index < 4; index++)
         {
             if (status == SEC_E_OK && buffers[index].BufferType == SECBUFFER_DATA && buffers[index].cbBuffer != 0)
             {
-                error = _httpclient_internal__append(&parser->pending, buffers[index].pvBuffer, buffers[index].cbBuffer,
-                    HTTP_HEADER_LIMIT + TLS_BUFFER_LIMIT);
+                error = _httpclient_internal__append(&parser->pending, buffers[index].pvBuffer, buffers[index].cbBuffer, HTTP_HEADER_LIMIT + TLS_BUFFER_LIMIT);
                 if (error == HTTPCLIENT_OK)
                 {
                     error = _httpclient_internal__parse(parser, connection->response);
@@ -461,6 +513,8 @@ static httpclient_error_t _httpclient_internal__read(https_connection_t* connect
                 extra = buffers[index].cbBuffer;
             }
         }
+
+        // Keep unread bytes
         if (extra > connection->used)
         {
             return HTTPCLIENT_TLS;
@@ -485,21 +539,23 @@ static httpclient_error_t _httpclient_internal__read(https_connection_t* connect
  * @param https_connection_t* connection -> receives the open socket and shared connection deadline
  * @param const char* host -> the hostname or numeric IP address to resolve
  * @param const char* port -> the destination port written as decimal text
- * @param uint timeout -> the time allowed in milliseconds after DNS lookup, shared by later reads and writes
+ * @param uint64 timeout -> the time allowed in milliseconds after DNS lookup, shared by later reads and writes
  *
  * @return httpclient_error_t -> HTTPCLIENT_OK when connected, or a DNS, socket or timeout error
  */
-static httpclient_error_t _httpclient_internal__connect(https_connection_t* connection, const char* host, const char* port, uint timeout)
+static httpclient_error_t _httpclient_internal__connect(https_connection_t *connection, const char *host, const char *port, uint64 timeout)
 {
+    uint64 now = 0;
     ADDRINFOA hints;
-    ADDRINFOA* addresses = NULL;
-    ADDRINFOA* current = NULL;
-    ULONG nonblocking = 1;
-    int native = 0;
-    int result = 0;
-    int size = 0;
+    ADDRINFOA *addresses = NULL;
+    ADDRINFOA *current = NULL;
+    ULONG nonblocking = 1; // ioctlsocket requires ULONG*.
+    int native = 0; // getsockopt writes an int.
+    int64 result = 0;
+    int size = 0; // getsockopt requires int*.
     httpclient_error_t error = HTTPCLIENT_SOCKET;
 
+    // Resolve website address
     clib__memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
@@ -510,7 +566,17 @@ static httpclient_error_t _httpclient_internal__connect(https_connection_t* conn
         connection->response->native_error = (uint)native;
         return HTTPCLIENT_DNS;
     }
-    connection->deadline = GetTickCount64() + timeout;
+
+    // Set shared deadline
+    now = GetTickCount64();
+    if (timeout > UINT64_MAX - now)
+    {
+        freeaddrinfo(addresses);
+        return HTTPCLIENT_ARGUMENT;
+    }
+    connection->deadline = now + timeout;
+
+    // Try allowed addresses
     for (current = addresses; current != NULL; current = current->ai_next)
     {
         if (connection->public_addresses_only && !httpclient_internal__address_allowed(current->ai_addr))
@@ -523,6 +589,8 @@ static httpclient_error_t _httpclient_internal__connect(https_connection_t* conn
             connection->response->native_error = (uint)WSAGetLastError();
             continue;
         }
+
+        // Enable nonblocking socket
         result = ioctlsocket(connection->socket, FIONBIO, &nonblocking);
         if (result == 0)
         {
@@ -535,8 +603,9 @@ static httpclient_error_t _httpclient_internal__connect(https_connection_t* conn
             error = _httpclient_internal__wait(connection, 1);
             if (error == HTTPCLIENT_OK)
             {
+                // Check completed connection
                 size = sizeof(native);
-                result = getsockopt(connection->socket, SOL_SOCKET, SO_ERROR, (char*)&native, &size);
+                result = getsockopt(connection->socket, SOL_SOCKET, SO_ERROR, (char *)&native, &size);
                 if (result != 0 || native != 0)
                 {
                     native = result != 0 ? WSAGetLastError() : native;
@@ -553,6 +622,8 @@ static httpclient_error_t _httpclient_internal__connect(https_connection_t* conn
         {
             connection->response->native_error = (uint)native;
         }
+
+        // Discard failed socket
         closesocket(connection->socket);
         connection->socket = INVALID_SOCKET;
         if (error == HTTPCLIENT_TIMEOUT)
@@ -571,12 +642,14 @@ static httpclient_error_t _httpclient_internal__connect(https_connection_t* conn
  *
  * @return void
  */
-void httpclient_transport__close(https_connection_t* connection)
+void httpclient_transport__close(https_connection_t *connection)
 {
     if (connection == NULL)
     {
         return;
     }
+
+    // Release TLS handles
     if (connection->has_context)
     {
         DeleteSecurityContext(&connection->context);
@@ -585,6 +658,8 @@ void httpclient_transport__close(https_connection_t* connection)
     {
         FreeCredentialsHandle(&connection->credential);
     }
+
+    // Close Windows socket
     if (connection->socket != INVALID_SOCKET)
     {
         closesocket(connection->socket);
@@ -608,17 +683,19 @@ void httpclient_transport__close(https_connection_t* connection)
  *
  * @return httpclient_error_t -> HTTPCLIENT_OK when ready to send, or the allocation, DNS, socket, timeout or TLS error
  */
-httpclient_error_t httpclient_transport__open(const httpclient_request_t* request, const httpclient_url_t* url,
-    httpclient_response_t* response, httpclient_connection_t** output)
+httpclient_error_t httpclient_transport__open(const httpclient_request_t *request, const httpclient_url_t *url, httpclient_response_t *response, httpclient_connection_t **output)
 {
+    uint64 index = 0;
     WSADATA winsock;
     SCH_CREDENTIALS credentials;
     TLS_PARAMETERS tls;
     TimeStamp expiry;
-    SECURITY_STATUS security;
+    int64 security = SEC_E_OK;
     httpclient_error_t error;
-    int result;
-    https_connection_t* connection = calloc(1, sizeof(*connection));
+    int64 result;
+    https_connection_t *connection = calloc(1, sizeof(*connection));
+
+    // Keep cleanup handle
     *output = connection;
     if (connection == NULL)
     {
@@ -628,6 +705,8 @@ httpclient_error_t httpclient_transport__open(const httpclient_request_t* reques
     connection->response = response;
     connection->is_https = (boole)url->is_https;
     connection->public_addresses_only = (boole)request->public_addresses_only;
+
+    // Start Windows sockets
     result = WSAStartup(MAKEWORD(2, 2), &winsock);
     if (result != 0)
     {
@@ -639,20 +718,22 @@ httpclient_error_t httpclient_transport__open(const httpclient_request_t* reques
     {
         SecInvalidateHandle(&connection->credential);
         SecInvalidateHandle(&connection->context);
-        for (uint index = 0; url->host[index] != 0; index++)
+        for (index = 0; url->host[index] != 0; index++)
         {
             connection->hostname[index] = (WCHAR)(ubyte)url->host[index];
         }
+
+        // Prepare TLS credentials
         clib__memset(&credentials, 0, sizeof(credentials));
         clib__memset(&tls, 0, sizeof(tls));
         tls.grbitDisabledProtocols = SP_PROT_SSL2_CLIENT | SP_PROT_SSL3_CLIENT | SP_PROT_TLS1_CLIENT | SP_PROT_TLS1_1_CLIENT;
         credentials.dwVersion = SCH_CREDENTIALS_VERSION;
-        credentials.dwFlags = SCH_CRED_AUTO_CRED_VALIDATION | SCH_CRED_NO_DEFAULT_CREDS | SCH_USE_STRONG_CRYPTO |
-            SCH_CRED_REVOCATION_CHECK_CHAIN_EXCLUDE_ROOT;
+
+        // Require certificate verification
+        credentials.dwFlags = SCH_CRED_AUTO_CRED_VALIDATION | SCH_CRED_NO_DEFAULT_CREDS | SCH_USE_STRONG_CRYPTO | SCH_CRED_REVOCATION_CHECK_CHAIN_EXCLUDE_ROOT;
         credentials.cTlsParameters = 1;
         credentials.pTlsParameters = &tls;
-        security = AcquireCredentialsHandleW(NULL, UNISP_NAME_W, SECPKG_CRED_OUTBOUND, NULL, &credentials, NULL, NULL,
-            &connection->credential, &expiry);
+        security = AcquireCredentialsHandleW(NULL, UNISP_NAME_W, SECPKG_CRED_OUTBOUND, NULL, &credentials, NULL, NULL, &connection->credential, &expiry);
         if (security != SEC_E_OK)
         {
             response->native_error = (uint)security;
@@ -660,10 +741,12 @@ httpclient_error_t httpclient_transport__open(const httpclient_request_t* reques
         }
         connection->has_credential = 1;
     }
-    error = _httpclient_internal__connect(connection, url->host, url->port,
-        request->timeout_ms == 0 ? 15000u : request->timeout_ms);
+
+    // Connect to website
+    error = _httpclient_internal__connect(connection, url->host, url->port, request->timeout_ms == 0 ? 15000u : request->timeout_ms);
     if (error == HTTPCLIENT_OK && connection->is_https)
     {
+        // Establish TLS connection
         error = _httpclient_internal__handshake(connection, 1);
     }
     return error;
@@ -674,12 +757,16 @@ httpclient_error_t httpclient_transport__open(const httpclient_request_t* reques
  *
  * @param httpclient_connection_t* connection -> the open connection and the time limit shared by the request
  * @param const void* data -> the request bytes, kept alive by the caller until this function returns
- * @param uint size -> the number of bytes to send
+ * @param uint64 size -> the number of bytes to send
  *
  * @return httpclient_error_t -> HTTPCLIENT_OK when all bytes were sent, or the allocation, TLS, socket or timeout error
  */
-httpclient_error_t httpclient_transport__write(httpclient_connection_t* connection, const void* data, uint size)
+httpclient_error_t httpclient_transport__write(httpclient_connection_t *connection, const void *data, uint64 size)
 {
+    if (size > SIZE_MAX)
+    {
+        return HTTPCLIENT_LIMIT;
+    }
     if (connection->is_https)
     {
         return _httpclient_internal__encrypt(connection, data, size);
@@ -688,7 +775,8 @@ httpclient_error_t httpclient_transport__write(httpclient_connection_t* connecti
 }
 
 /**
- * @brief Reads URL preview response data, decrypts HTTPS data if needed and continues parsing the response.
+ * @brief Reads URL preview response data, decrypts HTTPS data if needed and continues parsing the
+ *        response.
  *
  * HTTPS socket closure without a TLS close notification is reported as truncated.
  *
@@ -698,20 +786,24 @@ httpclient_error_t httpclient_transport__write(httpclient_connection_t* connecti
  *
  * @return httpclient_error_t -> HTTPCLIENT_OK after processing data or a clean closure, or the connection, TLS or HTTP error
  */
-httpclient_error_t httpclient_transport__read(httpclient_connection_t* connection, http_parser_t* parser, boole* closed)
+httpclient_error_t httpclient_transport__read(httpclient_connection_t *connection, http_parser_t *parser, boole *closed)
 {
+    httpclient_error_t error = 0;
+
     if (connection->is_https)
     {
         return _httpclient_internal__read(connection, parser, closed);
     }
-    httpclient_error_t error = _httpclient_internal__receive(connection, closed);
+
+    // Read HTTP bytes
+    error = _httpclient_internal__receive(connection, closed);
     if (error == HTTPCLIENT_OK && connection->used != 0)
     {
-        error = _httpclient_internal__append(&parser->pending, connection->encrypted, connection->used,
-            HTTP_HEADER_LIMIT + TLS_BUFFER_LIMIT);
+        error = _httpclient_internal__append(&parser->pending, connection->encrypted, connection->used, HTTP_HEADER_LIMIT + TLS_BUFFER_LIMIT);
         connection->used = 0;
         if (error == HTTPCLIENT_OK)
         {
+            // Parse received bytes
             error = _httpclient_internal__parse(parser, connection->response);
         }
     }

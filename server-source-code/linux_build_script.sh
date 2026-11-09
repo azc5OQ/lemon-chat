@@ -104,8 +104,8 @@ then
     rm -fv "$ROOT_DIRECTORY/main/build.ninja"
     rm -fv "$ROOT_DIRECTORY/main/.ninja_deps"
     rm -fv "$ROOT_DIRECTORY/main/.ninja_log"
-    rm -rfv "$THIRD_PARTY_DIRECTORY/libopus-1.5.2/CMakeFiles"
-    rm -fv "$THIRD_PARTY_DIRECTORY/libopus-1.5.2/CMakeCache.txt"
+    rm -rfv "$THIRD_PARTY_DIRECTORY/libopus-1.6.1/CMakeFiles"
+    rm -fv "$THIRD_PARTY_DIRECTORY/libopus-1.6.1/CMakeCache.txt"
     rm -fv "$ROOT_DIRECTORY/../buildresult/"*
     # stunnel + its OpenSSL dependency (binaries + build trees)
     ( cd "$THIRD_PARTY_DIRECTORY/stunnel/stunnel-5.75" && make distclean ) >/dev/null 2>&1
@@ -274,11 +274,12 @@ cp -v "$THIRD_PARTY_DIRECTORY/libmaxminddb-1.12.2/src/.libs/libmaxminddb.a" "$RO
 # DEPENDENCY 8/8 | Opus: audio codec
 # =============================================================================
 
-message "building libopus-1.5.2"
-cd "$THIRD_PARTY_DIRECTORY/libopus-1.5.2"
-cmake_lib
+message "building libopus-1.6.1"
+cd "$THIRD_PARTY_DIRECTORY/libopus-1.6.1"
+# Restore upstream CPU detection defaults, including runtime SSE4.1/AVX2 selection.
+cmake_lib -DOPUS_DISABLE_INTRINSICS=OFF "-UOPUS_X86_*"
 cmake --build . -j"$JOBS"  --target opus
-cp -r -v "$THIRD_PARTY_DIRECTORY/libopus-1.5.2/libopus.a" "$ROOT_DIRECTORY/main/linkage-files/linux/libopus.a"
+cp -r -v "$THIRD_PARTY_DIRECTORY/libopus-1.6.1/libopus.a" "$ROOT_DIRECTORY/main/linkage-files/linux/libopus.a"
 
 # =============================================================================
 # CLIENT | Generate the browser page
@@ -289,7 +290,7 @@ cp -r -v "$THIRD_PARTY_DIRECTORY/libopus-1.5.2/libopus.a" "$ROOT_DIRECTORY/main/
 if command -v node >/dev/null 2>&1
 then
     message "building the browser client (client.html)"
-    if ! node "$ROOT_DIRECTORY/../client-source-code/client-development/browser/build.cjs"
+    if ! node "$ROOT_DIRECTORY/../client-source-code/client-development/browser/build.cjs" --no-download-tools
     then
         warning "browser client build failed; continuing the server build"
         warning "The existing client-source-code/client.html will be packaged if available; it may be outdated"

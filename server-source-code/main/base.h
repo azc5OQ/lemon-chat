@@ -5,46 +5,42 @@
 
 typedef struct client_request_context_t
 {
-    ws_cli_conn_t* socket;
+    ws_cli_conn_t *socket;
     uint64 client_id;
     boole authenticated;
     boole active;
 } client_request_context_t;
 
-// Begin while the clients lock protects the socket/authentication snapshot. End
-// restores the prior thread-local scope, including when dispatch is nested.
-void base__begin_client_request(ws_cli_conn_t* socket, uint64 client_id, boole authenticated, client_request_context_t* previous);
-void base__end_client_request(const client_request_context_t* previous);
-// Caller holds the clients lock. Internal calls without a request scope remain
-// allowed for a valid existing slot; WebSocket dispatch must establish a scope.
+void base__begin_client_request(ws_cli_conn_t *socket, uint64 client_id, boole authenticated, client_request_context_t *previous);
+void base__end_client_request(const client_request_context_t *previous);
 boole base__is_current_client_request(uint64 client_id);
 
 boole base__is_request_allowed_based_on_spam_protection(uint64 client_index);
 uint64 base__get_chat_message_id(void);
 void base__increment_chat_message_id(void);
 
-boole base__is_client_valid(int client_id);
-boole base__is_client_valid_and_not_music_bot(int client_id);
-boole base__is_client_valid_admin(int client_id);
-boole base__is_client_valid_musicbot(int client_id);
-boole base__is_music_bot_and_song_slot_valid(int client_id);
-boole base__is_attachment_blocked(client_t* client, cstring receive_type);
+boole base__is_client_valid(uint64 client_id);
+boole base__is_client_valid_and_not_music_bot(uint64 client_id);
+boole base__is_client_valid_admin(uint64 client_id);
+boole base__is_client_valid_musicbot(uint64 client_id);
+boole base__is_music_bot_and_song_slot_valid(uint64 client_id);
+boole base__is_attachment_blocked(client_t *client, cstring receive_type);
 boole base__is_server_ram_budget_reached(void);
 void base__count_webrtc_bytes(uint64 received, uint64 sent);
-void base__get_webrtc_bytes(uint64* received, uint64* sent);
+void base__get_webrtc_bytes(uint64 *received, uint64 *sent);
 void base__start_server_uptime(void);
 uint64 base__get_server_uptime_seconds(void);
 
-void base__process_authenticated_client_message(ws_cli_conn_t* websocket, uint64 client_index, char* decrypted_metadata_cstring);
+void base__process_authenticated_client_message(ws_cli_conn_t *websocket, uint64 client_index, char *decrypted_metadata_cstring);
 
-void base__process_not_authenticated_client_message(ws_cli_conn_t* websocket, uint64 index, char* decrypted_metadata_cstring);
+void base__process_not_authenticated_client_message(ws_cli_conn_t *websocket, uint64 index, char *decrypted_metadata_cstring);
 
 extern uint64 g_chat_message_id;
-extern client_t* g_clients_array;
-extern channel_t* g_channel_array;
-extern icon_t* g_icons_array;
-extern group_t* g_groups_array;
-extern ban_entry_t* g_ban_array;
+extern client_t *g_clients_array;
+extern channel_t *g_channel_array;
+extern icon_t *g_icons_array;
+extern group_t *g_groups_array;
+extern ban_entry_t *g_ban_array;
 extern server_settings_t g_server_settings;
 extern custom_rwlock_t g_clients_global_rwlock_guard;
 extern custom_rwlock_t g_webrtc_peers_rwlock_guard;

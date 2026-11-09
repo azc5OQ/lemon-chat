@@ -1,15 +1,18 @@
 // This file checks login messages, establishes the encrypted connection and answers keepalive requests.
 #include "client_msg.h"
+#include "../../crypto/keys_session.h"
+#include "../../crypto/ciphers.h"
 #include <string.h>
 #include "../../core/channel.h"
 #include "../../core/client_session.h"
-#include "../../core/client_login.h"
+#include "../../crypto/auth_rsa.h"
 #include "../../core/identity_store.h"
 #include "../../core/permissions.h"
 #include "../../core/channel_groups.h"
 #include "../../core/administration.h"
 #include "../../core/login_admission.h"
-#include "../../metadata_crypto.h"
+#include "../../crypto/auth_handshake.h"
+#include "../../crypto/crypto_metadata.h"
 #include "../server/server_msg.h"
 #include "../../core/server_logs.h"
 #include "../../core/video_channel.h"
@@ -19,24 +22,24 @@
 #include "../../clib/clib.h"
 #include "../../../third-party/rxi-log/log.h"
 #include "../../../third-party/zhicheng/base64.h"
-#include "../../dh_primes.h"
+#include "../../crypto/dh_parameters.h"
 #include "../../../third-party/libtom/libtommath/tommath.h"
 #include "../../ip_tools.h"
 
 typedef struct pending_login_t
 {
     uint64 client_id;
-    ws_cli_conn_t* socket;
+    ws_cli_conn_t *socket;
 } pending_login_t;
 
 // declarations
-static void _client_msg_connection_internal__get_public_key_and_verification_string_and_dh_public_mix(cJSON* json_root, char** out_public_key, char** out_verification_string, char** out_dh_mix);
-static boole _client_msg_connection_internal__is_public_key_info_message_valid(cJSON* json_root, uint64 client_id);
-static int _client_msg_connection_internal__login_connection_is_valid(void* argument);
-static boole _client_msg_connection_internal__is_public_key_challenge_response_valid(cJSON* json_root, uint64 client_id);
-static char* _client_msg_connection_internal__get_challenge_string(cJSON* json_root);
+static void _client_msg_connection_internal__get_public_key_and_verification_string_and_dh_public_mix(cJSON *json_root, char **out_public_key, char **out_verification_string, char **out_dh_mix);
+static boole _client_msg_connection_internal__is_public_key_info_message_valid(cJSON *json_root, uint64 client_id);
+static boole _client_msg_connection_internal__login_connection_is_valid(void *argument);
+static boole _client_msg_connection_internal__is_public_key_challenge_response_valid(cJSON *json_root, uint64 client_id);
+static char *_client_msg_connection_internal__get_challenge_string(cJSON *json_root);
 static boole _client_msg_connection_internal__is_username_free_at_login(cstring candidate_username, uint64 client_index);
-static boole _client_msg_connection_internal__try_apply_chosen_username(cJSON* json_root, uint64 client_index);
+static boole _client_msg_connection_internal__try_apply_chosen_username(cJSON *json_root, uint64 client_index);
 
 /**
  * @brief This function processes connection check message from client
@@ -48,12 +51,11 @@ static boole _client_msg_connection_internal__try_apply_chosen_username(cJSON* j
  *
  * @return void
  */
-void client_msg__connection__process_connection_check(cJSON* json_root, uint64 sender_client_id)
+void client_msg__connection__process_connection_check(cJSON *json_root, uint64 sender_client_id)
 {
     clib__write_lock(&g_clients_global_rwlock_guard);
 
-    if (base__is_current_client_request(sender_client_id) == TRUE
-        && g_clients_array[sender_client_id].is_authenticated == TRUE)
+    if (base__is_current_client_request(sender_client_id) == TRUE && g_clients_array[sender_client_id].is_authenticated == TRUE)
     {
         g_clients_array[sender_client_id].timestamp_last_maintain_connection_message_received = util__get_timestamp_ms();
         server_msg__connection__send_connection_check_response_to_single_client(&g_clients_array[sender_client_id]);
@@ -63,7 +65,8 @@ void client_msg__connection__process_connection_check(cJSON* json_root, uint64 s
 }
 
 /**
- * @brief extracts the client's public key, verification string and dh public mix from the json into the provided output pointers
+ * @brief extracts the client's public key, verification string and dh public mix from the json into
+ *        the provided output pointers
  *
  * @param cJSON* json_root -> the parsed client request
  * @param char** out_public_key -> receives a pointer to the client's public key string
@@ -74,12 +77,12 @@ void client_msg__connection__process_connection_check(cJSON* json_root, uint64 s
  *
  * @attention this function assumes json_root is already verified , has correct data, if not this function will cause crash of entire server
  */
-static void _client_msg_connection_internal__get_public_key_and_verification_string_and_dh_public_mix(cJSON* json_root, char** out_public_key, char** out_verification_string, char** out_dh_mix)
+static void _client_msg_connection_internal__get_public_key_and_verification_string_and_dh_public_mix(cJSON *json_root, char **out_public_key, char **out_verification_string, char **out_dh_mix)
 {
-    cJSON* public_key_json = 0;
-    cJSON* verification_string_json = 0;
-    cJSON* json_message_object = 0;
-    cJSON* dh_public_mix_json = 0;
+    cJSON *public_key_json = 0;
+    cJSON *verification_string_json = 0;
+    cJSON *json_message_object = 0;
+    cJSON *dh_public_mix_json = 0;
 
     // "message" object is fetched from json_root, again
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
@@ -103,16 +106,16 @@ static void _client_msg_connection_internal__get_public_key_and_verification_str
  *
  * @return boole
  */
-static boole _client_msg_connection_internal__is_public_key_info_message_valid(cJSON* json_root, uint64 client_id)
+static boole _client_msg_connection_internal__is_public_key_info_message_valid(cJSON *json_root, uint64 client_id)
 {
-    cJSON* json_message_type = 0;
-    cJSON* json_message_value = 0;
-    cJSON* verification_string = 0;
-    cJSON* json_message_object = 0;
-    size_t length;
-    size_t maximum_length;
-    size_t digit;
-
+    uint64 public_key_string_length = 0;
+    cJSON *json_message_type = 0;
+    cJSON *json_message_value = 0;
+    cJSON *verification_string = 0;
+    cJSON *json_message_object = 0;
+    uint64 length;
+    uint64 maximum_length;
+    uint64 digit;
     boole status = FALSE;
 
     // "message" object is fetched from json_root, again
@@ -179,7 +182,7 @@ static boole _client_msg_connection_internal__is_public_key_info_message_valid(c
     // the larger sizes minimum_rsa_key_bits exists to let an admin require. only lengths no rsa
     // key could have are rejected here; the exact bit length is measured further down
     {
-        uint64 public_key_string_length = clib__utf8_string_length(json_message_value->valuestring);
+        public_key_string_length = clib__utf8_string_length(json_message_value->valuestring);
 
         if (public_key_string_length < PUBLIC_KEY_STRING_MIN_LENGTH || public_key_string_length > PUBLIC_KEY_STRING_MAX_LENGTH || (public_key_string_length % 4) != 0)
         {
@@ -246,23 +249,22 @@ static boole _client_msg_connection_internal__is_public_key_info_message_valid(c
 }
 
 /**
- * @brief Checks that the original connection still occupies its client slot and
- * is still waiting to begin the key exchange.
+ * @brief Checks that the original connection still occupies its client slot and is still waiting to
+ *        begin the key exchange.
  *
  * @param void* argument -> pending_login_t containing the client id and original socket
  *
- * @attention This function takes the clients read lock. The login waiting code
- * must release its own mutex before calling it.
+ * @attention This function takes the clients read lock. The login waiting code must release its own mutex before calling it.
  *
- * @return int -> 1 when this connection may begin its login; 0 otherwise
+ * @return boole -> TRUE when this connection may begin its login; FALSE otherwise
  */
-static int _client_msg_connection_internal__login_connection_is_valid(void* argument)
+static boole _client_msg_connection_internal__login_connection_is_valid(void *argument)
 {
     boole status0 = FALSE;
     boole status1 = FALSE;
     boole status2 = FALSE;
     boole status3 = FALSE;
-    pending_login_t* pending = argument;
+    pending_login_t *pending = argument;
     boole status = FALSE;
 
     clib__read_lock(&g_clients_global_rwlock_guard);
@@ -292,24 +294,21 @@ static int _client_msg_connection_internal__login_connection_is_valid(void* argu
 }
 
 /**
- * @brief Handles the client's first login message. After checking its format,
- * waits for a free login slot, checks the RSA key, calculates the shared secret
- * and encrypts a random challenge for the client to answer.
+ * @brief Handles the client's first login message. After checking its format, waits for a free
+ *        login slot, checks the RSA key, calculates the shared secret and encrypts a random
+ *        challenge for the client to answer.
  *
  * @param cJSON* json_root -> parsed login message; the caller keeps it alive until this function returns
  * @param uint64 sender_client_id -> the client slot assigned to this connection
  * @param ws_cli_conn_t* socket -> the original socket that received this login message
  *
- * @attention The expensive key calculations run without holding the clients lock.
- * Before storing their results or closing a failed login, this function checks
- * that the original socket still belongs to the same client slot. The later
- * challenge response proves that the client owns its private key, including when
- * it resumes an earlier session.
+ * @attention The expensive key calculations run without holding the clients lock. Before storing their results or closing a failed login, this function checks that the original socket still belongs to the same client slot. The later challenge response proves that the client owns its private key, including when it resumes an earlier session.
  *
  * @return void
  */
-void client_msg__connection__process_public_key_info(cJSON* json_root, uint64 sender_client_id, ws_cli_conn_t* socket)
+void client_msg__connection__process_public_key_info(cJSON *json_root, uint64 sender_client_id, ws_cli_conn_t *socket)
 {
+    cJSON *mix = NULL_POINTER;
     boole status17 = FALSE;
     boole status0 = FALSE;
     boole status1 = FALSE;
@@ -345,11 +344,22 @@ void client_msg__connection__process_public_key_info(cJSON* json_root, uint64 se
     boole is_minimum_rsa_key_bits_announced = FALSE;
     uint64 minimum_rsa_key_bits = 0;
     pending_login_t pending = { sender_client_id, socket };
+    int64 crypto_version = 0;
+    lemon_session_policy crypto_policy = { 0 };
+    char crypto_nonce[33] = { 0 };
+    ubyte crypto_secret[32] = { 0 };
+    ubyte crypto_transcript[32] = { 0 };
+    crypto_session_keys_t negotiated_session = { 0 };
+    cJSON *crypto_reply = NULL_POINTER;
+    cJSON *crypto_mixes = NULL_POINTER;
+    cJSON *message = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    uint64 exchange = 0;
+    uint64 exchange_count = 1;
 
     // data extracted from JSON
-    char* public_key = 0;
-    char* verification_string = 0;
-    char* dh_received_public_mix_from_client = 0;
+    char *public_key = 0;
+    char *verification_string = 0;
+    char *dh_received_public_mix_from_client = 0;
 
     // DH bignums
     mp_int bignum_modulus;
@@ -361,13 +371,12 @@ void client_msg__connection__process_public_key_info(cJSON* json_root, uint64 se
     mp_int bignum_modulus_minus_one;
 
     // the results of the arithmetic, computed without a lock and stored into the slot under the second lock
-    char* shared_secret_string = 0;
-    char* dh_public_mix_from_server_string_for_client = 0;
-    char* challenge_string = 0;
-    char* challenge_value_for_client = 0;
-
-    char exponent_bits[DH_EXPONENT_BITS + 1] = {0};
-    unsigned char exponent_random_bytes[DH_EXPONENT_BITS / 8] = {0};
+    char *shared_secret_string = 0;
+    char *dh_public_mix_from_server_string_for_client = 0;
+    char *challenge_string = 0;
+    char *challenge_value_for_client = 0;
+    char exponent_bits[DH_EXPONENT_BITS + 1] = { 0 };
+    ubyte exponent_random_bytes[DH_EXPONENT_BITS / 8] = { 0 };
     uint64 i = 0;
 
     // ──────────────────────────────────────────────────────────────────
@@ -407,6 +416,23 @@ void client_msg__connection__process_public_key_info(cJSON* json_root, uint64 se
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
+    }
+    crypto_version = auth_handshake__prepare(&g_clients_array[sender_client_id], message);
+    if (crypto_version == 2)
+    {
+        clib__unlock(&g_clients_global_rwlock_guard);
+        return;
+    }
+    if (crypto_version < 0)
+    {
+        clib__unlock(&g_clients_global_rwlock_guard);
+        goto _label_client_msg__process_public_key_info_end;
+    }
+    if (crypto_version == 1)
+    {
+        crypto_policy = g_clients_array[sender_client_id].crypto_policy;
+        memcpy(crypto_nonce, g_clients_array[sender_client_id].crypto_policy_nonce, sizeof(crypto_nonce));
+        exchange_count = crypto_policy.exchanges;
     }
     if (started_ms < g_clients_array[sender_client_id].timestamp_last_action + TIMESTAMP_LAST_ACTION_COOLDOWN_MS)
     {
@@ -457,7 +483,7 @@ void client_msg__connection__process_public_key_info(cJSON* json_root, uint64 se
     // admission, without stopping other clients from using the client lock.
     // A modulus one bit below the requested size is still accepted.
     {
-        client_key_bits = client_login__get_public_key_bit_length(public_key);
+        client_key_bits = auth_rsa__get_public_key_bit_length(public_key);
         is_too_weak = (client_key_bits < minimum_rsa_key_bits - 1) ? TRUE : FALSE;
         is_unusable = (client_key_bits == 0 || client_key_bits > 8192) ? TRUE : FALSE;
 
@@ -504,7 +530,7 @@ void client_msg__connection__process_public_key_info(cJSON* json_root, uint64 se
     // Client will compute:
     // shared_secret = B^a mod p   (same value as g^(a*b) mod p)
     // ──────────────────────────────────────────────────────────────────
-    mp_status = mp_init_multi(&bignum_modulus, &bignum_server_exponent, &bignum_client_public_mix, &bignum_shared_secret, &bignum_generator, &bignum_server_public_mix, &bignum_modulus_minus_one, (mp_int*)NULL_POINTER);
+    mp_status = mp_init_multi(&bignum_modulus, &bignum_server_exponent, &bignum_client_public_mix, &bignum_shared_secret, &bignum_generator, &bignum_server_public_mix, &bignum_modulus_minus_one, (mp_int *)NULL_POINTER);
     if (mp_status != MP_OKAY)
     {
         DBG_AUTHENTICATION log_info("[auth] client %llu: failed to initialize DH bignums", sender_client_id);
@@ -520,107 +546,137 @@ void client_msg__connection__process_public_key_info(cJSON* json_root, uint64 se
         goto _label_client_msg__process_public_key_info_end;
     }
 
-    // 3b. generate the server's secret exponent (DH_EXPONENT_BITS random bits, sized to the modulus)
-    // first bit forced to 1 to guarantee the full length, the rest from a cryptographically secure
-    // RNG. rand() must never be used here: it is a predictable PRNG seeded from the clock, so an
-    // exponent built from it could be reconstructed by an attacker, breaking the key exchange.
-    status17 = util__fill_secure_random_bytes(exponent_random_bytes, sizeof(exponent_random_bytes));
-    if (status17 == FALSE)
+    shared_secret_string = (char *)memorymanager__allocate(SHARED_SECRET_LENGTH, MEMALLOC_DHPROCESS);
+    dh_public_mix_from_server_string_for_client = (char *)memorymanager__allocate(SHARED_SECRET_LENGTH, MEMALLOC_DHPROCESS);
+    if (shared_secret_string == NULL_POINTER || dh_public_mix_from_server_string_for_client == NULL_POINTER)
     {
-        DBG_AUTHENTICATION log_info("[auth] client %llu: failed to generate DH exponent randomness", sender_client_id);
         goto _label_client_msg__process_public_key_info_end;
     }
-    clib__null_memory(exponent_bits, sizeof(exponent_bits));
-    exponent_bits[0] = '1';
-    for (i = 1; i < DH_EXPONENT_BITS; i++)
+    if (crypto_version == 1)
     {
-        exponent_bits[i] = (((exponent_random_bytes[i / 8] >> (7 - (i % 8))) & 1) == 0) ? '0' : '1';
+        crypto_reply = cJSON_CreateObject();
+        crypto_mixes = cJSON_AddArrayToObject(crypto_reply, "dh_public_mixes");
+        if (crypto_mixes == NULL_POINTER || !keys_session__begin_transcript(crypto_transcript, &crypto_policy, crypto_nonce, public_key))
+        {
+            goto _label_client_msg__process_public_key_info_end;
+        }
     }
-    exponent_bits[DH_EXPONENT_BITS] = '\0';
-    mp_status = mp_read_radix(&bignum_server_exponent, exponent_bits, 2);
-    if (mp_status != MP_OKAY)
+    for (exchange = 0; exchange < exchange_count; exchange++)
     {
-        DBG_AUTHENTICATION log_info("[auth] client %llu: failed to create DH exponent", sender_client_id);
-        goto _label_client_msg__process_public_key_info_end;
-    }
-    DBG_AUTHENTICATION log_info("[auth] client %llu: generated DH exponent", sender_client_id);
+        if (crypto_version == 1)
+        {
+            dh_received_public_mix_from_client = cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(message, "dh_public_mixes"), (int)exchange)->valuestring;
+        }
 
-    // 3c. parse client's public mix: A = g^a mod p (received as decimal string)
-    mp_status = mp_read_radix(&bignum_client_public_mix, (char*)dh_received_public_mix_from_client, 10);
-    if (mp_status != MP_OKAY)
-    {
-        DBG_AUTHENTICATION log_info("[auth] client %llu: failed to parse client's DH public mix", sender_client_id);
-        goto _label_client_msg__process_public_key_info_end;
-    }
+        // 3b. generate the server's secret exponent (DH_EXPONENT_BITS random bits, sized to the modulus)
+        // first bit forced to 1 to guarantee the full length, the rest from a cryptographically secure
+        // RNG. rand() must never be used here: it is a predictable PRNG seeded from the clock, so an
+        // exponent built from it could be reconstructed by an attacker, breaking the key exchange.
+        status17 = util__fill_secure_random_bytes(exponent_random_bytes, sizeof(exponent_random_bytes));
+        if (status17 == FALSE)
+        {
+            DBG_AUTHENTICATION log_info("[auth] client %llu: failed to generate DH exponent randomness", sender_client_id);
+            goto _label_client_msg__process_public_key_info_end;
+        }
+        clib__null_memory(exponent_bits, sizeof(exponent_bits));
+        exponent_bits[0] = '1';
+        for (i = 1; i < DH_EXPONENT_BITS; i++)
+        {
+            exponent_bits[i] = (((exponent_random_bytes[i / 8] >> (7 - (i % 8))) & 1) == 0) ? '0' : '1';
+        }
+        exponent_bits[DH_EXPONENT_BITS] = '\0';
+        mp_status = mp_read_radix(&bignum_server_exponent, exponent_bits, 2);
+        if (mp_status != MP_OKAY)
+        {
+            DBG_AUTHENTICATION log_info("[auth] client %llu: failed to create DH exponent", sender_client_id);
+            goto _label_client_msg__process_public_key_info_end;
+        }
+        DBG_AUTHENTICATION log_info("[auth] client %llu: generated DH exponent", sender_client_id);
 
-    // 3c-validate: reject a degenerate client public mix before exponentiating. A in {0, 1, p-1} (or outside
-    // [2, p-2]) forces a known / tiny shared secret; for a safe prime the only dangerous small-order elements
-    // are 1 and p-1, so requiring 2 <= A <= p-2 is sufficient.
-    mp_status = mp_sub_d(&bignum_modulus, 1uL, &bignum_modulus_minus_one);
-    if (mp_status != MP_OKAY)
-    {
-        DBG_AUTHENTICATION log_info("[auth] client %llu: failed to compute p-1 for DH validation", sender_client_id);
-        goto _label_client_msg__process_public_key_info_end;
-    }
-    if (mp_cmp_d(&bignum_client_public_mix, 1uL) != MP_GT || mp_cmp(&bignum_client_public_mix, &bignum_modulus_minus_one) != MP_LT)
-    {
-        DBG_AUTHENTICATION log_info("[auth] client %llu: rejected degenerate DH public mix (not in [2, p-2])", sender_client_id);
-        goto _label_client_msg__process_public_key_info_end;
-    }
+        // 3c. parse client's public mix: A = g^a mod p (received as decimal string)
+        mp_status = mp_read_radix(&bignum_client_public_mix, (char *)dh_received_public_mix_from_client, 10);
+        if (mp_status != MP_OKAY)
+        {
+            DBG_AUTHENTICATION log_info("[auth] client %llu: failed to parse client's DH public mix", sender_client_id);
+            goto _label_client_msg__process_public_key_info_end;
+        }
 
-    // 3d. compute shared_secret = A^b mod p, as a decimal string
-    mp_status = mp_exptmod(&bignum_client_public_mix, &bignum_server_exponent, &bignum_modulus, &bignum_shared_secret);
-    if (mp_status != MP_OKAY)
-    {
-        DBG_AUTHENTICATION log_info("[auth] client %llu: mp_exptmod failed for shared secret", sender_client_id);
-        goto _label_client_msg__process_public_key_info_end;
-    }
-    shared_secret_string = (char*)memorymanager__allocate(SHARED_SECRET_LENGTH, MEMALLOC_DHPROCESS);
-    if (shared_secret_string == NULL_POINTER)
-    {
-        goto _label_client_msg__process_public_key_info_end;
-    }
-    clib__null_memory(shared_secret_string, SHARED_SECRET_LENGTH);
-    mp_status = mp_to_radix(&bignum_shared_secret, shared_secret_string, SHARED_SECRET_LENGTH, &mp_written, 10);
-    if (mp_status != MP_OKAY)
-    {
-        DBG_AUTHENTICATION log_info("[auth] client %llu: failed to convert shared secret to string", sender_client_id);
-        goto _label_client_msg__process_public_key_info_end;
-    }
+        // 3c-validate: reject a degenerate client public mix before exponentiating. A in {0, 1, p-1} (or outside
+        // [2, p-2]) forces a known / tiny shared secret; for a safe prime the only dangerous small-order elements
+        // are 1 and p-1, so requiring 2 <= A <= p-2 is sufficient.
+        mp_status = mp_sub_d(&bignum_modulus, 1uL, &bignum_modulus_minus_one);
+        if (mp_status != MP_OKAY)
+        {
+            DBG_AUTHENTICATION log_info("[auth] client %llu: failed to compute p-1 for DH validation", sender_client_id);
+            goto _label_client_msg__process_public_key_info_end;
+        }
+        if (mp_cmp_d(&bignum_client_public_mix, 1uL) != MP_GT || mp_cmp(&bignum_client_public_mix, &bignum_modulus_minus_one) != MP_LT)
+        {
+            DBG_AUTHENTICATION log_info("[auth] client %llu: rejected degenerate DH public mix (not in [2, p-2])", sender_client_id);
+            goto _label_client_msg__process_public_key_info_end;
+        }
 
-    // 3e. compute server's public mix: B = g^b mod p, as a decimal string
-    mp_set_i64(&bignum_generator, 2);
-    mp_status = mp_exptmod(&bignum_generator, &bignum_server_exponent, &bignum_modulus, &bignum_server_public_mix);
-    if (mp_status != MP_OKAY)
+        // 3d. compute shared_secret = A^b mod p, as a decimal string
+        mp_status = mp_exptmod(&bignum_client_public_mix, &bignum_server_exponent, &bignum_modulus, &bignum_shared_secret);
+        if (mp_status != MP_OKAY)
+        {
+            DBG_AUTHENTICATION log_info("[auth] client %llu: mp_exptmod failed for shared secret", sender_client_id);
+            goto _label_client_msg__process_public_key_info_end;
+        }
+        clib__null_memory(shared_secret_string, SHARED_SECRET_LENGTH);
+        mp_status = mp_to_radix(&bignum_shared_secret, shared_secret_string, SHARED_SECRET_LENGTH, &mp_written, 10);
+        if (mp_status != MP_OKAY)
+        {
+            DBG_AUTHENTICATION log_info("[auth] client %llu: failed to convert shared secret to string", sender_client_id);
+            goto _label_client_msg__process_public_key_info_end;
+        }
+
+        // 3e. compute server's public mix: B = g^b mod p, as a decimal string
+        mp_set_i64(&bignum_generator, 2);
+        mp_status = mp_exptmod(&bignum_generator, &bignum_server_exponent, &bignum_modulus, &bignum_server_public_mix);
+        if (mp_status != MP_OKAY)
+        {
+            DBG_AUTHENTICATION log_info("[auth] client %llu: mp_exptmod failed for server public mix", sender_client_id);
+            goto _label_client_msg__process_public_key_info_end;
+        }
+        mp_status = mp_to_radix(&bignum_server_public_mix, dh_public_mix_from_server_string_for_client, SHARED_SECRET_LENGTH, &mp_written, 10);
+        if (mp_status != MP_OKAY)
+        {
+            DBG_AUTHENTICATION log_info("[auth] client %llu: failed to convert server public mix to string", sender_client_id);
+            goto _label_client_msg__process_public_key_info_end;
+        }
+        DBG_AUTHENTICATION log_info("[auth] client %llu: server public mix computed", sender_client_id);
+        if (crypto_version == 1)
+        {
+            mix = cJSON_CreateString(dh_public_mix_from_server_string_for_client);
+            if (mix == NULL_POINTER || !cJSON_AddItemToArray(crypto_mixes, mix))
+            {
+                cJSON_Delete(mix);
+                goto _label_client_msg__process_public_key_info_end;
+            }
+            if (!keys_session__mix(crypto_secret, (ubyte *)shared_secret_string, strlen(shared_secret_string)) || !keys_session__mix(crypto_transcript, (ubyte *)dh_received_public_mix_from_client, strlen(dh_received_public_mix_from_client)) || !keys_session__mix(crypto_transcript, (ubyte *)dh_public_mix_from_server_string_for_client, strlen(dh_public_mix_from_server_string_for_client)))
+            {
+                goto _label_client_msg__process_public_key_info_end;
+            }
+        }
+    }
+    if (crypto_version == 1 && !auth_handshake__finish(&crypto_policy, crypto_secret, crypto_transcript, &negotiated_session, crypto_reply))
     {
-        DBG_AUTHENTICATION log_info("[auth] client %llu: mp_exptmod failed for server public mix", sender_client_id);
         goto _label_client_msg__process_public_key_info_end;
     }
-    dh_public_mix_from_server_string_for_client = (char*)memorymanager__allocate(SHARED_SECRET_LENGTH, MEMALLOC_DHPROCESS);
-    if (dh_public_mix_from_server_string_for_client == NULL_POINTER)
-    {
-        goto _label_client_msg__process_public_key_info_end;
-    }
-    mp_status = mp_to_radix(&bignum_server_public_mix, dh_public_mix_from_server_string_for_client, SHARED_SECRET_LENGTH, &mp_written, 10);
-    if (mp_status != MP_OKAY)
-    {
-        DBG_AUTHENTICATION log_info("[auth] client %llu: failed to convert server public mix to string", sender_client_id);
-        goto _label_client_msg__process_public_key_info_end;
-    }
-    DBG_AUTHENTICATION log_info("[auth] client %llu: server public mix computed", sender_client_id);
 
     // ──────────────────────────────────────────────────────────────────
     // STEP 4: the RSA challenge, without a lock: a random string, encrypted with the client's public
     // key. only the real owner of the private key can decrypt it
     // ──────────────────────────────────────────────────────────────────
-    challenge_string = (char*)memorymanager__allocate(128, MEMALLOC_TYPE_CHALLENGE);
+    challenge_string = (char *)memorymanager__allocate(128, MEMALLOC_TYPE_CHALLENGE);
     if (challenge_string == NULL_POINTER || util__fill_block_of_data_with_ascii_characters(challenge_string, CHALLENGE_STRING_SIZE) == FALSE)
     {
         DBG_AUTHENTICATION log_info("[auth] client %llu: failed to generate RSA challenge randomness", sender_client_id);
         goto _label_client_msg__process_public_key_info_end;
     }
     DBG_AUTHENTICATION log_info("[auth] client %llu: generated %d-byte challenge", sender_client_id, CHALLENGE_STRING_SIZE);
-    challenge_value_for_client = client_login__encrypt_string_with_public_key(public_key, (unsigned char*)challenge_string, (uint64)clib__utf8_string_length(challenge_string));
+    challenge_value_for_client = auth_rsa__encrypt_string_with_public_key(public_key, (ubyte *)challenge_string, (uint64)clib__utf8_string_length(challenge_string));
     if (challenge_value_for_client == NULL_POINTER || challenge_value_for_client[0] == 0)
     {
         DBG_AUTHENTICATION log_info("[auth] client %llu: the challenge could not be encrypted with the client's key", sender_client_id);
@@ -655,15 +711,23 @@ void client_msg__connection__process_public_key_info(cJSON* json_root, uint64 se
     }
     clib__string_copy(g_clients_array[sender_client_id].public_key, sizeof(g_clients_array[sender_client_id].public_key), public_key);
     clib__null_memory(g_clients_array[sender_client_id].dh_shared_secret, SHARED_SECRET_LENGTH);
-    clib__string_copy(g_clients_array[sender_client_id].dh_shared_secret, sizeof(g_clients_array[sender_client_id].dh_shared_secret), shared_secret_string);
+    if (crypto_version == 0)
+    {
+        clib__string_copy(g_clients_array[sender_client_id].dh_shared_secret, sizeof(g_clients_array[sender_client_id].dh_shared_secret), shared_secret_string);
+    }
+    else
+    {
+        g_clients_array[sender_client_id].session_keys = negotiated_session;
+    }
     g_clients_array[sender_client_id].is_dh_shared_secret_agreed_upon = TRUE;
+
     // Make the keys that this connection will use for metadata, audio and video.
     // Also choose a random starting packet number for media sent to this client.
     // If this connection later takes over the client's earlier session, those
     // keys and the packet number must move into that session together.
-    if (!metadata_crypto__derive_session_keys(shared_secret_string, &g_clients_array[sender_client_id].session_keys) || !util__fill_secure_random_bytes((unsigned char*)&media_send_counter, sizeof(media_send_counter)))
+    if ((crypto_version == 0 && !crypto_metadata__derive_session_keys(shared_secret_string, &g_clients_array[sender_client_id].session_keys)) || !util__fill_secure_random_bytes((ubyte *)&media_send_counter, sizeof(media_send_counter)))
     {
-        metadata_crypto__clear_session_keys(&g_clients_array[sender_client_id].session_keys);
+        crypto_metadata__clear_session_keys(&g_clients_array[sender_client_id].session_keys);
         clib__unlock(&g_clients_global_rwlock_guard);
         goto _label_client_msg__process_public_key_info_end;
     }
@@ -671,7 +735,7 @@ void client_msg__connection__process_public_key_info(cJSON* json_root, uint64 se
     DBG_AUTHENTICATION log_info("[auth] client %llu: shared secret computed and stored", sender_client_id);
 
     // send server's DH public mix + encrypted challenge to client, keep the plaintext challenge for the answer
-    server_msg__connection__send_public_key_challenge_to_single_client(&g_clients_array[sender_client_id], challenge_value_for_client, dh_public_mix_from_server_string_for_client);
+    server_msg__connection__send_public_key_challenge_to_single_client(&g_clients_array[sender_client_id], challenge_value_for_client, crypto_version == 1 ? cJSON_GetArrayItem(crypto_mixes, 0)->valuestring : dh_public_mix_from_server_string_for_client, crypto_reply);
     clib__copy_memory(challenge_string, &g_clients_array[sender_client_id].challenge_string[0], CHALLENGE_STRING_SIZE, 128);
     g_clients_array[sender_client_id].is_public_key_challenge_sent = TRUE;
     is_failed = FALSE;
@@ -679,6 +743,10 @@ void client_msg__connection__process_public_key_info(cJSON* json_root, uint64 se
     DBG_AUTHENTICATION log_info("[auth] client %llu: challenge stored, waiting for response", sender_client_id);
 
 _label_client_msg__process_public_key_info_end:
+    ciphers__clear(crypto_secret, sizeof(crypto_secret));
+    ciphers__clear(crypto_transcript, sizeof(crypto_transcript));
+    crypto_metadata__clear_session_keys(&negotiated_session);
+    cJSON_Delete(crypto_reply);
     clib__null_memory(exponent_bits, sizeof(exponent_bits));
     clib__null_memory(exponent_random_bytes, sizeof(exponent_random_bytes));
     clib__null_memory(&media_send_counter, sizeof(media_send_counter));
@@ -686,7 +754,7 @@ _label_client_msg__process_public_key_info_end:
     {
         crypto_finished_ms = util__get_timestamp_ms();
     }
-    DBG_CONNECTION_PROGRESS log_info("[connection] key exchange client=%llu ready=%d total_ms=%llu crypto_ms=%llu", (unsigned long long)sender_client_id, (int)!is_failed, (unsigned long long)(util__get_timestamp_ms() - started_ms), (unsigned long long)(crypto_started_ms == 0 ? 0 : crypto_finished_ms - crypto_started_ms));
+    DBG_CONNECTION_PROGRESS log_info("[connection] key exchange client=%llu ready=%d total_ms=%llu crypto_ms=%llu", (uint64)sender_client_id, (int)!is_failed, (uint64)(util__get_timestamp_ms() - started_ms), (uint64)(crypto_started_ms == 0 ? 0 : crypto_finished_ms - crypto_started_ms));
     clib__write_lock(&g_clients_global_rwlock_guard);
     status0 = base__is_current_client_request(sender_client_id) == TRUE;
     if (status0 == TRUE)
@@ -729,7 +797,7 @@ _label_client_msg__process_public_key_info_end:
     {
         clib__null_memory(bignum_server_exponent.dp, (int64)bignum_server_exponent.alloc * sizeof(mp_digit));
         clib__null_memory(bignum_shared_secret.dp, (int64)bignum_shared_secret.alloc * sizeof(mp_digit));
-        mp_clear_multi(&bignum_modulus, &bignum_server_exponent, &bignum_client_public_mix, &bignum_shared_secret, &bignum_generator, &bignum_server_public_mix, &bignum_modulus_minus_one, (mp_int*)NULL_POINTER);
+        mp_clear_multi(&bignum_modulus, &bignum_server_exponent, &bignum_client_public_mix, &bignum_shared_secret, &bignum_generator, &bignum_server_public_mix, &bignum_modulus_minus_one, (mp_int *)NULL_POINTER);
     }
     if (has_login_slot == TRUE)
     {
@@ -738,7 +806,8 @@ _label_client_msg__process_public_key_info_end:
 }
 
 /**
- * @brief validates a public key challenge response: the message object and its value string are present
+ * @brief validates a public key challenge response: the message object and its value string are
+ *        present
  *
  * @param cJSON* json_root -> the parsed client request
  * @param uint64 client_id -> id of the client
@@ -747,10 +816,10 @@ _label_client_msg__process_public_key_info_end:
  *
  * @return boole
  */
-static boole _client_msg_connection_internal__is_public_key_challenge_response_valid(cJSON* json_root, uint64 client_id)
+static boole _client_msg_connection_internal__is_public_key_challenge_response_valid(cJSON *json_root, uint64 client_id)
 {
-    cJSON* json_message_value = 0;
-    cJSON* json_message_object = 0;
+    cJSON *json_message_value = 0;
+    cJSON *json_message_object = 0;
 
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
     if (json_message_object == 0)
@@ -786,11 +855,11 @@ static boole _client_msg_connection_internal__is_public_key_challenge_response_v
  *
  * @attention this function assumes json_root is already verified , has correct data, if not this function will cause crash of entire server
  */
-static char* _client_msg_connection_internal__get_challenge_string(cJSON* json_root)
+static char *_client_msg_connection_internal__get_challenge_string(cJSON *json_root)
 {
-    cJSON* json_message_object = 0;
-    cJSON* challenge_string = 0;
-    char* result = 0;
+    cJSON *json_message_object = 0;
+    cJSON *challenge_string = 0;
+    char *result = 0;
 
     // "message" object is fetched from json_root, again
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
@@ -810,8 +879,7 @@ static char* _client_msg_connection_internal__get_challenge_string(cJSON* json_r
  *
  * @return boole -> TRUE when nobody else connected uses it
  *
- * @note sessions carrying the SAME public key are skipped: those are this client's own earlier sessions,
- *       already closed by the identity takeover, so the name they still hold counts as free
+ * @note sessions carrying the SAME public key are skipped: those are this client's own earlier sessions, already closed by the identity takeover, so the name they still hold counts as free
  */
 static boole _client_msg_connection_internal__is_username_free_at_login(cstring candidate_username, uint64 client_index)
 {
@@ -844,20 +912,21 @@ static boole _client_msg_connection_internal__is_username_free_at_login(cstring 
 }
 
 /**
- * @brief Tries the requested login name and numbered variants without taking another client's or identity's name.
+ * @brief Tries the requested login name and numbered variants without taking another client's or
+ *        identity's name.
  * @param cJSON* json_root -> challenge response, optionally containing message.chosen_username
  * @param uint64 client_index -> client being authenticated
  * @return boole -> TRUE when a name was applied; FALSE to fall back to the normal default_nameN assignment
  * @note Names must fit within 50 bytes; an unavailable name does not reject the login.
  * @attention The caller holds the clients write lock.
  */
-static boole _client_msg_connection_internal__try_apply_chosen_username(cJSON* json_root, uint64 client_index)
+static boole _client_msg_connection_internal__try_apply_chosen_username(cJSON *json_root, uint64 client_index)
 {
     boole status = FALSE;
-    cJSON* json_message_object = 0;
-    cJSON* json_chosen_username = 0;
-    char candidate_username[USERNAME_MAX_LENGTH];
-    char suffix_buffer[16];
+    cJSON *json_message_object = 0;
+    cJSON *json_chosen_username = 0;
+    char candidate_username[USERNAME_MAX_LENGTH] = { 0 };
+    char suffix_buffer[16] = { 0 };
     int64 chosen_length = 0;
     uint64 i = 0;
 
@@ -889,7 +958,7 @@ static boole _client_msg_connection_internal__try_apply_chosen_username(cJSON* j
 
         if (i > 0)
         {
-            clib__string_format(suffix_buffer, sizeof(suffix_buffer), "%llu", (unsigned long long)(i + 1));
+            clib__string_format(suffix_buffer, sizeof(suffix_buffer), "%llu", (uint64)(i + 1));
 
             // a name that long has no room left for a number, so stop trying
             if ((chosen_length + (int64)clib__utf8_string_length(suffix_buffer)) > 50)
@@ -925,18 +994,18 @@ static boole _client_msg_connection_internal__try_apply_chosen_username(cJSON* j
  *
  * @return void
  */
-void client_msg__connection__process_public_key_challenge_response(cJSON* json_root, uint64 sender_client_id)
+void client_msg__connection__process_public_key_challenge_response(cJSON *json_root, uint64 sender_client_id)
 {
     boole status3 = FALSE;
     boole status = FALSE;
     boole status0 = FALSE;
     boole status1 = FALSE;
     boole status2 = FALSE;
-    char* received_challenge_string = 0;
-    channel_t* resumed_channel = NULL_POINTER;
-    client_t* current_client = NULL_POINTER;
-    cJSON* json_message_object = 0;
-    cJSON* json_fast_reconnect = 0;
+    char *received_challenge_string = 0;
+    channel_t *resumed_channel = NULL_POINTER;
+    client_t *current_client = NULL_POINTER;
+    cJSON *json_message_object = 0;
+    cJSON *json_fast_reconnect = 0;
     boole is_fast_reconnect = FALSE; // the client asks to resume its still-open session
     boole is_resumed_session = FALSE; // granted: current_client is the adopted session, not a fresh join
     int64 adopted_index = -1;
@@ -998,6 +1067,7 @@ void client_msg__connection__process_public_key_challenge_response(cJSON* json_r
         current_client->has_pending_maintainer_reset_vote = FALSE; // fresh session - no vote can be pending
         current_client->is_admin = FALSE;
         current_client->is_authenticated = TRUE;
+        ws_set_incoming_limit(current_client->p_ws_connection, g_server_settings.websocket_message_max_length);
         current_client->timestamp_last_maintain_connection_message_received = util__get_timestamp_ms();
 
         // identity ban: the ip check at socket open cannot see the key yet, so a banned identity
@@ -1123,6 +1193,13 @@ void client_msg__connection__process_public_key_challenge_response(cJSON* json_r
                 {
                     DBG_IDENTITIES log_info("%s %llu %s", "identities: enabled -> restoring groups for authenticated client_id", current_client->client_id, "\n");
                     identity_store__restore_identity_groups(current_client);
+                    if (!current_client->is_authenticated)
+                    {
+                        clib__unlock(&g_icons_global_rwlock_guard);
+                        clib__unlock(&g_groups_global_rwlock_guard);
+                        clib__unlock(&g_channels_global_rwlock_guard);
+                        goto _label_client_msg__process_public_key_challenge_response_end;
+                    }
                 }
                 else
                 {
@@ -1135,8 +1212,6 @@ void client_msg__connection__process_public_key_challenge_response(cJSON* json_r
                 {
                     identity_store__restore_identity_avatar(current_client);
                 }
-
-
             }
 
             permissions__refresh_guest_membership(current_client);
@@ -1194,6 +1269,7 @@ void client_msg__connection__process_public_key_challenge_response(cJSON* json_r
             server_msg__administration__send_group_list_to_single_client(current_client);
             server_msg__audio__send_active_microphone_usage_for_current_channel_to_single_client(current_client, current_client->channel_id);
             server_msg__emojis__send_list(current_client);
+
             // a resumed session never left, so the others get no connect broadcast
             if (is_resumed_session == FALSE)
             {

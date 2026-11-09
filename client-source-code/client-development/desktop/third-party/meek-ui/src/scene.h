@@ -140,6 +140,8 @@ GUI_API void  scene__set_background_color_override(gui_node_t* n, gui_color_t c)
 GUI_API void  scene__clear_background_color_override(gui_node_t* n);
 
 GUI_API void  scene__set_font_color_override(gui_node_t* n, gui_color_t c);
+// Empty family and nonpositive size restore the stylesheet values.
+GUI_API void  scene__set_font_override(gui_node_t* n, const char* family, float size);
 
 GUI_API void  scene__set_background_image_override(gui_node_t* n, char* name);
 

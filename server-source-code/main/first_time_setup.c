@@ -1,6 +1,7 @@
 #include "definitions.h"
+#include "crypto/ciphers.h"
 #include "util.h"
-#include "metadata_crypto.h"
+#include "crypto/crypto_metadata.h"
 
 // This file asks the server owner how to host and configure Lemon Chat.
 // It saves the answers when no valid server_settings.json exists yet.
@@ -29,9 +30,9 @@
 
 // the tunnel setup of selfhosting-tools/wireguard, as a path from the working directory (the repository's buildresult)
 #ifdef WIN32
-static const char* g_tunnel_setup_script_path = "..\\selfhosting-tools\\wireguard\\run_setup.bat";
+static const char *g_tunnel_setup_script_path = "..\\selfhosting-tools\\wireguard\\run_setup.bat";
 #else
-static const char* g_tunnel_setup_script_path = "../selfhosting-tools/wireguard/setup.sh";
+static const char *g_tunnel_setup_script_path = "../selfhosting-tools/wireguard/setup.sh";
 #endif
 
 typedef enum
@@ -44,15 +45,7 @@ typedef enum
     HOSTING_OTHER_PROXY
 } first_time_setup_hosting_t;
 
-static const char* g_hosting_names[] =
-{
-    "Direct hosting",
-    "Tailscale Funnel",
-    "Cloudflare Tunnel",
-    "ngrok",
-    "WireGuard through a VPS",
-    "Another HTTPS/WSS proxy"
-};
+static const char *g_hosting_names[] = { "Direct hosting", "Tailscale Funnel", "Cloudflare Tunnel", "ngrok", "WireGuard through a VPS", "Another HTTPS/WSS proxy" };
 
 // declarations
 static cstring _first_time_setup_internal__get_hosting_requirement(first_time_setup_hosting_t hosting);
@@ -60,19 +53,19 @@ static cstring _first_time_setup_internal__get_hosting_requirement(first_time_se
 static boole _first_time_setup_internal__has_wireguard(void);
 #endif
 static first_time_setup_hosting_t _first_time_setup_internal__ask_hosting(void);
-static int64 _first_time_setup_internal__ask_port(const char* question, int64 default_port);
+static int64 _first_time_setup_internal__ask_port(const char *question, int64 default_port);
 static void _first_time_setup_internal__prompt_network_settings(first_time_setup_hosting_t hosting);
 static boole _first_time_setup_internal__prompt_media_settings(first_time_setup_hosting_t hosting);
-static boole _first_time_setup_internal__ask_yes_no(const char* question, boole default_answer);
-static boole _first_time_setup_internal__ask_yes_no_with_note(const char* question, const char* note, boole default_answer);
-static void _first_time_setup_internal__ask_admin_password(char* out_plaintext, uint64 out_capacity);
-static int64 _first_time_setup_internal__scan_client_themes(char* client_html_path, char out_themes[][32], int64 max_themes);
+static boole _first_time_setup_internal__ask_yes_no(const char *question, boole default_answer);
+static boole _first_time_setup_internal__ask_yes_no_with_note(const char *question, const char *note, boole default_answer);
+static void _first_time_setup_internal__ask_admin_password(char *out_plaintext, uint64 out_capacity);
+static int64 _first_time_setup_internal__scan_client_themes(char *client_html_path, char out_themes[][32], int64 max_themes);
 static void _first_time_setup_internal__ask_certificate_paths(void);
 static void _first_time_setup_internal__prompt_stunnel_setup(first_time_setup_hosting_t hosting);
 static boole _first_time_setup_internal__is_tunnel_setup_available(void);
 static void _first_time_setup_internal__run_tunnel_setup(void);
 static void _first_time_setup_internal__reload_tunnel_settings(void);
-static void _first_time_setup_internal__ask_wireguard_details(char* input, uint64 input_size);
+static void _first_time_setup_internal__ask_wireguard_details(char *input, uint64 input_size);
 
 /**
  * @brief asks one yes/no question and returns the answer
@@ -87,7 +80,7 @@ static void _first_time_setup_internal__ask_wireguard_details(char* input, uint6
  *
  * @return boole -> TRUE or FALSE
  */
-static boole _first_time_setup_internal__ask_yes_no(const char* question, boole default_answer)
+static boole _first_time_setup_internal__ask_yes_no(const char *question, boole default_answer)
 {
     return _first_time_setup_internal__ask_yes_no_with_note(question, NULL_POINTER, default_answer);
 }
@@ -105,9 +98,9 @@ static boole _first_time_setup_internal__ask_yes_no(const char* question, boole 
  *
  * @return boole -> TRUE or FALSE
  */
-static boole _first_time_setup_internal__ask_yes_no_with_note(const char* question, const char* note, boole default_answer)
+static boole _first_time_setup_internal__ask_yes_no_with_note(const char *question, const char *note, boole default_answer)
 {
-    char input[256];
+    char input[256] = { 0 };
     uint64 i = 0;
     boole is_note_printed = FALSE;
 
@@ -166,10 +159,11 @@ static boole _first_time_setup_internal__ask_yes_no_with_note(const char* questi
  *
  * @return void
  */
-static void _first_time_setup_internal__ask_admin_password(char* out_plaintext, uint64 out_capacity)
+static void _first_time_setup_internal__ask_admin_password(char *out_plaintext, uint64 out_capacity)
 {
-    char first[256];
-    char second[256];
+    char first[256] = { 0 };
+    char second[256] = { 0 };
+
 #ifndef WIN32
     struct termios terminal_before;
     struct termios terminal_quiet;
@@ -233,8 +227,41 @@ static void _first_time_setup_internal__ask_admin_password(char* out_plaintext, 
 }
 
 /**
- * @brief scans the served client.html for the selectable theme names written into it, so
- *        first-time setup can offer them as a default
+ * @brief Reads a file length and returns to its beginning before the caller allocates a buffer.
+ * @param FILE* file -> open file to measure
+ * @return int64 -> file length, or -1 when either seek fails
+ */
+static int64 _first_time_setup_internal__file_size(FILE *file)
+{
+    int64 length = -1;
+
+#ifdef WIN32
+    if (_fseeki64(file, 0, SEEK_END) != 0)
+    {
+        return -1;
+    }
+    length = _ftelli64(file);
+    if (_fseeki64(file, 0, SEEK_SET) != 0)
+    {
+        return -1;
+    }
+#else
+    if (fseeko(file, 0, SEEK_END) != 0)
+    {
+        return -1;
+    }
+    length = ftello(file);
+    if (fseeko(file, 0, SEEK_SET) != 0)
+    {
+        return -1;
+    }
+#endif
+    return length;
+}
+
+/**
+ * @brief scans the served client.html for the selectable theme names written into it, so first-time
+ *        setup can offer them as a default
  *
  *        reads the whole file into memory, blanks out every <!-- --> region first so a commented-out
  *        theme entry is never offered, then walks the remaining text collecting each
@@ -248,24 +275,24 @@ static void _first_time_setup_internal__ask_admin_password(char* out_plaintext, 
  *
  * @return int64 -> how many theme names were written into out_themes
  */
-static int64 _first_time_setup_internal__scan_client_themes(char* client_html_path, char out_themes[][32], int64 max_themes)
+static int64 _first_time_setup_internal__scan_client_themes(char *client_html_path, char out_themes[][32], int64 max_themes)
 {
-    FILE* file = NULL_POINTER;
+    FILE *file = NULL_POINTER;
     int64 file_size = 0;
-    char* buffer = NULL_POINTER;
+    char *buffer = NULL_POINTER;
     uint64 bytes_read = 0;
     int64 count = 0;
-    char* cursor = NULL_POINTER;
-    char* found = NULL_POINTER;
-    char* value_start = NULL_POINTER;
-    char* value_end = NULL_POINTER;
+    char *cursor = NULL_POINTER;
+    char *found = NULL_POINTER;
+    char *value_start = NULL_POINTER;
+    char *value_end = NULL_POINTER;
     int64 length = 0;
     int64 j = 0;
     boole duplicate = FALSE;
-    char* comment_open = NULL_POINTER;
-    char* comment_close = NULL_POINTER;
-    char* blank_p = NULL_POINTER;
-    const char* marker = "choose-theme-item' data-name=\"";
+    char *comment_open = NULL_POINTER;
+    char *comment_close = NULL_POINTER;
+    char *blank_p = NULL_POINTER;
+    const char *marker = "choose-theme-item' data-name=\"";
 
     file = fopen(client_html_path, "rb");
     if (file == NULL_POINTER)
@@ -273,16 +300,14 @@ static int64 _first_time_setup_internal__scan_client_themes(char* client_html_pa
         return 0;
     }
 
-    fseek(file, 0, SEEK_END);
-    file_size = ftell(file);
-    fseek(file, 0, SEEK_SET);
-    if (file_size <= 0)
+    file_size = _first_time_setup_internal__file_size(file);
+    if (file_size <= 0 || (uint64)file_size >= SIZE_MAX)
     {
         fclose(file);
         return 0;
     }
 
-    buffer = (char*)malloc(file_size + 1);
+    buffer = (char *)malloc((uint64)file_size + 1);
     if (buffer == NULL_POINTER)
     {
         fclose(file);
@@ -296,12 +321,12 @@ static int64 _first_time_setup_internal__scan_client_themes(char* client_html_pa
     cursor = buffer;
     for (;;)
     {
-        comment_open = (char*)clib__strstr(cursor, "<!--");
+        comment_open = (char *)clib__strstr(cursor, "<!--");
         if (comment_open == NULL_POINTER)
         {
             break;
         }
-        comment_close = (char*)clib__strstr(comment_open, "-->");
+        comment_close = (char *)clib__strstr(comment_open, "-->");
         if (comment_close == NULL_POINTER)
         {
             break;
@@ -316,14 +341,14 @@ static int64 _first_time_setup_internal__scan_client_themes(char* client_html_pa
     cursor = buffer;
     for (;;)
     {
-        found = (char*)clib__strstr(cursor, marker);
+        found = (char *)clib__strstr(cursor, marker);
         if (found == NULL_POINTER)
         {
             break;
         }
 
         value_start = found + clib__strlen(marker);
-        value_end = (char*)clib__strchr(value_start, '"');
+        value_end = (char *)clib__strchr(value_start, '"');
         if (value_end == NULL_POINTER)
         {
             break;
@@ -396,28 +421,28 @@ static void _first_time_setup_internal__ask_certificate_paths(void)
  */
 static void _first_time_setup_internal__prompt_stunnel_setup(first_time_setup_hosting_t hosting)
 {
-    char input[600];
+    char input[600] = { 0 };
     int64 default_port = 1112;
     boole status0 = FALSE;
 #ifndef WIN32
-    char found_domains[32][256];
-    char domain[256];
-    DIR* cert_dir = 0;
-    struct dirent* entry = 0;
+    char found_domains[32][256] = { 0 };
+    char domain[256] = { 0 };
+    DIR *cert_dir = 0;
+    struct dirent *entry = 0;
     uint64 found_count = 0;
     uint64 i = 0;
     int64 selection = 0;
     pid_t certbot_pid = 0;
     int status = 0; // waitpid writes an int through &status
-    char probe[700];
+    char probe[700] = { 0 };
 
     clib__null_memory(input, sizeof(input));
     clib__null_memory(found_domains, sizeof(found_domains));
     clib__null_memory(domain, sizeof(domain));
 
 #else
-    char probe_fullchain[600];
-    char probe_privkey[600];
+    char probe_fullchain[600] = { 0 };
+    char probe_privkey[600] = { 0 };
 
     clib__null_memory(input, sizeof(input));
 #endif
@@ -442,8 +467,7 @@ static void _first_time_setup_internal__prompt_stunnel_setup(first_time_setup_ho
 
     while (TRUE)
     {
-        g_server_settings.wss_port = _first_time_setup_internal__ask_port(
-            (g_server_settings.is_external_wss_enabled == TRUE) ? "Public WSS port" : "WSS port", default_port);
+        g_server_settings.wss_port = _first_time_setup_internal__ask_port((g_server_settings.is_external_wss_enabled == TRUE) ? "Public WSS port" : "WSS port", default_port);
         if (hosting == HOSTING_FUNNEL && g_server_settings.wss_port != 8443 && g_server_settings.wss_port != 10000)
         {
             printf("%s %s\n", g_mark_warn, "Choose 8443 or 10000 for WSS; this setup uses public port 443 for the HTTPS page.");
@@ -526,9 +550,9 @@ static void _first_time_setup_internal__prompt_stunnel_setup(first_time_setup_ho
     {
         printf("%s %s\n", g_mark_info, "No certificate found under /etc/letsencrypt/live/.");
         status0 = _first_time_setup_internal__ask_yes_no_with_note("Request a Let's Encrypt certificate using Certbot?",
-            "    Your domain's DNS A record must point to this server's public IPv4 address.\n"
-            "    TCP port 80 must be reachable from the internet and not used by another program.\n",
-            FALSE);
+                                                                   "    Your domain's DNS A record must point to this server's public IPv4 address.\n"
+                                                                   "    TCP port 80 must be reachable from the internet and not used by another program.\n",
+                                                                   FALSE);
         if (status0 == FALSE)
         {
             printf("%s", "No certificate was selected. WSS remains disabled.\n");
@@ -557,7 +581,7 @@ static void _first_time_setup_internal__prompt_stunnel_setup(first_time_setup_ho
         if (certbot_pid == 0)
         {
             // exec certbot directly (no shell) so the domain cannot inject commands
-            execlp("certbot", "certbot", "certonly", "--standalone", "-d", domain, (char*)NULL_POINTER);
+            execlp("certbot", "certbot", "certonly", "--standalone", "-d", domain, (char *)NULL_POINTER);
             _exit(127); // exec failed -> certbot is not installed / not on PATH
         }
         else if (certbot_pid > 0)
@@ -657,16 +681,15 @@ static void _first_time_setup_internal__prompt_stunnel_setup(first_time_setup_ho
  */
 static boole _first_time_setup_internal__has_wireguard(void)
 {
-    cstring folders[] = {"ProgramW6432", "ProgramFiles", "ProgramFiles(x86)"};
-    char directory[2048];
-    char command[4096];
-    DWORD length = 0;
-    DWORD attributes = 0;
-    DWORD binary_type = 0;
-    uint index = 0;
+    cstring folders[] = { "ProgramW6432", "ProgramFiles", "ProgramFiles(x86)" };
+    char directory[2048] = { 0 };
+    char command[4096] = { 0 };
+    uint64 length = 0;
+    uint64 attributes = 0;
+    DWORD binary_type = 0; // GetBinaryTypeA writes through a DWORD pointer.
+    uint64 index = 0;
 
-    if (util__find_executable("wg", command, sizeof(command)) == TRUE &&
-        util__find_executable("wireguard", command, sizeof(command)) == TRUE)
+    if (util__find_executable("wg", command, sizeof(command)) == TRUE && util__find_executable("wireguard", command, sizeof(command)) == TRUE)
     {
         return TRUE;
     }
@@ -679,15 +702,13 @@ static boole _first_time_setup_internal__has_wireguard(void)
         }
         clib__string_format(command, sizeof(command), "%s\\WireGuard\\wg.exe", directory);
         attributes = GetFileAttributesA(command);
-        if (attributes == INVALID_FILE_ATTRIBUTES || (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0 ||
-            GetBinaryTypeA(command, &binary_type) == 0)
+        if (attributes == INVALID_FILE_ATTRIBUTES || (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0 || GetBinaryTypeA(command, &binary_type) == 0)
         {
             continue;
         }
         clib__string_format(command, sizeof(command), "%s\\WireGuard\\wireguard.exe", directory);
         attributes = GetFileAttributesA(command);
-        if (attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY) == 0 &&
-            GetBinaryTypeA(command, &binary_type) != 0)
+        if (attributes != INVALID_FILE_ATTRIBUTES && (attributes & FILE_ATTRIBUTE_DIRECTORY) == 0 && GetBinaryTypeA(command, &binary_type) != 0)
         {
             return TRUE;
         }
@@ -703,24 +724,24 @@ static boole _first_time_setup_internal__has_wireguard(void)
  */
 static cstring _first_time_setup_internal__get_hosting_requirement(first_time_setup_hosting_t hosting)
 {
-    char command[4096];
+    char command[4096] = { 0 };
 
     switch (hosting)
     {
-        case HOSTING_FUNNEL:
-            return tailscale__is_available() == TRUE ? NULL_POINTER : "Tailscale";
-        case HOSTING_CLOUDFLARE:
-            return util__find_executable("cloudflared", command, sizeof(command)) == TRUE ? NULL_POINTER : "cloudflared";
-        case HOSTING_NGROK:
-            return util__find_executable("ngrok", command, sizeof(command)) == TRUE ? NULL_POINTER : "ngrok";
-        case HOSTING_WIREGUARD:
+    case HOSTING_FUNNEL:
+        return tailscale__is_available() == TRUE ? NULL_POINTER : "Tailscale";
+    case HOSTING_CLOUDFLARE:
+        return util__find_executable("cloudflared", command, sizeof(command)) == TRUE ? NULL_POINTER : "cloudflared";
+    case HOSTING_NGROK:
+        return util__find_executable("ngrok", command, sizeof(command)) == TRUE ? NULL_POINTER : "ngrok";
+    case HOSTING_WIREGUARD:
 #ifdef WIN32
-            return _first_time_setup_internal__has_wireguard() == TRUE ? NULL_POINTER : "WireGuard";
+        return _first_time_setup_internal__has_wireguard() == TRUE ? NULL_POINTER : "WireGuard";
 #else
-            return util__find_executable("wg", command, sizeof(command)) == TRUE ? NULL_POINTER : "wireguard-tools (wg)";
+        return util__find_executable("wg", command, sizeof(command)) == TRUE ? NULL_POINTER : "wireguard-tools (wg)";
 #endif
-        default:
-            return NULL_POINTER;
+    default:
+        return NULL_POINTER;
     }
 }
 
@@ -730,18 +751,18 @@ static cstring _first_time_setup_internal__get_hosting_requirement(first_time_se
  */
 static first_time_setup_hosting_t _first_time_setup_internal__ask_hosting(void)
 {
-    char input[64];
-    char* end = NULL_POINTER;
+    char input[64] = { 0 };
+    char *end = NULL_POINTER;
     cstring requirement = NULL_POINTER;
     cstring name = NULL_POINTER;
     int64 choice = HOSTING_DIRECT;
-    uint index = 0;
+    uint64 index = 0;
 
     for (index = HOSTING_DIRECT; index <= HOSTING_OTHER_PROXY; index++)
     {
         requirement = _first_time_setup_internal__get_hosting_requirement((first_time_setup_hosting_t)index);
         name = index == HOSTING_DIRECT ? "Host directly (LAN or VPS)" : g_hosting_names[index - 1];
-        printf("    %u) %s%s\n", index, name, requirement == NULL_POINTER ? "" : " (unavailable, install first)");
+        printf("    %llu) %s%s\n", index, name, requirement == NULL_POINTER ? "" : " (unavailable, install first)");
     }
     while (TRUE)
     {
@@ -761,8 +782,7 @@ static first_time_setup_hosting_t _first_time_setup_internal__ask_hosting(void)
             requirement = _first_time_setup_internal__get_hosting_requirement((first_time_setup_hosting_t)choice);
             if (requirement != NULL_POINTER)
             {
-                printf("%s %s is unavailable. Install %s first and make its command available to the server.\n",
-                    g_mark_warn, g_hosting_names[choice - 1], requirement);
+                printf("%s %s is unavailable. Install %s first and make its command available to the server.\n", g_mark_warn, g_hosting_names[choice - 1], requirement);
                 continue;
             }
             return (first_time_setup_hosting_t)choice;
@@ -777,10 +797,10 @@ static first_time_setup_hosting_t _first_time_setup_internal__ask_hosting(void)
  * @param int64 default_port -> the port used when Enter is pressed
  * @return int64 -> a port from 1 to 65535
  */
-static int64 _first_time_setup_internal__ask_port(const char* question, int64 default_port)
+static int64 _first_time_setup_internal__ask_port(const char *question, int64 default_port)
 {
-    char input[64];
-    char* end = NULL_POINTER;
+    char input[64] = { 0 };
+    char *end = NULL_POINTER;
     int64 port = 0;
 
     while (TRUE)
@@ -811,9 +831,9 @@ static int64 _first_time_setup_internal__ask_port(const char* question, int64 de
  */
 static void _first_time_setup_internal__prompt_network_settings(first_time_setup_hosting_t hosting)
 {
-    char input[256];
-    char client_themes[16][32];
-    char theme_scan_path[600];
+    char input[256] = { 0 };
+    char client_themes[16][32] = { 0 };
+    char theme_scan_path[600] = { 0 };
     uint64 i = 0;
     int64 client_theme_count = 0;
     int64 theme_choice = 0;
@@ -888,9 +908,7 @@ static void _first_time_setup_internal__prompt_network_settings(first_time_setup
         {
             is_same_public_hostname = _first_time_setup_internal__ask_yes_no("Will client.html and the WSS connection use the same public domain name?", FALSE);
         }
-        if (is_same_public_hostname == TRUE && _first_time_setup_internal__ask_yes_no_with_note("Include the server connection details in client.html so it connects automatically?",
-                                                                                              "    This includes the connection passwords. Anyone who opens the page receives them.\n",
-                                                                                              FALSE) == TRUE)
+        if (is_same_public_hostname == TRUE && _first_time_setup_internal__ask_yes_no_with_note("Include the server connection details in client.html so it connects automatically?", "    This includes the connection passwords. Anyone who opens the page receives them.\n", FALSE) == TRUE)
         {
             g_server_settings.is_client_config_embedded = TRUE;
             printf("%s %s\n", g_mark_ok, "Automatic connection: enabled.");
@@ -917,7 +935,7 @@ static void _first_time_setup_internal__prompt_network_settings(first_time_setup
             printf("%s %s\n", g_mark_info, "Themes available in client.html:");
             for (i = 0; i < (uint64)client_theme_count; i++)
             {
-                printf("      %llu) %s\n", (unsigned long long)(i + 1), client_themes[i]);
+                printf("      %llu) %s\n", (uint64)(i + 1), client_themes[i]);
             }
 
             clib__null_memory(input, sizeof(input));
@@ -937,13 +955,24 @@ static void _first_time_setup_internal__prompt_network_settings(first_time_setup
         }
 
         status0 = _first_time_setup_internal__ask_yes_no_with_note("Save each user's identity in their browser?",
-            "    The browser reuses the same identity after the page is reloaded or reopened.\n"
-            "    This is separate from saving identities on the server, asked later.\n",
-            FALSE);
+                                                                   "    The browser reuses the same identity after the page is reloaded or reopened.\n"
+                                                                   "    This is separate from saving identities on the server, asked later.\n",
+                                                                   FALSE);
         if (status0 == TRUE)
         {
             g_server_settings.is_identity_localstorage_enabled = TRUE;
             printf("%s %s\n", g_mark_ok, "Saving browser identities: enabled.");
+        }
+    }
+    if (g_server_settings.is_client_http_enabled == FALSE)
+    {
+        g_server_settings.is_client_http_blank_when_disabled = _first_time_setup_internal__ask_yes_no_with_note("Keep an HTTP listener that serves a blank page?", "    No stops HTTP completely. Yes keeps the port open but does not serve client.html.\n", FALSE);
+        if (g_server_settings.is_client_http_blank_when_disabled)
+        {
+            do
+            {
+                g_server_settings.http_port = _first_time_setup_internal__ask_port("HTTP port for the blank page", 80);
+            } while (g_server_settings.http_port == g_server_settings.websocket_port || (g_server_settings.is_stunnel_enabled && g_server_settings.http_port == g_server_settings.wss_port));
         }
     }
     clib__null_memory(input, sizeof(input));
@@ -971,14 +1000,13 @@ static void _first_time_setup_internal__prompt_network_settings(first_time_setup
  */
 static boole _first_time_setup_internal__prompt_media_settings(first_time_setup_hosting_t hosting)
 {
-    char input[256];
+    char input[256] = { 0 };
     boole status0 = FALSE;
     boole is_tunnel_setup_requested = FALSE;
     boole is_http_tunnel = (hosting == HOSTING_FUNNEL || hosting == HOSTING_CLOUDFLARE || hosting == HOSTING_NGROK);
 
     g_server_settings.is_voice_chat_active = _first_time_setup_internal__ask_yes_no("Enable voice chat?", TRUE);
-    g_server_settings.is_music_bot_audio_active = _first_time_setup_internal__ask_yes_no_with_note("Enable music bot audio?",
-        "    Music bots can play audio even when voice chat is disabled.\n", TRUE);
+    g_server_settings.is_music_bot_audio_active = _first_time_setup_internal__ask_yes_no_with_note("Enable music bot audio?", "    Music bots can play audio even when voice chat is disabled.\n", TRUE);
     g_server_settings.is_video_streaming_active = _first_time_setup_internal__ask_yes_no("Enable video streaming and screen sharing?", FALSE);
 
     if (g_server_settings.is_voice_chat_active == FALSE && g_server_settings.is_music_bot_audio_active == FALSE && g_server_settings.is_video_streaming_active == FALSE)
@@ -1054,16 +1082,44 @@ static boole _first_time_setup_internal__prompt_media_settings(first_time_setup_
     return is_tunnel_setup_requested;
 }
 
+/** @brief Selects a supported cipher without silently replacing an invalid choice. */
+static crypto_key_type_t _first_time_setup_internal__cipher(void)
+{
+    int64 type = 0;
+    char input[80] = { 0 };
+
+    for (;;)
+    {
+        printf("%s Cipher: aes256, chacha20, camellia256, twofish256, serpent256, trivium80 [aes256]: ", g_mark_ask);
+        if (fgets(input, sizeof(input), stdin) == NULL_POINTER)
+        {
+            return CRYPTO_KEY_AES_256_CTR;
+        }
+        clib__string_trim_newline(input, sizeof(input));
+        if (input[0] == 0)
+        {
+            return CRYPTO_KEY_AES_256_CTR;
+        }
+        type = ciphers__type(input);
+        if (type != 0)
+        {
+            return (crypto_key_type_t)type;
+        }
+        printf("Choose one of the listed cipher names.\n");
+    }
+}
+
 /**
  * @brief Asks for hosting, access and chat settings, then saves the answers.
  * @param char plaintext_keys[][256] -> storage for up to 100 connection passwords
  */
 void first_time_setup__run(char plaintext_keys[][256])
 {
-    char input[256];
-    char* end = NULL_POINTER;
+    crypto_key_type_t cipher = 0;
+    char input[256] = { 0 };
+    char *end = NULL_POINTER;
     uint64 i = 0;
-    long slots = 0;
+    int64 slots = 0;
     int64 requested_key_count = 0;
     boole is_tunnel_setup_requested = FALSE;
     first_time_setup_hosting_t hosting = HOSTING_DIRECT;
@@ -1072,10 +1128,10 @@ void first_time_setup__run(char plaintext_keys[][256])
     printf("\n%s %s\n", g_mark_info, "First-time setup. Answers will be saved to server_settings.json.");
     printf("%s %s\n", "   ", "Press Enter to use the default: (Y/n) means yes; (y/N) means no.");
 
-    g_server_settings.is_permission_system_enabled = _first_time_setup_internal__ask_yes_no_with_note(
-        "Enable server groups, icons and group permissions?",
-        "    Choose no for a simple chat. The admin password still works.\n"
-        "    To change this later, edit server_settings.json and restart the server.\n", TRUE);
+    g_server_settings.is_permission_system_enabled = _first_time_setup_internal__ask_yes_no_with_note("Enable server groups, icons and group permissions?",
+                                                                                                      "    Choose no for a simple chat. The admin password still works.\n"
+                                                                                                      "    To change this later, edit server_settings.json and restart the server.\n",
+                                                                                                      TRUE);
 
     printf("\n%s %s\n\n", g_mark_info, "1/4  Hosting and network connections.");
     hosting = _first_time_setup_internal__ask_hosting();
@@ -1083,9 +1139,7 @@ void first_time_setup__run(char plaintext_keys[][256])
 
     printf("\n%s %s\n\n", g_mark_info, "2/4  Passwords and server limits.");
 
-    status0 = _first_time_setup_internal__ask_yes_no_with_note("Require connection passwords to join this server?",
-        "    Clients need all configured passwords, entered in the same order.\n",
-        FALSE);
+    status0 = _first_time_setup_internal__ask_yes_no_with_note("Require connection passwords to join this server?", "    Clients need all configured passwords, entered in the same order.\n", FALSE);
     if (status0 == TRUE)
     {
         clib__null_memory(input, sizeof(input));
@@ -1116,9 +1170,8 @@ void first_time_setup__run(char plaintext_keys[][256])
 
             clib__string_copy(plaintext_keys[i], sizeof(plaintext_keys[i]), input);
 
-            // Turn the entered password into an AES key. Store its type with
-            // its bytes so the encryption code knows which method to use.
-            if (!metadata_crypto__key_from_password(&g_server_settings.keys[i], CRYPTO_KEY_AES_256_CTR, input))
+            cipher = _first_time_setup_internal__cipher();
+            if (!crypto_metadata__key_from_password(&g_server_settings.keys[i], cipher, input))
             {
                 fprintf(stderr, "Failed to derive a configured encryption key.\n");
                 exit(EXIT_FAILURE);
@@ -1142,10 +1195,16 @@ void first_time_setup__run(char plaintext_keys[][256])
 
     clib__null_memory(input, sizeof(input));
 
+    printf("%s Session encryption applies even when no connection passwords are configured.\n", g_mark_info);
+    g_server_settings.is_random_cipher_layer_enabled = _first_time_setup_internal__ask_yes_no_with_note("Add one random cipher layer (the troll key option)?",
+                                                                                                        "    Each connection tries the supported ciphers against a cryptographic proof.\n"
+                                                                                                        "    Extra exchanges and layers cost CPU; they do not multiply the security rating.\n",
+                                                                                                        FALSE);
+
     /* This setting is read only at startup, before any client storage exists. */
     g_server_settings.max_client_count = DEFAULT_SERVER_SLOTS;
-    g_server_settings.max_channel_count = MAX_CHANNELS;
-    g_server_settings.channel_count_limit = MAX_CHANNELS;
+    g_server_settings.max_channel_count = DEFAULT_CHANNEL_COUNT;
+    g_server_settings.channel_count_limit = DEFAULT_CHANNEL_COUNT;
     for (;;)
     {
         printf("%s Maximum connected clients (1-%d) [%d]: ", g_mark_ask, MAX_SERVER_SLOTS, DEFAULT_SERVER_SLOTS);
@@ -1159,7 +1218,7 @@ void first_time_setup__run(char plaintext_keys[][256])
         {
             break;
         }
-        slots = clib__strtol(input, &end, 10);
+        slots = clib__strtoll(input, &end, 10);
         if (end != input && *end == 0 && slots >= 1 && slots <= MAX_SERVER_SLOTS)
         {
             g_server_settings.max_client_count = (uint64)slots;
@@ -1171,7 +1230,7 @@ void first_time_setup__run(char plaintext_keys[][256])
     printf("%s %s\n", g_mark_info, "The channel limit includes root, permanent channels and temporary channels.");
     for (;;)
     {
-        printf("%s Maximum channels (1-%d) [%d]: ", g_mark_ask, MAX_CHANNELS, MAX_CHANNELS);
+        printf("%s Maximum channels [%d]: ", g_mark_ask, DEFAULT_CHANNEL_COUNT);
         clib__null_memory(input, sizeof(input));
         if (fgets(input, sizeof(input), stdin) == NULL_POINTER)
         {
@@ -1182,18 +1241,20 @@ void first_time_setup__run(char plaintext_keys[][256])
         {
             break;
         }
-        slots = clib__strtol(input, &end, 10);
-        if (end != input && *end == 0 && slots >= 1 && slots <= MAX_CHANNELS)
+        slots = clib__strtoll(input, &end, 10);
+        if (end != input && *end == 0 && slots >= 1 && slots <= MAX_CHANNEL_COUNT)
         {
             g_server_settings.channel_count_limit = (uint64)slots;
+            g_server_settings.max_channel_count = (uint64)slots;
             break;
         }
-        printf("%s Enter a whole number from 1 to %d.\n", g_mark_warn, MAX_CHANNELS);
+        printf("%s Enter a whole number from 1 to %d.\n", g_mark_warn, MAX_CHANNEL_COUNT);
     }
 
     _first_time_setup_internal__ask_admin_password(input, sizeof(input));
     util__hash_password_to_base64(input, &g_server_settings.admin_password[0], ADMIN_PASSWORD_MAX_LENGTH);
     g_server_settings.is_admin_password_initial = TRUE;
+
     // keep the plaintext only for this run's startup summary (shown once, then cleared)
     clib__string_copy(g_first_run_admin_password, ADMIN_PASSWORD_MAX_LENGTH, input);
     clib__null_memory(input, sizeof(input));
@@ -1203,9 +1264,7 @@ void first_time_setup__run(char plaintext_keys[][256])
     is_tunnel_setup_requested = _first_time_setup_internal__prompt_media_settings(hosting);
 
 #ifndef WIN32
-    status0 = _first_time_setup_internal__ask_yes_no_with_note("Let start_server.sh restart the server after a crash?",
-        "    Applies the next time you launch through start_server.sh. Failures are recorded in crashes.txt.\n",
-        FALSE);
+    status0 = _first_time_setup_internal__ask_yes_no_with_note("Let start_server.sh restart the server after a crash?", "    Applies the next time you launch through start_server.sh. Failures are recorded in crashes.txt.\n", FALSE);
     if (status0 == TRUE)
     {
         g_server_settings.is_restart_on_crash_enabled = TRUE;
@@ -1215,11 +1274,7 @@ void first_time_setup__run(char plaintext_keys[][256])
 
     printf("\n%s %s\n\n", g_mark_info, "4/4  Client profiles and chat features.");
 
-    g_server_settings.is_identity_storage_enabled = _first_time_setup_internal__ask_yes_no_with_note("Save client identities on the server?",
-        g_server_settings.is_permission_system_enabled == TRUE
-            ? "    Saves assigned groups and profiles for clients returning with the same identity.\n"
-            : "    Saves profiles and enables an optional saved-user list for password admins.\n",
-        TRUE);
+    g_server_settings.is_identity_storage_enabled = _first_time_setup_internal__ask_yes_no_with_note("Save client identities on the server?", g_server_settings.is_permission_system_enabled == TRUE ? "    Saves assigned groups and profiles for clients returning with the same identity.\n" : "    Saves profiles and enables an optional saved-user list for password admins.\n", TRUE);
     g_server_settings.is_stored_client_list_allowed = FALSE;
     g_server_settings.is_last_seen_enabled = FALSE;
     g_server_settings.is_offline_messaging_allowed = FALSE;
@@ -1249,27 +1304,22 @@ void first_time_setup__run(char plaintext_keys[][256])
         g_server_settings.is_avatar_upload_allowed = TRUE;
         printf("%s %s\n", g_mark_ok, "avatars: on");
 
-        printf("%s %s%lld%s\n", g_mark_ok, "max avatar size: ", (long long)(g_server_settings.avatar_max_size_bytes / 1024), " KB");
+        printf("%s %s%lld%s\n", g_mark_ok, "max avatar size: ", (int64)(g_server_settings.avatar_max_size_bytes / 1024), " KB");
         printf("%s %s\n", g_mark_info, "You can change this limit in the server settings tab.");
     }
     clib__null_memory(input, sizeof(input));
 
     if (g_server_settings.is_identity_storage_enabled == TRUE)
     {
-        g_server_settings.is_stored_client_list_allowed = _first_time_setup_internal__ask_yes_no(
-            g_server_settings.is_permission_system_enabled == TRUE
-                ? "Show saved users, including offline users, to clients with permission?"
-                : "Show saved users, including offline users, to password admins?", FALSE);
+        g_server_settings.is_stored_client_list_allowed = _first_time_setup_internal__ask_yes_no(g_server_settings.is_permission_system_enabled == TRUE ? "Show saved users, including offline users, to clients with permission?" : "Show saved users, including offline users, to password admins?", FALSE);
         if (g_server_settings.is_stored_client_list_allowed == TRUE)
         {
             g_server_settings.is_last_seen_enabled = _first_time_setup_internal__ask_yes_no("Show when saved users were last online?", FALSE);
-            g_server_settings.is_offline_messaging_allowed = _first_time_setup_internal__ask_yes_no_with_note(
-                g_server_settings.is_permission_system_enabled == TRUE
-                    ? "Allow offline messages for users whose groups have permission?"
-                    : "Allow offline messages between password admins?",
-                "    The server saves public keys so users can encrypt messages for offline recipients.\n"
-                "    Encrypted messages wait in RAM until the recipient reconnects.\n"
-                "    Pending messages are lost when the server stops.\n", FALSE);
+            g_server_settings.is_offline_messaging_allowed = _first_time_setup_internal__ask_yes_no_with_note(g_server_settings.is_permission_system_enabled == TRUE ? "Allow offline messages for users whose groups have permission?" : "Allow offline messages between password admins?",
+                                                                                                              "    The server saves public keys so users can encrypt messages for offline recipients.\n"
+                                                                                                              "    Encrypted messages wait in RAM until the recipient reconnects.\n"
+                                                                                                              "    Pending messages are lost when the server stops.\n",
+                                                                                                              FALSE);
         }
         else
         {
@@ -1277,9 +1327,7 @@ void first_time_setup__run(char plaintext_keys[][256])
         }
     }
 
-    status0 = _first_time_setup_internal__ask_yes_no_with_note("Show when a user is typing a chat message?",
-        "    Shows a typing indicator. The unfinished message is not sent.\n",
-        FALSE);
+    status0 = _first_time_setup_internal__ask_yes_no_with_note("Show when a user is typing a chat message?", "    Shows a typing indicator. The unfinished message is not sent.\n", FALSE);
     if (status0 == TRUE)
     {
         g_server_settings.is_typing_indicator_allowed = TRUE;
@@ -1287,15 +1335,15 @@ void first_time_setup__run(char plaintext_keys[][256])
     }
 
     status0 = _first_time_setup_internal__ask_yes_no_with_note("Allow users to send files in chat?",
-        "    Controls file attachments, such as documents and archives. Pictures have a separate setting.\n"
-        "    Files are encrypted by the clients and relayed through server RAM, without being saved to disk.\n",
-        FALSE);
+                                                               "    Controls file attachments, such as documents and archives. Pictures have a separate setting.\n"
+                                                               "    Files are encrypted by the clients and relayed through server RAM, without being saved to disk.\n",
+                                                               FALSE);
     if (status0 == TRUE)
     {
         g_server_settings.is_file_upload_allowed = TRUE;
         printf("%s %s\n", g_mark_ok, "file uploads: on");
 
-        printf("%s %s%lld%s\n", g_mark_ok, "max file size: ", (long long)(g_server_settings.file_upload_max_size_bytes / (1024 * 1024)), " MB");
+        printf("%s %s%lld%s\n", g_mark_ok, "max file size: ", (int64)(g_server_settings.file_upload_max_size_bytes / (1024 * 1024)), " MB");
         printf("%s %s\n", g_mark_info, "You can change this limit in the server settings tab.");
     }
     clib__null_memory(input, sizeof(input));
@@ -1310,7 +1358,7 @@ void first_time_setup__run(char plaintext_keys[][256])
         printf("      %s%lld%s\n", "public wss port ...... ", g_server_settings.wss_port, " (provided by another program)");
     }
     printf("      %s%s\n", "connect password ..... ", (g_server_settings.keys_count > 0) ? "set" : "none");
-    printf("      %s%llu\n", "maximum channels ..... ", (unsigned long long)g_server_settings.channel_count_limit);
+    printf("      %s%llu\n", "maximum channels ..... ", (uint64)g_server_settings.channel_count_limit);
     printf("      %s%s\n", "music bot audio ...... ", (g_server_settings.is_music_bot_audio_active == TRUE) ? "on" : "off");
     printf("      %s%s\n", "video streaming ...... ", (g_server_settings.is_video_streaming_active == TRUE) ? "on" : "off");
     printf("      %s%s\n", "voice chat ........... ", (g_server_settings.is_voice_chat_active == TRUE) ? "on" : "off");
@@ -1331,7 +1379,7 @@ void first_time_setup__run(char plaintext_keys[][256])
     printf("      %s%s\n", "client renames ....... ", (g_server_settings.is_client_rename_allowed == TRUE) ? "allowed" : "admin only");
     if (g_server_settings.is_file_upload_allowed == TRUE)
     {
-        printf("      %s%s%lld%s\n", "file uploads ......... ", "on (max ", (long long)(g_server_settings.file_upload_max_size_bytes / (1024 * 1024)), " MB)");
+        printf("      %s%s%lld%s\n", "file uploads ......... ", "on (max ", (int64)(g_server_settings.file_upload_max_size_bytes / (1024 * 1024)), " MB)");
     }
     else
     {
@@ -1344,7 +1392,7 @@ void first_time_setup__run(char plaintext_keys[][256])
     }
     else if (g_server_settings.is_wireguard_mode_active == TRUE)
     {
-        printf("      %s%s%s%lld%s%lld\n\n", "wireguard mode ....... on, public address ", g_server_settings.webrtc_public_address, ", udp ", (long long)g_server_settings.webrtc_port_range_begin, "-", (long long)g_server_settings.webrtc_port_range_end);
+        printf("      %s%s%s%lld%s%lld\n\n", "wireguard mode ....... on, public address ", g_server_settings.webrtc_public_address, ", udp ", (int64)g_server_settings.webrtc_port_range_begin, "-", (int64)g_server_settings.webrtc_port_range_end);
     }
     else
     {
@@ -1372,17 +1420,17 @@ void first_time_setup__run(char plaintext_keys[][256])
  */
 static boole _first_time_setup_internal__is_tunnel_setup_available(void)
 {
-    FILE* script_file = 0;
+    FILE *script_file = 0;
     boole is_same_directory = FALSE;
 
 #ifdef WIN32
-    char working_directory[1024];
-    char settings_directory[1024];
-    DWORD working_directory_length = 0;
-    DWORD settings_directory_length = 0;
+    char working_directory[1024] = { 0 };
+    char settings_directory[1024] = { 0 };
+    uint64 working_directory_length = 0;
+    uint64 settings_directory_length = 0;
 #else
-    char* working_directory = 0;
-    char* settings_directory = 0;
+    char *working_directory = 0;
+    char *settings_directory = 0;
 #endif
 
     script_file = fopen(g_tunnel_setup_script_path, "rb");
@@ -1438,12 +1486,12 @@ static boole _first_time_setup_internal__is_tunnel_setup_available(void)
 static void _first_time_setup_internal__run_tunnel_setup(void)
 {
 #ifdef WIN32
-    char script_path[1024];
-    char command_line[1100];
-    char input[64];
-    DWORD script_path_length = 0;
-    STARTUPINFOA startup_info;
-    PROCESS_INFORMATION process_info;
+    char script_path[1024] = { 0 };
+    char command_line[1100] = { 0 };
+    char input[64] = { 0 };
+    uint64 script_path_length = 0;
+    STARTUPINFOA startup_info = { 0 };
+    PROCESS_INFORMATION process_info = { 0 };
 
     clib__null_memory(script_path, sizeof(script_path));
     clib__null_memory(command_line, sizeof(command_line));
@@ -1477,7 +1525,7 @@ static void _first_time_setup_internal__run_tunnel_setup(void)
     fgets(input, (int)sizeof(input), stdin);
 #else
     pid_t setup_pid = 0;
-    int status = 0;
+    int status = 0; // waitpid writes through an int pointer.
 
     printf("\n%s %s\n", g_mark_info, "The WireGuard setup script is running in this terminal. Server setup will continue when it finishes.");
     fflush(stdout);
@@ -1487,7 +1535,7 @@ static void _first_time_setup_internal__run_tunnel_setup(void)
     if (setup_pid == 0)
     {
         // started through POSIX sh, so the script needs no executable bit
-        execlp("sh", "sh", g_tunnel_setup_script_path, (char*)NULL_POINTER);
+        execlp("sh", "sh", g_tunnel_setup_script_path, (char *)NULL_POINTER);
         _exit(127); // exec failed -> sh is not installed / not on PATH
     }
     else if (setup_pid > 0)
@@ -1518,24 +1566,22 @@ static void _first_time_setup_internal__run_tunnel_setup(void)
  */
 static void _first_time_setup_internal__reload_tunnel_settings(void)
 {
-    FILE* settings_file = 0;
+    FILE *settings_file = 0;
     int64 file_length = 0;
     uint64 bytes_read = 0;
-    char* file_buffer = NULL_POINTER;
-    cJSON* json_root = NULL_POINTER;
-    cJSON* json_field = NULL_POINTER;
+    char *file_buffer = NULL_POINTER;
+    cJSON *json_root = NULL_POINTER;
+    cJSON *json_field = NULL_POINTER;
 
     settings_file = fopen("server_settings.json", "rb");
 
     if (settings_file != NULL_POINTER)
     {
-        fseek(settings_file, 0, SEEK_END);
-        file_length = ftell(settings_file);
-        fseek(settings_file, 0, SEEK_SET);
+        file_length = _first_time_setup_internal__file_size(settings_file);
 
-        if (file_length > 0)
+        if (file_length > 0 && (uint64)file_length <= SERVER_SETTINGS_MAX_FILE_BYTES && (uint64)file_length < SIZE_MAX)
         {
-            file_buffer = (char*)malloc(file_length + 1);
+            file_buffer = (char *)malloc((uint64)file_length + 1);
 
             if (file_buffer != NULL_POINTER)
             {
@@ -1571,7 +1617,7 @@ static void _first_time_setup_internal__reload_tunnel_settings(void)
 
     if (g_server_settings.is_wireguard_mode_active == TRUE)
     {
-        printf("%s %s%s%s%lld%s%lld\n", g_mark_ok, "wireguard mode: on, public address ", g_server_settings.webrtc_public_address, ", udp ", (long long)g_server_settings.webrtc_port_range_begin, "-", (long long)g_server_settings.webrtc_port_range_end);
+        printf("%s %s%s%s%lld%s%lld\n", g_mark_ok, "wireguard mode: on, public address ", g_server_settings.webrtc_public_address, ", udp ", (int64)g_server_settings.webrtc_port_range_begin, "-", (int64)g_server_settings.webrtc_port_range_end);
     }
     else
     {
@@ -1580,20 +1626,25 @@ static void _first_time_setup_internal__reload_tunnel_settings(void)
 }
 
 /**
- * @brief Asks for the WireGuard router address and, only with WebRTC enabled, its forwarded UDP range.
- *        Answers are checked before enabling the mode; an empty range keeps the default.
+ * @brief Asks for the WireGuard router address and, only with WebRTC enabled, its forwarded UDP
+ *        range. Answers are checked before enabling the mode; an empty range keeps the default.
  *
  * @param char* input -> the wizard's input buffer
  * @param uint64 input_size -> its size
  *
  * @return void
  */
-static void _first_time_setup_internal__ask_wireguard_details(char* input, uint64 input_size)
+static void _first_time_setup_internal__ask_wireguard_details(char *input, uint64 input_size)
 {
-    unsigned int octets[4];
-    long long range_begin = 0;
-    long long range_end = 0;
+    uint64 octets[4] = { 0 };
+    int64 range_begin = 0;
+    int64 range_end = 0;
     char trailing = 0;
+
+    if (input == NULL_POINTER || input_size < 2 || input_size > INT_MAX)
+    {
+        return;
+    }
 
     for (;;)
     {
@@ -1605,7 +1656,7 @@ static void _first_time_setup_internal__ask_wireguard_details(char* input, uint6
         }
         clib__string_trim_newline(input, input_size);
 
-        if (sscanf(input, "%u.%u.%u.%u%c", &octets[0], &octets[1], &octets[2], &octets[3], &trailing) == 4 && octets[0] <= 255 && octets[1] <= 255 && octets[2] <= 255 && octets[3] <= 255 && clib__utf8_string_length(input) < sizeof(g_server_settings.webrtc_public_address))
+        if (sscanf(input, "%llu.%llu.%llu.%llu%c", &octets[0], &octets[1], &octets[2], &octets[3], &trailing) == 4 && octets[0] <= 255 && octets[1] <= 255 && octets[2] <= 255 && octets[3] <= 255 && clib__utf8_string_length(input) < sizeof(g_server_settings.webrtc_public_address))
         {
             clib__null_memory(g_server_settings.webrtc_public_address, sizeof(g_server_settings.webrtc_public_address));
             clib__string_copy(g_server_settings.webrtc_public_address, sizeof(g_server_settings.webrtc_public_address), input);
@@ -1618,7 +1669,7 @@ static void _first_time_setup_internal__ask_wireguard_details(char* input, uint6
     while (g_server_settings.is_audio_over_webrtc_allowed == TRUE)
     {
         clib__null_memory(input, input_size);
-        printf("%s %s%lld-%lld%s", g_mark_ask, "UDP port range forwarded by the VPS for WebRTC (BEGIN-END) [", (long long)g_server_settings.webrtc_port_range_begin, (long long)g_server_settings.webrtc_port_range_end, "]: ");
+        printf("%s %s%lld-%lld%s", g_mark_ask, "UDP port range forwarded by the VPS for WebRTC (BEGIN-END) [", (int64)g_server_settings.webrtc_port_range_begin, (int64)g_server_settings.webrtc_port_range_end, "]: ");
         if (fgets(input, (int)input_size, stdin) == NULL_POINTER)
         {
             return;
@@ -1641,7 +1692,7 @@ static void _first_time_setup_internal__ask_wireguard_details(char* input, uint6
     }
 
     g_server_settings.is_wireguard_mode_active = TRUE;
-    printf("%s %s%s%s%lld%s%lld\n", g_mark_ok, "wireguard mode: on, public address ", g_server_settings.webrtc_public_address, ", udp ", (long long)g_server_settings.webrtc_port_range_begin, "-", (long long)g_server_settings.webrtc_port_range_end);
+    printf("%s %s%s%s%lld%s%lld\n", g_mark_ok, "wireguard mode: on, public address ", g_server_settings.webrtc_public_address, ", udp ", (int64)g_server_settings.webrtc_port_range_begin, "-", (int64)g_server_settings.webrtc_port_range_end);
     if (g_server_settings.is_audio_over_webrtc_allowed == TRUE)
     {
         printf("%s %s\n", "   ", "The VPS must forward the selected TCP ports, UDP port 3478 and this UDP range to this machine. See selfhosting-tools/wireguard/README.md.");

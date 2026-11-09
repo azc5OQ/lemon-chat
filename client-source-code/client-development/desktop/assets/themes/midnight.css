@@ -1,0 +1,1461 @@
+/* Midnight: quiet cool surfaces with a right channel list. */
+window
+{
+    font-family: Inter;
+    pad: 0;
+    font-size: 12;
+}
+.column
+{
+    display: flex;
+    flex-direction: column;
+}
+.row
+{
+    display: flex;
+    flex-direction: row;
+}
+#shell
+{
+    size: 0x0;
+}
+#toolbar
+{
+    align-items: center;
+    size: 0x34;
+    pad: 2 8;
+    gap: 4;
+}
+#workspace
+{
+    size: 0x0;
+    pad: 6;
+}
+#sidebar
+{
+    size: 220x0;
+    pad: 4;
+    gap: 4;
+}
+#conversation
+{
+    size: 0x0;
+    pad: 0 0 0 4;
+    gap: 4;
+}
+.section
+{
+    font-family: "Manrope SemiBold";
+}
+.muted
+{
+    font-size: 12;
+}
+#channel-path
+{
+    font-family: "Manrope SemiBold";
+    size: 0x24;
+    pad: 2 6;
+    font-size: 14;
+}
+#member-list
+{
+    height: 100%;
+    overflow-y: auto;
+    pad: 3 2;
+}
+.member
+{
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    size: 0x22;
+    pad: 0 3;
+    gap: 3;
+}
+.voice-icon, .voice-icon-active, .voice-icon-disabled, .voice-icon-muted
+{
+    size: 16x16;
+}
+.member-name
+{
+    size: 0x20;
+}
+.local .member-name
+{
+    font-family: "Manrope SemiBold";
+}
+.member-state
+{
+    size: 48x20;
+    font-size: 11;
+}
+.spacer
+{
+    size: 0x0;
+}
+#chat-tabs
+{
+    align-items: center;
+    size: 0x30;
+    pad: 0 4;
+    gap: 2;
+}
+#channel-title
+{
+    size: 144x24;
+    pad: 3 6;
+    font-family: "Manrope SemiBold";
+}
+#messages
+{
+    size: 0x0;
+    overflow-y: auto;
+    pad: 10 12;
+    gap: 6;
+}
+.notice-title
+{
+    font-size: 16;
+    font-family: Manrope;
+}
+#composer
+{
+    size: 0x80;
+    pad: 4;
+    gap: 4;
+}
+#composer-actions
+{
+    width: 100%;
+    height: 24;
+    gap: 4;
+    align-items: center;
+}
+#composer-spacer
+{
+    width: 100%;
+    height: 18;
+    font-size: 12;
+    text-align: right;
+}
+#message-input, #message-edit-text
+{
+    size: 0x32;
+    pad: 4 6;
+}
+#send-button
+{
+    size: 64x24;
+    pad: 2 6;
+}
+#status-bar
+{
+    font-size: 12;
+    size: 0x22;
+    pad: 0 8;
+    gap: 6;
+}
+#connection-status
+{
+    size: 0x18;
+    pad: 0;
+    font-size: 12;
+}
+#received-status
+{
+    size: 180x18;
+    pad: 0;
+    font-size: 12;
+    text-align: right;
+}
+input
+{
+    size: 0x24;
+    pad: 2 6;
+}
+button
+{
+    size: 0x24;
+    pad: 2 6;
+    transition: all 140 ease-out;
+    font-family: "Inter Medium";
+}
+.menu-button
+{
+    size: 0x24;
+    pad: 2 8;
+    font-family: "Inter Medium";
+}
+.panel
+{
+    position: absolute;
+    top: 36;
+    size: 380x460;
+    z-index: 10;
+}
+#connection-panel
+{
+    left: 12;
+    width: 420;
+    height: 260;
+}
+#connection-panel .panel-body
+{
+    pad: 8;
+    gap: 4;
+}
+#identity-panel
+{
+    right: 12;
+    width: 540;
+    height: 0;
+}
+#bookmarks-panel
+{
+    left: 120;
+    height: 500;
+}
+#server-info-panel
+{
+    right: 12;
+    width: 480;
+    height: 500;
+}
+#server-info-features
+{
+    display: block;
+    width: 100%;
+}
+.audio-device-select, .server-key-type
+{
+    width: 100%;
+    select-style: list;
+    height: 24;
+    pad: 2 6;
+    select-rows: 8;
+}
+.server-info-row
+{
+    width: 100%;
+    height: 24;
+    gap: 6;
+    align-items: center;
+}
+.server-info-label
+{
+    width: 100%;
+}
+.server-info-value
+{
+    width: 100%;
+    text-align: right;
+}
+#server-info-footer
+{
+    width: 100%;
+    height: 76;
+    pad: 6 9;
+    gap: 4;
+}
+#server-info-footer button, #server-info-result
+{
+    width: 100%;
+}
+#bookmark-list
+{
+    display: block;
+    width: 100%;
+    height: 180;
+    overflow-y: auto;
+}
+.bookmark-row, .bookmark-row:hover
+{
+    width: 100%;
+    height: 24;
+}
+.bookmark-row.selected, .bookmark-row.selected:hover
+{
+    font-family: "Manrope SemiBold";
+}
+.bookmark-buttons
+{
+    width: 100%;
+    height: 24;
+    gap: 4;
+}
+.bookmark-buttons button
+{
+    width: 100%;
+}
+#bookmark-name, #bookmark-address
+{
+    width: 100%;
+}
+#join-panel
+{
+    left: 228;
+    height: 180;
+}
+#settings-panel
+{
+    right: 12;
+}
+#audio-panel
+{
+    right: 12;
+    height: 560;
+}
+#audio-footer
+{
+    width: 100%;
+    height: 64;
+    pad: 6 9;
+    gap: 4;
+}
+#audio-footer button, #audio-result
+{
+    width: 100%;
+}
+#input-meter-track
+{
+    width: 100%;
+    height: 10;
+}
+#input-meter-fill
+{
+    width: 100%;
+    height: 10;
+}
+#member-panel
+{
+    left: 228;
+    height: 280;
+}
+#action-panel, #confirm-panel, #move-panel
+{
+    right: 12;
+    height: 250;
+    z-index: 12;
+}
+#move-panel
+{
+    height: 400;
+}
+#notice-panel
+{
+    right: 12;
+    top: 290;
+    height: 210;
+    z-index: 14;
+}
+#action-value
+{
+    width: 100%;
+}
+#move-destinations, .destination
+{
+    width: 100%;
+}
+#move-destinations
+{
+    gap: 3;
+}
+#channels-panel
+{
+    right: 12;
+    width: 640;
+    height: 520;
+}
+#channel-editor-layout
+{
+    width: 100%;
+    height: 100%;
+    pad: 7;
+    gap: 8;
+}
+#channel-editor-sidebar
+{
+    width: 170;
+    height: 100%;
+    gap: 4;
+}
+#channel-editor-list
+{
+    width: 100%;
+    height: 100%;
+    overflow-y: auto;
+}
+#channel-editor-main
+{
+    width: 100%;
+    height: 100%;
+    gap: 6;
+}
+#channel-editor-fields
+{
+    width: 100%;
+    height: 100%;
+    pad: 0 5 4 0;
+    gap: 5;
+    overflow-y: auto;
+}
+#channel-editor-fields input, #channel-editor-fields textarea
+{
+    width: 100%;
+}
+#channel-edit-description
+{
+    height: 48;
+    pad: 4;
+}
+.channel-editor-item, #channel-add, #channel-remove, #channel-save
+{
+    width: 100%;
+}
+.channel-editor-item
+{
+    height: 24;
+}
+.channel-editor-item.selected, .channel-editor-item.selected:hover
+{
+    font-family: "Manrope SemiBold";
+}
+.channel-number-row
+{
+    width: 100%;
+    height: 24;
+    align-items: center;
+    gap: 6;
+}
+.channel-number-row label
+{
+    width: 100%;
+}
+#channel-editor-fields .channel-number-row input
+{
+    width: 100;
+}
+#channel-form-result
+{
+    width: 100%;
+}
+#channel-delete-panel
+{
+    right: 24;
+    top: 60;
+    height: 250;
+    z-index: 15;
+}
+/* Meek's block div owns scrolling; its flex layout does not calculate scroll extents. */
+#member-list, #messages, .panel-body, #channel-editor-fields, #channel-editor-list
+{
+    display: block;
+    scrollbar-size: 8;
+}
+#conversation-tabs
+{
+    width: 100%;
+    height: 24;
+    gap: 2;
+    overflow-x: hidden;
+}
+.tab-close, .tab-scroll
+{
+    size: 20x24;
+    pad: 1;
+}
+.conversation-tab
+{
+    gap: 0;
+    align-items: center;
+    size: 144x24;
+    pad: 0 1;
+}
+.conversation-tab.selected, .conversation-tab.selected:hover
+{
+    font-family: "Manrope SemiBold";
+}
+.audio-buttons
+{
+    size: 0x24;
+    gap: 4;
+}
+.audio-buttons button
+{
+    width: 50%;
+    height: 24;
+    pad: 2 6;
+}
+slider
+{
+    size: 0x20;
+    width: 100%;
+    slider-track-height: 4;
+    slider-thumb-width: 13;
+}
+.panel-title
+{
+    gap: 4;
+    align-items: center;
+    size: 0x28;
+    pad: 2 4 2 8;
+}
+.panel-heading
+{
+    font-family: "Manrope SemiBold";
+    app-region: drag;
+    size: 0x20;
+    font-size: 13;
+}
+.close-button
+{
+    size: 22x22;
+    pad: 0;
+    font-family: Desktop;
+    font-size: 16;
+}
+.panel-body
+{
+    size: 0x0;
+    overflow-y: auto;
+    pad: 8;
+    gap: 4;
+}
+#connection-buttons
+{
+    size: 0x24;
+    gap: 4;
+}
+checkbox
+{
+    size: 0x22;
+    font-size: 12;
+    checkbox-track-width: 18;
+    checkbox-track-height: 18;
+    checkbox-track-radius: 2;
+    checkbox-track-border-width: 1;
+    checkbox-track-border-style: solid;
+    checkbox-mark-width: 2;
+}
+.hidden
+{
+    display: none;
+}
+
+/* Percent sizes fill the space left by fixed siblings in Meek UI. */
+#shell, #workspace, #sidebar, #conversation, #messages, .spacer, .panel-body
+{
+    height: 100%;
+}
+#conversation, .brand, .panel-heading, #message-input, #connection-status, .member-name
+{
+    width: 100%;
+}
+#channel-path, input, .panel-body button
+{
+    width: 100%;
+}
+
+#server-address, #game-executable, #username, #identity-string, #identity-bits, #channel-password
+{
+    width: 100%;
+}
+#connection-buttons button
+{
+    width: 120;
+}
+.channel-row
+{
+    width: 100%;
+    size: 0x22;
+    pad: 0 3;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 3;
+    font-family: "Inter Medium";
+}
+.channel-row.selected
+{
+    font-family: "Manrope SemiBold";
+}
+.channel-row.selected:hover, .channel-row.selected:pressed
+{
+    font-family: "Manrope SemiBold";
+}
+#chat-history
+{
+    width: 100%;
+    gap: 8;
+}
+.chat-message
+{
+    width: 100%;
+    gap: 2;
+}
+.chat-sender
+{
+    font-family: "Manrope SemiBold";
+    font-size: 12;
+}
+.chat-text
+{
+    width: 100%;
+    font-size: 13;
+    font-family: Inter;
+}
+#server-keys
+{
+    width: 100%;
+    gap: 4;
+}
+.server-key-row
+{
+    height: 24;
+}
+#server-path
+{
+    width: 100%;
+}
+
+#attachment-panel
+{
+    width: 560;
+    height: 480;
+    left: 228;
+    top: 44;
+}
+#attachment-picker
+{
+    width: 100%;
+    height: 260;
+    overflow-y: auto;
+}
+#identity-file-panel
+{
+    width: 540;
+    height: 460;
+    left: 238;
+    top: 48;
+}
+#identity-file-picker
+{
+    width: 100%;
+    height: 240;
+    overflow-y: auto;
+}
+.identity-actions, #identity-file-actions
+{
+    gap: 4;
+}
+.identity-actions button, #identity-file-actions button
+{
+    width: 120;
+}
+#chat-settings-panel
+{
+    width: 480;
+    height: 440;
+    left: 228;
+    top: 36;
+}
+#chat-settings-panel .panel-body
+{
+    overflow-y: auto;
+}
+.attachment-actions
+{
+    gap: 4;
+}
+.attachment-actions button
+{
+    width: 120;
+}
+#chat-scale
+{
+    height: 22;
+    width: 100%;
+}
+#picture-button, #file-button
+{
+    width: 64;
+}
+
+.tree-label
+{
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    size: 0x0;
+    gap: 0;
+}
+.tree-name
+{
+    size: 0x20;
+    width: 100%;
+    font-size: 12;
+    font-family: Inter;
+}
+.local .tree-name
+{
+    font-family: "Inter Medium";
+}
+.tree-playing
+{
+    height: 38;
+}
+.tree-song
+{
+    size: 0x16;
+    font-size: 12;
+}
+.tree-icon, .tree-flag, .tree-channel-symbol, .tree-icon-space
+{
+    size: 16x16;
+}
+.tree-unread, .tree-unread-space
+{
+    size: 16x16;
+}
+.tree-more
+{
+    size: 22x18;
+    font-size: 11;
+}
+
+.tab-label, .tab-label:hover
+{
+    width: 100%;
+    height: 18;
+    pad: 1 4;
+}
+#sidebar-divider
+{
+    height: 100%;
+    pad: 0;
+    width: 4;
+}
+.context-menu
+{
+    display: block;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 220;
+    height: 398;
+    overflow-y: auto;
+    z-index: 100;
+    item-height: 22;
+}
+#member-volume-panel
+{
+    left: 240;
+    height: 220;
+}
+.context-menu.hidden
+{
+    display: none;
+}
+#context-submenu
+{
+    z-index: 101;
+}
+label, button, input, textarea, checkbox, select, filepicker
+{
+    font-family: Inter;
+    font-size: 12;
+}
+
+/* Keep save controls visible while the appearance form scrolls. */
+#chat-settings-footer
+{
+    height: 72;
+    pad: 4 6;
+    gap: 4;
+}
+#chat-settings-result
+{
+    height: 28;
+    width: 100%;
+}
+#chat-settings-buttons
+{
+    height: 24;
+    gap: 4;
+}
+#chat-settings-buttons .spacer
+{
+    width: 100%;
+}
+#chat-settings-save
+{
+    width: 116;
+    height: 24;
+}
+#chat-settings-close
+{
+    width: 76;
+    height: 24;
+}
+.theme-file-fields
+{
+    display: flex;
+    height: 68;
+    gap: 4;
+}
+.theme-file-fields.hidden
+{
+    display: none;
+}
+
+/* Rounded browser icon geometry, with desktop-owned SVG and 4x PNG assets. */
+.web-toolbar-icon
+{
+    width: 24;
+    height: 24;
+    pad: 0;
+    background-size: fill;
+}
+
+/* Browser source: #local-settings-button; geometry retained. */
+#local-settings-button
+{
+    width: 24;
+    height: 24;
+    background-image: url("assets/icons/settings.png");
+}
+
+/* Browser source: --menu-icon-volume; geometry retained. */
+#audio-settings-button
+{
+    width: 24;
+    height: 24;
+    background-image: url("assets/icons/audio.png");
+}
+
+/* Browser source: --menu-icon-server-info; geometry retained. */
+#server-info-button
+{
+    width: 24;
+    height: 24;
+    background-image: url("assets/icons/server.png");
+}
+
+/* Browser source: --menu-icon-username; geometry retained. */
+#profile-button
+{
+    width: 24;
+    height: 24;
+    background-image: url("assets/icons/profile.png");
+}
+
+#toolbar-spacer
+{
+    width: 100%;
+    height: 1;
+}
+#audio-dock
+{
+    height: 52;
+    gap: 4;
+    pad: 4 3;
+}
+#view-caption
+{
+    height: 22;
+    pad: 3 7;
+    font-size: 12;
+    width: 100%;
+}
+
+.chat-empty
+{
+    width: 100%;
+    pad: 20 10;
+    gap: 6;
+}
+
+.connection-address-row, .connection-key-heading, .server-key-row
+{
+    width: 100%;
+    gap: 4;
+}
+.connection-host, .server-key-value
+{
+    width: 100%;
+}
+.connection-port
+{
+    width: 90;
+}
+.connection-host input, .connection-port input
+{
+    width: 100%;
+}
+.server-key-number
+{
+    width: 18;
+    pad: 4 0;
+}
+.server-key-type
+{
+    width: 110;
+    height: 24;
+}
+.server-key-remove
+{
+    width: 64;
+    height: 24;
+}
+#server-key-add
+{
+    width: 100;
+}
+
+#connection-footer, #identity-footer
+{
+    width: 100%;
+    height: 64;
+    pad: 5 8;
+    gap: 4;
+}
+
+#channels-button
+{
+    width: 24;
+    height: 24;
+    background-image: url("assets/icons/channels.png");
+}
+
+#idle-button
+{
+    width: 24;
+    height: 24;
+    background-image: url("assets/icons/away.png");
+}
+
+#toolbar-hint
+{
+    width: 140;
+    height: 18;
+    text-align: right;
+}
+
+#message-edit-panel
+{
+    right: 12;
+    height: 290;
+}
+#message-edit-text
+{
+    width: 100%;
+    height: 140;
+}
+.chat-message-heading
+{
+    width: 100%;
+    height: 22;
+    gap: 4;
+    align-items: center;
+}
+.chat-edit-button
+{
+    width: 20;
+    height: 20;
+    pad: 0;
+    visibility: hidden;
+}
+
+/* Chat formatting controls; font files are discovered from the adjacent fonts directory. */
+#chat-format-controls
+{
+    width: 100%;
+    height: 24;
+    gap: 4;
+    align-items: center;
+}
+#chat-font
+{
+    width: 60%;
+    height: 24;
+    pad: 2 6;
+    select-style: list;
+    select-rows: 8;
+    popup-width: 250;
+    option-height: 22;
+    border-radius: 7;
+}
+#chat-color-button
+{
+    width: 32;
+    height: 24;
+    font-size: 14;
+}
+#chat-font-size
+{
+    width: 35%;
+    height: 18;
+    slider-thumb-width: 18;
+    slider-track-height: 3;
+}
+#chat-font-size-label
+{
+    width: 44;
+    height: 20;
+    font-size: 12;
+    pad: 1 0;
+}
+#chat-format-reset
+{
+    width: 65;
+    height: 24;
+}
+#chat-color-panel
+{
+    width: 330;
+    height: 290;
+    right: 12;
+}
+#chat-color-picker
+{
+    width: 100%;
+    height: 190;
+}
+#chat-color-value
+{
+    width: 100%;
+    height: 24;
+    gap: 4;
+}
+#chat-color-hex-field
+{
+    width: 110;
+    height: 24;
+}
+#chat-color-hex
+{
+    width: 100%;
+    height: 24;
+}
+#chat-color-value button
+{
+    width: 70;
+    height: 24;
+}
+
+#audio-status
+{
+    font-size: 11;
+}
+
+#tree-caption
+{
+    font-size: 11;
+    pad: 0 2;
+}
+
+#connection-status, #received-status, #toolbar-hint
+{
+    font-size: 11;
+}
+
+#toolbar-trim
+{
+    height: 2;
+    width: 100%;
+}
+
+.tree-channel-symbol
+{
+    background-image: url("assets/icons/channel-midnight.png");
+    background-size: fill;
+}
+
+.voice-state-0
+{
+    background-image: url("assets/icons/voice-idle-midnight.png");
+    background-size: fill;
+}
+
+.voice-state-1
+{
+    background-image: url("assets/icons/voice-speaking-midnight.png");
+    background-size: fill;
+}
+
+.voice-state-2
+{
+    background-image: url("assets/icons/voice-ready-midnight.png");
+    background-size: fill;
+}
+
+.voice-state-3
+{
+    background-image: url("assets/icons/voice-off-midnight.png");
+    background-size: fill;
+}
+
+.voice-state-4
+{
+    background-image: url("assets/icons/voice-deafened-midnight.png");
+    background-size: fill;
+}
+
+.voice-state-5
+{
+    background-image: url("assets/icons/voice-muted-midnight.png");
+    background-size: fill;
+}
+
+#connection-footer
+{
+    height: 64;
+    pad: 4 6;
+    gap: 4;
+}
+
+.web-toolbar-icon:disabled
+{
+    opacity: 0.45;
+}
+
+window
+{
+    font-family: Inter;
+}
+#toolbar
+{
+    height: 34;
+}
+#toolbar-trim
+{
+    height: 2;
+}
+#workspace
+{
+    pad: 6;
+}
+#messages
+{
+    pad: 10 12;
+}
+.panel-heading, #channel-path
+{
+    font-family: "Manrope SemiBold";
+}
+
+/* Keep the close control inside the compact tab border. */
+.tab-close
+{
+    height: 18;
+    pad: 0;
+    font-size: 10;
+}
+
+/* Keep message entry and its Send button on one row. */
+#composer-input-row
+{
+    width: 100%;
+    height: 32;
+    gap: 4;
+    align-items: center;
+}
+#chat-format-toggle
+{
+    width: 64;
+    height: 24;
+    pad: 2 6;
+}
+
+/* Theme surfaces and controls. */
+window, label, button, input, textarea, checkbox, select, filepicker
+{
+    font-color: #e0e7f1;
+}
+window, #workspace, #sidebar, #conversation
+{
+    background-color: #1c222c;
+}
+#toolbar
+{
+    background-color: #121924;
+    border-width: 0;
+    radius: 0;
+}
+#toolbar-trim
+{
+    background-color: #3d4b60;
+}
+#sidebar, #audio-dock, #composer, #status-bar, #chat-tabs, #view-caption
+{
+    background-color: #222a36;
+    border-width: 0;
+    radius: 0;
+}
+#member-list, #messages, #bookmark-list, #channel-editor-list
+{
+    background-color: #151b25;
+    border: 1px solid #3d4b60;
+    radius: 2;
+}
+#channel-path
+{
+    background-color: transparent;
+    font-color: #e0e7f1;
+    border-width: 0;
+    font-size: 12;
+}
+.member, .channel-row, .bookmark-row, .channel-editor-item
+{
+    background-color: transparent;
+    font-color: #e0e7f1;
+    border-width: 0;
+    radius: 0;
+}
+.member:hover, .channel-row:hover, .channel-row:pressed, .bookmark-row:hover, .channel-editor-item:hover
+{
+    background-color: #303d50;
+}
+.channel-row.selected, .channel-row.selected:hover, .channel-row.selected:pressed, .channel-row.marked, .channel-row.marked:hover, .member.marked, .member.marked:hover, .bookmark-row.selected, .bookmark-row.selected:hover, .channel-editor-item.selected, .channel-editor-item.selected:hover
+{
+    background-color: #344762;
+    font-color: #f0f5fc;
+}
+.member-name, .tree-name, .local .member-name, .local .tree-name, .chat-text, .notice-title
+{
+    font-color: #e0e7f1;
+}
+.channel-row.selected .tree-name, .channel-row.marked .tree-name, .member.marked .tree-name, .member.marked .member-name
+{
+    font-color: #f0f5fc;
+}
+.muted, .tree-song, .member-state, #tree-caption, #audio-status, #connection-status, #received-status, #toolbar-hint, #composer-spacer, #chat-font-size-label
+{
+    font-color: #9caac0;
+}
+.chat-sender
+{
+    font-color: #a0b9db;
+}
+.voice-icon, .voice-icon-disabled, .voice-icon-muted
+{
+    font-color: #9caac0;
+}
+.voice-icon-active
+{
+    font-color: #a0b9db;
+}
+button
+{
+    background-color: #2b3647;
+    font-color: #e0e7f1;
+    border: 1px solid #3d4b60;
+    radius: 2;
+}
+button:hover
+{
+    background-color: #303d50;
+}
+button:pressed
+{
+    background-color: #344762;
+}
+button:disabled, #send-button:disabled, .tab-scroll:disabled
+{
+    background-color: #222a36;
+    font-color: #9caac0;
+    border: 1px solid #3d4b60;
+}
+.menu-button
+{
+    background-color: #121924;
+    font-color: #e0e7f1;
+    border: 1px solid #3d4b60;
+    radius: 2;
+}
+.menu-button:hover, .menu-button:pressed
+{
+    background-color: #2b3647;
+    font-color: #e0e7f1;
+}
+.web-toolbar-icon
+{
+    background-color: transparent;
+    border-width: 0;
+    radius: 0;
+}
+input, textarea, #message-input, #message-edit-text, #channel-edit-description, .audio-device-select, .server-key-type, #chat-font
+{
+    background-color: #1a2230;
+    font-color: #e0e7f1;
+    border: 1px solid #3d4b60;
+    radius: 2;
+}
+input:focus, textarea:focus, #message-input:focus, #message-edit-text:focus
+{
+    border: 1px solid #a0b9db;
+}
+#send-button
+{
+    background-color: #455f81;
+    font-color: #ffffff;
+    border: 1px solid #455f81;
+    radius: 2;
+}
+#send-button:hover
+{
+    background-color: #a0b9db;
+    font-color: #1c222c;
+}
+#channel-title, .conversation-tab
+{
+    background-color: #222a36;
+    font-color: #e0e7f1;
+    border: 1px solid #3d4b60;
+    radius: 2;
+}
+.conversation-tab.selected, .conversation-tab.selected:hover
+{
+    background-color: #344762;
+    font-color: #f0f5fc;
+}
+.tab-label, .tab-label:hover, .tab-close, .tab-close:hover, .tab-scroll, .chat-edit-button
+{
+    background-color: transparent;
+    font-color: #e0e7f1;
+    border-width: 0;
+    radius: 0;
+}
+.tab-close:hover, .tab-scroll:hover, .chat-edit-button:hover
+{
+    background-color: #303d50;
+}
+.panel, .context-menu
+{
+    background-color: #222a36;
+    font-color: #e0e7f1;
+    border: 1px solid #3d4b60;
+    radius: 2;
+    box-shadow: 0 0 0 #00000000;
+}
+.panel-title
+{
+    background-color: #121924;
+    font-color: #e0e7f1;
+    border-width: 0;
+    radius: 0;
+}
+.panel-heading, .close-button
+{
+    font-color: #e0e7f1;
+}
+.close-button
+{
+    background-color: transparent;
+    border-width: 0;
+    radius: 0;
+}
+.close-button:hover
+{
+    background-color: #455f81;
+}
+.context-menu
+{
+    accent-color: #344762;
+}
+#member-list, #messages, .panel-body, #channel-editor-fields, #channel-editor-list
+{
+    scrollbar-track: #222a36;
+    scrollbar-thumb: #3d4b60;
+}
+.audio-device-select, .server-key-type, #chat-font
+{
+    popup-background: #222a36;
+    popup-blur: 0;
+    popup-duration: 0;
+    option-color: #e0e7f1;
+    option-current-background: #344762;
+    option-current-color: #f0f5fc;
+    option-hover-background: #303d50;
+    option-hover-color: #e0e7f1;
+}
+checkbox
+{
+    checkbox-track-background: #1a2230;
+    checkbox-track-border-color: #3d4b60;
+    checkbox-mark-color: #a0b9db;
+}
+slider, #chat-font-size
+{
+    background-color: #3d4b60;
+    accent-color: #a0b9db;
+    slider-fill: #a0b9db;
+    radius: 0;
+}
+#input-meter-track
+{
+    background-color: #3d4b60;
+    radius: 0;
+}
+#input-meter-fill
+{
+    background-color: #a0b9db;
+    radius: 0;
+}
+#sidebar-divider
+{
+    background-color: #3d4b60;
+    border-width: 0;
+    radius: 0;
+}
+#sidebar-divider:hover, #sidebar-divider:pressed
+{
+    background-color: #a0b9db;
+}
+
+/* Workspace arrangement for this preset. */
+#workspace
+{
+    flex-direction: row;
+    pad: 6;
+}
+#sidebar
+{
+    size: 220x0;
+    pad: 4;
+    gap: 4;
+}
+#conversation
+{
+    pad: 0 4 0 0;
+    gap: 4;
+}
+
+.web-toolbar-icon:hover
+{
+    background-color: #455f81;
+}
+
+#microphone-button
+{
+    width: 100%;
+}
+#audio-disabled-warning
+{
+    size: 170x20;
+    gap: 4;
+    pad: 0;
+}
+#audio-disabled-label
+{
+    size: 66x18;
+    font-size: 11;
+    pad: 0;
+}
+#enable-audio-button
+{
+    size: 100x20;
+    font-size: 11;
+    pad: 1 4;
+}

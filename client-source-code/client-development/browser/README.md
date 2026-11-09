@@ -6,31 +6,56 @@ Source workspace for the chat client. The shipped client is a single
 
 ## Layout
 
-```
+```text
 client-development/browser/
-├─ build.cjs            # glues src/ -> ../../client.html (the shipped client, in client-source-code)
-├─ build.bat           # Windows: runs build.cjs, then pauses
-├─ build.sh            # Unix:    runs build.cjs
-├─ client-webassemblies/   # Opus/minimp3 .wasm *sources* + how to rebuild them
-│  ├─ README.md            # what the two modules are, build/removal steps
-│  ├─ libopusjs/           # libopus source archive (.tar.gz)
-│  └─ mp3-to-pcm/          # minimp3 source archive (.tar.gz)
-└─ src/
-   ├─ template.html    # the HTML shell: <head>, <body>, the <style>/<script>
-   │                   # tags, and one /* @@INCLUDE: ... @@ */ marker per source
-   ├─ styles/          # *.style  -> pure CSS (no <style> tags)
-   ├─ scripts/
-   │  ├─ vendor/       # third-party libs, one file each (aes-js, jsbn, rsa,
-   │  │                # cryptico, js-sha256, libopus, minimp3, ...)
-   │  └─ app/          # our code (utils, encoding, audio glue, audio, sounds, messages, ui, main, ...)
-   └─ wasm/            # *.wasm  -> real binaries (libopus, mp3_decoder)
+    build.cjs                  # compiles/tests wasm, then assembles ../../client.html
+    build.bat / build.sh       # build launchers
+    client-webassemblies/      # independent WebAssembly source projects
+        connection-crypto/     # symmetric ciphers and session key derivation
+        rsa-keygen/            # identity and RSA operations
+        libopusjs/             # Opus sources
+        mp3-to-pcm/            # minimp3 sources
+    main/
+        template.html          # ordered source includes
+        styles/                # CSS themes and layout
+        wasm/                  # compiled modules embedded during page assembly
+        scripts/
+            vendor/            # third-party JavaScript
+            app/
+                main.js, globals.js, utils.js, console-log.js
+                crypto/        # browser encryption wrappers and key handling
+                connection/    # connection lifecycle, heartbeat and reconnect
+                msg/           # protocol handlers and worker dispatch
+                channel/       # channel tree, roles and client status
+                chat/          # messages, attachments, replies and reactions
+                audio/         # microphone, playback, music and notifications
+                video/         # video transport and workers
+                ui/            # controls, layout, menus and theme effects
+                server/        # server settings, groups and moderation
+                mobile/        # Android host and Java bridge
+                workers/       # shared worker bootstrap and message handlers
 ```
 
+When you want to change a cipher, open
+`client-webassemblies/connection-crypto/main/crypto/`. That project owns the cipher
+adapters and key-derivation code, and its `third-party/` directory owns the
+Mbed TLS and LibTomCrypt dependencies it compiles. Its build does not read from
+the desktop or server projects.
+
+For browser-side encryption behavior, start in `main/scripts/app/crypto/`.
+`connection-crypto.js` calls the compiled cipher module, `keys.js` manages keys,
+and `rsa-crypto.js` wraps the separate RSA WebAssembly module. The JavaScript
+wrappers and the C algorithm implementations have separate jobs and locations.
+
+`main/template.html` still controls include order. Moving a file into a topic
+folder does not change startup or worker initialization order. The Android Node
+bridge has its own include list, updated to the same source paths.
+
 The application splits across topic files, all sharing one closure (see the
-Editing section). The big three: `scripts/app/messages.js` is the protocol layer
-(`server_msg` handlers + `client_msg` builders), `scripts/app/ui.js` is the `UI`
-object (rendering, themes, menus, dialogs), and `scripts/app/audio.js` is the
-audio engine (worklets, playback/capture graphs). `scripts/app/chat-files.js` is
+Editing section). The big three: `scripts/app/msg/messages.js` is the protocol layer
+(`server_msg` handlers + `client_msg` builders), `scripts/app/ui/ui.js` is the `UI`
+object (rendering, themes, menus, dialogs), and `scripts/app/audio/audio.js` is the
+audio engine (worklets, playback/capture graphs). `scripts/app/chat/chat-files.js` is
 the chat file feature (any file as an encrypted message: paperclip, drag & drop,
 the file card with its progress ring, the download button, and the fast base64 /
 crypto helpers its worker branches use). The rest of the page lives in one file
@@ -40,19 +65,19 @@ per topic, each with its own state at the top and its functions below:
 | --- | --- |
 | `globals.js` | every name two or more other files use, one group per topic; `g_` = app-wide state, `G_` = app-wide constant, no prefix = private to the file that declares it (kept at that file's top) |
 | `utils.js` | the helpers every file uses: storage, sleep, the log and the toast, base64 both ways, sha256, the touch-device check |
-| `workers.js` | the two worker handlers, data processing and websocket (run inside those workers only) |
+| `workers/workers.js` | the two worker handlers, data processing and websocket (run inside those workers only) |
 | `console-log.js` | the console prefixing installed in every context |
-| `connection.js` | the driver that decides when to dial, the dial, the heartbeat, fast reconnect, the connect-page hold, server bookmarks |
-| `keys.js` | the identity keypair, dh session keys, aes message bodies, channel keys and the maintainer wait timer |
-| `channel-tree.js` | lookups and rendering for channels and clients, avatars |
-| `chat.js` | composing and sending messages, pictures and files; the typing indicator; unread counts and seen receipts |
-| `android-host.js` | the headless node runtime, the webview bridge implementations, deep idle |
-| `layout.js` | the desktop grid layout engine |
-| `voice.js` | the microphone, the webrtc datachannel, the music bot stream |
-| `server-settings-tab.js` | the admin tab: field table, policy, icon uploads, country blocking |
-| `dispatch.js` | `dispatch__mainthread_onmessage`, everything the data-processing worker posts back |
+| `connection/connection.js` | the driver that decides when to dial, the dial, the heartbeat, fast reconnect, the connect-page hold, server bookmarks |
+| `crypto/keys.js` | the identity keypair, dh session keys, aes message bodies, channel keys and the maintainer wait timer |
+| `channel/channel-tree.js` | lookups and rendering for channels and clients, avatars |
+| `chat/chat.js` | composing and sending messages, pictures and files; the typing indicator; unread counts and seen receipts |
+| `mobile/android-host.js` | the headless node runtime, the webview bridge implementations, deep idle |
+| `ui/layout.js` | the desktop grid layout engine |
+| `audio/voice.js` | the microphone, the webrtc datachannel, the music bot stream |
+| `server/server-settings-tab.js` | the admin tab: field table, policy, icon uploads, country blocking |
+| `msg/dispatch.js` | `dispatch__mainthread_onmessage`, everything the data-processing worker posts back |
 | `main.js` | startup: `main__window_onload` and the export seam for the node runtime |
-| `android-bridge.js` | outside the closure: the `JavascriptJavaBridge__*` functions the java side calls by name |
+| `mobile/android-bridge.js` | outside the closure: the `JavascriptJavaBridge__*` functions the java side calls by name |
 
 Every top-level function carries its file's name as a prefix (`chat__send_chat_message` lives
 in chat.js), the way the C server names its functions, so a call site tells you where to look.
@@ -64,12 +89,13 @@ then what it does), one `@param type name -> what` per parameter and `@return ty
 (`void` when nothing comes back). Add one to a new function; `lemonchat-study/tools/docinv.py`
 lists any that lack it.
 
-`styles/fonts.style` contains the embedded fonts. The existing fonts use base64
-TrueType data. Inter, Manrope and Plus Jakarta Sans use base64 WOFF2 data to
-reduce the size of `client.html`. All three retain their full character sets and
-variable weights. Inter also retains its optical size axis.
+`styles/fonts.style` contains all 18 embedded font faces as Base64 WOFF2. This
+keeps `client.html` smaller without removing fonts or characters. Conversion
+preserves glyph outlines, spacing, hinting and font metadata. Inter, Manrope
+and Plus Jakarta Sans retain their variable weights; Inter also retains its
+optical size axis.
 
-These fonts come from the SIL Open Font License editions in the
+Inter, Manrope and Plus Jakarta Sans come from the SIL Open Font License editions in the
 [Google Fonts repository](https://github.com/google/fonts). Each font declaration
 includes its source URL, source revision, original file hash, copyright notice
 and complete license. The notices are included in the built client as well.
@@ -86,163 +112,173 @@ The theme's `--set-font` controls settings, dialogs, alerts, controls and lists.
 `--chat-author-font` and `--chat-meta-font` control message names and timestamps.
 Custom message font choices remain separate. To replace an embedded font,
 update its base64 data, weight range and source notice in `fonts.style`, then
-run the normal client build. The build itself needs no font conversion tools.
+run the normal client build. Convert a replacement font to WOFF2 before embedding
+it; FontTools with Brotli support can do this without subsetting characters.
+The build itself needs no font conversion tools and embeds the existing WOFF2
+bytes unchanged.
 
 ## Building
 
-To turn edits in `src/` into a new `client.html`, the build script uses Node.js
-to assemble files, embed WebAssembly and validate JavaScript. Node.js is needed
-for this build step independently of the Android runtime. The finished page
-runs in a browser without Node.js. Server builds skip this step when Node.js is
-missing, and continue even if an attempted client build fails. They package the
-existing `client.html` if available, with a warning that it may be outdated.
-Neither Node.js nor a successful client rebuild is required to build the server.
+Suppose you change a chat label in `main/scripts/app/ui/ui.js`, or change a cipher
+in `client-webassemblies/connection-crypto/main/crypto`. Users open `client.html`,
+so those edits become visible only after rebuilding that page. The normal build
+now compiles **all four WebAssembly modules from source**, tests them, and then
+embeds the resulting bytes as Base64 alongside the JavaScript, CSS and assets.
 
-Install a maintained LTS version of [Node.js](https://nodejs.org/) and reopen
-your terminal. A readable build needs only Node.js. To enable minification,
-install [Terser](https://terser.org/docs/cli-usage/) yourself:
+### Why Zig is part of a browser build
+
+The audio and crypto modules use C compiled to WebAssembly for speed. The build
+uses **`zig cc`**, Zig's C compiler based on Clang/LLVM. The sources remain
+ordinary C.
+
+Zig includes the compiler, linker and C-library support needed to build all four
+modules with one portable toolchain. It replaces the old Opus setup that required
+WSL, Emscripten and CMake. The build uses **Zig 0.15.2**, the version verified
+with its compatibility tests.
+
+Node.js runs the build scripts and tests and assembles the HTML. Neither tool
+is needed to run the finished page. The
+[WebAssembly README](client-webassemblies/README.md) describes the modules,
+their source locations and build commands.
+
+### Start the build and obtain tools
+
+From this directory, run `build.bat` on Windows or `sh build.sh` on Linux/macOS.
+The wrappers look for Node.js 20 or newer. If it is missing, they offer to
+download portable Node.js 24.14.0. The Node builder then looks for **Zig 0.15.2**,
+the C compiler used for all four modules, and offers to download it if missing.
+Choose minified or readable output; Terser is optional and can also be downloaded
+when you want minification. Declining Terser still permits a readable build.
+
+If the required Zig version is already on PATH or in `browser/.build-tools`,
+there is nothing to download. The builder prints `Using existing Zig` with its
+version and location. An explicit `ZIG` environment variable selects that
+executable; an invalid value produces an error instead of replacing your choice.
+Server builds use `--no-download-tools`, so they never show the download prompt.
+
+Before compilation starts, the builder lists all four `.wasm` files and their
+purpose. Each module has a `[WASM build 1/4]` heading and a completion message
+showing how many modules remain. Tests have their own `[WASM test 1/4]` headings,
+including separate progress messages for the longer RSA checks. Assembly and
+minification are announced afterward, so test output is not mistaken for more
+compilation.
+
+Downloads stay in `browser/.build-tools`, an ignored directory separate from
+source projects. Nothing is installed system-wide and no shell profile is
+changed. Node and Zig archives are checked against pinned SHA-256 hashes before
+extraction. Terser is installed locally through npm with lifecycle scripts
+disabled and a saved package lock. The downloaders need `curl` and `tar`; the Unix
+Node bootstrap also needs `sha256sum` or macOS's `shasum`. Current Windows includes
+PowerShell, curl and tar. You may instead install these tools yourself. Set `ZIG`
+to the **compiler executable**, not its directory, when it is outside PATH.
+
+There is no Emscripten SDK, WSL, CMake, Ninja, Python, TypeScript or separate
+wasm-opt requirement for this browser build. Zig includes its C compiler, linker
+and the C-library pieces used by Opus and connection crypto. Node.js runs the
+builder and tests; it is unrelated to the Android bridge here. The finished
+HTML runs in a browser without Node.js or Zig.
+
+### What one normal build does
+
+For example, run `build.bat --unminified` after editing the chat label:
+
+1. Locate the required tools, offering downloads when running interactively.
+2. Compile Opus/Speex, minimp3, RSA and connection crypto into a temporary
+   directory below `client-webassemblies/build`. Each project uses only its own
+   sources and third-party libraries. Every module must have zero host imports.
+3. Run the codec, cipher and RSA compatibility tests. Opus is checked against the
+   preserved previous module in both directions, including packet-loss recovery
+   and resampling. MP3 PCM is compared with the old decoder. RSA must reproduce
+   every recorded identity vector exactly, and cipher outputs must match their
+   reference vectors and OpenSSL counterparts.
+4. Only after every test passes, publish the complete set into `main/wasm`.
+   Compiler or test failure keeps the previous set. Builds use a lock so two
+   processes cannot publish competing sets. After an interrupted build, remove
+   `client-webassemblies/build/build.lock` only after confirming its builder has
+   stopped, then rebuild.
+5. Read `main/template.html`, insert its ordered source includes, and replace each
+   WebAssembly marker with Base64 from the newly compiled modules. Check script
+   syntax and the worker `THREAD_NAME` patch target.
+6. For minified output, optimize CSS/assets and run Terser on inline JavaScript.
+   Names, license notices, the worker patch target and headless export seam stay
+   intact; code compression and dead-code removal stay disabled.
+7. Replace `../../client.html` and, when present, the project-root
+   `buildresult/client.html`. HTML replacement is atomic per output file. A
+   compile, test, syntax or minifier failure leaves the previous HTML intact.
+
+Reload the served page to see the changed label. Editing sources without
+rebuilding leaves the existing HTML unchanged. The completion output reports
+module sizes, test results, include counts and the final file size. The compiler
+may reuse its internal object cache, but the source compilation step is always
+invoked; normal builds do not silently reuse the shipped wasm files.
+
+### Unattended builds and checks
 
 ```sh
-npm install --global terser
-```
+# Allow missing tools to be downloaded without an interactive prompt:
+sh build.sh --unminified --download-tools
+# Windows equivalent: build.bat --unminified --download-tools
 
-Run `build.bat` on Windows, `./build.sh` on Linux/macOS, or `node build.cjs`.
-Choose **1. Minified** or **2. Unminified**. When Terser is unavailable, option 1
-is shown as **disabled** and cannot be selected. The build never installs tools
-or downloads packages. Node.js and Terser are not bundled with this project.
-
-Both modes assemble `src/` into `../../client.html` and refresh an existing
-`buildresult/client.html`. Source files stay readable and unchanged. Output
-files are replaced only after assembly and validation succeed; a missing or
-failed minifier leaves the previous output intact.
-
-Minified output keeps the existing size savings: repeated CSS images are stored
-once, TrueType fonts are losslessly packaged as WOFF, and CSS whitespace is
-compacted. Terser 5 or newer removes JavaScript whitespace and ordinary comments.
-Names, license notices, the worker patch target and the headless export seam
-are preserved. Code compression and dead-code removal stay disabled.
-
-For scripts and CI, choose explicitly:
-
-```sh
-node build.cjs --unminified
-node build.cjs --minified
-node build.cjs --minified --output preview/client.html
+# With tools already installed; no network access or download prompts:
+node build.cjs --minified --no-download-tools
+node build.cjs --unminified --no-download-tools --output preview/client.html
 node build.cjs --unminified --no-server-copy
+
+# Syntax-only checks of existing modules; no compilation/downloads/output:
 node build.cjs --check
 node build.cjs --check-minifier
 ```
 
-`--output` builds an isolated file without updating the shipped or server copy.
-`--check` checks assembled JavaScript syntax and the worker patch target without
-writing output. `--check-minifier` reports whether an installed Terser can run.
-The build looks for a resolvable Terser package or the global npm installation.
+Without `--download-tools`, an unattended build never downloads anything. Missing
+required tools cause a clear failure. `--no-download-tools` also disables prompts
+in an interactive terminal. `--output` writes a separate HTML file without
+updating either default HTML destination; a normal build still compiles and
+publishes tested modules into `main/wasm`. `--no-server-copy` suppresses the
+`buildresult` copy. `LEMON_CLIENT_BUILD_MODE=minified` or `unminified` chooses a
+mode without prompting; command-line mode takes precedence.
 
-Server build scripts use the same builder. Set
-`LEMON_CLIENT_BUILD_MODE=unminified` or `minified` to skip the prompt;
-command-line options take precedence. A build without a terminal must specify
-its mode. Both Android Gradle projects default to unminified output. Use
-`-PclientBuildMode=minified` after installing Terser to request minification.
-Their separate native and headless build tools retain their own prerequisites.
-
-`--no-minify-js` optimizes CSS/assets while keeping JavaScript readable.
+`--no-minify-js` optimizes CSS/assets while leaving JavaScript readable.
 `--minify-js` and `--no-optimize` remain aliases for `--minified` and
-`--unminified`. The Windows wrapper pauses only when launched interactively
-without arguments or an environment-selected mode and preserves the exit code.
+`--unminified`. On Windows the wrapper pauses only with no arguments and no
+mode environment variable, and preserves the build's exit code.
 
-### Example: rebuild after changing the client
+### Build with checked prebuilt modules
 
-Suppose you change a message label in `src/scripts/app/ui.js`. The server serves
-`client.html`, so editing that source file alone does not update the page people
-open. From `client-source-code/client-development/browser`, run:
-
-```sh
-node build.cjs --unminified
-```
-
-The builder reads `src/template.html`, inserts the files named by its include
-markers, and replaces WebAssembly markers with base64 from the existing binary
-files in `src/wasm`. It checks each assembled script's syntax and the worker
-`THREAD_NAME` patch target. It does not compile the WebAssembly sources; use the
-[WebAssembly guide](client-webassemblies/README.md) when those binaries need rebuilding.
-
-In readable mode, the assembled HTML is written without CSS or JavaScript
-minification. In minified mode, the builder optimizes CSS and embedded assets,
-then runs Terser on the applicable inline scripts. It checks the resulting
-JavaScript syntax, worker patch declaration and headless export seam before
-writing. These checks do not replace testing the page in a browser.
-
-The default result is `client-source-code/client.html`. If the project-root
-`buildresult` directory already exists, the builder also updates
-`buildresult/client.html`. Reload the page served by your server to see the new
-label. Without rebuilding, the existing HTML still contains the old label.
-The completion messages show the output path, mode, include and WebAssembly
-counts, and the assembled and final byte sizes.
-
-### Output files and failures
-
-Use `--output preview/client.html` with a mode to try a build without replacing
-the default page or server copy. Relative output paths are resolved from your
-terminal's current directory. `--no-server-copy` updates the default page but
-leaves `buildresult/client.html` alone. The builder creates missing parent
-directories for the selected output; it does not create `buildresult` just to
-make the automatic server copy.
-
-Each output is written to a temporary file beside its destination and renamed
-into place. Assembly, syntax or minification errors occur before output writes,
-so those failures leave the previous output intact. The default page and server
-copy are written separately: if writing the server copy fails, the default page
-may already have been updated. Check the reported error and output paths before
-assuming both copies match.
-
-A standalone client build returns a nonzero exit code on failure. Common causes
-are missing Node.js, missing input files, invalid JavaScript, unavailable Terser,
-an invalid option or mode, and an unwritable output destination. For a missing
-minifier, install Terser or select `--unminified`. For an unattended build, select
-a mode explicitly; the builder does not silently choose one when it cannot prompt.
-`--check` validates assembly without writing files or requiring Terser;
-`--check-minifier` checks Terser separately without building the page.
-
-### Building the server when the client cannot be rebuilt
-
-Suppose the server machine has the C/C++ build tools but no Node.js. The Windows,
-Linux and macOS server scripts warn, skip the client rebuild and continue to the
-server build. If Node.js exists but the client build returns an error, they print
-a warning and continue in the same way. This includes syntax, minifier, mode
-selection and output-write errors. The client's standalone failure exit code is
-preserved; the server scripts handle it as an optional build step.
-
-During packaging, the scripts copy `client-source-code/client.html` if it exists.
-After a skipped or failed rebuild, that file may be an older client and may not
-match your edited sources. If it is absent, the scripts warn that the bundled
-HTTP server has no page to serve and still continue. You can build the client on
-another machine and place its `client.html` beside the server later. Native server
-build failures still fail the server build normally.
-
-To avoid the mode prompt during a server build, set the environment variable
-before invoking the server script. In Windows Command Prompt:
-
-```bat
-set "LEMON_CLIENT_BUILD_MODE=unminified"
-windows_build_script.bat
-```
-
-In PowerShell:
-
-```powershell
-$env:LEMON_CLIENT_BUILD_MODE = "unminified"
-.\windows_build_script.bat
-```
-
-On Linux, from `server-source-code`:
+If you cannot compile the WebAssembly projects, use the checked modules in
+`client-webassemblies/prebuilt-backup`. That directory contains a SHA-256 manifest
+and the matching loader required by its older Opus binary. Its RSA and MP3 modules
+include the current secret-clearing and input-bounds fixes; this is not an
+unchanged historical snapshot. Normal builds never overwrite that directory.
+To deliberately build an HTML page using this set, run:
 
 ```sh
-LEMON_CLIENT_BUILD_MODE=unminified bash linux_build_script.sh
+node build.cjs --unminified --prebuilt-wasm --output preview/prebuilt-modules.html
 ```
 
-Use `macos_build_script.sh` on macOS. Set the value to `minified` when Terser is
-installed and you want minification. If that request fails, the server scripts
-warn and use the existing page; they do not silently rebuild in a different mode.
+This verifies the hashes and runs RSA, MP3, cipher, and Opus compatibility and
+security regressions before embedding the modules and matching loader. A failed
+check stops the build. It does not compile C or replace `main/wasm`. Removing
+`--output` makes it the shipped page instead. A compiler failure never selects
+this set automatically. Return to the normal command to compile current sources
+again. The [prebuilt guide](client-webassemblies/prebuilt-backup/README.md)
+records which modules were refreshed and how to run their checks separately.
+
+### Server and Android builds
+
+The server scripts call this same builder with downloads disabled. A missing
+Node.js, missing Zig, failed module test or any other client build failure is a
+warning: **the server still builds**. Its package uses the existing `client.html`
+when available and warns if that page is missing or may be outdated. Neither
+Node.js, Zig nor a successful browser build is a server requirement.
+
+Both Android Gradle projects also invoke the browser builder and therefore need
+its tools when rebuilding this page; their native and headless build tools keep
+their own requirements. Their default mode is unminified; use
+`-PclientBuildMode=minified` when Terser is available. The Android Node bundle's
+separate generator consumes the browser modules already built by this process.
+
+See [the WebAssembly projects](client-webassemblies/README.md) for their source
+layout, individual build commands, tests and dependency versions.
 
 ## How the glue works
 
@@ -261,33 +297,33 @@ a `/* ... */` block comment, which is valid in both CSS and JS, so editors do
 not flag it.
 
 The two WebAssembly binaries are re-encoded to base64 at build time. These
-markers are **not** in `template.html` — they live inside the two `.js` files,
+markers are **not** in `template.html` â€” they live inside the two `.js` files,
 mid-string-literal, because that is where the base64 sits in the library code:
 
-- `scripts/vendor/libopus.emscripten.js` → `var libopus_webassembly_base64 = '@@WASM:wasm/libopus.wasm@@';`
-- `scripts/app/minimp3-worker.js` → `let mp3_decoder_webassembly_base64 = "@@WASM:wasm/mp3_decoder.wasm@@";`
+- `scripts/vendor/libopus.emscripten.js` â†’ `var libopus_webassembly_base64 = '@@WASM:wasm/libopus.wasm@@';`
+- `scripts/app/audio/minimp3-worker.js` â†’ `let mp3_decoder_webassembly_base64 = "@@WASM:wasm/mp3_decoder.wasm@@";`
 
 `build.cjs` expands the `@@INCLUDE` markers first, then swaps each
 `@@WASM:...@@` for `base64(the .wasm file)`.
 
 ## Editing
 
-- Edit any file under `src/`, then rebuild.
-- Keep `.js`/`.style` files **pure** — no `<script>`/`<style>` tags. Those live
+- Edit any file under `main/`, then rebuild.
+- Keep `.js`/`.style` files **pure** â€” no `<script>`/`<style>` tags. Those live
   only in `template.html`.
-- To add a new source file: create it under `src/scripts/...`, then add a
+- To add a new source file: create it under `main/scripts/...`, then add a
   `/* @@INCLUDE: scripts/path/to/file.js @@ */` line in `template.html` at the
-  spot it should load. Order matters — files are concatenated top to bottom.
+  spot it should load. Order matters â€” files are concatenated top to bottom.
 - **The includes share one closure, not just one `<script>` tag.** A wrapper
   opens inside `scripts/vendor/aes-js.js` and closes at the very END of
   `scripts/app/main.js` (its final `}));`). Every file spliced between those two
   lives inside that closure and sees `main.js`'s variables (that is how
-  `audio.js` works); a file placed outside that range silently sees none of
-  them. Corollary: nothing in the app is a `window` global — `typeof X` in
+  `audio/audio.js` works); a file placed outside that range silently sees none of
+  them. Corollary: nothing in the app is a `window` global â€” `typeof X` in
   devtools says `undefined` for everything, which is normal, not breakage. Also
   never brace-balance-check one file alone; only the whole assembled script
   element parses.
-- To replace a wasm binary: drop the new `.wasm` into `src/wasm/` and rebuild.
+- To replace a wasm binary: drop the new `.wasm` into `main/wasm/` and rebuild.
 
 ## Key configuration & state (`scripts/app/globals.js`)
 
@@ -317,21 +353,21 @@ Diffie-Hellman key exchange, and `g_my_rsa_key_object` / `g_rsa_public_key_strin
 for the client's RSA identity.
 
 Below these, the same block declares the rest of the per-session state
-(`g_is_websocket_connected`, `local_username`, `current_channel_id`, …). A few
+(`g_is_websocket_connected`, `local_username`, `current_channel_id`, â€¦). A few
 globals deliberately stay unprefixed: names that also appear as message-object
 keys or as locals elsewhere (`local_username`, `current_channel_id`, `host`,
-`port`, …) — renaming those was judged riskier than the inconsistency.
+`port`, â€¦) â€” renaming those was judged riskier than the inconsistency.
 
 ## Notes
 
 - Libraries split across source files are concatenated in template order.
 - `client-webassemblies/` holds WebAssembly sources and rebuild instructions.
-  The browser build embeds binaries from `src/wasm/` automatically; no separate
+  The browser build embeds binaries from `main/wasm/` automatically; no separate
   base64 conversion script is needed.
 
 ## Shared conversation-list features
 
-`src/scripts/app/member-conversations.js` adds name/channel search, previews of
+`main/scripts/app/chat/member-conversations.js` adds name/channel search, previews of
 messages already retained in the client, their displayed send times, and optional
 navigation from the member list into the selected chat. It uses the existing member
 mirror and chat contexts, with no new server protocol or separate history store.

@@ -1,3 +1,4 @@
+#include "../../util.h"
 // This file sends microphone status, audio connection details and WebRTC connection offers.
 
 #include "server_msg.h"
@@ -14,13 +15,14 @@
  *
  * @return void
  */
-void server_msg__audio__send_active_microphone_usage_for_current_channel_to_single_client(client_t* receiver, uint64 channel_id)
+void server_msg__audio__send_active_microphone_usage_for_current_channel_to_single_client(client_t *receiver, uint64 channel_id)
 {
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
-    cJSON* json_clients_array = 0;
+    cJSON *single_object = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
+    cJSON *json_clients_array = 0;
     uint64 x = 0;
-    client_t* client_in_loop = 0;
+    client_t *client_in_loop = 0;
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
@@ -30,7 +32,7 @@ void server_msg__audio__send_active_microphone_usage_for_current_channel_to_sing
     // create array of clients
     for (x = 0; x < g_server_settings.max_client_count; x++)
     {
-        cJSON* single_object = NULL_POINTER;
+        single_object = NULL_POINTER;
 
         client_in_loop = &g_clients_array[x];
         if (client_in_loop->is_existing == FALSE)
@@ -67,10 +69,10 @@ void server_msg__audio__send_active_microphone_usage_for_current_channel_to_sing
         cJSON_AddBoolToObject(single_object, "is_streaming_video", client_in_loop->is_streaming_video);
         cJSON_AddStringToObject(single_object, "song_name", client_in_loop->song_name);
 
-        cJSON_AddItemToArray(json_clients_array, single_object);
+        util__json_add_owned_array(json_clients_array, single_object);
     }
 
-    cJSON_AddItemToObject(message, "clients", json_clients_array);
+    util__json_add_owned_object(message, "clients", json_clients_array);
 
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
@@ -85,10 +87,10 @@ void server_msg__audio__send_active_microphone_usage_for_current_channel_to_sing
  *
  * @return void
  */
-void server_msg__audio__send_datachannel_cooldown_to_single_client(client_t* receiver, uint64 seconds_left)
+void server_msg__audio__send_datachannel_cooldown_to_single_client(client_t *receiver, uint64 seconds_left)
 {
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
@@ -109,14 +111,14 @@ void server_msg__audio__send_datachannel_cooldown_to_single_client(client_t* rec
  *
  * @return void
  */
-void server_msg__audio__send_webrtc_sdp_offer_to_single_client(client_t* receiver, const char* candidate, const char* mid)
+void server_msg__audio__send_webrtc_sdp_offer_to_single_client(client_t *receiver, const char *candidate, const char *mid)
 {
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
-    cJSON* json_message_value = NULL_POINTER;
-    cJSON* jmid = NULL_POINTER;
-    cJSON* jsoncandidate = NULL_POINTER;
-    cJSON* jsonlineindex = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
+    cJSON *json_message_value = NULL_POINTER;
+    cJSON *jmid = NULL_POINTER;
+    cJSON *jsoncandidate = NULL_POINTER;
+    cJSON *jsonlineindex = NULL_POINTER;
 
     root = server_msg__delivery__new_message("ice_candidate", &message);
     json_message_value = cJSON_CreateObject();
@@ -124,15 +126,15 @@ void server_msg__audio__send_webrtc_sdp_offer_to_single_client(client_t* receive
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
     jsoncandidate = cJSON_CreateString(candidate);
-    cJSON_AddItemToObject(json_message_value, "candidate", jsoncandidate);
+    util__json_add_owned_object(json_message_value, "candidate", jsoncandidate);
 
     jmid = cJSON_CreateString(mid);
-    cJSON_AddItemToObject(json_message_value, "sdpMid", jmid);
+    util__json_add_owned_object(json_message_value, "sdpMid", jmid);
 
     jsonlineindex = cJSON_CreateNumber(0.0);
-    cJSON_AddItemToObject(json_message_value, "sdpMLineIndex", jsonlineindex);
+    util__json_add_owned_object(json_message_value, "sdpMLineIndex", jsonlineindex);
 
-    cJSON_AddItemToObject(message, "value", json_message_value);
+    util__json_add_owned_object(message, "value", json_message_value);
 
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
@@ -148,17 +150,17 @@ void server_msg__audio__send_webrtc_sdp_offer_to_single_client(client_t* receive
  *
  * @return void
  */
-void server_msg__audio__send_state_of_client_to_all_clients(client_t* subject, uint64 state)
+void server_msg__audio__send_state_of_client_to_all_clients(client_t *subject, uint64 state)
 {
     boole status = FALSE;
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
-    cJSON* root_other_channel = NULL_POINTER;
-    cJSON* message_other_channel = NULL_POINTER;
-    char* plaintext = NULL_POINTER;
-    char* plaintext_other_channel = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
+    cJSON *root_other_channel = NULL_POINTER;
+    cJSON *message_other_channel = NULL_POINTER;
+    char *plaintext = NULL_POINTER;
+    char *plaintext_other_channel = NULL_POINTER;
     uint64 i = 0;
-    client_t* client = NULL_POINTER;
+    client_t *client = NULL_POINTER;
     boole is_subject_hidden = FALSE;
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
@@ -182,7 +184,7 @@ void server_msg__audio__send_state_of_client_to_all_clients(client_t* subject, u
     {
         client = &g_clients_array[i];
 
-        status = base__is_client_valid_and_not_music_bot((int)i);
+        status = base__is_client_valid_and_not_music_bot(i);
         if (status == FALSE)
         {
             continue;

@@ -9,9 +9,9 @@
 #include "../../../third-party/rxi-log/log.h"
 
 // declarations
-static boole _client_msg_audio_internal__is_json_sdp_answer_format_valid(cJSON* json_root, uint64 client_id, cJSON** checked_value);
-static boole _client_msg_audio_internal__is_ice_candidate_format_valid(cJSON* json_root, uint64 client_id, cJSON** checked_value);
-static boole _client_msg_audio_internal__is_json_process_microphone_usage_valid(cJSON* json_root);
+static boole _client_msg_audio_internal__is_json_sdp_answer_format_valid(cJSON *json_root, uint64 client_id, cJSON **checked_value);
+static boole _client_msg_audio_internal__is_ice_candidate_format_valid(cJSON *json_root, uint64 client_id, cJSON **checked_value);
+static boole _client_msg_audio_internal__is_json_process_microphone_usage_valid(cJSON *json_root);
 
 /**
  * @brief verifies if received json has needed keys and values
@@ -21,12 +21,12 @@ static boole _client_msg_audio_internal__is_json_process_microphone_usage_valid(
  *
  * @return boole
  */
-static boole _client_msg_audio_internal__is_json_sdp_answer_format_valid(cJSON* json_root, uint64 client_id, cJSON** checked_value)
+static boole _client_msg_audio_internal__is_json_sdp_answer_format_valid(cJSON *json_root, uint64 client_id, cJSON **checked_value)
 {
-    cJSON* json_sdp_message_value = 0;
-    cJSON* json_value_object = 0;
-    cJSON* json_sdp_message_type = 0;
-    cJSON* json_message_object = 0;
+    cJSON *json_sdp_message_value = 0;
+    cJSON *json_value_object = 0;
+    cJSON *json_sdp_message_type = 0;
+    cJSON *json_message_object = 0;
 
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
 
@@ -80,18 +80,19 @@ static boole _client_msg_audio_internal__is_json_sdp_answer_format_valid(cJSON* 
 }
 
 /**
- * @brief This function processes sdp answer for offer that server sent to client as part of process of establishing webrtc datachannel connection
+ * @brief This function processes sdp answer for offer that server sent to client as part of process
+ *        of establishing webrtc datachannel connection
  *
  * @param cJSON* json_root -> the parsed client request
  * @param uint64 sender_client_id -> id of the client that sent the request
  *
  * @return void
  */
-void client_msg__audio__process_sdp_answer(cJSON* json_root, uint64 sender_client_id)
+void client_msg__audio__process_sdp_answer(cJSON *json_root, uint64 sender_client_id)
 {
     boole status0 = FALSE;
     boole status = FALSE;
-    cJSON* json_message_value = 0;
+    cJSON *json_message_value = 0;
 
     DBG_AUDIO_WEBRTC log_info("%s", "client_msg__audio__process_sdp_answer");
 
@@ -115,9 +116,7 @@ void client_msg__audio__process_sdp_answer(cJSON* json_root, uint64 sender_clien
     {
         DBG_AUDIO_WEBRTC log_info("%s", "client_msg__audio__process_sdp_answer got here");
 
-        audio_webrtc__set_remote_description(&g_clients_array[sender_client_id],
-            cJSON_GetObjectItemCaseSensitive(json_message_value, "sdp")->valuestring,
-            cJSON_GetObjectItemCaseSensitive(json_message_value, "type")->valuestring);
+        audio_webrtc__set_remote_description(&g_clients_array[sender_client_id], cJSON_GetObjectItemCaseSensitive(json_message_value, "sdp")->valuestring, cJSON_GetObjectItemCaseSensitive(json_message_value, "type")->valuestring);
     }
 
     clib__unlock(&g_clients_global_rwlock_guard);
@@ -131,16 +130,16 @@ void client_msg__audio__process_sdp_answer(cJSON* json_root, uint64 sender_clien
  *
  * @return boole
  */
-static boole _client_msg_audio_internal__is_ice_candidate_format_valid(cJSON* json_root, uint64 client_id, cJSON** checked_value)
+static boole _client_msg_audio_internal__is_ice_candidate_format_valid(cJSON *json_root, uint64 client_id, cJSON **checked_value)
 {
     boole status0 = FALSE;
     boole status1 = FALSE;
     boole status2 = FALSE;
-    cJSON* json_candidate = 0;
-    cJSON* json_value_object = 0;
-    cJSON* json_sdpMid = 0;
-    cJSON* json_sdpMLineIndex = 0;
-    cJSON* json_message_object = 0;
+    cJSON *json_candidate = 0;
+    cJSON *json_value_object = 0;
+    cJSON *json_sdpMid = 0;
+    cJSON *json_sdpMLineIndex = 0;
+    cJSON *json_message_object = 0;
 
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
 
@@ -206,18 +205,19 @@ static boole _client_msg_audio_internal__is_ice_candidate_format_valid(cJSON* js
 }
 
 /**
- * @brief This function processes ice candidate. When I tried this on local network, this was not needed. Still, good to send and process
+ * @brief This function processes ice candidate. When I tried this on local network, this was not
+ *        needed. Still, good to send and process
  *
  * @param cJSON* json_root -> the parsed client request
  * @param uint64 sender_client_id -> id of the client that sent the request
  *
  * @return void
  */
-void client_msg__audio__process_ice_candidate(cJSON* json_root, uint64 sender_client_id)
+void client_msg__audio__process_ice_candidate(cJSON *json_root, uint64 sender_client_id)
 {
     boole status0 = FALSE;
     boole status = FALSE;
-    cJSON* json_message_value = 0;
+    cJSON *json_message_value = 0;
 
     DBG_AUDIO_WEBRTC log_info("%s", "client_msg__audio__process_ice_candidate");
 
@@ -241,8 +241,7 @@ void client_msg__audio__process_ice_candidate(cJSON* json_root, uint64 sender_cl
     {
         DBG_AUDIO_WEBRTC log_info("%s", "client_msg__audio__process_ice_candidate got here");
 
-        audio_webrtc__add_remote_candidate(&g_clients_array[sender_client_id],
-            cJSON_GetObjectItemCaseSensitive(json_message_value, "candidate")->valuestring);
+        audio_webrtc__add_remote_candidate(&g_clients_array[sender_client_id], cJSON_GetObjectItemCaseSensitive(json_message_value, "candidate")->valuestring);
     }
 
     clib__unlock(&g_clients_global_rwlock_guard);
@@ -255,10 +254,10 @@ void client_msg__audio__process_ice_candidate(cJSON* json_root, uint64 sender_cl
  *
  * @return boole
  */
-static boole _client_msg_audio_internal__is_json_process_microphone_usage_valid(cJSON* json_root)
+static boole _client_msg_audio_internal__is_json_process_microphone_usage_valid(cJSON *json_root)
 {
-    cJSON* json_value = 0;
-    cJSON* json_message_object = 0;
+    cJSON *json_value = 0;
+    cJSON *json_message_object = 0;
 
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
 
@@ -269,8 +268,7 @@ static boole _client_msg_audio_internal__is_json_process_microphone_usage_valid(
         return FALSE;
     }
 
-    if (json_value->valueint < 1 || json_value->valueint > 3
-        || json_value->valuedouble != (double)json_value->valueint)
+    if (json_value->valueint < 1 || json_value->valueint > 3 || json_value->valuedouble != (double)json_value->valueint)
     {
         DBG_AUDIO_WEBRTC log_info("%s", "_client_msg_audio_internal__is_json_process_microphone_usage_valid json_value->valueint < 1 || json_value->valueint > 3 \n");
         return FALSE;
@@ -280,22 +278,23 @@ static boole _client_msg_audio_internal__is_json_process_microphone_usage_valid(
 }
 
 /**
- * @brief processes a client's microphone-usage change and broadcasts the resulting audio state to the channel
+ * @brief processes a client's microphone-usage change and broadcasts the resulting audio state to
+ *        the channel
  *
  * @param cJSON* json_root -> the parsed client request
  * @param uint64 sender_client_id -> id of the client that sent the request
  *
  * @return void
  */
-void client_msg__audio__process_microphone_usage(cJSON* json_root, uint64 sender_client_id)
+void client_msg__audio__process_microphone_usage(cJSON *json_root, uint64 sender_client_id)
 {
     boole status1 = FALSE;
     boole status0 = FALSE;
-    cJSON* json_value = 0;
-    cJSON* json_message_object = 0;
+    cJSON *json_value = 0;
+    cJSON *json_message_object = 0;
     boole status = FALSE;
-    int received_microphone_usage = 0;
-    client_t* client = 0;
+    int64 received_microphone_usage = 0;
+    client_t *client = 0;
     boole is_served = FALSE;
 
     status = _client_msg_audio_internal__is_json_process_microphone_usage_valid(json_root);
@@ -379,8 +378,7 @@ void client_msg__audio__process_microphone_usage(cJSON* json_root, uint64 sender
         else if (received_microphone_usage == MICROPHONE_USAGE__ACTIVATE_PUSH_TO_TALK_AND_SEND_AUDIO)
         {
             clib__read_lock(&g_channels_global_rwlock_guard);
-            status = client->channel_id < g_server_settings.max_channel_count
-                && permissions__can_use_channel(client, &g_channel_array[client->channel_id], PERMISSION_TALK_POWER);
+            status = client->channel_id < g_server_settings.max_channel_count && permissions__can_use_channel(client, &g_channel_array[client->channel_id], PERMISSION_TALK_POWER);
             clib__unlock(&g_channels_global_rwlock_guard);
             if (status == FALSE)
             {
@@ -408,7 +406,7 @@ label_client_msg__process_microphone_usage_end:
  *
  * @return void
  */
-void client_msg__audio__process_create_new_webrtc_datachannel_connection(cJSON* json_root, uint64 sender_client_id)
+void client_msg__audio__process_create_new_webrtc_datachannel_connection(cJSON *json_root, uint64 sender_client_id)
 {
     boole status = FALSE;
     boole status0 = FALSE;
@@ -416,8 +414,8 @@ void client_msg__audio__process_create_new_webrtc_datachannel_connection(cJSON* 
     boole status2 = FALSE;
     boole status3 = FALSE;
     boole status4 = FALSE;
-    client_t* client = NULL_POINTER;
-    webrtc_peer_t* peer = NULL_POINTER;
+    client_t *client = NULL_POINTER;
+    webrtc_peer_t *peer = NULL_POINTER;
     uint64 timestamp_now = 0;
     uint64 cooldown_seconds = 0;
     boole initialize = FALSE;
@@ -436,8 +434,7 @@ void client_msg__audio__process_create_new_webrtc_datachannel_connection(cJSON* 
     status2 = g_server_settings.is_voice_chat_active == FALSE;
     status3 = g_server_settings.is_music_bot_audio_active == FALSE;
     status4 = g_server_settings.is_video_streaming_active == FALSE;
-    if (status0 == TRUE || status1 == TRUE
-        || (status2 == TRUE && status3 == TRUE && status4 == TRUE))
+    if (status0 == TRUE || status1 == TRUE || (status2 == TRUE && status3 == TRUE && status4 == TRUE))
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
@@ -454,8 +451,7 @@ void client_msg__audio__process_create_new_webrtc_datachannel_connection(cJSON* 
     {
         cooldown_seconds = (peer->cooldown_until_ms - timestamp_now + 999) / 1000;
     }
-    else if (peer->attempts_since_connected >= WEBRTC_DATACHANNEL_ATTEMPTS_BEFORE_COOLDOWN
-        && g_server_settings.webrtc_datachannel_cooldown_seconds > 0)
+    else if (peer->attempts_since_connected >= WEBRTC_DATACHANNEL_ATTEMPTS_BEFORE_COOLDOWN && g_server_settings.webrtc_datachannel_cooldown_seconds > 0)
     {
         cooldown_seconds = (uint64)g_server_settings.webrtc_datachannel_cooldown_seconds;
         peer->cooldown_until_ms = timestamp_now + cooldown_seconds * 1000;

@@ -23,27 +23,78 @@
 typedef struct memorymanager_header_t
 {
 #if LEMON_TRACK_ALLOCATIONS
-    struct memorymanager_header_t* prev;
-    struct memorymanager_header_t* next;
+    struct memorymanager_header_t *prev;
+    struct memorymanager_header_t *next;
 #endif
     uint64 size;
+    // Fixed header fields keep payloads aligned to 16 bytes.
     uint type;
     uint guard;
 } memorymanager_header_t;
 
 #if LEMON_TRACK_ALLOCATIONS
-static memorymanager_header_t* g_memorymanager_head = 0;
+static memorymanager_header_t *g_memorymanager_head = 0;
 static uint64 g_memorymanager_live_count = 0;
 static pthread_mutex_t g_memorymanager_lock = PTHREAD_MUTEX_INITIALIZER;
 #endif
 
+static atomic_uint_fast64_t g_upload_bytes;
+static atomic_uint_fast64_t g_music_bytes;
+
+static atomic_uint_fast64_t *_budget(uint64 type, uint64 *limit)
+{
+    if (type == MEMALLOC_FILE_UPLOAD_BY_PARTS)
+    {
+        *limit = 256ULL * 1024 * 1024;
+        return &g_upload_bytes;
+    }
+    if (type == MEMALLOC_MUSICBOT_SONG)
+    {
+        *limit = 512ULL * 1024 * 1024;
+        return &g_music_bytes;
+    }
+    return NULL_POINTER;
+}
+
+static boole _reserve(uint64 size, uint64 type)
+{
+    uint64 limit = 0;
+    atomic_uint_fast64_t *counter = _budget(type, &limit);
+    uint_fast64_t used = 0;
+
+    if (counter == NULL_POINTER)
+    {
+        return TRUE;
+    }
+    used = atomic_load(counter);
+    do
+    {
+        if (size > limit || used > limit - size)
+        {
+            return FALSE;
+        }
+    } while (!atomic_compare_exchange_weak(counter, &used, used + size));
+    return TRUE;
+}
+
+static void _release(uint64 size, uint64 type)
+{
+    uint64 limit = 0;
+    atomic_uint_fast64_t *counter = _budget(type, &limit);
+
+    if (counter != NULL_POINTER)
+    {
+        atomic_fetch_sub(counter, size);
+    }
+}
+
 // static functions are defined first
 
 // declarations
-static memorymanager_header_t* _memorymanager_internal__header_of(nuint address);
+static memorymanager_header_t *_memorymanager_internal__header_of(nuint address);
 #if LEMON_TRACK_ALLOCATIONS
-static void _memorymanager_internal__link(memorymanager_header_t* header);
-static void _memorymanager_internal__unlink(memorymanager_header_t* header);
+static void _memorymanager_internal__link(memorymanager_header_t *header);
+static void _memorymanager_internal__unlink(memorymanager_header_t *header);
 #endif
 
 /**
@@ -53,9 +104,9 @@ static void _memorymanager_internal__unlink(memorymanager_header_t* header);
  *
  * @return memorymanager_header_t* the header that sits immediately before the caller's bytes
  */
-static memorymanager_header_t* _memorymanager_internal__header_of(nuint address)
+static memorymanager_header_t *_memorymanager_internal__header_of(nuint address)
 {
-    return ((memorymanager_header_t*)address) - 1;
+    return ((memorymanager_header_t *)address) - 1;
 }
 
 #if LEMON_TRACK_ALLOCATIONS
@@ -68,7 +119,7 @@ static memorymanager_header_t* _memorymanager_internal__header_of(nuint address)
  *
  * @return void
  */
-static void _memorymanager_internal__link(memorymanager_header_t* header)
+static void _memorymanager_internal__link(memorymanager_header_t *header)
 {
     header->prev = 0;
     header->next = g_memorymanager_head;
@@ -90,7 +141,7 @@ static void _memorymanager_internal__link(memorymanager_header_t* header)
  *
  * @return void
  */
-static void _memorymanager_internal__unlink(memorymanager_header_t* header)
+static void _memorymanager_internal__unlink(memorymanager_header_t *header)
 {
     if (header->prev != NULL_POINTER)
     {
@@ -138,7 +189,7 @@ void memorymanager__init(void)
  */
 nuint memorymanager__allocate(uint64 size, uint64 type)
 {
-    memorymanager_header_t* header = 0;
+    memorymanager_header_t *header = 0;
     nuint result = 0;
 
     if (size == 0 || size > (uint64)INT64_MAX || size > SIZE_MAX - sizeof(memorymanager_header_t))
@@ -146,10 +197,15 @@ nuint memorymanager__allocate(uint64 size, uint64 type)
         return 0;
     }
 
-    header = (memorymanager_header_t*)calloc(1, sizeof(memorymanager_header_t) + (size_t)size);
+    if (!_reserve(size, type))
+    {
+        return 0;
+    }
+    header = (memorymanager_header_t *)calloc(1, sizeof(memorymanager_header_t) + (uint64)size);
 
     if (header == NULL_POINTER)
     {
+        _release(size, type);
         return 0;
     }
 
@@ -169,7 +225,7 @@ nuint memorymanager__allocate(uint64 size, uint64 type)
     pthread_mutex_unlock(&g_memorymanager_lock);
 #endif
 
-    DBG_MEMORY_MANAGER log_info("%s %p %s %llu %s %llu %s", "memorymanager__allocate address ", (void*)result, " size ", size, " type ", type, "\n");
+    DBG_MEMORY_MANAGER log_info("%s %p %s %llu %s %llu %s", "memorymanager__allocate address ", (void *)result, " size ", size, " type ", type, "\n");
 
     return result;
 }
@@ -186,10 +242,10 @@ nuint memorymanager__allocate(uint64 size, uint64 type)
  */
 nuint memorymanager__realloc(nuint address, uint64 newsize)
 {
-    memorymanager_header_t* header = NULL_POINTER;
+    memorymanager_header_t *header = NULL_POINTER;
     uint64 old_size = 0;
     uint64 copy_size = 0;
-    uint type = 0;
+    uint64 type = 0;
     nuint replacement = 0;
 
     if (address == 0)
@@ -229,7 +285,7 @@ nuint memorymanager__realloc(nuint address, uint64 newsize)
         return 0;
     }
     copy_size = old_size < newsize ? old_size : newsize;
-    clib__memcpy((void*)replacement, (void*)address, (int64)copy_size);
+    clib__memcpy((void *)replacement, (void *)address, (int64)copy_size);
     memorymanager__free(address);
     return replacement;
 }
@@ -245,7 +301,7 @@ nuint memorymanager__realloc(nuint address, uint64 newsize)
  */
 boole memorymanager__free(nuint address)
 {
-    memorymanager_header_t* header = 0;
+    memorymanager_header_t *header = 0;
     uint64 size = 0;
 
     if (address == 0)
@@ -264,7 +320,7 @@ boole memorymanager__free(nuint address)
 #if LEMON_TRACK_ALLOCATIONS
         pthread_mutex_unlock(&g_memorymanager_lock);
 #endif
-        DBG_MEMORY_MANAGER log_info("%s %p %s", "memorymanager__free double-free on ", (void*)address, " \n");
+        DBG_MEMORY_MANAGER log_info("%s %p %s", "memorymanager__free double-free on ", (void *)address, " \n");
         return FALSE;
     }
 
@@ -273,7 +329,7 @@ boole memorymanager__free(nuint address)
 #if LEMON_TRACK_ALLOCATIONS
         pthread_mutex_unlock(&g_memorymanager_lock);
 #endif
-        DBG_MEMORY_MANAGER log_info("%s %p %s", "memorymanager__free bad guard on ", (void*)address, " (not a tracked block) \n");
+        DBG_MEMORY_MANAGER log_info("%s %p %s", "memorymanager__free bad guard on ", (void *)address, " (not a tracked block) \n");
         return FALSE;
     }
 
@@ -287,11 +343,12 @@ boole memorymanager__free(nuint address)
     pthread_mutex_unlock(&g_memorymanager_lock);
 #endif
 
-    DBG_MEMORY_MANAGER log_info("%s %p %s %llu %s", "memorymanager__free address ", (void*)address, " size ", size, "\n");
+    DBG_MEMORY_MANAGER log_info("%s %p %s %llu %s", "memorymanager__free address ", (void *)address, " size ", size, "\n");
 
     // zero the caller's bytes before returning the block to libc, matching the old contract
-    clib__null_memory((void*)address, size);
-    free((void*)header);
+    clib__null_memory((void *)address, size);
+    _release(size, header->type);
+    free((void *)header);
 
     return TRUE;
 }
@@ -304,13 +361,13 @@ boole memorymanager__free(nuint address)
 void memorymanager__print_all_allocations(void)
 {
 #if LEMON_TRACK_ALLOCATIONS
-    memorymanager_header_t* header = 0;
+    memorymanager_header_t *header = 0;
 
     pthread_mutex_lock(&g_memorymanager_lock);
 
     for (header = g_memorymanager_head; header != NULL_POINTER; header = header->next)
     {
-        log_info("%s %p %s %llu %s %u %s", "address ", (void*)(header + 1), " size ", header->size, " type ", header->type, "\n");
+        log_info("%s %p %s %llu %s %u %s", "address ", (void *)(header + 1), " size ", header->size, " type ", header->type, "\n");
     }
 
     pthread_mutex_unlock(&g_memorymanager_lock);

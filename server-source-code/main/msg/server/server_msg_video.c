@@ -1,3 +1,4 @@
+#include "../../util.h"
 // This file tells clients about video streams, viewing requests and requests for a complete video frame.
 
 #include "server_msg.h"
@@ -5,9 +6,10 @@
 #include "../../../third-party/rxi-log/log.h"
 
 /**
- * @brief tells every client in a channel that a video stream started or ended there, with what the streamer announced while it runs
- *        the streamer gets it too, that is how its popup confirms the start; late joiners to the
- *        server learn about a running stream from is_streaming_video in the client list instead
+ * @brief tells every client in a channel that a video stream started or ended there, with what the
+ *        streamer announced while it runs the streamer gets it too, that is how its popup confirms
+ *        the start; late joiners to the server learn about a running stream from is_streaming_video
+ *        in the client list instead
  *
  * @param uint64 channel_id -> the channel
  * @param boole is_active -> TRUE for a start, FALSE for an end
@@ -18,9 +20,9 @@
  */
 void server_msg__video__send_state_to_clients_in_same_channel(uint64 channel_id, boole is_active, uint64 streamer_client_id, cstring reason)
 {
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
-    client_t* streamer = 0;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
+    client_t *streamer = 0;
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
@@ -48,19 +50,20 @@ void server_msg__video__send_state_to_clients_in_same_channel(uint64 channel_id,
 }
 
 /**
- * @brief hands one member the stream's offer: it may now press connect. sent to everybody present at the start and to a later joiner the streamer allowed
+ * @brief hands one member the stream's offer: it may now press connect. sent to everybody present
+ *        at the start and to a later joiner the streamer allowed
  *
  * @param client_t* receiver -> the member
  * @param client_t* streamer -> the streamer, whose announced source / codec / size are sent with it so the receiver can probe its decoder first, with whether sound is included and the ids of the members watching right now
  *
  * @return void
  */
-void server_msg__video__send_offer_to_single_client(client_t* receiver, client_t* streamer)
+void server_msg__video__send_offer_to_single_client(client_t *receiver, client_t *streamer)
 {
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
-    cJSON* watching_client_ids = NULL_POINTER;
-    client_t* member = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
+    cJSON *watching_client_ids = NULL_POINTER;
+    client_t *member = NULL_POINTER;
     uint64 i = 0;
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
@@ -83,7 +86,7 @@ void server_msg__video__send_offer_to_single_client(client_t* receiver, client_t
         member = &g_clients_array[i];
         if (member->is_existing == TRUE && member->channel_id == streamer->channel_id && member->is_video_viewer_watching == TRUE)
         {
-            cJSON_AddItemToArray(watching_client_ids, cJSON_CreateNumber((double)member->client_id));
+            util__json_add_owned_array(watching_client_ids, cJSON_CreateNumber((double)member->client_id));
         }
     }
 
@@ -99,10 +102,10 @@ void server_msg__video__send_offer_to_single_client(client_t* receiver, client_t
  *
  * @return void
  */
-void server_msg__video__send_viewer_request_to_single_client(client_t* receiver, client_t* newcomer)
+void server_msg__video__send_viewer_request_to_single_client(client_t *receiver, client_t *newcomer)
 {
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
@@ -116,9 +119,10 @@ void server_msg__video__send_viewer_request_to_single_client(client_t* receiver,
 }
 
 /**
- * @brief tells one client that a viewer connected or disconnected. the streamer counts its viewers from it and sends a keyframe for a
- *        new one; a member the streamer allowed marks the watching row in its channel tree. video_channel.c sends it to those clients
- *        only, so a member that was not allowed never learns who watches
+ * @brief tells one client that a viewer connected or disconnected. the streamer counts its viewers
+ *        from it and sends a keyframe for a new one; a member the streamer allowed marks the
+ *        watching row in its channel tree. video_channel.c sends it to those clients only, so a
+ *        member that was not allowed never learns who watches
  *
  * @param client_t* receiver -> the streamer, or a member the streamer allowed
  * @param uint64 viewer_client_id -> the viewer
@@ -126,10 +130,10 @@ void server_msg__video__send_viewer_request_to_single_client(client_t* receiver,
  *
  * @return void
  */
-void server_msg__video__send_viewer_state_to_single_client(client_t* receiver, uint64 viewer_client_id, boole is_watching)
+void server_msg__video__send_viewer_state_to_single_client(client_t *receiver, uint64 viewer_client_id, boole is_watching)
 {
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
@@ -149,10 +153,10 @@ void server_msg__video__send_viewer_state_to_single_client(client_t* receiver, u
  *
  * @return void
  */
-void server_msg__video__send_keyframe_request_to_single_client(client_t* receiver)
+void server_msg__video__send_keyframe_request_to_single_client(client_t *receiver)
 {
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
@@ -163,17 +167,18 @@ void server_msg__video__send_keyframe_request_to_single_client(client_t* receive
 }
 
 /**
- * @brief tells a client why its stream request was refused ("disabled", "channel_disabled", "busy", "not_allowed", "no_stream", "revoked")
+ * @brief tells a client why its stream request was refused ("disabled", "channel_disabled", "busy",
+ *        "not_allowed", "no_stream", "revoked")
  *
  * @param client_t* receiver -> the client that asked
  * @param cstring reason -> the short reason code sent to the clients
  *
  * @return void
  */
-void server_msg__video__send_refused_to_single_client(client_t* receiver, cstring reason)
+void server_msg__video__send_refused_to_single_client(client_t *receiver, cstring reason)
 {
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 

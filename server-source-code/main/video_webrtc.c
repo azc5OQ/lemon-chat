@@ -17,10 +17,10 @@
 #include "util.h"
 
 // declarations
-static void RTC_API _video_webrtc_internal__datachannel_on_open_callback(int id, void* ptr);
-static void RTC_API _video_webrtc_internal__datachannel_on_closed_callback(int id, void* ptr);
-static void RTC_API _video_webrtc_internal__datachannel_on_message_callback(int id, const char* message, int size, void* ptr);
-static void RTC_API _video_webrtc_internal__datachannel_on_error_callback(int id, const char* error, void* ptr);
+static void RTC_API _video_webrtc_internal__datachannel_on_open_callback(int id, void *ptr);
+static void RTC_API _video_webrtc_internal__datachannel_on_closed_callback(int id, void *ptr);
+static void RTC_API _video_webrtc_internal__datachannel_on_message_callback(int id, const char *message, int size, void *ptr);
+static void RTC_API _video_webrtc_internal__datachannel_on_error_callback(int id, const char *error, void *ptr);
 
 /**
  * @brief the client's video data channel opened, so the server can send video to it
@@ -30,9 +30,9 @@ static void RTC_API _video_webrtc_internal__datachannel_on_error_callback(int id
  *
  * @return void
  */
-static void RTC_API _video_webrtc_internal__datachannel_on_open_callback(int id, void* ptr)
+static void RTC_API _video_webrtc_internal__datachannel_on_open_callback(int id, void *ptr)
 {
-    webrtc_peer_t* peer = (webrtc_peer_t*)ptr;
+    webrtc_peer_t *peer = (webrtc_peer_t *)ptr;
     boole status = FALSE;
 
     DBG_VIDEO_WEBRTC log_info("%s", "_video_webrtc_internal__datachannel_on_open_callback");
@@ -65,9 +65,9 @@ static void RTC_API _video_webrtc_internal__datachannel_on_open_callback(int id,
  *
  * @return void
  */
-static void RTC_API _video_webrtc_internal__datachannel_on_closed_callback(int id, void* ptr)
+static void RTC_API _video_webrtc_internal__datachannel_on_closed_callback(int id, void *ptr)
 {
-    webrtc_peer_t* peer = (webrtc_peer_t*)ptr;
+    webrtc_peer_t *peer = (webrtc_peer_t *)ptr;
     uint64 client_id = 0;
     boole is_current = FALSE;
     boole status0 = FALSE;
@@ -113,9 +113,9 @@ static void RTC_API _video_webrtc_internal__datachannel_on_closed_callback(int i
  *
  * @return void
  */
-static void RTC_API _video_webrtc_internal__datachannel_on_message_callback(int id, const char* message, int size, void* ptr)
+static void RTC_API _video_webrtc_internal__datachannel_on_message_callback(int id, const char *message, int size, void *ptr)
 {
-    webrtc_peer_t* peer_sender = (webrtc_peer_t*)ptr;
+    webrtc_peer_t *peer_sender = (webrtc_peer_t *)ptr;
     boole status0 = FALSE;
     boole status1 = FALSE;
 
@@ -125,9 +125,10 @@ static void RTC_API _video_webrtc_internal__datachannel_on_message_callback(int 
     {
         return;
     }
+
     // peer slots never move: the index comes from the pointer, not from fields another callback can reset
     base__count_webrtc_bytes((uint64)size, 0);
-    video_channel__relay_packet((uint64)(peer_sender - g_webrtc_peers_array), NULL_POINTER, id, (const unsigned char*)message, (uint64)size);
+    video_channel__relay_packet((uint64)(peer_sender - g_webrtc_peers_array), NULL_POINTER, id, (const ubyte *)message, (uint64)size);
 }
 
 /**
@@ -139,7 +140,7 @@ static void RTC_API _video_webrtc_internal__datachannel_on_message_callback(int 
  *
  * @return void
  */
-static void RTC_API _video_webrtc_internal__datachannel_on_error_callback(int id, const char* error, void* ptr)
+static void RTC_API _video_webrtc_internal__datachannel_on_error_callback(int id, const char *error, void *ptr)
 {
     DBG_VIDEO_WEBRTC log_info("%s %s", "_video_webrtc_internal__datachannel_on_error_callback", error);
 }
@@ -153,7 +154,7 @@ static void RTC_API _video_webrtc_internal__datachannel_on_error_callback(int id
  *
  * @return void
  */
-void video_webrtc__create_data_channel(webrtc_peer_t* peer)
+void video_webrtc__create_data_channel(webrtc_peer_t *peer)
 {
     rtcDataChannelInit video_init;
 
@@ -190,7 +191,7 @@ void video_webrtc__create_data_channel(webrtc_peer_t* peer)
  */
 boole video_webrtc__is_connected(uint64 client_id)
 {
-    webrtc_peer_t* peer = &g_webrtc_peers_array[client_id];
+    webrtc_peer_t *peer = &g_webrtc_peers_array[client_id];
     boole status0 = FALSE;
     boole status1 = FALSE;
 
@@ -211,7 +212,7 @@ boole video_webrtc__is_connected(uint64 client_id)
  */
 boole video_webrtc__is_data_channel_current(uint64 client_id, int data_channel)
 {
-    webrtc_peer_t* peer = &g_webrtc_peers_array[client_id];
+    webrtc_peer_t *peer = &g_webrtc_peers_array[client_id];
     boole status = FALSE;
 
     status = video_webrtc__is_connected(client_id) == TRUE;
@@ -233,8 +234,8 @@ boole video_webrtc__is_data_channel_current(uint64 client_id, int data_channel)
  */
 boole video_webrtc__can_send(uint64 client_id)
 {
-    webrtc_peer_t* peer = &g_webrtc_peers_array[client_id];
-    int buffered = 0;
+    webrtc_peer_t *peer = &g_webrtc_peers_array[client_id];
+    int64 buffered = 0;
     boole status0 = FALSE;
     boole status1 = FALSE;
 
@@ -254,16 +255,16 @@ boole video_webrtc__can_send(uint64 client_id)
  * @brief Sends one encrypted video packet through the viewer's data channel.
  *
  * @param uint64 client_id -> valid index of the receiving client's WebRTC peer
- * @param const unsigned char* packet -> encrypted packet; the caller keeps this buffer
+ * @param const ubyte* packet -> encrypted packet; the caller keeps this buffer
  * @param uint64 size -> packet length in bytes
  *
  * @attention The caller holds the WebRTC peers read lock and checks video_webrtc__can_send before preparing the packet.
  *
  * @return boole -> TRUE when libdatachannel accepted the packet; FALSE if disconnected or sending fails.
  */
-boole video_webrtc__send(uint64 client_id, const unsigned char* packet, uint64 size)
+boole video_webrtc__send(uint64 client_id, const ubyte *packet, uint64 size)
 {
-    webrtc_peer_t* peer = &g_webrtc_peers_array[client_id];
+    webrtc_peer_t *peer = &g_webrtc_peers_array[client_id];
     boole status0 = FALSE;
     boole status1 = FALSE;
 
@@ -273,7 +274,7 @@ boole video_webrtc__send(uint64 client_id, const unsigned char* packet, uint64 s
     {
         return FALSE;
     }
-    if (rtcSendMessage(peer->video_data_channel_handle, (const char*)packet, (int)size) < 0)
+    if (rtcSendMessage(peer->video_data_channel_handle, (const char *)packet, (int)size) < 0)
     {
         return FALSE;
     }

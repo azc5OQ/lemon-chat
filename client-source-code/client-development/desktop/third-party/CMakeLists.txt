@@ -1,5 +1,10 @@
 # Local copies of Lemon Chat's dependencies; application clib is never injected into their sources.
 set(DESKTOP_THIRD_PARTY "${CMAKE_CURRENT_SOURCE_DIR}")
+add_library(lemon_desktop_aes SHARED kokke-tiny-aes-c/aes.c)
+target_include_directories(lemon_desktop_aes PUBLIC "${DESKTOP_THIRD_PARTY}/kokke-tiny-aes-c")
+set_target_properties(lemon_desktop_aes PROPERTIES PREFIX "" OUTPUT_NAME "lemon-aes" WINDOWS_EXPORT_ALL_SYMBOLS ON)
+install(TARGETS lemon_desktop_aes RUNTIME DESTINATION . LIBRARY DESTINATION . ARCHIVE DESTINATION lib)
+
 set(desktop_vad_sources fvad.c signal_processing/division_operations.c signal_processing/energy.c
     signal_processing/get_scaling_square.c signal_processing/resample_48khz.c
     signal_processing/resample_by_2_internal.c signal_processing/resample_fractional.c
@@ -13,7 +18,7 @@ install(FILES "${DESKTOP_THIRD_PARTY}/libfvad/LICENSE" DESTINATION licenses RENA
 install(FILES "${DESKTOP_THIRD_PARTY}/libfvad/PATENTS" DESTINATION licenses RENAME libfvad-PATENTS.txt)
 add_library(lemon_desktop_audio_devices SHARED miniaudio.c)
 target_include_directories(lemon_desktop_audio_devices PUBLIC "${DESKTOP_THIRD_PARTY}/miniaudio-0.11.26")
-target_compile_definitions(lemon_desktop_audio_devices PUBLIC MA_NO_DECODING MA_NO_ENCODING MA_NO_RESOURCE_MANAGER MA_NO_NODE_GRAPH MA_NO_ENGINE)
+target_compile_definitions(lemon_desktop_audio_devices PUBLIC MA_NO_ENCODING MA_NO_RESOURCE_MANAGER MA_NO_NODE_GRAPH MA_NO_ENGINE)
 set_target_properties(lemon_desktop_audio_devices PROPERTIES PREFIX "" OUTPUT_NAME "lemon-audio" WINDOWS_EXPORT_ALL_SYMBOLS ON)
 if(UNIX)
     target_link_libraries(lemon_desktop_audio_devices PRIVATE ${CMAKE_DL_LIBS} m)
@@ -30,10 +35,6 @@ target_include_directories(lemon_desktop_json PUBLIC "${DESKTOP_THIRD_PARTY}/dav
 target_compile_definitions(lemon_desktop_json PRIVATE CJSON_EXPORT_SYMBOLS INTERFACE CJSON_IMPORT_SYMBOLS)
 set_target_properties(lemon_desktop_json PROPERTIES PREFIX "" OUTPUT_NAME "lemon-json")
 
-add_library(lemon_desktop_aes SHARED "${DESKTOP_THIRD_PARTY}/kokke-tiny-aes-c/aes.c")
-target_include_directories(lemon_desktop_aes PUBLIC "${DESKTOP_THIRD_PARTY}/kokke-tiny-aes-c")
-set_target_properties(lemon_desktop_aes PROPERTIES PREFIX "" OUTPUT_NAME "lemon-aes" WINDOWS_EXPORT_ALL_SYMBOLS ON)
-
 # Only the desktop's checks are requested; do not build the codec's own test programs.
 set(BUILD_TESTING OFF)
 set(OPUS_BUILD_TESTING OFF CACHE BOOL "" FORCE)
@@ -42,13 +43,13 @@ set(OPUS_BUILD_SHARED_LIBRARY ON CACHE BOOL "" FORCE)
 set(OPUS_PACKAGE_VERSION "1.5.2")
 add_subdirectory(libopus-1.5.2 "${CMAKE_CURRENT_BINARY_DIR}/opus" EXCLUDE_FROM_ALL)
 set_target_properties(opus PROPERTIES PREFIX "" OUTPUT_NAME "opus")
-install(TARGETS lemon_desktop_json lemon_desktop_aes opus RUNTIME DESTINATION . LIBRARY DESTINATION .
+install(TARGETS lemon_desktop_json opus RUNTIME DESTINATION . LIBRARY DESTINATION .
     ARCHIVE DESTINATION lib PUBLIC_HEADER DESTINATION include/opus)
 install(FILES "${DESKTOP_THIRD_PARTY}/libopus-1.5.2/COPYING" DESTINATION licenses RENAME Opus.txt)
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/cJSON-LICENSE.txt" DESTINATION licenses RENAME cJSON.txt)
 
-# Reuse the server's crypto implementation with only the primitives needed by the client.
-set(desktop_mbedtls_sources aes aesni aesce asn1parse asn1write base64 bignum bignum_core bignum_mod bignum_mod_raw
+# Build the local Mbed TLS copy with only the primitives needed by the client.
+set(desktop_mbedtls_sources camellia chacha20 aes aesni aesce asn1parse asn1write base64 bignum bignum_core bignum_mod bignum_mod_raw
     constant_time ctr_drbg entropy entropy_poll hkdf md oid platform platform_util rsa rsa_alt_helpers sha256)
 list(TRANSFORM desktop_mbedtls_sources PREPEND "${DESKTOP_THIRD_PARTY}/mbedtls-3.6.6/library/")
 list(TRANSFORM desktop_mbedtls_sources APPEND ".c")
@@ -63,3 +64,15 @@ add_library(lemon_desktop_identity_keygen STATIC identity_keygen.c)
 set_target_properties(lemon_desktop_identity_keygen PROPERTIES POSITION_INDEPENDENT_CODE ON)
 install(TARGETS lemon_desktop_crypto_library RUNTIME DESTINATION . LIBRARY DESTINATION .)
 install(FILES "${DESKTOP_THIRD_PARTY}/mbedtls-3.6.6/LICENSE" DESTINATION licenses RENAME MbedTLS.txt)
+
+# Bounds-aware parsing for every desktop font, including local custom fonts.
+set(FT_DISABLE_ZLIB ON CACHE BOOL "" FORCE)
+set(FT_DISABLE_BZIP2 ON CACHE BOOL "" FORCE)
+set(FT_DISABLE_PNG ON CACHE BOOL "" FORCE)
+set(FT_DISABLE_HARFBUZZ ON CACHE BOOL "" FORCE)
+set(FT_DISABLE_BROTLI ON CACHE BOOL "" FORCE)
+set(FT_DISABLE_HVF ON CACHE BOOL "" FORCE)
+set(BUILD_SHARED_LIBS OFF)
+add_subdirectory(freetype-2.15.0 EXCLUDE_FROM_ALL)
+set_target_properties(freetype PROPERTIES POSITION_INDEPENDENT_CODE ON)
+install(FILES freetype-2.15.0/docs/FTL.TXT DESTINATION licenses RENAME FreeType.txt)

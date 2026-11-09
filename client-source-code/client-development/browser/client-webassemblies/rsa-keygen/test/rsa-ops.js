@@ -5,7 +5,7 @@
 let fs = require("fs");
 
 // jsbn/rsa are the reference the wasm ops are held to; the client itself no longer ships them
-let vendor_path = __dirname + "/../../../src/scripts/vendor/";
+let vendor_path = __dirname + "/../../../main/scripts/vendor/";
 let legacy_path = __dirname + "/legacy-reference/";
 let source = ["jsbn.js", "rsa.js"]
     .map(function(f)
@@ -20,7 +20,7 @@ let window = {};
 let probe = null;
 eval(source + "\nprobe = { BigInteger: BigInteger, RSAKey: RSAKey, parseBigInt: parseBigInt };");
 
-let wasm_bytes = fs.readFileSync(__dirname + "/../build/rsa_keygen.wasm");
+let wasm_bytes = fs.readFileSync(process.env.LEMON_RSA_WASM || (__dirname + "/../build/rsa_keygen.wasm"));
 
 // deterministic message stream, so failures reproduce
 let lcg_state = 0x12345678;

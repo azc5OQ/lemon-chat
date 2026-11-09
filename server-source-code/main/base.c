@@ -2,7 +2,7 @@
 // It also holds shared server state and checks clients, permissions and server limits.
 #include "base.h"
 #include "core/channel.h"
-#include "core/client_login.h"
+#include "crypto/auth_rsa.h"
 #include "msg/client/client_msg.h"
 #include "core/attachments.h"
 #include "httpclient/url_resolver.h"
@@ -31,16 +31,18 @@ custom_rwlock_t g_bans_global_rwlock_guard;
 pthread_mutex_t g_chat_message_id_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 uint64 g_chat_message_id;
-client_t* g_clients_array;
-channel_t* g_channel_array;
-icon_t* g_icons_array;
-group_t* g_groups_array;
-ban_entry_t* g_ban_array;
+client_t *g_clients_array;
+channel_t *g_channel_array;
+icon_t *g_icons_array;
+group_t *g_groups_array;
+ban_entry_t *g_ban_array;
 server_settings_t g_server_settings;
 
 static _Thread_local client_request_context_t g_client_request_context;
 
-void base__begin_client_request(ws_cli_conn_t* socket, uint64 client_id, boole authenticated, client_request_context_t* previous)
+// Begin while the clients lock protects the socket/authentication snapshot. End
+// restores the prior thread-local scope, including when dispatch is nested.
+void base__begin_client_request(ws_cli_conn_t *socket, uint64 client_id, boole authenticated, client_request_context_t *previous)
 {
     *previous = g_client_request_context;
     g_client_request_context.socket = socket;
@@ -49,17 +51,20 @@ void base__begin_client_request(ws_cli_conn_t* socket, uint64 client_id, boole a
     g_client_request_context.active = TRUE;
 }
 
-void base__end_client_request(const client_request_context_t* previous)
+void base__end_client_request(const client_request_context_t *previous)
 {
     g_client_request_context = *previous;
 }
 
+// Caller holds the clients lock. Internal calls without a request scope remain
+// allowed for a valid existing slot; WebSocket dispatch must establish a scope.
 boole base__is_current_client_request(uint64 client_id)
 {
     boole status0 = FALSE;
     boole status1 = FALSE;
     boole status2 = FALSE;
-    client_t* client = NULL_POINTER;
+    client_t *client = NULL_POINTER;
+
     if (g_clients_array == NULL_POINTER || client_id >= (uint64)g_server_settings.max_client_count)
     {
         return FALSE;
@@ -93,11 +98,12 @@ static _Atomic(uint64) webrtc_sent_bytes;
 #endif
 
 // declarations
-static boole _base_internal__is_message_correct_at_first_sight_and_get_message_type(cJSON* json_root, uint64 client_id, char** out_message_type);
-static void _base_internal__process_music_bot_key_request(cJSON* json_root, ws_cli_conn_t* websocket, uint64 client_index);
+static boole _base_internal__is_message_correct_at_first_sight_and_get_message_type(cJSON *json_root, uint64 client_id, char **out_message_type);
+static void _base_internal__process_music_bot_key_request(cJSON *json_root, ws_cli_conn_t *websocket, uint64 client_index);
 
 /**
- * @brief enforces per-client spam protection: rejects an action made inside the cooldown window, otherwise records its time and allows it
+ * @brief enforces per-client spam protection: rejects an action made inside the cooldown window,
+ *        otherwise records its time and allows it
  *
  * @param uint64 client_index -> id of the client
  *
@@ -149,8 +155,8 @@ boole base__is_request_allowed_based_on_spam_protection(uint64 client_index)
 uint64 base__get_chat_message_id(void)
 {
     uint64 to_return = 0;
-    pthread_mutex_lock(&g_chat_message_id_mutex);
 
+    pthread_mutex_lock(&g_chat_message_id_mutex);
     to_return = g_chat_message_id;
     pthread_mutex_unlock(&g_chat_message_id_mutex);
 
@@ -173,18 +179,18 @@ void base__increment_chat_message_id(void)
 
 /**
  * @brief Checks that a client slot exists, is authenticated and has a WebSocket connection.
- * @param int client_id -> index into g_clients_array; client id and client index are the same
+ * @param uint64 client_id -> index into g_clients_array; client id and client index are the same
  * @return boole -> TRUE when all checks pass; FALSE for an invalid or unused slot
  * @attention The caller holds the clients lock.
  */
-boole base__is_client_valid(int client_id)
+boole base__is_client_valid(uint64 client_id)
 {
     boole status0 = FALSE;
     boole status1 = FALSE;
     boole status2 = FALSE;
     boole status3 = FALSE;
 
-    status0 = (boole)(client_id >= 0 && (uint64)client_id < g_server_settings.max_client_count);
+    status0 = client_id < g_server_settings.max_client_count;
     if (status0 == FALSE)
     {
         return FALSE;
@@ -205,11 +211,11 @@ boole base__is_client_valid(int client_id)
 
 /**
  * @brief Checks for an authenticated client with a WebSocket connection, excluding music bots.
- * @param int client_id -> index into the clients array
+ * @param uint64 client_id -> index into the clients array
  * @return boole -> TRUE when the client passes these checks
  * @attention The caller holds the clients lock.
  */
-boole base__is_client_valid_and_not_music_bot(int client_id)
+boole base__is_client_valid_and_not_music_bot(uint64 client_id)
 {
     boole status0 = FALSE;
     boole status1 = FALSE;
@@ -217,7 +223,7 @@ boole base__is_client_valid_and_not_music_bot(int client_id)
     boole status3 = FALSE;
     boole status4 = FALSE;
 
-    status0 = (boole)(client_id >= 0 && (uint64)client_id < g_server_settings.max_client_count);
+    status0 = client_id < g_server_settings.max_client_count;
     if (status0 == FALSE)
     {
         return FALSE;
@@ -239,11 +245,11 @@ boole base__is_client_valid_and_not_music_bot(int client_id)
 
 /**
  * @brief Checks for an authenticated client with a WebSocket connection and admin rights.
- * @param int client_id -> index into the clients array
+ * @param uint64 client_id -> index into the clients array
  * @return boole -> TRUE when the client passes these checks
  * @attention The caller holds the clients lock.
  */
-boole base__is_client_valid_admin(int client_id)
+boole base__is_client_valid_admin(uint64 client_id)
 {
     boole status0 = FALSE;
     boole status1 = FALSE;
@@ -251,7 +257,7 @@ boole base__is_client_valid_admin(int client_id)
     boole status3 = FALSE;
     boole status4 = FALSE;
 
-    status0 = (boole)(client_id >= 0 && (uint64)client_id < g_server_settings.max_client_count);
+    status0 = client_id < g_server_settings.max_client_count;
     if (status0 == FALSE)
     {
         return FALSE;
@@ -273,17 +279,17 @@ boole base__is_client_valid_admin(int client_id)
 
 /**
  * @brief Checks whether the client slot holds an existing music bot.
- * @param int client_id -> index into the clients array
+ * @param uint64 client_id -> index into the clients array
  * @return boole -> TRUE when the slot contains a music bot
  * @attention The caller holds the clients lock.
  */
-boole base__is_client_valid_musicbot(int client_id)
+boole base__is_client_valid_musicbot(uint64 client_id)
 {
     boole status0 = FALSE;
     boole status1 = FALSE;
     boole status2 = FALSE;
 
-    status0 = (boole)(client_id >= 0 && (uint64)client_id < g_server_settings.max_client_count);
+    status0 = client_id < g_server_settings.max_client_count;
     if (status0 == FALSE)
     {
         return FALSE;
@@ -303,18 +309,18 @@ boole base__is_client_valid_musicbot(int client_id)
 
 /**
  * @brief Checks whether an existing music bot has room for another song.
- * @param int client_id -> index into the clients array
+ * @param uint64 client_id -> index into the clients array
  * @return boole -> TRUE when the music bot has a free song slot
  * @attention The caller holds the clients lock.
  */
-boole base__is_music_bot_and_song_slot_valid(int client_id)
+boole base__is_music_bot_and_song_slot_valid(uint64 client_id)
 {
     boole status0 = FALSE;
     boole status1 = FALSE;
     boole status2 = FALSE;
     boole status3 = FALSE;
 
-    status0 = (boole)(client_id >= 0 && (uint64)client_id < g_server_settings.max_client_count);
+    status0 = client_id < g_server_settings.max_client_count;
     if (status0 == FALSE)
     {
         return FALSE;
@@ -334,12 +340,13 @@ boole base__is_music_bot_and_song_slot_valid(int client_id)
 }
 
 /**
- * @brief Checks whether this user chose to block this kind of picture or file and the server allows it.
+ * @brief Checks whether this user chose to block this kind of picture or file and the server allows
+ *        it.
  * @param client_t* client -> recipient, protected by the clients lock
  * @param cstring receive_type -> direct_chat_picture, direct_chat_file, channel_chat_picture or channel_chat_file
  * @return boole -> TRUE when a new attachment should skip this recipient
  */
-boole base__is_attachment_blocked(client_t* client, cstring receive_type)
+boole base__is_attachment_blocked(client_t *client, cstring receive_type)
 {
     if (clib__strcmp(receive_type, "direct_chat_picture") == 0)
     {
@@ -361,8 +368,8 @@ boole base__is_attachment_blocked(client_t* client, cstring receive_type)
 }
 
 /**
- * @brief Checks whether the 32-bit memory budget prevents a new login or upload.
- * The 64-bit build always returns FALSE.
+ * @brief Checks whether the 32-bit memory budget prevents a new login or upload. The 64-bit build
+ *        always returns FALSE.
  * @return boole -> TRUE when the 32-bit budget is reached or usage cannot be read
  */
 boole base__is_server_ram_budget_reached(void)
@@ -406,7 +413,7 @@ void base__count_webrtc_bytes(uint64 received, uint64 sent)
  * @param uint64* sent -> receives the outgoing byte total
  * @return void
  */
-void base__get_webrtc_bytes(uint64* received, uint64* sent)
+void base__get_webrtc_bytes(uint64 *received, uint64 *sent)
 {
     *received = atomic_load_explicit(&webrtc_received_bytes, memory_order_relaxed);
     *sent = atomic_load_explicit(&webrtc_sent_bytes, memory_order_relaxed);
@@ -445,11 +452,11 @@ uint64 base__get_server_uptime_seconds(void)
  *
  * @return boole -> TRUE when the message contains a nonempty type string
  */
-static boole _base_internal__is_message_correct_at_first_sight_and_get_message_type(cJSON* json_root, uint64 client_id, char** out_message_type)
+static boole _base_internal__is_message_correct_at_first_sight_and_get_message_type(cJSON *json_root, uint64 client_id, char **out_message_type)
 {
-    cJSON* json_message_type = 0;
-    cJSON* json_message_object = 0;
-    int objectCount = 0;
+    cJSON *json_message_type = 0;
+    cJSON *json_message_object = 0;
+    int64 objectCount = 0;
 
     objectCount = cJSON_GetArraySize(json_root);
 
@@ -500,16 +507,16 @@ static boole _base_internal__is_message_correct_at_first_sight_and_get_message_t
  * @brief Sends the requested bot key after checking the session, bot ID and channel.
  * @attention Acquires the clients write lock and preserves the request cooldown.
  */
-static void _base_internal__process_music_bot_key_request(cJSON* json_root, ws_cli_conn_t* websocket, uint64 client_index)
+static void _base_internal__process_music_bot_key_request(cJSON *json_root, ws_cli_conn_t *websocket, uint64 client_index)
 {
     boole status0 = FALSE;
     boole status1 = FALSE;
     boole status2 = FALSE;
     boole status3 = FALSE;
-    cJSON* message = NULL_POINTER;
-    cJSON* bot_id = NULL_POINTER;
-    client_t* client = NULL_POINTER;
-    client_t* bot = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
+    cJSON *bot_id = NULL_POINTER;
+    client_t *client = NULL_POINTER;
+    client_t *bot = NULL_POINTER;
     uint64 now = 0;
 
     message = cJSON_GetObjectItemCaseSensitive(json_root, "message");
@@ -568,6 +575,87 @@ end:
     clib__unlock(&g_clients_global_rwlock_guard);
 }
 
+/** @brief Bounds command tree allocation before parsing and rejects ambiguous JSON text. */
+static cJSON *_base_internal__parse_client_message(const char *text)
+{
+    const char *cursor = NULL_POINTER;
+    ubyte value = 0;
+
+    // Existing requests are shallow objects; large chat/file bodies are strings.
+    // This conservative structural count bounds tree nodes even for unused fields.
+    const uint64 maximum_depth = 32;
+    const uint64 maximum_complexity = 4096;
+    uint64 depth = 0;
+    uint64 complexity = 0;
+    boole quoted = FALSE;
+    boole escaped = FALSE;
+
+    if (text == NULL_POINTER)
+    {
+        return NULL_POINTER;
+    }
+    for (cursor = text; *cursor != 0; cursor++)
+    {
+        value = (ubyte)*cursor;
+        if (value < 32 && (quoted || (value != '\t' && value != '\r' && value != '\n')))
+        {
+            return NULL_POINTER;
+        }
+        if (quoted)
+        {
+            if (escaped)
+            {
+                if (strncmp(cursor, "u0000", 5) == 0)
+                {
+                    return NULL_POINTER;
+                }
+                escaped = FALSE;
+            }
+            else if (value == '\\')
+            {
+                escaped = TRUE;
+            }
+            else if (value == '"')
+            {
+                quoted = FALSE;
+            }
+        }
+        else if (value == '"')
+        {
+            quoted = TRUE;
+        }
+        else if (value == '{' || value == '[')
+        {
+            if (++depth > maximum_depth)
+            {
+                return NULL_POINTER;
+            }
+            complexity += value == '[' ? 2 : 1;
+        }
+        else if (value == '}' || value == ']')
+        {
+            if (depth == 0)
+            {
+                return NULL_POINTER;
+            }
+            depth--;
+        }
+        else if (value == ':' || value == ',')
+        {
+            complexity++;
+        }
+        if (complexity > maximum_complexity)
+        {
+            return NULL_POINTER;
+        }
+    }
+    if (quoted || depth != 0)
+    {
+        return NULL_POINTER;
+    }
+    return cJSON_ParseWithOpts(text, NULL_POINTER, TRUE);
+}
+
 /**
  * @brief routes an authenticated client's decrypted message to the matching handler
  *
@@ -577,25 +665,26 @@ end:
  *
  * @return void
  */
-void base__process_authenticated_client_message(ws_cli_conn_t* websocket, uint64 client_index, char* decrypted_metadata_cstring)
+void base__process_authenticated_client_message(ws_cli_conn_t *websocket, uint64 client_index, char *decrypted_metadata_cstring)
 {
-    cJSON* json_root = 0;
+    cJSON *json_root = 0;
     boole status = FALSE;
     boole status0 = FALSE;
     boole status1 = FALSE;
     boole status2 = FALSE;
-    char* message_type = 0;
-    client_t* client = NULL_POINTER;
+    char *message_type = 0;
+    client_t *client = NULL_POINTER;
     boole is_sender_idle = FALSE;
 
     // DBG_CLIENT_MESSAGE_MAIN_FUNCTION log_info("%s %s %s", "base__process_authenticated_client_message message : ", decrypted_metadata_cstring, "\n");
-    json_root = cJSON_Parse(decrypted_metadata_cstring);
+    json_root = _base_internal__parse_client_message(decrypted_metadata_cstring);
 
     if (json_root == NULL_POINTER)
     {
         // Record the rejection without copying decrypted passwords or keys into logs.
         log_info("%s %llu %s %llu", "client : ", client_index, " unparseable frame, decrypted length ", (uint64)clib__strlen(decrypted_metadata_cstring));
         ws_close_client(websocket);
+
         // there is no json object to call cJSON_Delete on so just disconnect the client
         return;
     }
@@ -626,6 +715,7 @@ void base__process_authenticated_client_message(ws_cli_conn_t* websocket, uint64
         util__json_delete_secure(json_root);
         return;
     }
+
     // A decrypted, well-formed message from this authenticated socket proves
     // liveness even when its action is later refused by permissions or policy.
     // Never refresh a replacement session or accept malformed JSON as activity.
@@ -1018,7 +1108,8 @@ void base__process_authenticated_client_message(ws_cli_conn_t* websocket, uint64
 }
 
 /**
- * @brief routes a not-yet-authenticated client's message (key exchange / challenge) to the matching handler
+ * @brief routes a not-yet-authenticated client's message (key exchange / challenge) to the matching
+ *        handler
  *
  * @param ws_cli_conn_t* websocket -> the client's websocket connection
  * @param uint64 index -> id of the client
@@ -1026,12 +1117,12 @@ void base__process_authenticated_client_message(ws_cli_conn_t* websocket, uint64
  *
  * @return void
  */
-void base__process_not_authenticated_client_message(ws_cli_conn_t* websocket, uint64 index, char* decrypted_metadata_cstring)
+void base__process_not_authenticated_client_message(ws_cli_conn_t *websocket, uint64 index, char *decrypted_metadata_cstring)
 {
-    cJSON* json_root = 0;
+    cJSON *json_root = 0;
     boole status = FALSE;
     int64 checked_message_length = 0;
-    char* message_type = 0;
+    char *message_type = 0;
 
     DBG_AUTHENTICATION log_info("%s %p %s", "[i] authenticating client ", websocket, "\n");
 
@@ -1048,16 +1139,18 @@ void base__process_not_authenticated_client_message(ws_cli_conn_t* websocket, ui
         return;
     }
 
-    json_root = cJSON_Parse(decrypted_metadata_cstring);
+    json_root = _base_internal__parse_client_message(decrypted_metadata_cstring);
 
     DBG_AUTHENTICATION log_info("%s", "base__process_not_authenticated_client_message decrypted_metadata_cstring \n");
 
     if (json_root == 0)
     {
         DBG_AUTHENTICATION log_info("%s %llu %s", "client : ", index, " json_root is null \n");
+
         // a wrong key decrypts the handshake into garbage, which is exactly what arrives here
         server_logs__join_refused("wrong key or malformed handshake", ws_getaddress(websocket));
         ws_close_client(websocket);
+
         // there is no json object to cJSON_Delete, since it's 0
         return;
     }

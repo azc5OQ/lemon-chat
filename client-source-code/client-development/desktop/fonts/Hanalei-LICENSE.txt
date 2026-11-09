@@ -1,0 +1,3 @@
+Copyright (c) 2012 by Brian J. Bonislawsky DBA Astigmatic (AOETI) (astigma@astigmatic.com), with ReservedFont Name "Hanalei"
+
+http://scripts.sil.org/OFL

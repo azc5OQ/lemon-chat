@@ -13,11 +13,11 @@
 #include "../../../third-party/zhicheng/base64.h"
 
 // declarations
-static boole _client_msg_chat_internal__is_json_chat_message_format_valid(cJSON* json_root, uint64 client_id);
-static void _client_msg_chat_internal__process_chat_message_action(cJSON* json_root, uint64 sender_client_id, char* outbound_action_type, boole is_edit);
-static boole _client_msg_chat_internal__is_json_poke_client_request_format_valid(cJSON* json_root, uint64 client_id);
-static boole _client_msg_chat_internal__is_offline_chat_message_valid(cJSON* json_root);
-static boole _client_msg_chat_internal__is_call_idle_client_message_valid(cJSON* json_root);
+static boole _client_msg_chat_internal__is_json_chat_message_format_valid(cJSON *json_root, uint64 client_id);
+static void _client_msg_chat_internal__process_chat_message_action(cJSON *json_root, uint64 sender_client_id, char *outbound_action_type, boole is_edit);
+static boole _client_msg_chat_internal__is_json_poke_client_request_format_valid(cJSON *json_root, uint64 client_id);
+static boole _client_msg_chat_internal__is_offline_chat_message_valid(cJSON *json_root);
+static boole _client_msg_chat_internal__is_call_idle_client_message_valid(cJSON *json_root);
 
 /**
  * @brief verifies if received json has needed keys and values
@@ -29,16 +29,15 @@ static boole _client_msg_chat_internal__is_call_idle_client_message_valid(cJSON*
  *
  * @return boole
  */
-static boole _client_msg_chat_internal__is_json_chat_message_format_valid(cJSON* json_root, uint64 client_id)
+static boole _client_msg_chat_internal__is_json_chat_message_format_valid(cJSON *json_root, uint64 client_id)
 {
     boole status = FALSE;
-    cJSON* json_chat_message_value = 0;
-    cJSON* json_receiver_id = 0;
-    cJSON* json_local_message_id = 0;
-    cJSON* json_message_object = 0;
+    cJSON *json_chat_message_value = 0;
+    cJSON *json_receiver_id = 0;
+    cJSON *json_local_message_id = 0;
+    cJSON *json_message_object = 0;
     uint64 validated_id = 0;
-    uint64 receiver_count = g_server_settings.max_client_count > g_server_settings.max_channel_count
-        ? g_server_settings.max_client_count : g_server_settings.max_channel_count;
+    uint64 receiver_count = g_server_settings.max_client_count > g_server_settings.max_channel_count ? g_server_settings.max_client_count : g_server_settings.max_channel_count;
 
     // existence of "message" has already been checked at this point
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
@@ -67,7 +66,7 @@ static boole _client_msg_chat_internal__is_json_chat_message_format_valid(cJSON*
     // would exceed the websocket frame limit, base__encrypt returns NULL and the send loop silently skips every
     // recipient while the sender still gets a delivery ack. base64 grows ~4/3; leave 2KB for the added sender
     // fields + envelope overhead. derived from the frame limit so it tracks the websocket_message_max_length setting.
-    if (clib__utf8_string_length_check_max_length(json_chat_message_value->valuestring, (int)((g_server_settings.websocket_message_max_length * 3) / 4 - 2048)) == -1)
+    if (clib__utf8_string_length_check_max_length(json_chat_message_value->valuestring, (int64)((g_server_settings.websocket_message_max_length * 3) / 4 - 2048)) == -1)
     {
         DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client : ", client_id, " chat message value too large \n");
         return FALSE;
@@ -99,7 +98,7 @@ static boole _client_msg_chat_internal__is_json_chat_message_format_valid(cJSON*
  *
  * @return void
  */
-void client_msg__chat__process_direct_chat_message(cJSON* json_root, uint64 sender_client_id)
+void client_msg__chat__process_direct_chat_message(cJSON *json_root, uint64 sender_client_id)
 {
     boole status = FALSE;
     boole status0 = FALSE;
@@ -107,11 +106,10 @@ void client_msg__chat__process_direct_chat_message(cJSON* json_root, uint64 send
     boole is_receiver_existing = FALSE;
     boole is_receiver_idle = FALSE;
     boole is_receiver_music_bot = FALSE;
-    cJSON* json_receiver_id = 0;
-    cJSON* json_local_message_id = 0;
-    cJSON* json_chat_message_value = 0;
-    cJSON* json_message_object = 0;
-
+    cJSON *json_receiver_id = 0;
+    cJSON *json_local_message_id = 0;
+    cJSON *json_chat_message_value = 0;
+    cJSON *json_message_object = 0;
     uint64 server_chat_message_id = 0;
 
     // because maintainer of channel sends out channel keys to each client individually,
@@ -206,24 +204,25 @@ void client_msg__chat__process_direct_chat_message(cJSON* json_root, uint64 send
 }
 
 /**
- * @brief This function processes a channel chat message, broadcasting it to clients in the sender's channel
+ * @brief This function processes a channel chat message, broadcasting it to clients in the sender's
+ *        channel
  *
  * @param cJSON* json_root -> the parsed client request
  * @param uint64 sender_client_id -> id of the client that sent the request
  *
  * @return void
  */
-void client_msg__chat__process_channel_chat_message(cJSON* json_root, uint64 sender_client_id)
+void client_msg__chat__process_channel_chat_message(cJSON *json_root, uint64 sender_client_id)
 {
     boole status0 = FALSE;
     boole is_channel_existing = FALSE;
+
     // cJSON* json_receiver_id = 0; json contains this ID, but it is not needed. Id of channel is taken from sender's client struct
-    cJSON* json_local_message_id = 0;
-    cJSON* json_chat_message_value = 0;
-    cJSON* json_message_object = 0;
+    cJSON *json_local_message_id = 0;
+    cJSON *json_chat_message_value = 0;
+    cJSON *json_message_object = 0;
     uint64 channel_id = 0;
     uint64 server_chat_message_id = 0;
-
     boole status = FALSE;
 
     status = base__is_request_allowed_based_on_spam_protection(sender_client_id);
@@ -300,18 +299,18 @@ channel_message_done:
  *
  * @return void
  */
-static void _client_msg_chat_internal__process_chat_message_action(cJSON* json_root, uint64 sender_client_id, char* outbound_action_type, boole is_edit)
+static void _client_msg_chat_internal__process_chat_message_action(cJSON *json_root, uint64 sender_client_id, char *outbound_action_type, boole is_edit)
 {
     boole status0 = FALSE;
     boole status = FALSE;
-    cJSON* json_message_object = 0;
-    cJSON* json_message_id = 0;
-    cJSON* json_receiver_type = 0;
-    cJSON* json_receiver_id = 0;
-    cJSON* json_new_message_value = 0;
-    char* receiver_type = 0;
-    char* new_message_value = NULL_POINTER;
-    char* requester_public_key = 0;
+    cJSON *json_message_object = 0;
+    cJSON *json_message_id = 0;
+    cJSON *json_receiver_type = 0;
+    cJSON *json_receiver_id = 0;
+    cJSON *json_new_message_value = 0;
+    char *receiver_type = 0;
+    char *new_message_value = NULL_POINTER;
+    char *requester_public_key = 0;
     uint64 target_chat_message_id = 0;
     uint64 channel_id = 0;
     uint64 receiver_id = 0;
@@ -332,8 +331,7 @@ static void _client_msg_chat_internal__process_chat_message_action(cJSON* json_r
     json_message_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "message_id");
     json_receiver_type = cJSON_GetObjectItemCaseSensitive(json_message_object, "receiver_type");
 
-    if (util__json_read_uint64(json_message_id, 9007199254740991ULL, &target_chat_message_id) == FALSE
-        || cJSON_IsString(json_receiver_type) == FALSE)
+    if (util__json_read_uint64(json_message_id, 9007199254740991ULL, &target_chat_message_id) == FALSE || cJSON_IsString(json_receiver_type) == FALSE)
     {
         return;
     }
@@ -354,7 +352,7 @@ static void _client_msg_chat_internal__process_chat_message_action(cJSON* json_r
         }
 
         // same oversize guard a normal chat message gets (see _client_msg_chat_internal__is_json_chat_message_format_valid)
-        if (clib__utf8_string_length_check_max_length(json_new_message_value->valuestring, (int)((g_server_settings.websocket_message_max_length * 3) / 4 - 2048)) == -1)
+        if (clib__utf8_string_length_check_max_length(json_new_message_value->valuestring, (int64)((g_server_settings.websocket_message_max_length * 3) / 4 - 2048)) == -1)
         {
             return;
         }
@@ -376,11 +374,19 @@ static void _client_msg_chat_internal__process_chat_message_action(cJSON* json_r
     if (clib__is_string_equal(receiver_type, "user") == TRUE)
     {
         json_receiver_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "receiver_id");
-        if (g_server_settings.max_client_count > 0
-            && util__json_read_uint64(json_receiver_id, g_server_settings.max_client_count - 1, &receiver_id) == TRUE)
+        if (g_server_settings.max_client_count > 0 && util__json_read_uint64(json_receiver_id, g_server_settings.max_client_count - 1, &receiver_id) == TRUE)
         {
-            if (g_clients_array[receiver_id].is_authenticated == TRUE)
+            if (g_clients_array[receiver_id].is_existing == TRUE && g_clients_array[receiver_id].is_authenticated == TRUE && g_clients_array[receiver_id].is_music_bot == FALSE)
             {
+                // An edit carries new content and follows the same delivery policy as a new message.
+                // Deletion remains available when sending new private content has been disabled.
+                if (is_edit == TRUE && (g_server_settings.is_private_messaging_allowed == FALSE || (g_clients_array[receiver_id].is_idle == TRUE && (g_server_settings.is_sending_text_to_idle_clients_allowed == FALSE || permissions__is_allowed(&g_clients_array[sender_client_id], PERMISSION_MESSAGE_IDLE_CLIENTS) == FALSE))))
+                {
+                    server_msg__administration__send_access_denied_to_single_client(&g_clients_array[sender_client_id], NULL_POINTER);
+                    clib__unlock(&g_clients_global_rwlock_guard);
+                    return;
+                }
+
                 // deliver to the private counterpart and back to the requester so both views update
                 server_msg__chat__send_message_action_to_single_client(&g_clients_array[receiver_id], outbound_action_type, target_chat_message_id, requester_public_key, requester_is_admin, new_message_value);
                 server_msg__chat__send_message_action_to_single_client(&g_clients_array[sender_client_id], outbound_action_type, target_chat_message_id, requester_public_key, requester_is_admin, new_message_value);
@@ -409,27 +415,29 @@ static void _client_msg_chat_internal__process_chat_message_action(cJSON* json_r
 }
 
 /**
- * @brief processes a request to delete a chat message (rebroadcasts a delete action to the right audience)
+ * @brief processes a request to delete a chat message (rebroadcasts a delete action to the right
+ *        audience)
  *
  * @param cJSON* json_root -> the parsed client request
  * @param uint64 sender_client_id -> id of the client that sent the request
  *
  * @return void
  */
-void client_msg__chat__process_delete_chat_message_request(cJSON* json_root, uint64 sender_client_id)
+void client_msg__chat__process_delete_chat_message_request(cJSON *json_root, uint64 sender_client_id)
 {
     _client_msg_chat_internal__process_chat_message_action(json_root, sender_client_id, "chat_message_delete", FALSE);
 }
 
 /**
- * @brief processes a request to edit a chat message (rebroadcasts an edit action to the right audience)
+ * @brief processes a request to edit a chat message (rebroadcasts an edit action to the right
+ *        audience)
  *
  * @param cJSON* json_root -> the parsed client request
  * @param uint64 sender_client_id -> id of the client that sent the request
  *
  * @return void
  */
-void client_msg__chat__process_edit_chat_message_request(cJSON* json_root, uint64 sender_client_id)
+void client_msg__chat__process_edit_chat_message_request(cJSON *json_root, uint64 sender_client_id)
 {
     _client_msg_chat_internal__process_chat_message_action(json_root, sender_client_id, "chat_message_edit", TRUE);
 }
@@ -442,20 +450,19 @@ void client_msg__chat__process_edit_chat_message_request(cJSON* json_root, uint6
  *
  * @return boole
  */
-static boole _client_msg_chat_internal__is_json_poke_client_request_format_valid(cJSON* json_root, uint64 client_id)
+static boole _client_msg_chat_internal__is_json_poke_client_request_format_valid(cJSON *json_root, uint64 client_id)
 {
     uint64 validated_id = 0;
-    cJSON* json_poke_message = 0;
-    cJSON* json_receiver_id = 0;
-    cJSON* json_message_object = 0;
+    cJSON *json_poke_message = 0;
+    cJSON *json_receiver_id = 0;
+    cJSON *json_message_object = 0;
 
     // existence of "message" has already been checked at this point
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
 
     // json_message_object exists, continue validating received json
     json_receiver_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "client_id");
-    if (g_server_settings.max_client_count == 0
-        || util__json_read_uint64(json_receiver_id, g_server_settings.max_client_count - 1, &validated_id) == FALSE)
+    if (g_server_settings.max_client_count == 0 || util__json_read_uint64(json_receiver_id, g_server_settings.max_client_count - 1, &validated_id) == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client : ", client_id, " cJSON_IsNumber(json_receiver_id) \n");
         return FALSE;
@@ -490,20 +497,21 @@ static boole _client_msg_chat_internal__is_json_poke_client_request_format_valid
 }
 
 /**
- * @brief This function processes a poke-client request, forwarding the poke message to the target client
+ * @brief This function processes a poke-client request, forwarding the poke message to the target
+ *        client
  *
  * @param cJSON* json_root -> the parsed client request
  * @param uint64 sender_client_id -> id of the client that sent the request
  *
  * @return void
  */
-void client_msg__chat__process_poke_client_request(cJSON* json_root, uint64 sender_client_id)
+void client_msg__chat__process_poke_client_request(cJSON *json_root, uint64 sender_client_id)
 {
     boole status0 = FALSE;
     boole status = FALSE;
-    cJSON* json_message_object = 0;
-    cJSON* json_receiver_id = 0;
-    cJSON* json_poke_message = 0;
+    cJSON *json_message_object = 0;
+    cJSON *json_receiver_id = 0;
+    cJSON *json_poke_message = 0;
 
     status = base__is_request_allowed_based_on_spam_protection(sender_client_id);
     if (status == FALSE)
@@ -541,9 +549,9 @@ void client_msg__chat__process_poke_client_request(cJSON* json_root, uint64 send
 }
 
 /**
- * @brief passes on "this client is typing" to the conversation the client is writing to. the request carries
- *        no message content and nothing is stored - it is forwarded to whoever is on the other side
- *        and forgotten. the whole feature is off unless the server allows it.
+ * @brief passes on "this client is typing" to the conversation the client is writing to. the
+ *        request carries no message content and nothing is stored - it is forwarded to whoever is
+ *        on the other side and forgotten. the whole feature is off unless the server allows it.
  *
  * @param cJSON* json_root -> the parsed client request
  * @param uint64 sender_client_id -> id of the client that is typing
@@ -552,14 +560,14 @@ void client_msg__chat__process_poke_client_request(cJSON* json_root, uint64 send
  *
  * @return void
  */
-void client_msg__chat__process_typing_indicator_request(cJSON* json_root, uint64 sender_client_id)
+void client_msg__chat__process_typing_indicator_request(cJSON *json_root, uint64 sender_client_id)
 {
     boole status0 = FALSE;
     boole status = FALSE;
     boole is_direct_message = FALSE;
-    cJSON* json_message_object = 0;
-    cJSON* json_receiver_type = 0;
-    cJSON* json_receiver_id = 0;
+    cJSON *json_message_object = 0;
+    cJSON *json_receiver_type = 0;
+    cJSON *json_receiver_id = 0;
     uint64 receiver_id = 0;
     uint64 receiver_count = 0;
 
@@ -626,11 +634,11 @@ label_client_msg__process_typing_indicator_request_end:
  * @brief Checks the saved recipient identity and encrypted offline message.
  * @param json_root Parsed request.
  */
-static boole _client_msg_chat_internal__is_offline_chat_message_valid(cJSON* json_root)
+static boole _client_msg_chat_internal__is_offline_chat_message_valid(cJSON *json_root)
 {
-    cJSON* json_message_object = 0;
-    cJSON* json_recipient_identity_hash = 0;
-    cJSON* json_value = 0;
+    cJSON *json_message_object = 0;
+    cJSON *json_recipient_identity_hash = 0;
+    cJSON *json_value = 0;
 
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
     if (json_message_object == NULL_POINTER)
@@ -668,19 +676,20 @@ static boole _client_msg_chat_internal__is_offline_chat_message_valid(cJSON* jso
 }
 
 /**
- * @brief Stores an encrypted message when the sender and saved recipient have the required permissions.
+ * @brief Stores an encrypted message when the sender and saved recipient have the required
+ *        permissions.
  * @param json_root Request containing the recipient identity and encrypted message.
  * @param sender_client_id Client sending the message.
  */
-void client_msg__chat__process_offline_chat_message(cJSON* json_root, uint64 sender_client_id)
+void client_msg__chat__process_offline_chat_message(cJSON *json_root, uint64 sender_client_id)
 {
     boole status = FALSE;
     boole status0 = FALSE;
-    client_t* sender = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
-    const char* recipient = NULL_POINTER;
-    char sender_hash[IDENTITY_HASH_MAX_LENGTH];
-    char connected_hash[IDENTITY_HASH_MAX_LENGTH];
+    client_t *sender = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
+    const char *recipient = NULL_POINTER;
+    char sender_hash[IDENTITY_HASH_MAX_LENGTH] = { 0 };
+    char connected_hash[IDENTITY_HASH_MAX_LENGTH] = { 0 };
     uint64 i = 0;
 
     status = _client_msg_chat_internal__is_offline_chat_message_valid(json_root);
@@ -717,8 +726,7 @@ void client_msg__chat__process_offline_chat_message(cJSON* json_root, uint64 sen
     }
     for (i = 0; i < (uint64)g_server_settings.max_client_count; i++)
     {
-        if (g_clients_array[i].is_existing == FALSE || g_clients_array[i].is_authenticated == FALSE
-            || g_clients_array[i].public_key[0] == 0)
+        if (g_clients_array[i].is_existing == FALSE || g_clients_array[i].is_authenticated == FALSE || g_clients_array[i].public_key[0] == 0)
         {
             continue;
         }
@@ -729,8 +737,7 @@ void client_msg__chat__process_offline_chat_message(cJSON* json_root, uint64 sen
         }
     }
     util__hash_password_to_base64(sender->public_key, sender_hash, sizeof(sender_hash));
-    identity_store__queue_offline_message((char*)recipient, sender_hash, sender->username,
-        cJSON_GetObjectItemCaseSensitive(message, "value")->valuestring);
+    identity_store__queue_offline_message((char *)recipient, sender_hash, sender->username, cJSON_GetObjectItemCaseSensitive(message, "value")->valuestring);
 
 label_offline_message_end:
     clib__unlock(&g_clients_global_rwlock_guard);
@@ -744,17 +751,16 @@ label_offline_message_end:
  *
  * @return boole
  */
-static boole _client_msg_chat_internal__is_call_idle_client_message_valid(cJSON* json_root)
+static boole _client_msg_chat_internal__is_call_idle_client_message_valid(cJSON *json_root)
 {
     uint64 validated_id = 0;
-    cJSON* json_message_object = 0;
-    cJSON* json_client_id = 0;
+    cJSON *json_message_object = 0;
+    cJSON *json_client_id = 0;
 
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
 
     json_client_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "client_id");
-    if (g_server_settings.max_client_count == 0
-        || util__json_read_uint64(json_client_id, g_server_settings.max_client_count - 1, &validated_id) == FALSE)
+    if (g_server_settings.max_client_count == 0 || util__json_read_uint64(json_client_id, g_server_settings.max_client_count - 1, &validated_id) == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s", "_client_msg_chat_internal__is_call_idle_client_message_valid cJSON_IsNumber(json_client_id)");
         return FALSE;
@@ -777,7 +783,7 @@ static boole _client_msg_chat_internal__is_call_idle_client_message_valid(cJSON*
  *
  * @return void
  */
-void client_msg__chat__process_call_idle_client_message(cJSON* json_root, uint64 sender_client_id)
+void client_msg__chat__process_call_idle_client_message(cJSON *json_root, uint64 sender_client_id)
 {
     boole status = FALSE;
     boole status0 = FALSE;
@@ -787,11 +793,10 @@ void client_msg__chat__process_call_idle_client_message(cJSON* json_root, uint64
     boole status4 = FALSE;
     boole status5 = FALSE;
     boole status6 = FALSE;
-    client_t* caller = 0;
-    client_t* callee = 0;
-
-    cJSON* json_message_object = 0;
-    cJSON* json_callee_client_id = 0;
+    client_t *caller = 0;
+    client_t *callee = 0;
+    cJSON *json_message_object = 0;
+    cJSON *json_callee_client_id = 0;
 
     status = _client_msg_chat_internal__is_call_idle_client_message_valid(json_root);
     if (status == FALSE)
@@ -821,8 +826,7 @@ void client_msg__chat__process_call_idle_client_message(cJSON* json_root, uint64
         goto label_client_msg__process_call_idle_client_message_end;
     }
 
-    if (g_server_settings.is_idle_mode_allowed == FALSE
-        || permissions__is_allowed(caller, PERMISSION_CALL_IDLE_CLIENTS) == FALSE)
+    if (g_server_settings.is_idle_mode_allowed == FALSE || permissions__is_allowed(caller, PERMISSION_CALL_IDLE_CLIENTS) == FALSE)
     {
         server_msg__administration__send_access_denied_to_single_client(caller, NULL_POINTER);
         goto label_client_msg__process_call_idle_client_message_end;
@@ -851,13 +855,14 @@ label_client_msg__process_call_idle_client_message_end:
  * @param uint64 client_id -> client requesting the preview
  * @param ws_cli_conn_t* socket -> connection that sent the request
  */
-void client_msg__chat__process_resolve_url_request(cJSON* json_root, uint64 client_id, ws_cli_conn_t* socket)
+void client_msg__chat__process_resolve_url_request(cJSON *json_root, uint64 client_id, ws_cli_conn_t *socket)
 {
     boole status0 = FALSE;
-    cJSON* message = cJSON_GetObjectItemCaseSensitive(json_root, "message");
-    cJSON* url = cJSON_GetObjectItemCaseSensitive(message, "url");
-    cJSON* request_id = cJSON_GetObjectItemCaseSensitive(message, "request_id");
+    cJSON *message = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    cJSON *url = cJSON_GetObjectItemCaseSensitive(message, "url");
+    cJSON *request_id = cJSON_GetObjectItemCaseSensitive(message, "request_id");
     httpclient_url_t parsed;
+
     status0 = !cJSON_IsString(url);
     if (status0 == FALSE)
     {

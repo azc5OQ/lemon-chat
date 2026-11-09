@@ -40,6 +40,15 @@ Choose the feature area below, then search within that section for the exact req
 
 ## Application and transport wrappers
 
+The chat WebSocket uses application close code `4001` when a connected client
+is kicked from the server and `4002` when it is banned. These are transport close
+frames, not JSON messages. Browser and desktop clients use them to display the
+reason and play `you_were_kicked_from_the_server` or
+`you_were_banned_from_the_server` once, instead of the generic connection-lost
+sound. The browser waits for an explicit connect request after either action.
+Other close codes retain the normal disconnect behavior. A ban rejected before
+login does not trigger the sound for removal from an authenticated session.
+
 ### Application wrapper
 
 ```json
@@ -492,6 +501,7 @@ This body has no `is_idle`, `is_streaming_song`, `is_streaming_video` or `song_n
 | --- | --- | --- | --- |
 | `message.type` | string | Required | Literal `"client_disconnect"`. |
 | `message.client_id` | number | Required | Client slot ID of the disconnected client. |
+| `message.reason` | string | Optional | `"ban"` when a moderator banned the client; absent for other disconnects. |
 
 ## Channels and idle state
 
@@ -974,6 +984,7 @@ This body uses `channel_name` and `channel_description`. It has no parent, root,
 | --- | --- | --- | --- |
 | `message.type` | string | Required | Literal `"channel_join"`. |
 | `message.channel_id` | number | Required | Visible destination channel ID; `-1` can conceal membership. |
+| `message.reason` | string | Optional | `"move"` for a forced move, including channel deletion; `"kick"` for a channel kick. Absent for a voluntary join. Also included when the destination is hidden. |
 | `message.channel_group_id` | number | Required | Channel role ID: `0` ordinary member, `1` Channel Admin, `2`–`127` a custom role. |
 | `message.client_id` | number | Required | Numeric client slot ID. |
 | `message.audio_state` | number | Required | `1` transmitting; `2` push-to-talk enabled; `3` microphone disabled, reception enabled; `4` all audio disabled. |
@@ -1294,6 +1305,8 @@ This body uses `channel_name` and `channel_description`. It has no parent, root,
 ### Client request: `edit_chat_message_request`
 
 **Legacy, insecure body.** Retained here because the server still accepts it. The updated client does not send it; use the [encrypted edit control body](#edit-control-body) instead.
+
+For `receiver_type: "user"`, this legacy request requires private messaging to be enabled and a live, authenticated, non-bot recipient. An idle recipient also requires the server's idle-text setting and the sender's `message_idle_clients` permission. A policy refusal returns `access_denied`; these sending restrictions do not prevent deletion of an existing message.
 
 **Body**
 
@@ -1777,7 +1790,7 @@ There is no single extra-data object containing every field. Each intent has the
 | `message.file_send_intent_extra_data` | object | Required | Intent-specific metadata object. The five complete body variants below show which members belong together. |
 | `message.file_send_intent_extra_data.receiver_id` | number | Required for picture/file intents | Recipient client ID for a direct intent; channel context ID for a channel intent. |
 | `message.file_send_intent_extra_data.local_message_id` | number | Required for picture/file intents | Sender-assigned local message ID. This is a JSON number, separate from the server message ID. |
-| `message.file_send_intent_extra_data.file_header` | string | Required for direct_chat_file and channel_chat_file | Encrypted file-header string; nonempty and no longer than `FILE_HEADER_MAX_LENGTH` (8192). Direct files use a serialized direct-file envelope; channel files use raw base64 ciphertext. Its decrypted body is documented under [File header](#file-header). |
+| `message.file_send_intent_extra_data.file_header` | string | Required for direct_chat_file and channel_chat_file | Encrypted file-header string; nonempty and no longer than `FILE_HEADER_MAX_LENGTH` (8192). Direct files use a serialized direct-file envelope; channel files use a serialized [authenticated file envelope](#authenticated-file-envelope). Its decrypted body is documented under [File header](#file-header). |
 | `message.file_send_intent_extra_data.song_name` | string | Required for musicbot_file | Nonempty song display name, at most 511 UTF-8 characters. |
 | `message.file_send_intent_extra_data.musicbot_id` | number | Required for musicbot_file | Client ID of the target music bot. |
 
@@ -2479,7 +2492,7 @@ No additional body fields.
 | Field | JSON type | Presence | Body value |
 | --- | --- | --- | --- |
 | `message.type` | string | Required | Literal `"admin_password"`. |
-| `message.value` | string | Required | Administrator password; nonempty, at most 50 UTF-8 characters. |
+| `message.value` | string | Required | Administrator password; nonempty, at most 50 UTF-8 bytes. |
 
 ### Client request: `change_admin_password`
 
@@ -2500,7 +2513,7 @@ No additional body fields.
 | Field | JSON type | Presence | Body value |
 | --- | --- | --- | --- |
 | `message.type` | string | Required | Literal `"change_admin_password"`. |
-| `message.value` | string | Required | Replacement administrator password; nonempty, at most 50 UTF-8 characters. |
+| `message.value` | string | Required | Replacement administrator password; nonempty, at most 50 UTF-8 bytes. |
 
 ### Client request: `add_group_to_client`
 
@@ -3380,7 +3393,7 @@ No additional body fields.
 | Field | JSON type | Presence | Body value |
 | --- | --- | --- | --- |
 | `message.type` | string | Required | Literal `"remove_ban"`. |
-| `message.ip_address` | string | Required | IP address identifying the ban in this address-based body. |
+| `message.ip_address` | string | Required | IP address whose matching ban records are all removed together. A failed save leaves those records in effect. |
 
 ### Server response: `admin_status`
 
@@ -5496,6 +5509,34 @@ The nested `permissions` object accepts exactly the [11 channel action permissio
 }
 ```
 
+**Administrator password and ban result bodies**
+
+The same response body acknowledges `change_admin_password`, `ban` and the address-based `remove_ban`. The `succeeded` value is `true` only after the corresponding change has been saved. These responses do not contain passwords, hashes or banned identities.
+
+```json
+{
+    "message":
+    {
+        "type": "moderation_result",
+        "succeeded": false,
+        "text": "The admin password was not changed because the settings could not be saved."
+    }
+}
+```
+
+| Request/result | `message.succeeded` | `message.text` |
+| --- | --- | --- |
+| Password saved | `true` | `Admin password changed.` |
+| Password save failed | `false` | `The admin password was not changed because the settings could not be saved.` |
+| Ban saved | `true` | `Client banned.` |
+| Ban list full | `false` | `The client was not banned because the ban list is full.` |
+| Ban save failed | `false` | `The client was not banned because the settings could not be saved.` |
+| All bans for the IP removed | `true` | `Bans for this IP address removed.` |
+| IP unban save failed | `false` | `The bans were not removed because the settings could not be saved.` |
+| No matching IP ban | `false` | `No bans were found for this IP address.` |
+
+A rejected channel-array reduction also sends this body with `succeeded: false` and `text: "Delete channels whose IDs are outside the new channel count before lowering it."`, followed by `server_settings_saved` with `success: false`.
+
 ### Server response: `channel_access`
 
 **Body**
@@ -5801,7 +5842,7 @@ All listed settings are optional members of `message`. No nested `settings` obje
 | `message.is_video_streaming_active` | boolean | Optional; absent retains current value | Whether video streaming is enabled; this settings field uses active, while login/policy use allowed. |
 | `message.is_hide_clients_in_password_protected_channels_active` | boolean | Optional; absent retains current value | Whether membership of password-protected channels is concealed from outsiders. |
 | `message.is_temp_channel_creation_allowed` | boolean | Optional; absent retains current value | Whether temporary channel creation is enabled by the general setting. |
-| `message.max_channel_count` | number | Optional; absent retains current value | Whole-number creation limit from 1 to 100, including root, permanent and temporary channels. Lowering it preserves existing channels. Invalid values reject the entire update. |
+| `message.max_channel_count` | number | Optional; absent retains current value | Allocated channel slots, a whole number from 1 to 2147483647, subject to allocation limits. Includes root, permanent and temporary channels; valid IDs are 0 through count minus 1. A reduction is rejected if any existing channel ID is at least the new count. Allocation or save failure preserves the current array and count. |
 | `message.is_typing_indicator_allowed` | boolean | Optional; absent retains current value | Whether typing indicators are enabled. |
 | `message.is_client_rename_allowed` | boolean | Optional; absent retains current value | Whether client renaming is enabled. |
 | `message.is_link_preview_allowed` | boolean | Optional; absent retains current value | Whether URL previews are enabled. |
@@ -6042,7 +6083,7 @@ The full example and usage-only example are separate body shapes. `ram_bytes` is
 | `message.is_video_streaming_active` | boolean | Present in full response | Whether video streaming is enabled; this settings field uses active, while login/policy use allowed. |
 | `message.is_hide_clients_in_password_protected_channels_active` | boolean | Present in full response | Whether membership of password-protected channels is concealed from outsiders. |
 | `message.is_temp_channel_creation_allowed` | boolean | Present in full response | Whether temporary channel creation is enabled by the general setting. |
-| `message.max_channel_count` | number | Present in full response | Configured channel creation limit, including root and temporary channels; defaults to 100. |
+| `message.max_channel_count` | number | Present in full response | Configured channel array size, including root and temporary channels; defaults to 100. |
 | `message.is_typing_indicator_allowed` | boolean | Present in full response | Whether typing indicators are enabled. |
 | `message.is_client_rename_allowed` | boolean | Present in full response | Whether client renaming is enabled. |
 | `message.is_link_preview_allowed` | boolean | Present in full response | Whether URL previews are enabled. |
@@ -6662,6 +6703,19 @@ No additional body fields.
         "type": "server_emoji_error",
         "operation": "upload_server_emoji",
         "reason": "Use one to 32 lowercase letters, digits or underscores for the name."
+    }
+}
+```
+
+**Collection storage limit**
+
+```json
+{
+    "message":
+    {
+        "type": "server_emoji_error",
+        "operation": "upload_server_emoji",
+        "reason": "Emoji images have a combined 32 MiB encoded storage limit. Delete some images before uploading another."
     }
 }
 ```
@@ -8002,6 +8056,28 @@ Reaction JSON carried as encrypted chat content. In a direct message, every fiel
 | `emoji_name` | string | Required | Emoji name, 1–32 lowercase letters, digits or underscores. |
 | `active` | boolean | Required | True adds the reaction; false removes it. |
 
+### Authenticated file envelope
+
+Current clients serialize this object into the encrypted file-header string and the assembled file-body string. A channel file uses it directly. A direct file stores the serialized object in its outer envelope's `message_value`. The server can see the nonce, ciphertext and tag; it does not receive the file keys or plaintext.
+
+```json
+{
+    "v": 2,
+    "iv": "<base64 of 16 fresh random bytes>",
+    "data": "<base64 ciphertext>",
+    "tag": "<base64 of 32 HMAC-SHA256 bytes>"
+}
+```
+
+| Field | JSON type | Presence | Body value |
+| --- | --- | --- | --- |
+| `v` | number | Required | Literal integer `2`. |
+| `iv` | string | Required | Fresh 16-byte nonce encoded as 24 Base64 characters, including padding. Headers and bodies have separate nonces. |
+| `data` | string | Required | Four-layer AES-256-CTR ciphertext of UTF-8 JSON with zero padding: at least 1024 bytes for a header and 4096 bytes for a body. |
+| `tag` | string | Required | 32-byte HMAC-SHA256 encoded as 44 Base64 characters. Verified before decryption. |
+
+The v2 object contains exactly these four members. [File encryption](encryption.md#file-encryption) specifies the derivation and authenticated bytes. Updated clients also read legacy bare Base64 file ciphertext, but never generate it. Older receivers need an update to read v2 files; the server forwards the envelope without translating it.
+
 ### File header
 
 **Client-side plaintext.** This is the decrypted JSON inside a chat file's encrypted `file_header`. For a direct file, the server cannot read any of these three fields. It contains file metadata and has no `data` member; the outer encrypted upload length remains server-visible separately.
@@ -8047,16 +8123,16 @@ JSON parsed from a direct-file envelope used for an encrypted header or complete
 ```json
 {
     "message_keys": "<RSA-encrypted keys>",
-    "message_value": "<base64 file ciphertext>"
+    "message_value": "<serialized authenticated file envelope>"
 }
 ```
 
 | Field | JSON type | Presence | Body value |
 | --- | --- | --- | --- |
 | `message_keys` | string | Required | Serialized four-key array encrypted with the recipient's RSA public key. The plaintext content keys are not available to the server. |
-| `message_value` | string | Required | Raw base64 file ciphertext string; its plaintext is not visible to the server. The file format does not use the text format's serialized `{iv,data}` object here. |
+| `message_value` | string | Required | Serialized v2 authenticated file envelope; its plaintext is not visible to the server. Legacy senders may supply bare Base64 ciphertext. |
 
-Channel file bodies and channel file headers are encrypted base64 strings without the direct-file `message_keys` wrapper. Decrypted picture content is an image representation rather than the JSON file-header/file-body objects above.
+Channel file bodies and channel file headers use the serialized v2 authenticated envelope without the direct-file `message_keys` wrapper. Decrypted picture content is an image representation rather than the JSON file-header/file-body objects above.
 
 ### Decoded SDP offer value
 
@@ -8090,7 +8166,7 @@ The body names, field types and conditional members above were checked against t
 
 - [Request type dispatch](../server-source-code/main/base.c)
 - [Common application wrapper](../server-source-code/main/msg/server/server_msg_delivery.c)
-- [Transport encryption](../server-source-code/main/metadata_crypto.c)
+- [Transport encryption](../server-source-code/main/crypto/crypto_metadata.c)
 - [Connection request bodies](../server-source-code/main/msg/client/client_msg_connection.c)
 - [Connection response bodies](../server-source-code/main/msg/server/server_msg_connection.c)
 - [Channel request bodies](../server-source-code/main/msg/client/client_msg_channel.c)
@@ -8122,9 +8198,9 @@ The body names, field types and conditional members above were checked against t
 - [Audio WebSocket session](../server-source-code/main/audio_websocket.c)
 - [Video WebSocket session](../server-source-code/main/video_websocket.c)
 - [SDP offer string](../server-source-code/main/audio_webrtc.c)
-- [Content bodies](../client-source-code/client-development/browser/src/scripts/app/workers.js)
-- [Text and key encryption](../client-source-code/client-development/browser/src/scripts/app/keys.js)
-- [Formatted text](../client-source-code/client-development/browser/src/scripts/app/chat.js)
-- [Quoted replies](../client-source-code/client-development/browser/src/scripts/app/chat-replies.js)
-- [Reactions](../client-source-code/client-development/browser/src/scripts/app/chat-reactions.js)
-- [File headers and file bodies](../client-source-code/client-development/browser/src/scripts/app/chat-files.js)
+- [Content bodies](../client-source-code/client-development/browser/main/scripts/app/workers/workers.js)
+- [Text and key encryption](../client-source-code/client-development/browser/main/scripts/app/crypto/keys.js)
+- [Formatted text](../client-source-code/client-development/browser/main/scripts/app/chat/chat.js)
+- [Quoted replies](../client-source-code/client-development/browser/main/scripts/app/chat/chat-replies.js)
+- [Reactions](../client-source-code/client-development/browser/main/scripts/app/chat/chat-reactions.js)
+- [File headers and file bodies](../client-source-code/client-development/browser/main/scripts/app/chat/chat-files.js)

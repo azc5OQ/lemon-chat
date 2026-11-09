@@ -8,25 +8,27 @@
 #include "../../../third-party/rxi-log/log.h"
 
 // declarations
-static boole _client_msg_video_internal__is_json_video_stream_start_valid(cJSON* json_root);
+static boole _client_msg_video_internal__is_json_video_stream_start_valid(cJSON *json_root);
 
 /**
- * @brief checks a video_stream_start request: source is "screen" or "file", codec is a short webcodecs string of letters, digits and dots, width / height / fps are numbers inside the server's caps, is_sound_included is a boolean when present
+ * @brief checks a video_stream_start request: source is "screen" or "file", codec is a short
+ *        webcodecs string of letters, digits and dots, width / height / fps are numbers inside the
+ *        server's caps, is_sound_included is a boolean when present
  *
  * @param cJSON* json_root -> the parsed client request
  *
  * @return boole TRUE when every field is present and sane
  */
-static boole _client_msg_video_internal__is_json_video_stream_start_valid(cJSON* json_root)
+static boole _client_msg_video_internal__is_json_video_stream_start_valid(cJSON *json_root)
 {
     boole status = FALSE;
-    cJSON* json_message_object = 0;
-    cJSON* json_source = 0;
-    cJSON* json_codec = 0;
-    cJSON* json_width = 0;
-    cJSON* json_height = 0;
-    cJSON* json_fps = 0;
-    cJSON* json_is_sound_included = 0;
+    cJSON *json_message_object = 0;
+    cJSON *json_source = 0;
+    cJSON *json_codec = 0;
+    cJSON *json_width = 0;
+    cJSON *json_height = 0;
+    cJSON *json_fps = 0;
+    cJSON *json_is_sound_included = 0;
     uint64 codec_length = 0;
     int64 validated_dimension = 0;
     uint64 i = 0;
@@ -109,15 +111,15 @@ static boole _client_msg_video_internal__is_json_video_stream_start_valid(cJSON*
  *
  * @return void
  */
-void client_msg__video__process_start(cJSON* json_root, uint64 sender_client_id)
+void client_msg__video__process_start(cJSON *json_root, uint64 sender_client_id)
 {
     boole status = FALSE;
     boole status0 = FALSE;
     boole status1 = FALSE;
     boole status2 = FALSE;
-    client_t* client = 0;
-    cJSON* json_message_object = 0;
-    cJSON* json_is_sound_included = 0;
+    client_t *client = 0;
+    cJSON *json_message_object = 0;
+    cJSON *json_is_sound_included = 0;
     cstring refusal_reason = "";
 
     status = base__is_request_allowed_based_on_spam_protection(sender_client_id);
@@ -175,14 +177,14 @@ void client_msg__video__process_start(cJSON* json_root, uint64 sender_client_id)
  *
  * @return void
  */
-void client_msg__video__process_stop(cJSON* json_root, uint64 sender_client_id)
+void client_msg__video__process_stop(cJSON *json_root, uint64 sender_client_id)
 {
     boole status0 = FALSE;
     boole status1 = FALSE;
     boole status2 = FALSE;
     boole status3 = FALSE;
     boole status4 = FALSE;
-    client_t* client = 0;
+    client_t *client = 0;
 
     clib__write_lock(&g_clients_global_rwlock_guard);
     clib__write_lock(&g_channels_global_rwlock_guard);
@@ -219,15 +221,15 @@ void client_msg__video__process_stop(cJSON* json_root, uint64 sender_client_id)
  *
  * @return void
  */
-void client_msg__video__process_watch(cJSON* json_root, uint64 sender_client_id)
+void client_msg__video__process_watch(cJSON *json_root, uint64 sender_client_id)
 {
     boole status = FALSE;
     boole status0 = FALSE;
     boole status1 = FALSE;
     boole status2 = FALSE;
-    client_t* client = 0;
-    cJSON* json_message_object = 0;
-    cJSON* json_is_watching = 0;
+    client_t *client = 0;
+    cJSON *json_message_object = 0;
+    cJSON *json_is_watching = 0;
     cstring refusal_reason = "";
 
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
@@ -269,23 +271,24 @@ void client_msg__video__process_watch(cJSON* json_root, uint64 sender_client_id)
 }
 
 /**
- * @brief the streamer answers whether a member that joined after the start may watch (or revokes one)
+ * @brief the streamer answers whether a member that joined after the start may watch (or revokes
+ *        one)
  *
  * @param cJSON* json_root -> the parsed client request, "client_id" and "is_allowed"
  * @param uint64 sender_client_id -> id of the client that sent the request
  *
  * @return void
  */
-void client_msg__video__process_allow_viewer(cJSON* json_root, uint64 sender_client_id)
+void client_msg__video__process_allow_viewer(cJSON *json_root, uint64 sender_client_id)
 {
     boole status = FALSE;
     boole status0 = FALSE;
     boole status1 = FALSE;
     boole status2 = FALSE;
-    client_t* client = 0;
-    cJSON* json_message_object = 0;
-    cJSON* json_client_id = 0;
-    cJSON* json_is_allowed = 0;
+    client_t *client = 0;
+    cJSON *json_message_object = 0;
+    cJSON *json_client_id = 0;
+    cJSON *json_is_allowed = 0;
     uint64 viewer_client_id = 0;
 
     status = base__is_request_allowed_based_on_spam_protection(sender_client_id);
@@ -303,8 +306,7 @@ void client_msg__video__process_allow_viewer(cJSON* json_root, uint64 sender_cli
     json_client_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "client_id");
     json_is_allowed = cJSON_GetObjectItemCaseSensitive(json_message_object, "is_allowed");
 
-    if (g_server_settings.max_client_count == 0
-        || util__json_read_uint64(json_client_id, g_server_settings.max_client_count - 1, &viewer_client_id) == FALSE)
+    if (g_server_settings.max_client_count == 0 || util__json_read_uint64(json_client_id, g_server_settings.max_client_count - 1, &viewer_client_id) == FALSE)
     {
         return;
     }
@@ -335,19 +337,20 @@ void client_msg__video__process_allow_viewer(cJSON* json_root, uint64 sender_cli
 }
 
 /**
- * @brief a watching viewer lost frames and asks the streamer for a keyframe (rate limited per streamer)
+ * @brief a watching viewer lost frames and asks the streamer for a keyframe (rate limited per
+ *        streamer)
  *
  * @param cJSON* json_root -> the parsed client request
  * @param uint64 sender_client_id -> id of the client that sent the request
  *
  * @return void
  */
-void client_msg__video__process_keyframe_request(cJSON* json_root, uint64 sender_client_id)
+void client_msg__video__process_keyframe_request(cJSON *json_root, uint64 sender_client_id)
 {
     boole status0 = FALSE;
     boole status1 = FALSE;
     boole status2 = FALSE;
-    client_t* client = 0;
+    client_t *client = 0;
 
     clib__write_lock(&g_clients_global_rwlock_guard);
     clib__write_lock(&g_channels_global_rwlock_guard);

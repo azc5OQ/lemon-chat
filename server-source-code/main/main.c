@@ -9,7 +9,7 @@
 #include "clib/clib.h"
 #include "../third-party/dave-g-json/cJSON.h" // needed by base.h
 #include "base.h"
-#include "metadata_crypto.h"
+#include "crypto/crypto_metadata.h"
 #include "core/server_logs.h"
 
 #include "../third-party/ITH-sha/sha256.h"
@@ -42,25 +42,25 @@
 // terminal status markers ([*] info, [+] ok, [-] off, [!] warn, [?] prompt) plus the banner color. they
 // default to plain ASCII and are upgraded to ANSI-colored versions by _main_internal__init_terminal (called
 // once at startup) when stdout is an interactive, color-capable console.
-const char* g_mark_info = "[*]";
-const char* g_mark_ok = "[+]";
-const char* g_mark_off = "[-]";
-const char* g_mark_warn = "[!]";
-const char* g_mark_ask = "[?]";
-static const char* g_color_banner = "";
-static const char* g_color_reset = "";
+const char *g_mark_info = "[*]";
+const char *g_mark_ok = "[+]";
+const char *g_mark_off = "[-]";
+const char *g_mark_warn = "[!]";
+const char *g_mark_ask = "[?]";
+static const char *g_color_banner = "";
+static const char *g_color_reset = "";
 
-char* g_first_run_admin_password = NULL_POINTER; // plaintext admin password, kept only through this run's startup summary, then wiped
+char *g_first_run_admin_password = NULL_POINTER; // plaintext admin password, kept only through this run's startup summary, then wiped
 static pthread_mutex_t g_log_mutex = PTHREAD_MUTEX_INITIALIZER; // serializes console log output across threads
 
 // declarations
 static void _main_internal__print_startup_summary(void);
 static void _main_internal__print_browser_addresses(boole is_stunnel_started);
-static void _main_internal__log_handler(juice_log_level_t level, const char* message);
-static void* _main_internal__start_stun_turn_listener_for_webrtc_datachannel(void* argument);
+static void _main_internal__log_handler(juice_log_level_t level, const char *message);
+static void *_main_internal__start_stun_turn_listener_for_webrtc_datachannel(void *argument);
 static void _main_internal__print_debug_information(void);
 static void _main_internal__init_terminal(void);
-static void _main_internal__log_lock(bool lock, void* udata);
+static void _main_internal__log_lock(bool lock, void *udata);
 static void _main_internal__print_banner(void);
 
 /**
@@ -70,9 +70,9 @@ static void _main_internal__print_banner(void);
  */
 static void _main_internal__print_browser_addresses(boole is_stunnel_started)
 {
-    char addresses[16][IPV4_ADDRESS_STRING_LENGTH];
-    uint count;
-    uint index;
+    char addresses[16][IPV4_ADDRESS_STRING_LENGTH] = { 0 };
+    uint64 count = 0;
+    uint64 index = 0;
 
     if (g_server_settings.is_client_http_enabled == FALSE)
     {
@@ -126,6 +126,7 @@ static void _main_internal__print_startup_summary(void)
 {
     boole is_stunnel_started = stunnel__was_started();
     int64 certificate_days_left = -1;
+
 #ifndef WIN32
     struct stat certificate_file_info;
 
@@ -184,7 +185,7 @@ static void _main_internal__print_startup_summary(void)
 
     if (g_server_settings.is_wireguard_mode_active == TRUE)
     {
-        printf("  %s  %-18s on, public address %s, udp %lld-%lld forwarded by the router\n", g_mark_ok, "wireguard mode", g_server_settings.webrtc_public_address, (long long)g_server_settings.webrtc_port_range_begin, (long long)g_server_settings.webrtc_port_range_end);
+        printf("  %s  %-18s on, public address %s, udp %lld-%lld forwarded by the router\n", g_mark_ok, "wireguard mode", g_server_settings.webrtc_public_address, (int64)g_server_settings.webrtc_port_range_begin, (int64)g_server_settings.webrtc_port_range_end);
     }
 
     // optional bundled http server that serves the client
@@ -265,14 +266,14 @@ static void _main_internal__print_startup_summary(void)
  *
  * @return void
  */
-static void _main_internal__log_handler(juice_log_level_t level, const char* message)
+static void _main_internal__log_handler(juice_log_level_t level, const char *message)
 {
 #ifndef WIN32
 
-    FILE* file = stdout;
+    FILE *file = stdout;
     time_t t = time(NULL_POINTER);
     struct tm lt;
-    char buffer[32];
+    char buffer[32] = { 0 };
 
     clib__null_memory(buffer, sizeof(buffer));
     if (localtime_r(&t, &lt) == NULL_POINTER || strftime(buffer, 32, "%Y-%m-%d %H:%M:%S", &lt) == 0)
@@ -291,11 +292,11 @@ static void _main_internal__log_handler(juice_log_level_t level, const char* mes
  * @param void* argument -> unused thread argument
  * @return void* -> NULL_POINTER after starting the listener or if startup fails
  */
-static void* _main_internal__start_stun_turn_listener_for_webrtc_datachannel(void* argument)
+static void *_main_internal__start_stun_turn_listener_for_webrtc_datachannel(void *argument)
 {
     violet_options_t vopts;
-    char* argv[] = { "violet", "--log-level=fatal", 0 };
-    juice_server_t* server = NULL_POINTER;
+    char *argv[] = { "violet", "--log-level=fatal", 0 };
+    juice_server_t *server = NULL_POINTER;
 
     (void)argument;
     violet_options_init(&vopts);
@@ -341,7 +342,8 @@ error:
 }
 
 /**
- * @brief prints one "<name> active" line for every debug category that is switched on at compile time
+ * @brief prints one "<name> active" line for every debug category that is switched on at compile
+ *        time
  *
  *        each DBG_* macro expands to either the following printf or to nothing, so the startup output
  *        lists exactly the debug categories built into this binary.
@@ -370,19 +372,24 @@ static void _main_internal__print_debug_information(void)
 }
 
 /**
- * @brief detects whether stdout can show ANSI color (enabling it on the Windows console) and, when so,
- *        upgrades the status markers and banner to colored versions
+ * @brief detects whether stdout can show ANSI color (enabling it on the Windows console) and, when
+ *        so, upgrades the status markers and banner to colored versions
  *
  * @return void
  */
 static void _main_internal__init_terminal(void)
 {
+#ifdef WIN32
+    HANDLE stdout_handle = 0;
+    DWORD console_mode = 0;
+#endif
+
     boole use_color = FALSE;
 
 #ifdef WIN32
     {
-        HANDLE stdout_handle = GetStdHandle(STD_OUTPUT_HANDLE);
-        DWORD console_mode = 0;
+        stdout_handle = GetStdHandle(STD_OUTPUT_HANDLE);
+        console_mode = 0;
 
         // GetConsoleMode only succeeds for a real console (not a redirected file/pipe), which also keeps
         // escape codes out of redirected output. ENABLE_VIRTUAL_TERMINAL_PROCESSING turns on ANSI.
@@ -411,15 +418,15 @@ static void _main_internal__init_terminal(void)
 }
 
 /**
- * @brief lock callback for the logging library so concurrent threads cannot interleave their log lines
- *        on the console (registered via log_set_lock)
+ * @brief lock callback for the logging library so concurrent threads cannot interleave their log
+ *        lines on the console (registered via log_set_lock)
  *
  * @param bool lock -> TRUE to acquire the lock, FALSE to release it
  * @param void* udata -> unused
  *
  * @return void
  */
-static void _main_internal__log_lock(bool lock, void* udata)
+static void _main_internal__log_lock(bool lock, void *udata)
 {
     (void)udata;
 
@@ -457,10 +464,10 @@ int main(void)
 #endif
 {
     boole status = FALSE;
-    char input[50];
-    char http_webroot_resolved[512];
-    char client_html_path[640];
-    FILE* client_html_file = 0;
+    char input[50] = { 0 };
+    char http_webroot_resolved[512] = { 0 };
+    char client_html_path[640] = { 0 };
+    FILE *client_html_file = 0;
 
     base__start_server_uptime();
 
@@ -501,28 +508,33 @@ int main(void)
         exit(EXIT_FAILURE);
     }
     settings__load();
-    login_admission__set_limit((uint)g_server_settings.max_concurrent_logins);
+    login_admission__set_limit((uint64)g_server_settings.max_concurrent_logins);
 
-    g_clients_array = (client_t*)memorymanager__allocate(sizeof(client_t) * g_server_settings.max_client_count, MEMALLOC_CLIENTS_ARRAY);
-    g_channel_array = (channel_t*)memorymanager__allocate(sizeof(channel_t) * g_server_settings.max_channel_count, MEMALLOC_CHANNELS_ARRAY);
-    g_client_stored_data = (client_stored_data_t*)memorymanager__allocate(sizeof(client_stored_data_t) * MAX_CLIENT_STORED_DATA, MEMALLOC_CLIENT_STORED_DATA_ARRAY);
-    g_icons_array = (icon_t*)memorymanager__allocate(sizeof(icon_t) * MAX_ICONS, MEMALLOC_CLIENT_STORED_DATA_ARRAY);
-    g_groups_array = (group_t*)memorymanager__allocate(sizeof(group_t) * MAX_GROUPS, MEMALLOC_CLIENT_STORED_DATA_ARRAY);
-    g_ban_array = (ban_entry_t*)memorymanager__allocate(sizeof(ban_entry_t) * MAX_BANS, MEMALLOC_BANS_ARRAY);
+    if (g_server_settings.max_channel_count < 1 || g_server_settings.max_channel_count > MAX_CHANNEL_COUNT || g_server_settings.max_channel_count > SIZE_MAX / sizeof(channel_t))
+    {
+        fprintf(stderr, "The configured channel array cannot be represented on this platform.\n");
+        exit(EXIT_FAILURE);
+    }
+    g_clients_array = (client_t *)memorymanager__allocate(sizeof(client_t) * g_server_settings.max_client_count, MEMALLOC_CLIENTS_ARRAY);
+    g_channel_array = (channel_t *)memorymanager__allocate(sizeof(channel_t) * g_server_settings.max_channel_count, MEMALLOC_CHANNELS_ARRAY);
+    g_client_stored_data = (client_stored_data_t *)memorymanager__allocate(sizeof(client_stored_data_t) * MAX_CLIENT_STORED_DATA, MEMALLOC_CLIENT_STORED_DATA_ARRAY);
+    g_icons_array = (icon_t *)memorymanager__allocate(sizeof(icon_t) * MAX_ICONS, MEMALLOC_CLIENT_STORED_DATA_ARRAY);
+    g_groups_array = (group_t *)memorymanager__allocate(sizeof(group_t) * MAX_GROUPS, MEMALLOC_CLIENT_STORED_DATA_ARRAY);
+    g_ban_array = (ban_entry_t *)memorymanager__allocate(sizeof(ban_entry_t) * MAX_BANS, MEMALLOC_BANS_ARRAY);
 
     // offline message queue: ram only, allocated once, never persisted. the payloads themselves are
     // allocated per message, so an empty queue costs only these slot headers
     if (g_server_settings.is_offline_messaging_allowed == TRUE)
     {
-        g_offline_messages = (offline_chat_message_t*)memorymanager__allocate(sizeof(offline_chat_message_t) * MAX_OFFLINE_MESSAGES, MEMALLOC_OFFLINE_MESSAGES_ARRAY);
+        g_offline_messages = (offline_chat_message_t *)memorymanager__allocate(sizeof(offline_chat_message_t) * MAX_OFFLINE_MESSAGES, MEMALLOC_OFFLINE_MESSAGES_ARRAY);
     }
-    g_webrtc_peers_array = (webrtc_peer_t*)memorymanager__allocate(sizeof(webrtc_peer_t) * g_server_settings.max_client_count, MEMALLOC_WEBRTC_PEERS);
-    if (g_clients_array == NULL_POINTER || g_channel_array == NULL_POINTER || g_client_stored_data == NULL_POINTER || g_icons_array == NULL_POINTER || g_groups_array == NULL_POINTER || g_ban_array == NULL_POINTER || g_webrtc_peers_array == NULL_POINTER ||
-        (g_server_settings.is_offline_messaging_allowed == TRUE && g_offline_messages == NULL_POINTER)
-        // reserve chat, audio and video sockets even when media is enabled later at run time
-        || ws_init_client_slots((uint32_t)g_server_settings.max_client_count * WEBSOCKET_CONNECTIONS_PER_CLIENT) != 0)
+    g_webrtc_peers_array = (webrtc_peer_t *)memorymanager__allocate(sizeof(webrtc_peer_t) * g_server_settings.max_client_count, MEMALLOC_WEBRTC_PEERS);
+
+    status = g_clients_array == NULL_POINTER || g_channel_array == NULL_POINTER || g_client_stored_data == NULL_POINTER || g_icons_array == NULL_POINTER || g_groups_array == NULL_POINTER || g_ban_array == NULL_POINTER || g_webrtc_peers_array == NULL_POINTER || (g_server_settings.is_offline_messaging_allowed == TRUE && g_offline_messages == NULL_POINTER);
+    if (status || ws_init_client_slots((uint)g_server_settings.max_client_count * WEBSOCKET_CONNECTIONS_PER_CLIENT) != 0)
     {
-        fprintf(stderr, "Unable to reserve startup arrays. Reduce server_slots in server_settings.json or provide more memory.\n");
+        // reserve chat, audio and video sockets even when media is enabled later at run time
+        fprintf(stderr, "Unable to reserve startup arrays. Reduce server_slots or max_channel_count in server_settings.json or provide more memory.\n");
         exit(EXIT_FAILURE);
     }
 
@@ -540,12 +552,10 @@ int main(void)
         return EXIT_FAILURE;
     }
 
-    // resolve the http webroot and warn about a missing client.html now (main thread), so this and the
-    // startup summary print before any worker thread is launched and cannot interleave on the console
-    if (g_server_settings.is_client_http_enabled == TRUE)
-    {
-        clib__null_memory(http_webroot_resolved, sizeof(http_webroot_resolved));
+    // Resolve the root even when HTTP starts disabled, for later live enabling.
+    // Startup diagnostics still precede the worker threads.
 
+    {
         if (g_server_settings.http_webroot[0] != 0)
         {
             clib__string_copy(http_webroot_resolved, sizeof(http_webroot_resolved), g_server_settings.http_webroot);
@@ -568,15 +578,14 @@ int main(void)
 
         // warn loudly if client.html is not where the http server will look for it, so the operator does
         // not get a silent 404 in the browser
-        clib__null_memory(client_html_path, sizeof(client_html_path));
         clib__string_format(client_html_path, sizeof(client_html_path), "%s/client.html", http_webroot_resolved);
         client_html_file = fopen(client_html_path, "rb");
         if (client_html_file != NULL_POINTER)
         {
             fclose(client_html_file);
-            printf("%s %s%s\n", g_mark_ok, "http server: serving client.html from ", client_html_path);
+            printf("%s %s%s\n", g_mark_ok, "http server: client.html available at ", client_html_path);
         }
-        else
+        else if (g_server_settings.is_client_http_enabled)
         {
             printf("%s %s%s%s\n", g_mark_warn, "http server: client.html NOT found at ", client_html_path, " - copy client.html there or the browser will get 404");
         }
@@ -616,14 +625,11 @@ int main(void)
         return EXIT_FAILURE;
     }
 
-    // http_server__start spawns its own thread and returns immediately (webroot already resolved above)
-    if (g_server_settings.is_client_http_enabled == TRUE)
+    http_server__set_https_redirect(g_server_settings.is_stunnel_enabled && g_server_settings.is_https_enabled, g_server_settings.https_port);
+    http_server__initialize(g_server_settings.http_port, http_webroot_resolved);
+    if (!http_server__set_mode(g_server_settings.is_client_http_enabled, g_server_settings.is_client_http_blank_when_disabled))
     {
-        if (g_server_settings.is_stunnel_enabled == TRUE && g_server_settings.is_https_enabled == TRUE)
-        {
-            http_server__set_https_redirect(TRUE, g_server_settings.https_port);
-        }
-        http_server__start(g_server_settings.http_port, http_webroot_resolved);
+        fprintf(stderr, "HTTP listener could not start; change its port or free the port before enabling it.\n");
     }
 
     // the STUN/TURN + webrtc datachannel listener is always started and kept up; is_voice_chat_active

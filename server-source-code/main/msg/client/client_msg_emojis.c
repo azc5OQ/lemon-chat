@@ -8,7 +8,7 @@
 #include "../../clib/clib_rwlock.h"
 #include <string.h>
 
-static void _client_msg_emojis_internal__process(cJSON* json_root, uint64 client_id, ws_cli_conn_t* socket, cstring operation);
+static void _client_msg_emojis_internal__process(cJSON *json_root, uint64 client_id, ws_cli_conn_t *socket, cstring operation);
 
 /**
  * @brief Checks the connection and permissions before handling an emoji request.
@@ -17,21 +17,21 @@ static void _client_msg_emojis_internal__process(cJSON* json_root, uint64 client
  * @param socket Connection that sent the request.
  * @param operation Request message type.
  */
-static void _client_msg_emojis_internal__process(cJSON* json_root, uint64 client_id, ws_cli_conn_t* socket, cstring operation)
+static void _client_msg_emojis_internal__process(cJSON *json_root, uint64 client_id, ws_cli_conn_t *socket, cstring operation)
 {
     boole status = FALSE;
     boole status0 = FALSE;
     boole status1 = FALSE;
     boole status2 = FALSE;
     boole status3 = FALSE;
-    cJSON* message = cJSON_GetObjectItemCaseSensitive(json_root, "message");
-    cJSON* id = cJSON_GetObjectItemCaseSensitive(message, "emoji_id");
-    cJSON* name = cJSON_GetObjectItemCaseSensitive(message, "name");
-    cJSON* base64 = cJSON_GetObjectItemCaseSensitive(message, "base64");
-    client_t* client = NULL_POINTER;
+    cJSON *message = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    cJSON *id = cJSON_GetObjectItemCaseSensitive(message, "emoji_id");
+    cJSON *name = cJSON_GetObjectItemCaseSensitive(message, "name");
+    cJSON *base64 = cJSON_GetObjectItemCaseSensitive(message, "base64");
+    client_t *client = NULL_POINTER;
     cstring error = NULL_POINTER;
     cstring requested_id = cJSON_IsString(id) ? id->valuestring : NULL_POINTER;
-    char new_id[33] = {0};
+    char new_id[33] = { 0 };
     boole editing = (boole)(clib__strcmp(operation, "upload_server_emoji") == 0 || clib__strcmp(operation, "delete_server_emoji") == 0);
 
     if (client_id >= g_server_settings.max_client_count)
@@ -60,8 +60,7 @@ static void _client_msg_emojis_internal__process(cJSON* json_root, uint64 client
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
     }
-    if (editing && permissions__is_allowed(client, clib__strcmp(operation, "upload_server_emoji") == 0
-        ? PERMISSION_UPLOAD_EMOJIS : PERMISSION_DELETE_EMOJIS) == FALSE)
+    if (editing && permissions__is_allowed(client, clib__strcmp(operation, "upload_server_emoji") == 0 ? PERMISSION_UPLOAD_EMOJIS : PERMISSION_DELETE_EMOJIS) == FALSE)
     {
         server_msg__administration__send_access_denied_to_single_client(client, NULL_POINTER);
         server_msg__emojis__send_error(client, operation, "Insufficient permissions.", requested_id);
@@ -88,8 +87,7 @@ static void _client_msg_emojis_internal__process(cJSON* json_root, uint64 client
     }
     else
     {
-        error = emojis__add(cJSON_IsString(name) ? name->valuestring : NULL_POINTER,
-            cJSON_IsString(base64) ? base64->valuestring : NULL_POINTER, new_id);
+        error = emojis__add(cJSON_IsString(name) ? name->valuestring : NULL_POINTER, cJSON_IsString(base64) ? base64->valuestring : NULL_POINTER, new_id);
         if (error != NULL_POINTER)
         {
             server_msg__emojis__send_error(client, operation, error, NULL_POINTER);
@@ -108,7 +106,7 @@ static void _client_msg_emojis_internal__process(cJSON* json_root, uint64 client
  * @param client_id Requesting client slot.
  * @param socket Connection that sent the request.
  */
-void client_msg__emojis__process_list(cJSON* json_root, uint64 client_id, ws_cli_conn_t* socket)
+void client_msg__emojis__process_list(cJSON *json_root, uint64 client_id, ws_cli_conn_t *socket)
 {
     _client_msg_emojis_internal__process(json_root, client_id, socket, "load_server_emojis");
 }
@@ -119,7 +117,7 @@ void client_msg__emojis__process_list(cJSON* json_root, uint64 client_id, ws_cli
  * @param client_id Requesting client slot.
  * @param socket Connection that sent the request.
  */
-void client_msg__emojis__process_image(cJSON* json_root, uint64 client_id, ws_cli_conn_t* socket)
+void client_msg__emojis__process_image(cJSON *json_root, uint64 client_id, ws_cli_conn_t *socket)
 {
     _client_msg_emojis_internal__process(json_root, client_id, socket, "load_server_emoji");
 }
@@ -130,7 +128,7 @@ void client_msg__emojis__process_image(cJSON* json_root, uint64 client_id, ws_cl
  * @param client_id Requesting client slot.
  * @param socket Connection that sent the request.
  */
-void client_msg__emojis__process_upload(cJSON* json_root, uint64 client_id, ws_cli_conn_t* socket)
+void client_msg__emojis__process_upload(cJSON *json_root, uint64 client_id, ws_cli_conn_t *socket)
 {
     _client_msg_emojis_internal__process(json_root, client_id, socket, "upload_server_emoji");
 }
@@ -141,7 +139,7 @@ void client_msg__emojis__process_upload(cJSON* json_root, uint64 client_id, ws_c
  * @param client_id Requesting client slot.
  * @param socket Connection that sent the request.
  */
-void client_msg__emojis__process_delete(cJSON* json_root, uint64 client_id, ws_cli_conn_t* socket)
+void client_msg__emojis__process_delete(cJSON *json_root, uint64 client_id, ws_cli_conn_t *socket)
 {
     _client_msg_emojis_internal__process(json_root, client_id, socket, "delete_server_emoji");
 }

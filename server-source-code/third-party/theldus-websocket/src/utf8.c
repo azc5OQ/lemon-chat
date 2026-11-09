@@ -83,7 +83,7 @@ int is_utf8_len(uint8_t *s, size_t len)
 
 uint32_t is_utf8_len_state(uint8_t *s, size_t len, uint32_t state)
 {
-	uint32_t codepoint;
+    uint32_t codepoint = 0;
 	size_t i;
 
 	for (i = 0; i < len; i++)

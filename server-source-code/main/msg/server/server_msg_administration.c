@@ -22,12 +22,12 @@
  *
  * @return void
  */
-void server_msg__administration__send_client_info_to_single_client(client_t* receiver, client_t* subject, cJSON* request)
+void server_msg__administration__send_client_info_to_single_client(client_t *receiver, client_t *subject, cJSON *request)
 {
     boole status = FALSE;
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
-    cJSON* request_id = cJSON_GetObjectItemCaseSensitive(request, "request_id");
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
+    cJSON *request_id = cJSON_GetObjectItemCaseSensitive(request, "request_id");
     uint64 now_ms = 0;
     uint64 connected_seconds = 0;
     uint64 last_action_seconds_ago = 0;
@@ -72,7 +72,8 @@ void server_msg__administration__send_client_info_to_single_client(client_t* rec
 }
 
 /**
- * @brief This function sends icon list to single client. Called when client sents challenge_response message to server during authentication process.
+ * @brief This function sends icon list to single client. Called when client sents
+ *        challenge_response message to server during authentication process.
  *
  * @param client_t* receiver -> the client that receives it
  *
@@ -80,11 +81,12 @@ void server_msg__administration__send_client_info_to_single_client(client_t* rec
  *
  * @return void
  */
-void server_msg__administration__send_icon_list_to_single_client(client_t* receiver)
+void server_msg__administration__send_icon_list_to_single_client(client_t *receiver)
 {
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
-    cJSON* json_icons_array = 0;
+    cJSON *single_client = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
+    cJSON *json_icons_array = 0;
     uint64 x = 0;
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
@@ -100,7 +102,7 @@ void server_msg__administration__send_icon_list_to_single_client(client_t* recei
     // create array of clients
     for (x = 0; x < MAX_ICONS; x++)
     {
-        cJSON* single_client = NULL_POINTER;
+        single_client = NULL_POINTER;
 
         if (g_icons_array[x].is_existing == FALSE)
         {
@@ -110,10 +112,10 @@ void server_msg__administration__send_icon_list_to_single_client(client_t* recei
         single_client = cJSON_CreateObject();
         cJSON_AddNumberToObject(single_client, "icon_id", (double)g_icons_array[x].id);
         cJSON_AddStringToObject(single_client, "base64_icon", (g_icons_array[x].base64 != NULL_POINTER) ? g_icons_array[x].base64 : "");
-        cJSON_AddItemToArray(json_icons_array, single_client);
+        util__json_add_owned_array(json_icons_array, single_client);
     }
 
-    cJSON_AddItemToObject(message, "icons", json_icons_array);
+    util__json_add_owned_object(message, "icons", json_icons_array);
 
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
@@ -128,13 +130,13 @@ void server_msg__administration__send_icon_list_to_single_client(client_t* recei
  *
  * @return void
  */
-void server_msg__administration__send_group_list_to_single_client(client_t* receiver)
+void server_msg__administration__send_group_list_to_single_client(client_t *receiver)
 {
     boole status = FALSE;
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
-    cJSON* json_groups_array = 0;
-    cJSON* single_group_id_object = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
+    cJSON *json_groups_array = 0;
+    cJSON *single_group_id_object = NULL_POINTER;
     uint64 x = 0;
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
@@ -161,20 +163,19 @@ void server_msg__administration__send_group_list_to_single_client(client_t* rece
         cJSON_AddStringToObject(single_group_id_object, "group_type", permissions__group_type_name(g_groups_array[x].group_type));
         cJSON_AddBoolToObject(single_group_id_object, "is_default_guest", g_groups_array[x].is_default_guest == TRUE);
         cJSON_AddNumberToObject(single_group_id_object, "group_linked_icon_id", (double)g_groups_array[x].icon_id);
-        cJSON_AddItemToObject(single_group_id_object, "has_icon", cJSON_CreateBool(g_groups_array[x].has_icon == TRUE));
+        util__json_add_owned_object(single_group_id_object, "has_icon", cJSON_CreateBool(g_groups_array[x].has_icon == TRUE));
         status = permissions__is_allowed_in_groups(receiver, PERMISSION_VIEW_GROUP_PERMISSIONS);
         if (status == TRUE)
         {
-            cJSON_AddItemToObject(single_group_id_object, "permissions", permissions__write(&g_groups_array[x].permissions));
+            util__json_add_owned_object(single_group_id_object, "permissions", permissions__write(&g_groups_array[x].permissions));
         }
-        cJSON_AddItemToObject(single_group_id_object, "access", permissions__write_group_access(receiver, x));
-        cJSON_AddItemToArray(json_groups_array, single_group_id_object);
+        util__json_add_owned_object(single_group_id_object, "access", permissions__write_group_access(receiver, x));
+        util__json_add_owned_array(json_groups_array, single_group_id_object);
     }
 
-    cJSON_AddItemToObject(message, "groups", json_groups_array);
-    cJSON_AddItemToObject(message, "access", permissions__write_access(receiver));
-    cJSON_AddItemToObject(message, "channel_groups", g_server_settings.is_permission_system_enabled
-        ? channel_groups__write_catalog(permissions__is_allowed_in_groups(receiver, PERMISSION_VIEW_GROUP_PERMISSIONS)) : cJSON_CreateArray());
+    util__json_add_owned_object(message, "groups", json_groups_array);
+    util__json_add_owned_object(message, "access", permissions__write_access(receiver));
+    util__json_add_owned_object(message, "channel_groups", g_server_settings.is_permission_system_enabled ? channel_groups__write_catalog(permissions__is_allowed_in_groups(receiver, PERMISSION_VIEW_GROUP_PERMISSIONS)) : cJSON_CreateArray());
 
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
@@ -182,29 +183,29 @@ void server_msg__administration__send_group_list_to_single_client(client_t* rece
 
 /**
  * @brief sends the admin identity-management list: every stored identity as { public_key_hash,
- *        group_ids[], is_online }. is_online is TRUE when a currently-connected authenticated client
- *        hashes to the same identity. admin-only; the caller checks that and holds the clients lock.
+ *        group_ids[], is_online }. is_online is TRUE when a currently-connected authenticated
+ *        client hashes to the same identity. admin-only; the caller checks that and holds the
+ *        clients lock.
  *
  * @param client_t* receiver -> the client that receives it
  *
- * @note the caller must hold the clients read lock (g_clients_array is read for online status). the
- *       identity store is guarded by g_client_stored_data_mutex, taken here.
+ * @note the caller must hold the clients read lock (g_clients_array is read for online status). the identity store is guarded by g_client_stored_data_mutex, taken here.
  *
  * @return void
  */
-void server_msg__administration__send_identity_list_to_single_client(client_t* receiver)
+void server_msg__administration__send_identity_list_to_single_client(client_t *receiver)
 {
     boole status = FALSE;
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
-    cJSON* json_identities_array = 0;
-    cJSON* single_identity_object = NULL_POINTER;
-    cJSON* identity_group_ids_array = NULL_POINTER;
-    client_t* connected_client = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
+    cJSON *json_identities_array = 0;
+    cJSON *single_identity_object = NULL_POINTER;
+    cJSON *identity_group_ids_array = NULL_POINTER;
+    client_t *connected_client = NULL_POINTER;
     boole is_online = FALSE;
     boole has_assigned_group = FALSE;
     uint64 group_id = 0;
-    char client_hash[BASE64_ENCODE_OUT_SIZE(32)];
+    char client_hash[BASE64_ENCODE_OUT_SIZE(32)] = { 0 };
     uint64 i = 0;
     uint64 t = 0;
     uint64 c = 0;
@@ -245,15 +246,14 @@ void server_msg__administration__send_identity_list_to_single_client(client_t* r
             {
                 continue;
             }
-            cJSON_AddItemToArray(identity_group_ids_array, cJSON_CreateNumber((double)group_id));
+            util__json_add_owned_array(identity_group_ids_array, cJSON_CreateNumber((double)group_id));
             has_assigned_group = TRUE;
         }
-        if (g_server_settings.is_permission_system_enabled == TRUE && has_assigned_group == FALSE
-            && g_guest_group_id < MAX_GROUPS)
+        if (g_server_settings.is_permission_system_enabled == TRUE && has_assigned_group == FALSE && g_guest_group_id < MAX_GROUPS)
         {
-            cJSON_AddItemToArray(identity_group_ids_array, cJSON_CreateNumber((double)g_guest_group_id));
+            util__json_add_owned_array(identity_group_ids_array, cJSON_CreateNumber((double)g_guest_group_id));
         }
-        cJSON_AddItemToObject(single_identity_object, "group_ids", identity_group_ids_array);
+        util__json_add_owned_object(single_identity_object, "group_ids", identity_group_ids_array);
 
         // mark online if any connected authenticated non-bot receiver hashes to this identity
         for (c = 0; c < g_server_settings.max_client_count; c++)
@@ -276,32 +276,32 @@ void server_msg__administration__send_identity_list_to_single_client(client_t* r
                 break;
             }
         }
-        cJSON_AddItemToObject(single_identity_object, "is_online", cJSON_CreateBool(is_online == TRUE));
+        util__json_add_owned_object(single_identity_object, "is_online", cJSON_CreateBool(is_online == TRUE));
 
-        cJSON_AddItemToArray(json_identities_array, single_identity_object);
+        util__json_add_owned_array(json_identities_array, single_identity_object);
     }
 
     pthread_mutex_unlock(&g_client_stored_data_mutex);
     clib__unlock(&g_groups_global_rwlock_guard);
 
-    cJSON_AddItemToObject(message, "identities", json_identities_array);
+    util__json_add_owned_object(message, "identities", json_identities_array);
 
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
 }
 
 /**
- * @brief tells a single client it should change the admin password (sent once after the first admin login,
- *        because the initial password was typed in cleartext at setup)
+ * @brief tells a single client it should change the admin password (sent once after the first admin
+ *        login, because the initial password was typed in cleartext at setup)
  *
  * @param client_t* receiver -> the client to notify
  *
  * @return void
  */
-void server_msg__administration__send_force_admin_password_change_to_single_client(client_t* receiver)
+void server_msg__administration__send_force_admin_password_change_to_single_client(client_t *receiver)
 {
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
 
     root = server_msg__delivery__new_message("force_admin_password_change", &message);
 
@@ -319,10 +319,10 @@ void server_msg__administration__send_force_admin_password_change_to_single_clie
  *
  * @return void
  */
-void server_msg__administration__send_access_denied_to_single_client(client_t* receiver, const char* reason)
+void server_msg__administration__send_access_denied_to_single_client(client_t *receiver, const char *reason)
 {
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
 
     if (receiver == NULL_POINTER || receiver->is_existing == FALSE || receiver->is_authenticated == FALSE)
     {
@@ -346,11 +346,11 @@ void server_msg__administration__send_access_denied_to_single_client(client_t* r
  *
  * @return void
  */
-void server_msg__administration__send_admin_log_to_single_client(client_t* receiver)
+void server_msg__administration__send_admin_log_to_single_client(client_t *receiver)
 {
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
-    cJSON* json_lines = 0;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
+    cJSON *json_lines = 0;
 
     json_lines = server_logs__build_json_array();
     if (json_lines == NULL_POINTER)
@@ -360,7 +360,7 @@ void server_msg__administration__send_admin_log_to_single_client(client_t* recei
 
     root = server_msg__delivery__new_message("admin_log", &message);
 
-    cJSON_AddItemToObject(message, "lines", json_lines);
+    util__json_add_owned_object(message, "lines", json_lines);
 
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
@@ -374,10 +374,10 @@ void server_msg__administration__send_admin_log_to_single_client(client_t* recei
  *
  * @return void
  */
-void server_msg__administration__send_add_group_to_client_event_to_all_clients(client_t* subject, uint64 group_id)
+void server_msg__administration__send_add_group_to_client_event_to_all_clients(client_t *subject, uint64 group_id)
 {
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
@@ -404,10 +404,10 @@ void server_msg__administration__send_add_group_to_client_event_to_all_clients(c
  *
  * @return void
  */
-void server_msg__administration__send_remove_group_from_client_event_to_all_clients(client_t* subject, uint64 group_id)
+void server_msg__administration__send_remove_group_from_client_event_to_all_clients(client_t *subject, uint64 group_id)
 {
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
@@ -434,10 +434,10 @@ void server_msg__administration__send_remove_group_from_client_event_to_all_clie
  *
  * @return void
  */
-void server_msg__administration__send_add_new_icon_event_to_all_clients(uint64 new_icon_id, char* icon_base64_value)
+void server_msg__administration__send_add_new_icon_event_to_all_clients(uint64 new_icon_id, char *icon_base64_value)
 {
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
@@ -460,8 +460,8 @@ void server_msg__administration__send_add_new_icon_event_to_all_clients(uint64 n
  */
 void server_msg__administration__send_remove_group_event_to_all_clients(uint64 group_id)
 {
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
@@ -483,8 +483,8 @@ void server_msg__administration__send_remove_group_event_to_all_clients(uint64 g
  */
 void server_msg__administration__send_remove_icon_event_to_all_clients(uint64 icon_id)
 {
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
@@ -508,15 +508,15 @@ void server_msg__administration__send_remove_icon_event_to_all_clients(uint64 ic
  */
 void server_msg__administration__send_group_icon_changed_event_to_all_clients(uint64 group_id, boole has_icon, uint64 icon_id)
 {
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
     root = server_msg__delivery__new_message("group_icon_changed", &message);
 
     cJSON_AddNumberToObject(message, "group_id", group_id);
-    cJSON_AddItemToObject(message, "has_icon", cJSON_CreateBool(has_icon == TRUE));
+    util__json_add_owned_object(message, "has_icon", cJSON_CreateBool(has_icon == TRUE));
     cJSON_AddNumberToObject(message, "group_linked_icon_id", icon_id);
 
     server_msg__delivery__send_json_to_all_clients(root, NULL_POINTER);
@@ -530,15 +530,14 @@ void server_msg__administration__send_group_icon_changed_event_to_all_clients(ui
  * @param uint64 group_id -> id of the new group
  * @param char* group_name -> name of the new group
  * @param uint64 group_linked_icon_id -> id of the icon linked to the group
- * @param boole has_icon -> TRUE when the group really has an icon, sent as a bool so the client knows
- *                          whether group_linked_icon_id is meaningful
+ * @param boole has_icon -> TRUE when the group really has an icon, sent as a bool so the client knows whether group_linked_icon_id is meaningful
  *
  * @return void
  */
-void server_msg__administration__send_create_new_group_event_to_all_clients(uint64 group_id, char* group_name, uint64 group_linked_icon_id, boole has_icon)
+void server_msg__administration__send_create_new_group_event_to_all_clients(uint64 group_id, char *group_name, uint64 group_linked_icon_id, boole has_icon)
 {
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
@@ -549,7 +548,7 @@ void server_msg__administration__send_create_new_group_event_to_all_clients(uint
     cJSON_AddStringToObject(message, "group_type", permissions__group_type_name(g_groups_array[group_id].group_type));
     cJSON_AddBoolToObject(message, "is_default_guest", g_groups_array[group_id].is_default_guest == TRUE);
     cJSON_AddNumberToObject(message, "group_linked_icon_id", group_linked_icon_id);
-    cJSON_AddItemToObject(message, "has_icon", cJSON_CreateBool(has_icon == TRUE));
+    util__json_add_owned_object(message, "has_icon", cJSON_CreateBool(has_icon == TRUE));
 
     server_msg__delivery__send_json_to_all_clients(root, NULL_POINTER);
 
@@ -563,13 +562,12 @@ void server_msg__administration__send_create_new_group_event_to_all_clients(uint
 void server_msg__administration__send_group_permissions_changed(uint64 group_id)
 {
     boole status = FALSE;
-    cJSON* message = NULL_POINTER;
-    cJSON* root = server_msg__delivery__new_message("group_permissions_changed", &message);
-
+    cJSON *message = NULL_POINTER;
+    cJSON *root = server_msg__delivery__new_message("group_permissions_changed", &message);
     uint64 i = 0;
 
     cJSON_AddNumberToObject(message, "group_id", (double)group_id);
-    cJSON_AddItemToObject(message, "permissions", permissions__write(&g_groups_array[group_id].permissions));
+    util__json_add_owned_object(message, "permissions", permissions__write(&g_groups_array[group_id].permissions));
     for (i = 0; i < (uint64)g_server_settings.max_client_count; i++)
     {
         status = permissions__is_allowed_in_groups(&g_clients_array[i], PERMISSION_VIEW_GROUP_PERMISSIONS);
@@ -585,10 +583,10 @@ void server_msg__administration__send_group_permissions_changed(uint64 group_id)
  * @brief Tells a client whether it currently has admin access, even when groups are disabled.
  * @param receiver -> authenticated client receiving its own status
  */
-void server_msg__administration__send_admin_status_to_single_client(client_t* receiver)
+void server_msg__administration__send_admin_status_to_single_client(client_t *receiver)
 {
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
 
     root = server_msg__delivery__new_message("admin_status", &message);
     cJSON_AddBoolToObject(message, "is_admin", receiver->is_admin);
@@ -600,7 +598,7 @@ void server_msg__administration__send_admin_status_to_single_client(client_t* re
  * @brief Refreshes group controls and current rights after a membership change.
  * @param receiver -> client being updated while the caller holds only the clients lock
  */
-void server_msg__administration__send_permission_update_to_single_client(client_t* receiver)
+void server_msg__administration__send_permission_update_to_single_client(client_t *receiver)
 {
     if (receiver == NULL_POINTER || receiver->is_existing == FALSE || receiver->is_authenticated == FALSE || receiver->is_music_bot == TRUE)
     {
@@ -613,7 +611,8 @@ void server_msg__administration__send_permission_update_to_single_client(client_
 }
 
 /**
- * @brief Refreshes connected users after group permissions change. The caller holds only the clients lock.
+ * @brief Refreshes connected users after group permissions change. The caller holds only the
+ *        clients lock.
  */
 void server_msg__administration__send_permission_updates_to_all_clients(void)
 {

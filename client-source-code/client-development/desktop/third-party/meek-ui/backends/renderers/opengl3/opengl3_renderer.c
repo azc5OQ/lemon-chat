@@ -382,9 +382,8 @@ typedef struct _opengl3_renderer_internal__state_t
     // hardware's linear->sRGB write produces the correct color.
     // When NOT set (driver lacks WGL_ARB_pixel_format, or it failed
     // to find a matching format), we stay on the legacy non-sRGB
-    // framebuffer and compile the older shaders that keep colors in
-    // sRGB space and use the pow(a, 1/2.2) coverage workaround for
-    // text. Same visual output as before this refactor.
+    // framebuffer. These shaders keep colors in sRGB space and preserve
+    // the atlas coverage, including when drawing dark text on light panels.
     boole srgb_fb;                                                                               // 0x8B0
     // adopted: the context belongs to the host (embedded / overlay use).
     // No clear, no SwapBuffers, no context or DC teardown.
@@ -447,32 +446,11 @@ static _opengl3_renderer_internal__state_t _opengl3_renderer_internal__g;
 // create needless blend work for transparent pixels (and so quad
 // edges between glyphs don't accumulate "zero + zero" color that
 // could be picked up by downstream effects).
-// GAMMA-CORRECT EDGE COVERAGE. We don't render to an sRGB framebuffer
-// (that would require WGL_ARB_pixel_format's sRGB-capable attribute,
-// which needs a whole dummy-context dance to resolve before we can
-// call it -- a bigger refactor than we wanted for the first sharpness
-// pass). Instead we apply the gamma curve to the atlas coverage
-// BEFORE multiplying by vertex alpha: pow(a, 1/2.2).
-// Why this helps: standard SRC_ALPHA/INV_SRC_ALPHA blending treats
-// 8-bit color values as if they were linear intensities, but monitors
-// interpret them as sRGB. That means a pixel with coverage=0.5 blends
-// 50%/50% between text color and background in code, but the human
-// eye sees it as ~22% brightness relative to full text color
-// (because sRGB curves the lower half hard). Edges of glyphs end up
-// looking dim and soft -- the "washed-out grayscale AA" look that
-// makes our text feel blurry next to DirectWrite's output in WSL
-// Settings or similar native UIs.
-// pow(coverage, 1/2.2) reshapes the coverage so that a linear ramp
-// in input produces a visually-linear ramp out. At coverage=0.5 this
-// gives ~0.73, i.e. 73% blend toward text color, which lands at the
-// perceptual midpoint. Edges appear solid and crisp, not smeared.
-// This is an approximation of proper sRGB-framebuffer blending --
-// accurate to within a percent or two for the common case of light
-// text on a dark background, which is essentially all of the UI.
-// For a fully physically-correct pipeline we would eventually want
-// an sRGB swap chain (or an intermediate sRGB FBO we blit from) on
-// all four backends; until then this keeps the rest of the pipeline
-// untouched.
+// Atlas values describe pixel coverage. Keep that alpha unchanged on both
+// light and dark surfaces: boosting coverage to compensate for light text
+// on black makes dark text on white appear artificially bold. The legacy
+// framebuffer blends in its stored color space; the sRGB path below can
+// additionally blend RGB in linear space without changing glyph coverage.
 #include "shaders/generated/text.frag.h"
 
 // ===== sRGB-framebuffer shader variants ====================================
@@ -481,17 +459,13 @@ static _opengl3_renderer_internal__state_t _opengl3_renderer_internal__g;
 // In that mode, the hardware converts shader output values from linear
 // to sRGB on write, and alpha blending happens in linear space --
 // exactly what we want for physically-correct edge compositing.
-// Two changes from the legacy shaders above:
-// 1. vec3 linear_rgb = pow(v_color.rgb, vec3(2.2));
+// Unlike the legacy shaders, these convert the vertex RGB to linear:
+// vec3 linear_rgb = pow(v_color.rgb, vec3(2.2));
 // Vertex colors are sourced from sRGB hex values in .style
 // (e.g. #6366f1). The hardware writes linear->sRGB, so we
 // must feed it linear values; converting in the fragment
 // shader is the simplest place.
-// 2. Text shader drops the pow(a, 1/2.2) coverage workaround.
-// That hack existed to approximate gamma-correct blending on
-// a non-sRGB FB by brightening edge coverage; with a real
-// sRGB FB the math is already correct. Applying it here
-// would DOUBLE-gamma the alpha and produce thick/chunky text.
+// Both paths preserve the atlas alpha coverage.
 // pow(x, 2.2) is a fast approximation of the full piecewise sRGB
 // transfer function. Error is < 0.01 across the 0..1 range, which is
 // well below 8-bit quantization. Worth the two saved instructions.
@@ -1818,7 +1792,7 @@ static boole _opengl3_renderer_internal__set_pixel_format(HDC hdc)
         _opengl3_renderer_internal__log_win32_error("SetPixelFormat");
         return FALSE;
     }
-    log_info("%s %d %s", "opengl3: legacy (non-sRGB) pixel format selected (index", pf, "); text will use pow-coverage gamma approximation");
+    log_info("%s %d %s", "opengl3: legacy (non-sRGB) pixel format selected (index", pf, "); text preserves atlas coverage");
     return TRUE;
 }
 #endif
@@ -2081,9 +2055,8 @@ static boole _opengl3_renderer_internal__build_pipeline(void)
 static boole _opengl3_renderer_internal__build_text_pipeline(void)
 {
     // Text fragment shader variant depends on sRGB FB availability
-    // just like the rect shader. Non-sRGB path keeps the legacy
-    // pow(a, 1/2.2) coverage hack; sRGB path does sRGB->linear on
-    // the vertex color and relies on the hardware for gamma.
+    // just like the rect shader. Both preserve atlas coverage. The sRGB
+    // path converts the vertex RGB to linear before hardware blending.
     char* fs_src = _opengl3_renderer_internal__g.srgb_fb
                  ? _opengl3_renderer_internal__text_fs_src_srgb
                  : _opengl3_renderer_internal__text_fs_src;

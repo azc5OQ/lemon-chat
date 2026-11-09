@@ -9,21 +9,21 @@
 
 typedef struct login_waiter_t
 {
-    struct login_waiter_t* previous;
-    struct login_waiter_t* next;
+    struct login_waiter_t *previous;
+    struct login_waiter_t *next;
     pthread_cond_t ready;
 } login_waiter_t;
 
 static pthread_mutex_t g_login_mutex = PTHREAD_MUTEX_INITIALIZER;
-static login_waiter_t* g_first_waiter = NULL;
-static login_waiter_t* g_last_waiter = NULL;
-static uint g_active_logins = 0;
-static uint g_login_limit = 4;
+static login_waiter_t *g_first_waiter = NULL;
+static login_waiter_t *g_last_waiter = NULL;
+static uint64 g_active_logins = 0;
+static uint64 g_login_limit = 4;
 
 // declarations
 static uint64 _login_admission_internal__now_ms(void);
 static void _login_admission_internal__wake_next(void);
-static void _login_admission_internal__remove_waiter(login_waiter_t* waiter);
+static void _login_admission_internal__remove_waiter(login_waiter_t *waiter);
 
 /**
  * @brief Reads elapsed time without being affected by changes to the system clock.
@@ -32,7 +32,8 @@ static void _login_admission_internal__remove_waiter(login_waiter_t* waiter);
  */
 static uint64 _login_admission_internal__now_ms(void)
 {
-    struct timespec now;
+    struct timespec now = { 0 };
+
     clock_gettime(CLOCK_MONOTONIC, &now);
     return (uint64)now.tv_sec * 1000 + (uint64)now.tv_nsec / 1000000;
 }
@@ -61,7 +62,7 @@ static void _login_admission_internal__wake_next(void)
  *
  * @return void
  */
-static void _login_admission_internal__remove_waiter(login_waiter_t* waiter)
+static void _login_admission_internal__remove_waiter(login_waiter_t *waiter)
 {
     if (waiter->previous != NULL)
     {
@@ -85,11 +86,11 @@ static void _login_admission_internal__remove_waiter(login_waiter_t* waiter)
 /**
  * @brief Changes the login limit without interrupting calculations already running.
  *
- * @param uint limit -> simultaneous logins allowed, clamped to 1 through 64
+ * @param uint64 limit -> simultaneous logins allowed, clamped to 1 through 64
  *
  * @return void
  */
-void login_admission__set_limit(uint limit)
+void login_admission__set_limit(uint64 limit)
 {
     if (limit < 1)
     {
@@ -109,30 +110,28 @@ void login_admission__set_limit(uint limit)
 /**
  * @brief Waits in arrival order for a free login slot, using the connection's reader thread.
  *
- * @param int (*)(void*) connection_is_valid -> returns nonzero while the connection may log in
+ * @param boole (*)(void*) connection_is_valid -> returns TRUE while the connection may log in
  * @param void* connection -> callback data, kept alive by the caller until this returns
- * @param uint timeout_ms -> maximum wait in milliseconds
+ * @param uint64 timeout_ms -> maximum wait in milliseconds
  *
- * @attention Call without the clients lock. After success, release the slot exactly
- * once when key calculations finish, including on failure.
+ * @attention Call without the clients lock. After success, release the slot exactly once when key calculations finish, including on failure.
  *
- * @return int -> 1 when a slot was acquired; 0 on cancellation, timeout or error
+ * @return boole -> TRUE when a slot was acquired; FALSE on cancellation, timeout or error
  */
-int login_admission__acquire(int (*connection_is_valid)(void*), void* connection, uint timeout_ms)
+boole login_admission__acquire(boole (*connection_is_valid)(void *), void *connection, uint64 timeout_ms)
 {
-    login_waiter_t waiter;
-    uint64 deadline_ms = _login_admission_internal__now_ms() + timeout_ms;
-    int acquired = 0;
-    struct timespec wake_time;
-    uint64 now_ms;
-    uint64 wait_ms;
-    int wait_status;
-    int valid;
+    login_waiter_t waiter = { 0 };
+    uint64 started_ms = _login_admission_internal__now_ms();
+    boole acquired = FALSE;
+    struct timespec wake_time = { 0 };
+    uint64 elapsed_ms = 0;
+    uint64 wait_ms = 0;
+    int64 wait_status = 0;
+    boole valid = FALSE;
 
-    if (connection_is_valid == NULL || timeout_ms == 0
-        || pthread_cond_init(&waiter.ready, NULL) != 0)
+    if (connection_is_valid == NULL || timeout_ms == 0 || pthread_cond_init(&waiter.ready, NULL) != 0)
     {
-        return 0;
+        return FALSE;
     }
 
     // Each waiting reader keeps its own small queue entry on its stack. There
@@ -159,21 +158,21 @@ int login_admission__acquire(int (*connection_is_valid)(void*), void* connection
         valid = connection_is_valid(connection);
         pthread_mutex_lock(&g_login_mutex);
 
-        now_ms = _login_admission_internal__now_ms();
-        if (valid == 0 || now_ms >= deadline_ms)
+        elapsed_ms = _login_admission_internal__now_ms() - started_ms;
+        if (valid == FALSE || elapsed_ms >= timeout_ms)
         {
             break;
         }
         if (g_first_waiter == &waiter && g_active_logins < g_login_limit)
         {
             g_active_logins++;
-            acquired = 1;
+            acquired = TRUE;
             break;
         }
 
         // A disconnected connection is noticed within a second even if every
-        // login slot is busy. The overall queue deadline uses a monotonic clock.
-        wait_ms = deadline_ms - now_ms;
+        // login slot is busy. Elapsed time avoids overflowing a large timeout.
+        wait_ms = timeout_ms - elapsed_ms;
         if (wait_ms > 1000)
         {
             wait_ms = 1000;

@@ -5,6 +5,7 @@
 *.lib
 *.dll
 *.so
+*.so.*
 *.dylib
 *.exe
 *.outs
@@ -72,10 +73,14 @@ compile_commands.json
 Thumbs.db
 desktop.ini
 
+# Python bytecode caches, including repository tools.
+__pycache__/
+*.pyc
+*.pyo
+
 # ---- Project notes (local, not tracked) ----
 notes/
 buildresult/
-/proposals/
 
 # gradle
 .gradle
@@ -120,7 +125,7 @@ selfhosting-tools/wireguard/lemon-wg0.conf
 # ---- Native desktop client ----
 # Local checks and their fixtures are intentionally kept out of Git.
 /client-source-code/client-development/desktop/checks/
-/client-source-code/client-development/desktop/src/overlay/checks/
+/client-source-code/client-development/desktop/main/overlay/checks/
 /client-source-code/client-development/desktop/build-tools/
 
 # Build trees and packaged copies, including IDE defaults.
@@ -180,3 +185,47 @@ selfhosting-tools/wireguard/lemon-wg0.conf
 # Local Android SDK configuration and Python cache.
 /client-source-code/client-development/mobile/android/local.properties
 /client-source-code/client-development/mobile/nodejs-client/__pycache__/
+
+# Browser-local downloaded tools and WebAssembly build output.
+!/tools/clang-format.exe
+/client-source-code/client-development/browser/.build-tools/
+/client-source-code/client-development/browser/client-webassemblies/**/build/
+
+# FreeType ships required platform sources in builds/; these are not build output.
+!/client-source-code/client-development/desktop/third-party/freetype-2.15.0/builds/
+!/client-source-code/client-development/desktop/third-party/freetype-2.15.0/builds/**
+
+# Omit upstream history and generated reference documentation from the vendored library.
+/client-source-code/client-development/desktop/third-party/freetype-2.15.0/ChangeLog
+/client-source-code/client-development/desktop/third-party/freetype-2.15.0/docs/reference/
+
+# Generated Opus configuration; keep cmake/ sources and *.in templates tracked.
+/server-source-code/third-party/libopus-1.6.1/CPackConfig.cmake
+/server-source-code/third-party/libopus-1.6.1/CPackSourceConfig.cmake
+/server-source-code/third-party/libopus-1.6.1/OpusConfig.cmake
+/server-source-code/third-party/libopus-1.6.1/OpusConfigVersion.cmake
+/server-source-code/third-party/libopus-1.6.1/config.h
+/server-source-code/third-party/libopus-1.6.1/opus.pc
+
+# Local Autotools output from bundled server dependencies.
+/server-source-code/third-party/libmaxminddb-1.12.2/autom4te.cache/
+/server-source-code/third-party/libmaxminddb-1.12.2/**/.deps/
+/server-source-code/third-party/libmaxminddb-1.12.2/config.h
+/server-source-code/third-party/libmaxminddb-1.12.2/config.log
+/server-source-code/third-party/libmaxminddb-1.12.2/config.status
+/server-source-code/third-party/libmaxminddb-1.12.2/libtool
+/server-source-code/third-party/libmaxminddb-1.12.2/stamp-h1
+/server-source-code/third-party/libmaxminddb-1.12.2/include/stamp-h2
+/server-source-code/third-party/libmaxminddb-1.12.2/t/maxminddb_test_helper.lo
+/server-source-code/third-party/stunnel/stunnel-5.75/config.log
+/server-source-code/third-party/stunnel/stunnel-5.75/config.status
+/server-source-code/third-party/stunnel/stunnel-5.75/libtool
+/server-source-code/third-party/stunnel/stunnel-5.75/src/.deps/
+/server-source-code/third-party/stunnel/stunnel-5.75/src/.libs/
+/server-source-code/third-party/stunnel/stunnel-5.75/src/config.h
+/server-source-code/third-party/stunnel/stunnel-5.75/src/stamp-h1
+/server-source-code/third-party/stunnel/stunnel-5.75/src/env.lo
+/server-source-code/third-party/stunnel/stunnel-5.75/src/libstunnel.la
+/server-source-code/third-party/stunnel/stunnel-5.75/src/stunnel
+/client-source-code/client-development/desktop/third-party/freetype-2.15.0/docs/oldlogs/
+/client-source-code/client-development/desktop/third-party/freetype-2.15.0/tests/

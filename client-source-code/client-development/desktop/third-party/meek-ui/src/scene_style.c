@@ -1394,6 +1394,15 @@ static void _scene_style_internal__resolve_recursive(gui_node_t* n)
         n->resolved.font_color     = n->font_color_override;
         n->resolved.has_font_color = TRUE;
     }
+    if (n->font_family_override[0])
+    {
+        stdlib__memcpy(n->resolved.font_family, n->font_family_override, sizeof(n->resolved.font_family));
+    }
+    if (n->font_size_override > 0)
+    {
+        n->resolved.font_size = n->font_size_override;
+        n->resolved.font_size_explicit = TRUE;
+    }
     if (n->has_background_image_override)
     {
         stdlib__memcpy(n->resolved.background_image, n->background_image_override, sizeof(n->resolved.background_image));
@@ -1494,10 +1503,26 @@ void scene__clear_background_image_override(gui_node_t* n)
 }
 
 /**
- * @brief scene__set_font_color_override
+ * @brief Keeps a runtime font selection across stylesheet resolution and layout reloads.
  *
  * @return void
  */
+void scene__set_font_override(gui_node_t* n, const char* family, float size)
+{
+    int64 index = 0;
+    if (n == NULL_POINTER)
+    {
+        return;
+    }
+    while (family != NULL_POINTER && family[index] && index < (int64)sizeof(n->font_family_override) - 1)
+    {
+        n->font_family_override[index] = family[index];
+        index++;
+    }
+    n->font_family_override[index] = 0;
+    n->font_size_override = size;
+}
+
 void scene__set_font_color_override(gui_node_t* n, gui_color_t c)
 {
     if (n == NULL_POINTER)

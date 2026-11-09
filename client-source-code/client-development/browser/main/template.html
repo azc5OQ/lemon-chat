@@ -1,0 +1,1900 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <script id="lemon-cfg">/*LEMONCFG replaced at serve-time by the built-in HTTP server with window.__SERVER_CONFIG__={"port":N,"keys":[...]} so the served page autoconnects; served any other way this stays an inert comment and the normal connect form shows. padding leaves room for the injected config:............................................................................................................................................................................................................*/</script>
+    <title>chat</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <link rel="icon" type="image/x-icon" href="" />
+
+
+    <!-- /*
+    fonts are embedded at the start, for convenience
+    everything (html, css ,fonts, javascript libraries (including javascript webworkers), few icons) must be contained in this single html file
+    the code also must be easily modifiable and easy to understand
+    if procedural code is easy to understand then the code here will be procedural and not nessecarily object oriented
+    */ -->
+
+    <style>
+/* @@INCLUDE: styles/fonts.style @@ */
+    </style>
+
+    <!-- country flags: shared base set, always-on; a theme overrides individual flags with !important -->
+    <style>
+/* @@INCLUDE: styles/flags.style @@ */
+    </style>
+
+    <!-- default theme style -->
+    <style id="style-theme-default" class="style-theme-html-element">
+/* @@INCLUDE: styles/theme-default.style @@ */
+    </style>
+
+
+    <!-- Other themes stay disabled until selected, so they do not flash on screen
+         while the page loads. apply_theme() changes the media attribute. -->
+
+    <!-- default mobile theme style -->
+    <style id="style-theme-default-mobile" class="style-theme-html-element" media="(max-width: 1px)">
+/* @@INCLUDE: styles/theme-default-mobile.style @@ */
+    </style>
+
+
+    <!-- Hybrid-v1 keeps its base panels, with updated menus and message controls. -->
+    <style id="style-theme-hybrid" class="style-theme-html-element" media="(max-width: 1px)">
+/* @@INCLUDE: styles/theme-hybrid.style @@ */
+    </style>
+
+    <!-- These skins change how Lemon Chat looks while keeping its usual controls. -->
+    <style id="style-theme-hybrid-v2" class="style-theme-html-element" media="(max-width: 1px)">
+/* @@INCLUDE: styles/theme-hybrid-v2.style @@ */
+    </style>
+
+    <style id="style-theme-aero" class="style-theme-html-element" media="(max-width: 1px)">
+/* @@INCLUDE: styles/theme-aero.style @@ */
+    </style>
+
+    <style id="style-theme-ozone" class="style-theme-html-element" media="(max-width: 1px)">
+/* @@INCLUDE: styles/theme-default.style @@ */
+/* @@INCLUDE: styles/theme-ozone.style @@ */
+    </style>
+
+
+    <!-- termix theme style (dark theme; opts into the right-pane member list) -->
+    <style id="style-theme-termix" class="style-theme-html-element" media="(max-width: 1px)">
+/* @@INCLUDE: styles/theme-termix.style @@ */
+    </style>
+
+
+    <style id="style-theme-pocket" class="style-theme-html-element" media="(max-width: 1px)">
+/* @@INCLUDE: styles/theme-default.style @@ */
+/* @@INCLUDE: styles/theme-pocket.style @@ */
+    </style>
+    <!-- simpledark theme style (messenger look; flat channel list, avatar strip via the member-list mirror) -->
+    <style id="style-theme-simpledark" class="style-theme-html-element" media="(max-width: 1px)">
+/* @@INCLUDE: styles/theme-simpledark.style @@ */
+    </style>
+
+    <!-- bluebell theme style (simpledark's polished sibling: gradients, glows, softer edges) -->
+    <style id="style-theme-bluebell" class="style-theme-html-element" media="(max-width: 1px)">
+/* @@INCLUDE: styles/theme-bluebell.style @@ */
+    </style>
+
+
+    <!-- Mono phone theme: the existing theme picker also switches its light/dark palette. -->
+    <style id="style-theme-mono-light" class="style-theme-html-element" media="(max-width: 1px)">
+/* @@INCLUDE: styles/theme-default.style @@ */
+/* @@INCLUDE: styles/theme-mono.style @@ */
+    </style>
+
+    <style id="style-theme-mono-dark" class="style-theme-html-element" media="(max-width: 1px)">
+/* @@INCLUDE: styles/theme-default.style @@ */
+/* @@INCLUDE: styles/theme-mono.style @@ */
+/* @@INCLUDE: styles/theme-mono-dark.style @@ */
+    </style>
+
+    <!-- layout engine bits: always active, NOT a theme sheet. the style-theme-html-element
+         class must stay off this element - apply_theme() disables every sheet carrying it -->
+    <style id="style-layout">
+/* @@INCLUDE: styles/layout.style @@ */
+/* @@INCLUDE: styles/member-conversations.style @@ */
+/* @@INCLUDE: styles/link-previews.style @@ */
+/* @@INCLUDE: styles/server-info.style @@ */
+/* @@INCLUDE: styles/chat-reactions.style @@ */
+/* @@INCLUDE: styles/chat-replies.style @@ */
+/* @@INCLUDE: styles/groups.style @@ */
+/* @@INCLUDE: styles/server-emojis.style @@ */
+/* @@INCLUDE: styles/server-administration.style @@ */
+    </style>
+
+    <script type="text/javascript">
+/* @@INCLUDE: scripts/vendor/aes-js.js @@ */
+/* @@INCLUDE: scripts/app/utils.js @@ */
+/* @@INCLUDE: scripts/app/globals.js @@ */
+/* @@INCLUDE: scripts/vendor/sha256.js @@ */
+/* @@INCLUDE: scripts/vendor/js-sha256.js @@ */
+/* @@INCLUDE: scripts/app/audio/opus-runtime.js @@ */
+/* @@INCLUDE: scripts/app/audio/audio-opus-glue.js @@ */
+/* @@INCLUDE: scripts/app/crypto/rsa-crypto.js @@ */
+/* @@INCLUDE: scripts/app/workers/worker-entry.js @@ */
+/* @@INCLUDE: scripts/vendor/minimp3.js @@ */
+/* @@INCLUDE: scripts/app/audio/minimp3-worker.js @@ */
+/* @@INCLUDE: scripts/app/video/video-worker.js @@ */
+/* @@INCLUDE: scripts/app/audio/audio.js @@ */
+/* @@INCLUDE: scripts/app/audio/sounds.js @@ */
+/* @@INCLUDE: scripts/app/msg/messages.js @@ */
+/* @@INCLUDE: scripts/app/ui/theme-effects.js @@ */
+/* @@INCLUDE: scripts/app/ui/ui.js @@ */
+/* @@INCLUDE: scripts/app/chat/chat-files.js @@ */
+/* @@INCLUDE: scripts/app/mobile/android-host.js @@ */
+/* @@INCLUDE: scripts/app/connection/connection.js @@ */
+/* @@INCLUDE: scripts/app/ui/head-menu.js @@ */
+/* @@INCLUDE: scripts/app/workers/workers.js @@ */
+/* @@INCLUDE: scripts/app/console-log.js @@ */
+/* @@INCLUDE: scripts/app/crypto/connection-crypto.js @@ */
+/* @@INCLUDE: scripts/app/crypto/keys.js @@ */
+/* @@INCLUDE: scripts/app/channel/channel-tree.js @@ */
+/* @@INCLUDE: scripts/app/chat/chat.js @@ */
+/* @@INCLUDE: scripts/app/chat/chat-history.js @@ */
+/* @@INCLUDE: scripts/app/chat/chat-reactions.js @@ */
+/* @@INCLUDE: scripts/app/chat/chat-replies.js @@ */
+/* @@INCLUDE: scripts/app/chat/image-upload.js @@ */
+/* @@INCLUDE: scripts/app/server/groups.js @@ */
+/* @@INCLUDE: scripts/app/server/moderation.js @@ */
+/* @@INCLUDE: scripts/app/channel/channel-groups.js @@ */
+/* @@INCLUDE: scripts/app/chat/server-emojis.js @@ */
+/* @@INCLUDE: scripts/app/chat/link-previews.js @@ */
+/* @@INCLUDE: scripts/app/ui/layout.js @@ */
+/* @@INCLUDE: scripts/app/audio/voice.js @@ */
+/* @@INCLUDE: scripts/app/audio/audio-transport.js @@ */
+/* @@INCLUDE: scripts/app/video/video-transport.js @@ */
+/* @@INCLUDE: scripts/app/video/video.js @@ */
+/* @@INCLUDE: scripts/app/server/server-settings-tab.js @@ */
+/* @@INCLUDE: scripts/app/server/server-info.js @@ */
+/* @@INCLUDE: scripts/app/channel/client-status.js @@ */
+/* @@INCLUDE: scripts/app/msg/dispatch.js @@ */
+/* @@INCLUDE: scripts/app/chat/member-conversations.js @@ */
+/* @@INCLUDE: scripts/app/main.js @@ */
+    </script>
+
+    <script>
+/* @@INCLUDE: scripts/app/mobile/android-bridge.js @@ */
+    </script>
+
+</head>
+<!-- the class says that no connected interface is shown yet: connection.js removes it on login and sets it again on a
+     disconnect; a theme sheet uses it for the page behind the connect window (hybrid) -->
+<body class="is-connected-ui-hidden server-groups-disabled server-groups-admin-only">
+
+    <textarea id="textarea-log" style="display: none;">
+     </textarea>
+
+
+    <div id="server-settings-tab" class="server-administration">
+        <div id="menu-bar-container">
+            <p class="dialog-title">Server administration</p>
+            <div class="close-button" id="close-button-server-settings"></div>
+        </div>
+        <div id="server-settings-tab-subcontainer">
+            <div class="server-settings-page-picker">
+                <label for="server-settings-page-select">Section</label>
+                <select id="server-settings-page-select" aria-controls="server-settings-tab-subcontainer2">
+                    <optgroup label="Settings">
+                        <option value="general">General</option>
+                        <option value="users">Users</option>
+                        <option value="connections">Connections</option>
+                        <option value="encryption">Encryption</option>
+                        <option value="channels">Channels</option>
+                        <option value="chat-files">Chat and files</option>
+                        <option value="voice-video">Voice and video</option>
+                        <option value="browser-page">Browser page</option>
+                    </optgroup>
+                    <optgroup label="Administration">
+                        <option value="groups" id="server-settings-groups-option">Groups</option>
+                        <option value="emojis">Emojis</option>
+                        <option value="bans">Bans</option>
+                        <option value="log">Log</option>
+                    </optgroup>
+                </select>
+            </div>
+            <ul class="server-settings-tab-ul server-settings-pages-nav" aria-label="Settings pages">
+                <li class="server-settings-tab-li" data-action="2" data-settings-page="general" tabindex="0" role="button" aria-controls="server-settings-page-general">General</li>
+                <li class="server-settings-tab-li" data-action="users" data-settings-page="users" tabindex="0" role="button" aria-controls="server-settings-page-users">Users</li>
+                <li class="server-settings-tab-li" data-action="connections" data-settings-page="connections" tabindex="0" role="button" aria-controls="server-settings-page-connections">Connections</li>
+                <li class="server-settings-tab-li" data-action="encryption" data-settings-page="encryption" tabindex="0" role="button" aria-controls="server-settings-page-encryption">Encryption</li>
+                <li class="server-settings-tab-li" data-action="channels" data-settings-page="channels" tabindex="0" role="button" aria-controls="server-settings-page-channels">Channels</li>
+                <li class="server-settings-tab-li" data-action="chat-files" data-settings-page="chat-files" tabindex="0" role="button" aria-controls="server-settings-page-chat-files">Chat and files</li>
+                <li class="server-settings-tab-li" data-action="voice-video" data-settings-page="voice-video" tabindex="0" role="button" aria-controls="server-settings-page-voice-video">Voice and video</li>
+                <li class="server-settings-tab-li" data-action="browser-page" data-settings-page="browser-page" tabindex="0" role="button" aria-controls="server-settings-page-browser-page">Browser page</li>
+            </ul>
+            <ul class="server-settings-tab-ul server-settings-management-nav" aria-label="Administration tools">
+                <li class="server-settings-tab-li" id="server-settings-open-groups" data-action="1" data-server-groups tabindex="0" role="button" aria-controls="server-settings-tab-groups">Groups</li>
+                <li class="server-settings-tab-li" data-action="6" tabindex="0" role="button">Emojis</li>
+                <li class="server-settings-tab-li" data-action="3" tabindex="0" role="button">Bans</li>
+                <li class="server-settings-tab-li" data-action="5" tabindex="0" role="button">Log</li>
+            </ul>
+        </div>
+            <div id="server-settings-tab-subcontainer2">
+                <section id="server-settings-tab-groups" data-server-groups style="display: none;" aria-labelledby="server-settings-groups-title">
+                    <p class="server-settings-general-header" id="server-settings-groups-title">Groups</p>
+                    <p>Use groups to give users permissions. You can edit server groups and channel groups in the Groups window.</p>
+                    <button type="button" id="server-settings-groups-button">Open Groups</button>
+                </section>
+                <div id="server-settings-tab-emojis" style="display: none;">
+                    <section id="server-emojis-panel">
+                        <p class="server-settings-general-header">server emojis</p>
+                        <p>Manage this server's reaction emojis. Upload your own images or delete emojis you do not want. Users can enable emoji reactions in their local settings.</p>
+                        <form id="server-emojis-upload-form">
+                            <label for="server-emojis-name">name</label>
+                            <input id="server-emojis-name" type="text" maxlength="32" pattern="[a-z0-9_]+" placeholder="party" required autocomplete="off">
+                            <label for="server-emojis-file">image</label>
+                            <input id="server-emojis-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" required>
+                            <button id="server-emojis-upload" type="submit">Upload</button>
+                        </form>
+                        <p>PNG, JPEG and static WebP images up to 10 MiB are resized to at most 128 &times; 128 pixels before upload. Animated GIFs keep their animation and must fit within 128 &times; 128 pixels, 256 KiB and 200 frames. Names use lowercase letters, numbers and underscores.</p>
+                        <div class="server-emojis-toolbar">
+                            <label for="server-emojis-search">search</label>
+                            <input id="server-emojis-search" type="search" placeholder="find an emoji">
+                            <button id="server-emojis-refresh" type="button">Refresh</button>
+                        </div>
+                        <div id="server-emojis-list"></div>
+                        <div class="server-emojis-toolbar">
+                            <button id="server-emojis-previous" type="button">Previous</button>
+                            <span id="server-emojis-page"></span>
+                            <button id="server-emojis-next" type="button">Next</button>
+                        </div>
+                        <p id="server-emojis-status" role="status"></p>
+                        <p>Uploads and deletions apply immediately. Save changes to keep them after a restart.</p>
+                        <button id="server-emojis-save" type="button">Save changes</button>
+                    </section>
+                </div>
+                <div id="server-settings-tab-general-settings">
+                    <fieldset id="server-settings-general-settings-container" aria-label="Server settings" disabled>
+                        <section class="server-settings-page" id="server-settings-page-general" data-settings-page="general" aria-labelledby="server-settings-page-title-general">
+                            <h2 class="server-settings-general-header" id="server-settings-page-title-general">General</h2>
+
+                            <section id="server-settings-server-info" class="server-info-summary">
+                                <dl>
+                                    <div><dt>Used slots</dt><dd data-admin-server-slots>Unavailable</dd></div>
+                                    <div><dt>Uptime</dt><dd data-admin-server-uptime>Unavailable</dd></div>
+                                    <div title="RAM currently used by the server process, including shared memory. Refreshed every five seconds while this tab is visible."><dt>Server RAM usage</dt><dd data-admin-server-ram>Waiting for the server&hellip;</dd></div>
+                                    <div title="Total WebSocket and WebRTC data received since this server started. Includes chat, audio and video. Excludes the client web page and network protocol overhead outside WebSocket."><dt>Data received</dt><dd data-admin-server-received>Waiting for the server&hellip;</dd></div>
+                                    <div title="Total WebSocket and WebRTC data sent since this server started. Sending one stream to ten viewers counts ten copies. WebRTC counts data accepted for sending, without retransmissions or transport headers."><dt>Data sent</dt><dd data-admin-server-sent>Waiting for the server&hellip;</dd></div>
+                                </dl>
+                                <p class="server-settings-general-subheader">server banner</p>
+                                <img data-admin-server-banner class="server-info-banner" alt="Server banner preview" hidden>
+                                <div class="server-banner-actions">
+                                    <button type="button" id="server-banner-upload-button">Upload banner</button>
+                                    <button type="button" id="server-banner-remove-button">Remove banner</button>
+                                    <input type="file" id="server-banner-file-input" accept="image/png,image/jpeg,image/webp" hidden>
+                                </div>
+                                <p>PNG, JPEG or WebP. Large images are resized to fit.</p>
+                                <p id="server-banner-status" role="status"></p>
+                            </section>
+
+                            <p class="server-settings-general-subheader">information shared with users</p>
+
+                            <label class="server-settings-general-row">
+                                <input type="checkbox" id="server-settings-publish-uptime">
+                                <span>share server uptime</span>
+                            </label>
+
+                            <label class="server-settings-general-row">
+                                <input type="checkbox" id="server-settings-publish-slots">
+                                <span>share occupied and total slots</span>
+                            </label>
+
+                            <label class="server-settings-general-row">
+                                <input type="checkbox" id="server-settings-publish-banner">
+                                <span>show the server banner</span>
+                            </label>
+
+                            <label class="server-settings-general-row">
+                                <input type="checkbox" id="server-settings-publish-features">
+                                <span>share the public server settings list</span>
+                            </label>
+
+                            <p>Hidden information is omitted from public replies. Clients still receive the connection and permission settings needed to work.</p>
+                        </section>
+                        <section class="server-settings-page" id="server-settings-page-users" data-settings-page="users" aria-labelledby="server-settings-page-title-users" hidden>
+                            <h2 class="server-settings-general-header" id="server-settings-page-title-users">Users</h2>
+
+                            <label class="server-settings-general-row">
+                                <input type="checkbox" id="server-settings-general-display-flags-checkbox">
+                                <span>display country flags near clients</span>
+                            </label>
+
+                            <label class="server-settings-general-row" id="server-settings-hide-admin-flag-row" style="display: none;">
+                                <input type="checkbox" id="server-settings-general-hide-admin-flag-checkbox">
+                                <span>hide admin's flag</span>
+                            </label>
+
+                            <label class="server-settings-general-row">
+                                <input type="checkbox" id="server-settings-general-allow-renames-checkbox">
+                                <span>allow users to rename themselves (admins always can)</span>
+                            </label>
+
+                            <label class="server-settings-general-row server-settings-general-row-number" data-server-groups>
+                                <span>max size of a group or channel icon (bytes, 1000-30000)</span>
+                                <input type="number" min="1000" max="30000" step="1" id="server-settings-general-icon-max-size-input">
+                            </label>
+
+                            <label class="server-settings-general-row server-settings-general-row-number">
+                                <span>max avatar size (KB)</span>
+                                <input type="number" min="1" max="90" step="1" id="server-settings-general-avatar-max-size-input">
+                            </label>
+                        </section>
+                        <section class="server-settings-page" id="server-settings-page-connections" data-settings-page="connections" aria-labelledby="server-settings-page-title-connections" hidden>
+                            <h2 class="server-settings-general-header" id="server-settings-page-title-connections">Connections</h2>
+
+                            <p class="server-settings-general-subheader">reserved slots</p>
+
+                            <label class="server-settings-general-row">
+                                <span>Slots for permitted groups</span>
+                                <input id="server-settings-reserved-slots" type="number" min="0" step="1" value="0">
+                            </label>
+
+                            <p class="server-settings-help">Part of the existing slot count, kept for groups with Use reserved slots. Zero disables reservation. Requires server groups.</p>
+
+                            <label class="server-settings-general-row">
+                                <input type="checkbox" id="server-settings-general-allow-same-ip-checkbox">
+                                <span>allow more than one client from the same IP address</span>
+                            </label>
+
+                            <label class="server-settings-general-row">
+                                <input type="checkbox" id="server-settings-general-country-blocking-checkbox">
+                                <span>restrict access by country</span>
+                            </label>
+
+                            <div id="server-settings-country-blocking-container" style="display: none;">
+                                <select id="server-settings-country-block-select">
+                                    <option value="">add a country to the block list ...</option>
+                                </select>
+                                <div id="server-settings-blocked-countries-list"></div>
+                            </div>
+
+                            <label class="server-settings-general-row server-settings-general-row-number">
+                                <span>maximum simultaneous logins (1-64)</span>
+                                <input type="number" min="1" max="64" step="1" id="server-settings-general-concurrent-logins-input">
+                            </label>
+
+                            <label class="server-settings-general-row">
+                                <input type="checkbox" id="server-settings-general-fast-reconnect-checkbox">
+                                <span>fast reconnect: a client that loses its socket resumes its session in place</span>
+                            </label>
+
+                            <label class="server-settings-general-row">
+                                <input type="checkbox" id="server-settings-general-identity-takeover-checkbox">
+                                <span>identity takeover: a new connect with an identity of user that is already online disconnects that user (default off: the same identity is refused)</span>
+                            </label>
+
+                            <label class="server-settings-general-row">
+                                <input type="checkbox" id="server-settings-general-connection-check-checkbox">
+                                <span>Disconnect clients when keep-alive messages time out</span>
+                            </label>
+
+                            <label class="server-settings-general-row">
+                                <input type="checkbox" id="server-settings-general-websocket-ping-checkbox">
+                                <span>additional WebSocket ping check: disconnect after 4 unanswered pings (independent of the keep-alive setting above)</span>
+                            </label>
+                        </section>
+                        <section class="server-settings-page" id="server-settings-page-encryption" data-settings-page="encryption" aria-labelledby="server-settings-page-title-encryption" hidden>
+                            <h2 class="server-settings-general-header" id="server-settings-page-title-encryption">Encryption</h2>
+
+                            <p class="server-settings-general-help">When you change these settings, connected users keep their negotiated keys. New connections use the saved settings. More DH rounds make each login take longer.</p>
+
+                            <label class="server-settings-general-row server-settings-general-row-number">
+                                <span>DH exchanges per new connection (1-4)</span>
+                                <input type="number" min="1" max="4" step="1" id="server-encryption-dh_exchange_count">
+                            </label>
+
+                            <label class="server-settings-general-row server-settings-general-row-number">
+                                <span>session encryption layers (1-8)</span>
+                                <input type="number" min="1" max="8" step="1" id="server-encryption-session_encryption_layer_count">
+                            </label>
+
+                            <label class="server-settings-general-row">
+                                <span>session cipher</span>
+                                <select id="server-encryption-session_cipher"><option value="aes256">AES-256</option><option value="chacha20">ChaCha20</option><option value="camellia256">Camellia-256</option><option value="twofish256">Twofish-256</option><option value="serpent256">Serpent-256</option><option value="trivium80">Trivium-80 (fixed IV compatibility)</option></select>
+                            </label>
+
+                            <label class="server-settings-general-row">
+                                <input type="checkbox" id="server-encryption-is_random_cipher_layer_enabled">
+                                <span>add one random-cipher layer (troll key)</span>
+                            </label>
+
+                            <p class="server-settings-general-help" id="server-encryption-password-count"></p>
+
+                            <label class="server-settings-general-row">
+                                <input type="checkbox" id="server-encryption-replace-passwords">
+                                <span>replace the connection passwords when saving</span>
+                            </label>
+
+                            <div id="server-encryption-password-editor" hidden>
+                                <p class="server-settings-general-help">Enter the complete new list in its required order. Saving an empty list removes the password requirement. Connected users keep working; they need the new list when they reconnect. This does not change the administrator password.</p>
+                                <div id="server-encryption-password-rows"></div>
+                                <button type="button" id="server-encryption-add-password">Add connection password</button>
+                            </div>
+
+                            <p class="server-settings-general-help" id="server-encryption-result" role="status"></p>
+
+                            <label class="server-settings-general-row server-settings-general-row-number">
+                                <span>minimum rsa key size in bits (2048-8192, clients with weaker keys are dropped)</span>
+                                <input type="number" min="2048" max="8192" step="1" id="server-settings-general-minimum-rsa-bits-input">
+                            </label>
+
+                            <label class="server-settings-general-row">
+                                <input type="checkbox" id="server-settings-general-announce-rsa-bits-checkbox">
+                                <span>tell rejected clients which key size is required</span>
+                            </label>
+                        </section>
+                        <section class="server-settings-page" id="server-settings-page-channels" data-settings-page="channels" aria-labelledby="server-settings-page-title-channels" hidden>
+                            <h2 class="server-settings-general-header" id="server-settings-page-title-channels">Channels</h2>
+
+                            <label class="server-settings-general-row server-settings-general-row-number">
+                                <span>maximum channels, including root</span>
+                                <input type="number" min="1" max="2147483647" step="1" id="server-settings-general-max-channel-count">
+                            </label>
+
+                            <p class="server-settings-general-help">Counts permanent and temporary channels. A value of 50 permits channel IDs 0–49; delete higher-ID channels before lowering it to 50.</p>
+
+                            <label class="server-settings-general-row">
+                                <input type="checkbox" id="server-settings-general-hide-clients-in-password-protected-channels">
+                                <span>hide clients in password protected channels</span>
+                            </label>
+
+                            <label class="server-settings-general-row" id="server-settings-general-temp-channels-row">
+                                <input type="checkbox" id="server-settings-general-allow-temp-channels-checkbox">
+                                <span>allow users to create temporary channels</span>
+                            </label>
+
+                            <p class="server-settings-general-help" id="server-settings-general-temp-channels-groups-note" style="display: none">Set "Create temporary channels" in Server groups.</p>
+
+                            <p class="server-settings-general-subheader">channel keys in large channels</p>
+
+                            <label class="server-settings-general-row">
+                                <input type="checkbox" id="server-settings-channel-key-reuse-enabled">
+                                <span>reuse channel keys in large channels</span>
+                            </label>
+
+                            <div id="server-settings-channel-key-reuse-options" hidden>
+                                <label class="server-settings-general-row">
+                                    <input type="checkbox" id="server-settings-channel-key-reuse-on-join">
+                                    <span>keep keys when someone joins</span>
+                                </label>
+                                <label class="server-settings-general-row server-settings-general-row-number">
+                                    <span>minimum active users after joining (minimum 30)</span>
+                                    <input type="number" min="30" max="1000000" step="1" id="server-settings-channel-key-reuse-join-min-clients" value="50">
+                                </label>
+                                <label class="server-settings-general-row">
+                                    <input type="checkbox" id="server-settings-channel-key-reuse-on-leave">
+                                    <span>keep keys when someone leaves, disconnects or goes idle</span>
+                                </label>
+                                <label class="server-settings-general-row server-settings-general-row-number">
+                                    <span>minimum remaining active users (minimum 30)</span>
+                                    <input type="number" min="30" max="1000000" step="1" id="server-settings-channel-key-reuse-leave-min-clients" value="100">
+                                </label>
+                            </div>
+                        </section>
+                        <section class="server-settings-page" id="server-settings-page-chat-files" data-settings-page="chat-files" aria-labelledby="server-settings-page-title-chat-files" hidden>
+                            <h2 class="server-settings-general-header" id="server-settings-page-title-chat-files">Chat and files</h2>
+
+                            <label class="server-settings-general-row">
+                                <input type="checkbox" id="server-settings-general-link-previews-checkbox">
+                                <span>show link previews (URLs are sent to this server for lookup)</span>
+                            </label>
+
+                            <p class="server-settings-general-subheader">messages</p>
+
+                            <label class="server-settings-general-row">
+                                <input type="checkbox" id="server-settings-general-allow-typing-indicator-checkbox">
+                                <span>show when somebody is typing</span>
+                            </label>
+
+                            <label class="server-settings-general-row">
+                                <input type="checkbox" id="server-settings-general-allow-text-to-idle-clients-checkbox">
+                                <span>allow sending messages to idle clients</span>
+                            </label>
+
+                            <label class="server-settings-general-row">
+                                <input type="checkbox" id="server-settings-general-allow-private-messages-checkbox">
+                                <span>allow private messages between clients</span>
+                            </label>
+
+                            <label class="server-settings-general-row">
+                                <input type="checkbox" id="server-settings-general-allow-file-uploads-checkbox">
+                                <span>allow file uploads in chat (any file, not just pictures; held in server RAM only while relayed)</span>
+                            </label>
+
+                            <label class="server-settings-general-row server-settings-general-row-number" id="server-settings-file-upload-size-row" style="display: none;">
+                                <span>max file size (MB)</span>
+                                <input type="number" min="1" max="100" step="1" id="server-settings-general-file-upload-max-size-input">
+                            </label>
+
+                            <p class="server-settings-general-warning" id="server-settings-general-file-upload-size-warning" style="display: none;">over 20 MB is not recommended: every transfer is held in server RAM at about twice the file size, and uploads get slow on phones and weak connections</p>
+
+                            <label class="server-settings-general-row">
+                                <input type="checkbox" id="server-settings-general-allow-pictures-checkbox">
+                                <span>allow inline pictures in chat</span>
+                            </label>
+
+                            <label class="server-settings-general-row server-settings-general-row-number" id="server-settings-picture-max-size-row" style="display: none;">
+                                <span>max picture size (MB)</span>
+                                <input type="number" min="1" max="15" step="1" id="server-settings-general-picture-max-size-input">
+                            </label>
+
+                            <p class="server-settings-general-subheader">attachment receive choices</p>
+
+                            <label class="server-settings-general-row">
+                                <input type="checkbox" id="server-settings-allow-block-direct-chat-pictures">
+                                <span>allow clients to block direct chat pictures</span>
+                            </label>
+
+                            <label class="server-settings-general-row">
+                                <input type="checkbox" id="server-settings-allow-block-direct-chat-files">
+                                <span>allow clients to block direct chat files</span>
+                            </label>
+
+                            <label class="server-settings-general-row">
+                                <input type="checkbox" id="server-settings-allow-block-channel-chat-pictures">
+                                <span>allow clients to block channel chat pictures</span>
+                            </label>
+
+                            <label class="server-settings-general-row">
+                                <input type="checkbox" id="server-settings-allow-block-channel-chat-files">
+                                <span>allow clients to block channel chat files</span>
+                            </label>
+                        </section>
+                        <section class="server-settings-page" id="server-settings-page-voice-video" data-settings-page="voice-video" aria-labelledby="server-settings-page-title-voice-video" hidden>
+                            <h2 class="server-settings-general-header" id="server-settings-page-title-voice-video">Voice and video</h2>
+
+                            <label class="server-settings-general-row">
+                                <input type="checkbox" id="server-settings-general-enable-audio">
+                                <span>enable audio server-wide</span>
+                            </label>
+
+                            <label class="server-settings-general-row">
+                                <input type="checkbox" id="server-settings-general-enable-video-streaming-checkbox">
+                                <span>allow video streaming</span>
+                            </label>
+
+                            <!-- These connections carry both audio and video. -->
+                            <div class="server-settings-general-row" id="server-settings-general-audio-connections-row">
+                                <span>audio and video connections</span>
+                                <select id="server-settings-general-audio-connections">
+                                    <option value="both">WebSocket and WebRTC (clients choose)</option>
+                                    <option value="websocket">WebSocket only</option>
+                                    <option value="webrtc">WebRTC only</option>
+                                </select>
+                            </div>
+
+                            <label class="server-settings-general-row">
+                                <input type="checkbox" id="server-settings-general-enable-music-bot-audio-checkbox">
+                                <span>enable audio for music bots</span>
+                            </label>
+
+                            <label class="server-settings-general-row">
+                                <input type="checkbox" id="server-settings-general-marquee-everyone-checkbox">
+                                <span>show a music bot's "now playing" marquee to everyone, not only inside its channel</span>
+                            </label>
+
+                            <label class="server-settings-general-row server-settings-general-row-number">
+                                <span>voice datachannel cooldown after 10 failed connection attempts (seconds, 0 = keep trying)</span>
+                                <input type="number" min="0" max="86400" step="1" id="server-settings-general-datachannel-cooldown-input">
+                            </label>
+
+                            <p class="server-settings-general-subheader">music bot snapshot</p>
+
+                            <label class="server-settings-general-row">
+                                <input type="checkbox" id="server-save-music-bots">
+                                <span>include music bots and uploaded playlists in this save</span>
+                            </label>
+
+                            <p class="server-settings-general-help">Save a copy of the songs and playlists for future startups. Connection keys encrypt this copy when configured. It stays on disk after restoration.</p>
+
+                            <p id="server-music-snapshot-status" role="status"></p>
+
+                            <div id="server-music-snapshot-recovery" hidden>
+                                <div id="server-music-snapshot-retry-controls" hidden>
+                                    <p>Provide the original snapshot keys in their original order, or leave the list empty to use the current server keys.</p>
+                                    <div id="server-music-snapshot-key-rows"></div>
+                                    <button type="button" id="server-music-snapshot-add-key">Add recovery key</button>
+                                    <button type="button" id="server-music-snapshot-retry">Retry restoration</button>
+                                    <p>Recovery keys are used only for this attempt; they do not change the server connection passwords.</p>
+                                </div>
+                                <button type="button" id="server-music-snapshot-delete">Clear from disk</button>
+                            </div>
+                        </section>
+                        <section class="server-settings-page" id="server-settings-page-browser-page" data-settings-page="browser-page" aria-labelledby="server-settings-page-title-browser-page" hidden>
+                            <h2 class="server-settings-general-header" id="server-settings-page-title-browser-page">Browser page</h2>
+
+                            <label class="server-settings-general-row">
+                                <input type="checkbox" id="server-http-enabled">
+                                <span>serve client.html over HTTP</span>
+                            </label>
+
+                            <div id="server-http-disable-options">
+                                <label class="server-settings-general-row">
+                                    <span>How should HTTP be disabled?</span>
+                                    <select id="server-http-disable-mode">
+                                        <option value="stop">Stop the HTTP listener completely</option>
+                                        <option value="blank">Keep the listener and serve a blank page</option>
+                                    </select>
+                                </label>
+                            </div>
+
+                            <label class="server-settings-general-row">
+                                <input type="checkbox" id="server-http-embed">
+                                <span>embed connection details for automatic connection</span>
+                            </label>
+
+                            <p class="server-settings-general-help">Embedding includes connection passwords. Everyone who downloads the page receives them. Turning it off removes them from future responses.</p>
+
+                            <p class="server-settings-general-help" id="server-http-port"></p>
+
+                            <p class="server-settings-general-help">HTTP controls the browser page. Connected chat users keep their WebSocket connections.</p>
+
+                        </section>
+                    </fieldset>
+                    <div id="server-settings-footer">
+                        <input type="button" value="Save all settings" id="save-server-settings-button">
+                        <p id="server-settings-save-status" role="status" aria-live="polite"></p>
+                    </div>
+                </div>
+                <div id="server-settings-tab-bans">
+                    <div id="server-settings-bans-container">
+                        <p class="server-settings-general-header">bans</p>
+                        <div id="server-settings-bans-list"></div>
+                    </div>
+                </div>
+                <div id="server-settings-tab-log">
+                    <div id="server-settings-log-container">
+                        <p class="server-settings-general-header">log</p>
+                        <p style="font-size:11px; opacity:0.7; margin: 0 0 6px 0;">events are kept in server RAM only, never in a file, and are gone after a server restart. the log is capped by the size below, and entries older than the retention period are purged once a day.</p>
+                        <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-log-joins-checkbox">
+                            <span>log users joining (username and IP address)</span>
+                        </label>
+                        <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-log-renames-checkbox">
+                            <span>log username changes</span>
+                        </label>
+                        <label class="server-settings-general-row" data-server-groups>
+                            <input type="checkbox" id="server-settings-log-groups-checkbox">
+                            <span>log adding of groups</span>
+                        </label>
+                        <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-log-settings-checkbox">
+                            <span>log server settings updates</span>
+                        </label>
+                        <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-log-kicks-bans-checkbox">
+                            <span>log kicks and bans</span>
+                        </label>
+                        <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-log-disconnects-checkbox">
+                            <span>log users disconnecting</span>
+                        </label>
+                        <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-log-sockets-checkbox">
+                            <span>log every socket opening and closing (login or not, shows bots)</span>
+                        </label>
+                        <label class="server-settings-general-row">
+                            <input type="checkbox" id="server-settings-log-failed-checkbox">
+                            <span>log failed attempts (wrong key, banned IP or identity, blocked country, same IP, wrong admin password)</span>
+                        </label>
+                        <label class="server-settings-general-row server-settings-general-row-number">
+                            <span>max log size (MB)</span>
+                            <input type="number" min="1" max="100" step="1" id="server-settings-log-max-size-input">
+                        </label>
+                        <label class="server-settings-general-row server-settings-general-row-number">
+                            <span>keep entries for</span>
+                            <select id="server-settings-log-retention-select">
+                                <option value="1">1 day</option>
+                                <option value="7">7 days</option>
+                                <option value="30">30 days</option>
+                            </select>
+                        </label>
+                        <div id="server-settings-log-buttons">
+                            <input type="button" value="save log settings" id="server-settings-log-save-button">
+                            <input type="button" value="refresh" id="server-settings-log-refresh-button">
+                            <input type="button" value="clear log" id="server-settings-log-clear-button">
+                        </div>
+                        <textarea id="server-settings-log-textarea" readonly spellcheck="false" placeholder="the log is empty"></textarea>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    <a-toast style="visibility:hidden"></a-toast>
+
+    <!-- the one gradient every file card's progress ring strokes with. it has to live in a rendered
+         svg: a paint server inside a display:none subtree cannot be referenced in chromium -->
+    <svg width="0" height="0" style="position: absolute;" aria-hidden="true" focusable="false">
+        <defs>
+            <linearGradient id="chat-file-ring-gradient" x1="0" y1="0" x2="1" y2="1">
+                <stop class="chat-file-ring-stop-start" offset="0"></stop>
+                <stop class="chat-file-ring-stop-end" offset="1"></stop>
+            </linearGradient>
+        </defs>
+    </svg>
+
+    <dialog id="groups-log-dialog" aria-labelledby="groups-log-title">
+        <header class="groups-titlebar">
+            <strong id="groups-log-title">Server log</strong>
+            <button type="button" id="groups-log-close" class="close-button" aria-label="Close server log" title="Close server log"></button>
+        </header>
+        <textarea id="groups-log-text" readonly aria-label="Server log entries"></textarea>
+        <footer class="groups-footer">
+            <button type="button" id="groups-log-refresh">Refresh</button>
+        </footer>
+    </dialog>
+    <dialog id="groups-icon-picker" aria-labelledby="groups-icon-title">
+        <header class="groups-titlebar">
+            <strong id="groups-icon-title">Server group icon</strong>
+            <button type="button" id="groups-icon-close" class="close-button" aria-label="Close icon selection" title="Close icon selection"></button>
+        </header>
+        <div class="groups-icon-body">
+            <label class="groups-icon-search" for="groups-icon-search">
+                <span>Search icons</span>
+                <input id="groups-icon-search" type="search" placeholder="Find icon by ID" autocomplete="off">
+            </label>
+            <div id="groups-icon-options" aria-label="Available group icons"></div>
+            <div class="groups-icon-pages">
+                <button type="button" id="groups-icon-previous">Previous</button>
+                <span id="groups-icon-page" role="status"></span>
+                <button type="button" id="groups-icon-next">Next</button>
+            </div>
+            <div id="groups-icon-selection">
+                <span id="groups-icon-selected-preview"></span>
+                <span id="groups-icon-selected-label"></span>
+                <button type="button" id="groups-icon-delete-selected">Delete icon</button>
+            </div>
+            <p id="groups-icon-note"></p>
+            <p id="groups-icon-status" role="status"></p>
+        </div>
+        <footer class="groups-footer">
+            <button type="button" id="groups-icon-upload" title="PNG, JPEG or static WebP, up to 10 MiB. Images are resized to at most 64 &times; 64 pixels before upload.">Upload&hellip;</button>
+            <input id="groups-icon-file" type="file" accept="image/png,image/jpeg,image/webp" multiple hidden>
+            <div class="groups-icon-confirm">
+                <button type="button" id="groups-icon-done">Cancel</button>
+                <button type="button" id="groups-icon-use">Use icon</button>
+            </div>
+        </footer>
+    </dialog>
+
+    <dialog id="groups-dialog" aria-labelledby="groups-window-title">
+        <div class="groups-titlebar">
+            <strong id="groups-window-title">Server groups</strong>
+            <button type="button" id="groups-close" class="close-button" aria-label="Close server groups" title="Close server groups"></button>
+        </div>
+        <div class="groups-columns">
+            <aside class="groups-sidebar">
+                <label for="groups-search">Server groups</label>
+                <input type="search" id="groups-search" placeholder="Find a group">
+                <div id="groups-list" aria-label="Server groups"></div>
+                <div class="groups-toolbar" id="groups-actions">
+                    <button type="button" id="groups-add" title="Create a server group">+ Add</button>
+                    <button type="button" id="groups-rename" title="Rename the selected server group">Rename</button>
+                    <button type="button" id="groups-delete" title="Delete the selected server group">Delete group</button>
+                </div>
+                <form id="groups-create" hidden>
+                    <input type="text" id="groups-new-name" aria-label="New group name" placeholder="New group name" maxlength="31" required>
+                    <label for="groups-new-type">Initial permissions</label>
+                    <select id="groups-new-type">
+                        <option value="admin">Admin</option>
+                        <option value="moderator">Moderator</option>
+                        <option value="normal" selected>Normal</option>
+                        <option value="guest">Guest</option>
+                    </select>
+                    <div class="groups-toolbar">
+                        <button type="submit">Create</button>
+                        <button type="button" id="groups-create-cancel">Cancel</button>
+                    </div>
+                </form>
+            </aside>
+            <section class="groups-details">
+                <div class="groups-detail-heading">
+                    <h2 id="groups-detail-title">Permissions</h2>
+                    <button type="button" id="groups-icon-button" aria-haspopup="dialog" aria-expanded="false" aria-controls="groups-icon-picker" title="Choose the selected group's icon">
+                        <span id="groups-icon-preview"></span><span>Icon</span>
+                    </button>
+                    <label class="groups-mode-label" for="groups-mode">View
+                        <select id="groups-mode" title="Simple shows named power levels. Advanced shows numbers. Action permissions use Enable or Disable in both views."><option value="simple">Simple</option><option value="advanced">Advanced</option></select>
+                    </label>
+                </div>
+                <div class="groups-permission-filter">
+                    <input type="search" id="groups-permission-search" aria-label="Find a permission" placeholder="Find a permission">
+                    <label><input type="checkbox" id="groups-modified-only">Changed only</label>
+                </div>
+                <form id="groups-permission-form" novalidate>
+                    <div class="groups-table-scroll">
+                        <table class="groups-permission-table">
+                            <thead><tr><th scope="col">Permission</th><th scope="col" id="groups-value-heading">Setting</th><th scope="col" title="The lowest flagged value wins">Negate</th><th scope="col" title="Ignore channel-group changes to this permission">Skip</th><th scope="col" class="groups-grant-heading" title="Required permission editing power. See Permission help.">Grant</th></tr></thead>
+                            <tbody id="groups-permissions"></tbody>
+                        </table>
+                        <p id="groups-no-permissions" hidden>No permissions match this filter.</p>
+                    </div>
+                </form>
+                <div class="groups-permission-help" aria-live="polite">
+                    <strong id="groups-help-title">Permissions</strong>
+                    <p id="groups-description"></p>
+                </div>
+                <div class="groups-toolbar groups-permission-actions">
+                    <button type="button" id="groups-reset" title="Restore the selected permission's saved value">Reset selected</button>
+                    <span id="groups-edit-status" role="status"></span>
+                </div>
+            </section>
+            <aside class="groups-members-panel">
+                <label id="groups-member-label" for="groups-member-search">Members</label>
+                <input type="search" id="groups-member-search" placeholder="Find a user">
+                <div id="groups-members" aria-label="Group members"></div>
+                <div class="groups-toolbar" id="groups-member-actions">
+                    <button type="button" id="groups-member-add">Add</button>
+                    <button type="button" id="groups-member-remove">Remove</button>
+                </div>
+                <button type="button" id="groups-member-cancel" hidden>Back to members</button>
+                <p id="groups-member-note" role="status"></p>
+            </aside>
+        </div>
+        <section id="groups-permission-guide" aria-labelledby="groups-guide-title" hidden>
+            <h2 id="groups-guide-title">Permissions</h2>
+            <p>This documentation helps you find your way around Lemon Chat's permission system.</p>
+            <p>Permissions are assigned to a user's identity through server groups. Adding someone to a group changes their permissions.</p>
+            <p>Server groups apply across the whole server. Channel groups apply only in the channel where they are assigned.</p>
+            <p>Simple and Advanced are two views of the same permissions. Simple shows Enabled, Disabled and power values. Advanced also shows Negate, Skip and Grant. Switching views does not change the permissions.</p>
+
+            <section class="groups-help-concept">
+                <h3>Enabled and Disabled</h3>
+                <p>These values control whether a group gives a permission.</p>
+                <p>Imagine a user has two groups. One enables a permission, and the other disables it. <strong>Enabled normally wins</strong>, so the user can still do that action. Disabled alone does not take away a permission given by another group. Negate can change this, as explained below.</p>
+            </section>
+
+            <section class="groups-help-concept">
+                <h3>Power</h3>
+                <p>Some actions also compare your power with a required value. For example, to ban someone with ban protection 100, you need the ban permission enabled and ban power of at least 100.</p>
+                <p>If your groups give different powers for the same action, the highest value normally wins. None means 0.</p>
+            </section>
+
+            <p>Negate, Skip and Grant are advanced settings. They are useful when you need more control over how permissions combine or who can edit them.</p>
+
+            <section class="groups-help-concept">
+                <h3>Negate</h3>
+                <p>Imagine you want to stop certain people from speaking in a channel, even though their server groups give them enough talk power to speak there.</p>
+                <p>For example, the channel requires talk power 25. A Members server group gives 50, but you want people assigned to a Listener channel group to have only 10 in that channel.</p>
+                <p>Giving Listener talk power 10 is not enough on its own: the higher value, 50, would still win. Setting <strong>Negate on Listener's talk power</strong> makes its value of 10 take priority. The user now has 10 in that channel, so they cannot meet the required 25.</p>
+                <p>Negate affects only the permission it is set on. If several applicable groups set Negate on that permission, the lowest of those marked values wins. It also works with Enabled and Disabled: <strong>Disabled with Negate overrides ordinary Enabled values</strong>.</p>
+            </section>
+
+            <section class="groups-help-concept">
+                <h3>Skip</h3>
+                <p>Now imagine you want moderators to keep their server talk power even when they are assigned to Listener in that channel.</p>
+                <p>Give the moderator's server group talk power 75 and set <strong>Skip on that permission</strong>. Their server talk power stays 75, even if Listener gives 10 with Negate. Without Skip, Listener would reduce it to 10.</p>
+                <p>Skip keeps that server permission from being changed by channel groups. It does not ignore Negate in other server groups, and it does not bypass channel requirements: talk power 75 is still too low for a channel requiring 100.</p>
+            </section>
+
+            <section class="groups-help-concept">
+                <h3>Grant</h3>
+                <p>Imagine you want someone to edit picture permissions in a group, but leave its ban permissions locked.</p>
+                <p><strong>Grant is the permission editing power required to change a particular setting.</strong> If the editor has permission editing power 50, they can change a picture setting with Grant 25, but cannot change a ban setting with Grant 75.</p>
+                <p>Without different Grant values, those settings would require the same editing power. The editor still needs permission to edit the group and cannot give permissions or powers they do not have. New permission rows start with Grant 1000.</p>
+            </section>
+
+            <p>Full server administrators bypass these group permission checks. Only they can edit groups that use Negate or Skip.</p>
+            <p>Choose <strong>Save changes</strong> to apply permission edits. Changing a value or pressing Enter in a permission field does not save it.</p>
+        </section>
+        <div class="groups-footer">
+            <span id="groups-save-note">Permission changes apply only when you choose Save changes.</span>
+            <button type="button" id="groups-save">Save changes</button>
+            <button type="button" id="groups-done">Close</button>
+        </div>
+    </dialog>
+
+    <div id="body-container">
+        <div id="communication-system-head-menu">
+            <!-- the menus at the left end (head-menu.js): "connections" opens the connect window or ends the connection, "bookmarks" lists the saved servers -->
+            <div id="head-menu-left-group">
+                <div class="head-menu-dropdown" id="connections-menu">
+                    <input type="button" class="head-menu-dropdown-button" id="connections-menu-button" value="connections">
+                    <div class="head-menu-dropdown-list" id="connections-menu-list" style="display: none;">
+                        <p class="head-menu-dropdown-item" id="connections-menu-connect">connect</p>
+                        <p class="head-menu-dropdown-item" id="connections-menu-disconnect">disconnect</p>
+                    </div>
+                </div>
+                <div class="head-menu-dropdown" id="bookmarks-menu">
+                    <input type="button" class="head-menu-dropdown-button" id="bookmarks-menu-button" value="bookmarks">
+                    <div class="head-menu-dropdown-list" id="bookmarks-menu-list" style="display: none;"></div>
+                </div>
+                <div class="head-menu-dropdown" id="groups-menu" data-server-groups data-server-groups-shortcut>
+                    <input type="button" class="head-menu-dropdown-button" id="groups-menu-button" data-server-groups value="server groups" aria-haspopup="dialog">
+                </div>
+            </div>
+            <input type="button" id="clear-chat-button">
+            <input type="button" id="hide-chat-button">
+            <input type="button" id="show-admin-password-entry">
+            <input type="button" id="show-secret-identity-string" title="export identity: view the passphrase or save this identity as a file">
+            <input type="button" id="microphone-always-broadcasting-audio-button">
+            <input type="button" id="hide-show-flags-button">
+            <input type="button" id="sound-effects-button">
+            <input type="button" id="local-settings-button" value="local" title="settings stored only on this device, no admin involved">
+            <div id="local-settings-container" style="display: none;">
+                <div id="menu-bar-container"><p id="local-settings-title">local settings</p><div class="close-button" id="local-settings-x-button"></div></div>
+                <div id="local-settings-body">
+                    <div id="local-settings-tabs" role="tablist" aria-label="local settings sections" aria-orientation="vertical">
+                        <button type="button" class="local-settings-tab" id="local-settings-tab-appearance" role="tab" aria-controls="local-settings-page-appearance" aria-selected="true" tabindex="0">Appearance</button>
+                        <button type="button" class="local-settings-tab" id="local-settings-tab-chat" role="tab" aria-controls="local-settings-page-chat" aria-selected="false" tabindex="-1">Chat</button>
+                        <button type="button" class="local-settings-tab" id="local-settings-tab-audio" role="tab" aria-controls="local-settings-page-audio" aria-selected="false" tabindex="-1">Audio</button>
+                        <button type="button" class="local-settings-tab" id="local-settings-tab-files" role="tab" aria-controls="local-settings-page-files" aria-selected="false" tabindex="-1">Files & pictures</button>
+                        <button type="button" class="local-settings-tab" id="local-settings-tab-identity" role="tab" aria-controls="local-settings-page-identity" aria-selected="false" tabindex="-1">Identity</button>
+                        <button type="button" class="local-settings-tab" id="local-settings-tab-advanced" role="tab" aria-controls="local-settings-page-advanced" aria-selected="false" tabindex="-1">Advanced</button>
+                    </div>
+                    <div id="local-settings-scroll">
+                        <section class="local-settings-page" id="local-settings-page-appearance" role="tabpanel" aria-labelledby="local-settings-tab-appearance" tabindex="0">
+                            <h2 class="local-settings-section-title">Appearance</h2>
+                            <div class="local-settings-row local-settings-chat-scale-row">
+                                <label class="local-settings-text" for="local-settings-chat-scale">
+                                    <span class="local-settings-label">chat size</span>
+                                    <span class="local-settings-hint">scales messages, pictures and replies; keeps the channel list unchanged</span>
+                                </label>
+                                <div class="local-settings-chat-scale-controls">
+                                    <input type="range" id="local-settings-chat-scale" min="50" max="200" step="5" value="100">
+                                    <output id="local-settings-chat-scale-value" for="local-settings-chat-scale">100%</output>
+                                    <input type="button" id="local-settings-chat-scale-reset" value="Reset" title="Reset chat size to 100%">
+                                </div>
+                            </div>
+                            <label class="local-settings-row">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">show avatars</span>
+                                    <span class="local-settings-hint">shows a picture or initials beside messages in every theme</span>
+                                </span>
+                                <input type="checkbox" id="local-settings-show-avatars">
+                            </label>
+                            <label class="local-settings-row">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">disable custom fonts in chat messages</span>
+                                </span>
+                                <input type="checkbox" id="local-settings-theme-chat-formatting">
+                            </label>
+                            <label class="local-settings-row">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">country flags</span>
+                                    <span class="local-settings-hint">shows the flag of the country each person connects from</span>
+                                </span>
+                                <input type="checkbox" id="local-settings-country-flags">
+                            </label>
+                            <label class="local-settings-row">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">hide server icons in the channel list</span>
+                                    <span class="local-settings-hint">hides server group and custom channel icons, keeping flags and audio/video indicators</span>
+                                </span>
+                                <input type="checkbox" id="local-settings-hide-server-icons">
+                            </label>
+                            <label class="local-settings-row">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">theme cursor</span>
+                                    <span class="local-settings-hint">lets a theme replace the mouse cursor and draw a glow around it (ozone does); off keeps the system cursor</span>
+                                </span>
+                                <input type="checkbox" id="local-settings-custom-cursor">
+                            </label>
+                            <label class="local-settings-row local-settings-row-member-list">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">people on the side</span>
+                                    <span class="local-settings-hint">moves the people strip from the top to the left edge</span>
+                                </span>
+                                <input type="checkbox" id="local-settings-member-list-vertical">
+                            </label>
+                            <label class="local-settings-row local-settings-row-member-list">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">only my channel</span>
+                                    <span class="local-settings-hint">hides everyone who is not in the channel you are in</span>
+                                </span>
+                                <input type="checkbox" id="local-settings-member-list-neighbors">
+                            </label>
+                            <label class="local-settings-row local-settings-row-member-list">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">show who has audio off</span>
+                                    <span class="local-settings-hint">marks people who cannot receive audio at all, so you know before you speak</span>
+                                </span>
+                                <input type="checkbox" id="local-settings-audio-availability">
+                            </label>
+                        </section>
+                        <section class="local-settings-page" id="local-settings-page-chat" role="tabpanel" aria-labelledby="local-settings-tab-chat" tabindex="0" hidden>
+                            <h2 class="local-settings-section-title">Chat</h2>
+                            <div class="local-settings-row" data-server-groups data-server-groups-shortcut>
+                                <span class="local-settings-text"><span class="local-settings-label">server groups</span><span class="local-settings-hint">browse the groups on the connected server</span></span>
+                                <button type="button" id="local-settings-open-groups" data-server-groups>View server groups</button>
+                            </div>
+                            <label class="local-settings-row">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">emoji reactions</span>
+                                    <span class="local-settings-hint">show and send emoji reactions in channel and private chats</span>
+                                </span>
+                                <input type="checkbox" id="local-settings-chat-reactions">
+                            </label>
+                            <label class="local-settings-row">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">quoted replies</span>
+                                    <span class="local-settings-hint">show quotes and Reply buttons in channel and private chats</span>
+                                </span>
+                                <input type="checkbox" id="local-settings-chat-replies">
+                            </label>
+                            <label class="local-settings-row">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">auto-scroll to the end</span>
+                                    <span class="local-settings-hint">a new message scrolls the chat down; off keeps your place while you read older messages</span>
+                                </span>
+                                <input type="checkbox" id="local-settings-auto-scroll">
+                            </label>
+                            <label class="local-settings-row">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">limit messages kept in each chat</span>
+                                    <span class="local-settings-hint">keeps the newest entries in each channel or private chat; older entries are removed from this device's view</span>
+                                </span>
+                                <input type="checkbox" id="local-settings-limit-chat-messages">
+                            </label>
+                            <label class="local-settings-row" id="local-settings-chat-message-limit-row" hidden>
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">messages per chat</span>
+                                    <span class="local-settings-hint">pictures and files count too; increasing this number cannot restore removed entries</span>
+                                </span>
+                                <input type="number" id="local-settings-chat-message-limit" value="1000" min="1" step="1" required>
+                            </label>
+                            <label class="local-settings-row">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">search chat with Ctrl+F</span>
+                                    <span class="local-settings-hint">off uses the browser's normal Find command</span>
+                                </span>
+                                <input type="checkbox" id="local-settings-chat-search">
+                            </label>
+                            <label class="local-settings-row">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">read receipts</span>
+                                    <span class="local-settings-hint">shows an eye on a private message once the other person has read it</span>
+                                </span>
+                                <input type="checkbox" id="local-settings-seen-indicator">
+                            </label>
+                            <label class="local-settings-row">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">tell others when you read</span>
+                                    <span class="local-settings-hint">sends the eye back, so people can see you have read their private message</span>
+                                </span>
+                                <input type="checkbox" id="local-settings-send-seen">
+                            </label>
+                        </section>
+                        <section class="local-settings-page" id="local-settings-page-audio" role="tabpanel" aria-labelledby="local-settings-tab-audio" tabindex="0" hidden>
+                            <h2 class="local-settings-section-title">Audio</h2>
+                            <div class="local-settings-row local-settings-row-select">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">microphone</span>
+                                    <span class="local-settings-hint">whether you hold the mic to speak or leave it running</span>
+                                </span>
+                                <select id="local-settings-mic-mode">
+                                    <option value="push-to-talk">push to talk</option>
+                                    <option value="continuous">continuous</option>
+                                </select>
+                                <!-- touch themes use these instead of the select: an android webview cancels a
+                                     native dropdown as soon as an ancestor animates, so the list never opened -->
+                                <div id="local-settings-mic-mode-segmented">
+                                    <input type="button" class="local-settings-segment" data-mic-mode="push-to-talk" value="hold">
+                                    <input type="button" class="local-settings-segment" data-mic-mode="continuous" value="hands free">
+                                </div>
+                            </div>
+                            <div class="local-settings-row local-settings-row-select" id="local-settings-ptt-key-row">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">push-to-talk key</span>
+                                    <span class="local-settings-hint">the keyboard key you hold down while speaking</span>
+                                </span>
+                                <input type="button" id="local-settings-ptt-key" value="Q">
+                            </div>
+                            <label class="local-settings-row" id="local-settings-ptt-disable-while-typing-row">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">disable push-to-talk while typing in chat</span>
+                                    <span class="local-settings-hint">ignores the push-to-talk key while the chat message box is focused</span>
+                                </span>
+                                <input type="checkbox" id="local-settings-ptt-disable-while-typing" checked>
+                            </label>
+                            <div class="local-settings-row local-settings-row-select" id="local-settings-mic-device-row" style="display: none;">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">microphone input</span>
+                                    <span class="local-settings-hint">which microphone the app captures from</span>
+                                </span>
+                                <select id="local-settings-mic-device"></select>
+                            </div>
+                            <label class="local-settings-row">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">hide the microphone button</span>
+                                    <span class="local-settings-hint">removes the round mic button from the chat screen entirely</span>
+                                </span>
+                                <input type="checkbox" id="local-settings-hide-mic">
+                            </label>
+                            <label class="local-settings-row">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">show MP3 button</span>
+                                    <span class="local-settings-hint">shows the button for streaming an MP3 file from this device</span>
+                                </span>
+                                <input type="checkbox" id="local-settings-show-mp3-button" checked>
+                            </label>
+                            <label class="local-settings-row">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">sound effects</span>
+                                    <span class="local-settings-hint">a short sound when someone joins, leaves or writes</span>
+                                </span>
+                                <input type="checkbox" id="local-settings-sound-effects">
+                            </label>
+                            <div class="local-settings-row local-settings-row-select" id="local-settings-audio-connection-row">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">audio and video connection</span>
+                                    <span class="local-settings-hint">the server decides which connections it allows</span>
+                                </span>
+                                <select id="local-settings-audio-connection" aria-describedby="local-settings-webrtc-note">
+                                    <option value="webrtc">Prefer WebRTC DataChannel (not peer-to-peer)</option>
+                                    <option value="websocket">Prefer WebSocket</option>
+                                </select>
+                                <p id="local-settings-webrtc-note" class="local-settings-hint">Lemon Chat uses only the DataChannel part of the WebRTC stack. It works like a WebSocket over UDP. The server acts as the other WebRTC peer, so users do not connect directly to each other or share their IP addresses through WebRTC. With either connection, the server relays your encrypted audio without having the keys to decrypt it. Both WebRTC DataChannel and WebSocket are available as an experiment to see which works better for audio.</p>
+                            </div>
+                        </section>
+                        <section class="local-settings-page" id="local-settings-page-files" role="tabpanel" aria-labelledby="local-settings-tab-files" tabindex="0" hidden>
+                            <h2 class="local-settings-section-title">Files & pictures</h2>
+                            <label class="local-settings-row local-settings-row-select">
+                                <span class="local-settings-text"><span class="local-settings-label">maximum image width (X), in pixels</span></span>
+                                <input type="number" class="local-settings-image-limit" id="local-settings-image-max-width" min="32" max="4096" step="1" value="600">
+                            </label>
+                            <label class="local-settings-row local-settings-row-select">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">maximum image height (Y), in pixels</span>
+                                    <span class="local-settings-hint">pictures keep their proportions; opening the original is unchanged</span>
+                                </span>
+                                <input type="number" class="local-settings-image-limit" id="local-settings-image-max-height" min="32" max="4096" step="1" value="480">
+                            </label>
+                            <label class="local-settings-row">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">block direct chat pictures</span>
+                                    <span class="local-settings-hint">This feature must also be enabled on the server.</span>
+                                </span>
+                                <input type="checkbox" id="local-settings-block-direct-chat-pictures" data-attachment-preference="block_direct_chat_pictures">
+                            </label>
+                            <label class="local-settings-row">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">block direct chat files</span>
+                                    <span class="local-settings-hint">This feature must also be enabled on the server.</span>
+                                </span>
+                                <input type="checkbox" id="local-settings-block-direct-chat-files" data-attachment-preference="block_direct_chat_files">
+                            </label>
+                            <label class="local-settings-row">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">block channel chat pictures</span>
+                                    <span class="local-settings-hint">This feature must also be enabled on the server.</span>
+                                </span>
+                                <input type="checkbox" id="local-settings-block-channel-chat-pictures" data-attachment-preference="block_channel_chat_pictures">
+                            </label>
+                            <label class="local-settings-row">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">block channel chat files</span>
+                                    <span class="local-settings-hint">This feature must also be enabled on the server.</span>
+                                </span>
+                                <input type="checkbox" id="local-settings-block-channel-chat-files" data-attachment-preference="block_channel_chat_files">
+                            </label>
+                        </section>
+                        <section class="local-settings-page" id="local-settings-page-identity" role="tabpanel" aria-labelledby="local-settings-tab-identity" tabindex="0" hidden>
+                            <h2 class="local-settings-section-title">Identity</h2>
+                            <div class="local-settings-row local-settings-row-select">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">avatar and account</span>
+                                    <span class="local-settings-hint">change your picture and stored identity</span>
+                                </span>
+                                <input type="button" id="local-settings-avatar-button" value="open">
+                            </div>
+                            <div class="local-settings-row local-settings-row-select">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">identity key size</span>
+                                    <span class="local-settings-hint">bigger is stronger but slower to create, and it changes which identity a passphrase produces</span>
+                                </span>
+                                <select id="local-settings-rsa-key-bits">
+                                    <option value="2048">2048 bits</option>
+                                    <option value="3072">3072 bits</option>
+                                    <option value="4096">4096 bits</option>
+                                    <option value="6144">6144 bits</option>
+                                    <option value="8192">8192 bits</option>
+                                </select>
+                            </div>
+                        </section>
+                        <section class="local-settings-page" id="local-settings-page-advanced" role="tabpanel" aria-labelledby="local-settings-tab-advanced" tabindex="0" hidden>
+                            <h2 class="local-settings-section-title">Advanced</h2>
+                            <label class="local-settings-row">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">app log button</span>
+                                    <span class="local-settings-hint">adds a toolbar button that opens the connection log</span>
+                                </span>
+                                <input type="checkbox" id="local-settings-show-log">
+                            </label>
+                            <label class="local-settings-row">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">write a debug log file</span>
+                                    <span class="local-settings-hint">records what the app does, so a fault can be looked at afterwards</span>
+                                </span>
+                                <input type="checkbox" id="local-settings-file-logging">
+                            </label>
+                        </section>
+                    </div>
+                </div>
+                <input type="button" id="local-settings-close-button" value="save">
+            </div>
+            <input type="button" id="choose-theme-button" value="theme">
+            <div id="choose-theme-button-list">
+                <button type="button" class="choose-theme-item" data-name="default" data-mobile="false">Default</button>
+                <button type="button" class="choose-theme-item" data-name="hybrid" data-mobile="false">Hybrid-v1</button>
+                <button type="button" class="choose-theme-item" data-name="hybrid-v2" data-mobile="false">Hybrid V2</button>
+                <button type="button" class="choose-theme-item" data-name="aero" data-mobile="false">Aero</button>
+                <button type="button" class="choose-theme-item" data-name="ozone" data-mobile="false">Ozone</button>
+                <button type="button" class="choose-theme-item" data-name="termix" data-mobile="false">Termix</button>
+                <button type="button" class="choose-theme-item" data-name="default-mobile" data-mobile="true" title="Designed for mobile">Mobile</button>
+                <button type="button" class="choose-theme-item" data-name="pocket" data-mobile="true" title="Designed for mobile">Pocket</button>
+                <button type="button" class="choose-theme-item" data-name="simpledark" data-mobile="true" title="Designed for mobile">Simpledark</button>
+                <button type="button" class="choose-theme-item" data-name="bluebell" data-mobile="true" title="Designed for mobile">Bluebell</button>
+                <button type="button" class="choose-theme-item" data-name="mono-light" data-mobile="true" title="Designed for mobile">Mono Light</button>
+                <button type="button" class="choose-theme-item" data-name="mono-dark" data-mobile="true" title="Designed for mobile">Mono Dark</button>
+            </div>
+            <input type="button" id="layout-edit-button" value="layout" title="re-arrange the panels; click again to lock them in place">
+            <input type="button" id="switch-identity-button" value="import identity" title="import identity: load an identity file or passphrase, then reconnect as that identity">
+            <input type="button" id="channel-flatten-toggle-button" value="flatten" title="toggle the channel tree between nested and a flat, single-level list">
+            <input type="button" id="enter-server-settings">
+        </div>
+        <!-- shown while the connect page is held back, so the wait is a spinner, not a blank screen -->
+        <style>
+            /* visible by default: the spinner IS the first page, until connected or revealed.
+               the theme's body color is painted onto it at show time (js), making it opaque */
+            #connect-holdback-loader { display: flex; position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 50; flex-direction: column; align-items: center; justify-content: center; }
+            #connect-holdback-spinner { width: 34px; height: 34px; border-radius: 50%; border: 3px solid rgba(128,128,128,0.28); border-top-color: rgba(128,128,128,0.85); animation: connect-holdback-spin 0.9s linear infinite; }
+            @keyframes connect-holdback-spin { to { transform: rotate(360deg); } }
+            /* a running attempt fades the connect button - still there, just disabled;
+               hiding rows or pages on click caused layout flicker */
+            #connect-button { transition: opacity 0.25s; }
+            #connect-button.connect-attempt-pending { opacity: 0.35; pointer-events: none; }
+            /* status lines pop in and out and can be long; reserved height plus a width cap
+               (wrap instead of widening) stops the connect form from jumping around */
+            #connection-status-reason, #connection-status-countdown, #connection-status-lastseen, #another-buttons-loading-container-p {
+                min-height: 1.3em; max-width: 330px; overflow-wrap: anywhere; margin-left: auto; margin-right: auto;
+            }
+            #another-buttons-loading-container-p { min-height: 2.6em; }
+        </style>
+        <div id="connect-holdback-loader">
+            <div id="connect-holdback-spinner"></div>
+        </div>
+        <div id="verification-system" style="visibility: hidden;">
+            <div style="height: 25vmin;"></div>
+            <div id="container-2" style="min-width: 520px;">
+                <!-- the title bar that makes the form a window: dragging by it comes from main.js, the close button from head-menu.js;
+                     the stylesheets hide it where the form stays a page of its own (android, the member list themes) -->
+                <div id="menu-bar-container"><p class="dialog-title">connection details</p><div class="close-button" id="connect-window-close-button"></div></div>
+                <!-- saved servers: picking one fills the address and port below. android hides the
+                     whole connect form, so this rides with it -->
+                <div id="server-bookmarks-container">
+                    <select id="server-bookmark-select">
+                        <option value="">saved servers</option>
+                    </select>
+                    <input type="text" id="server-bookmark-name" maxlength="40" placeholder="name this server">
+                    <input type="button" class="button-1" id="server-bookmark-save" value="save">
+                    <input type="button" class="button-1" id="server-bookmark-delete" value="delete">
+                </div>
+                <!-- the form, in framed sections. the explanation of a section is its title attribute, which the browser shows
+                     on hover (as the server info does). the server section holds the address and port grid, which main.js shows
+                     on a page without written-in server details and hides on android and on a page with them (the window shows
+                     it filled there, with the page's keys as rows, all of which the user may change, connection.js). ui.js appends a row per key to
+                     the keys grid, keys.js reads those inputs. android hides every section through the stylesheet and keeps its
+                     own cards below -->
+                <fieldset class="connect-section" id="connect-identity-section" title="your identity is an RSA key pair; the server recognises you by it. a new one is made at random on first start. use the toolbar to load a saved identity or to save this one. the value shown is a fingerprint: the first twelve hex digits of the SHA-256 hash of its public key">
+                    <legend>identity</legend>
+                    <p class="connect-section-text" id="connect-identity-summary">making a key pair ...</p>
+                </fieldset>
+                <fieldset class="connect-section" id="connect-server-section">
+                    <legend>server</legend>
+                    <div id="connect-form-grid">
+                        <label class="connect-window-label" for="input-ip-address">address</label>
+                        <div class="connect-window-field"><input type="text" id="input-ip-address" class="text-input-pretty" value="127.0.0.1"></div>
+                        <label class="connect-window-label" for="input-port-number">port</label>
+                        <div class="connect-window-field"><input type="text" id="input-port-number" class="text-input-pretty" value="1111"></div>
+                    </div>
+                </fieldset>
+                <div class="connect-section" id="connect-advanced-toggle">
+                    <label><input type="checkbox" id="connect-show-advanced" aria-controls="connect-keys-section" aria-expanded="false"> Show advanced</label>
+                </div>
+                <fieldset class="connect-section" id="connect-keys-section" hidden title="a server can require one or more keys, which its admin hands out. each key has a type; without the right keys the login is refused. a key works as a password and also as one more encryption layer on top of the existing encryption. keys are optional, but they add security">
+                    <legend>login keys</legend>
+                    <div id="connect-keys-grid"></div>
+                    <div class="connect-section-actions">
+                        <input type="button" class="button-1" id="add-key-button" value="add key">
+                    </div>
+                </fieldset>
+                <div id="another-buttons-container">
+                    <div id="another-buttons-sub-container" style="display: none;">
+                        <!-- the old icon button stays for the scripts that toggle it; the identity section has the text buttons -->
+                        <input type="button" class="button-1" id="import-identity-button" value="" style="display: none;">
+                        <input type="button" class="button-1" id="connect-button" value="connect">
+                    </div>
+                    <!-- one section: what the connection is doing, and the detail behind it. the
+                         wrapper is what lets the mobile themes draw them as a single panel -->
+                    <div id="connect-status-section">
+                        <div id="another-buttons-sub-loading-container">
+                            <div id="another-buttons-loading-container" style="width: 64px; height: 40px; display: inline-block; background-repeat: no-repeat; display: inline-block;">
+                            </div>
+                            <div style="height: 32px; top: 5px; color: inherit; font-family: sans-serif; display: inline-block; vertical-align: top;">
+                                <p id="another-buttons-loading-container-p">waiting for chat app .....</p>
+                            </div>
+                        </div>
+                        <!-- live connection detail; hidden by default, the mobile themes reveal it -->
+                        <div id="connection-status-extra">
+                            <p id="connection-status-reason"></p>
+                            <p id="connection-status-countdown"></p>
+                            <p id="connection-status-lastseen"></p>
+                        </div>
+                    </div>
+                    <div id="android-server-settings-container" style="display: none;">
+                        <input type="button" class="button-1" id="android-server-settings-button" value="server settings">
+                    </div>
+                </div>
+            </div>
+            <div style="height: 25vmin;">
+            </div>
+        </div>
+        <div id="communication-system-container">
+            <div id="space-devider1">
+                <div id="drag-resize-channels"></div>
+                <div id="channel-list-container">
+                </div>
+
+                <div id="idle-clients-container">
+                    <div class="single-channel idle-channel" data-channel-id="idle" data-channel-parent-id="-3">
+                        <div class="padding-div" style="padding-left: 0px;">
+                        </div>
+                        <div id="idle-channel-collapse-button" class="single-channel-collapse-button">
+                        </div>
+                        <p class="single-channel-name-p" data-channel-name-id="0">idle</p>
+                        <div class="">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="space-devider2">
+                <div id="drag-resize-chat"></div>
+                <div id="chat-window-container">
+                    <div id="chat-search" role="search" aria-label="search this chat" hidden>
+                        <input type="search" id="chat-search-input" placeholder="search this chat" aria-label="search retained messages in this chat" autocomplete="off" spellcheck="false">
+                        <span id="chat-search-count" role="status" aria-live="polite">0 matches</span>
+                        <button type="button" id="chat-search-previous" title="previous match (Shift+Enter)" aria-label="previous match">&#8593;</button>
+                        <button type="button" id="chat-search-next" title="next match (Enter)" aria-label="next match">&#8595;</button>
+                        <button type="button" id="chat-search-close" title="close search (Escape)" aria-label="close search">&#215;</button>
+                    </div>
+                    <div id="chat-context-selectors-container">
+                        <div class="chat-context-selector" data-chat-context-selector-type="channel" data-chat-context-selector-id="channel-0" style="background-color: rgb(54, 57, 63);">
+                            <div class="p-container">
+                                <p id="current-channel-name">root</p>
+                            </div>
+                            <div class="remove-chat-context-selector" data-chat-context-remove-selector-type="channel" data-chat-context-remove-selector-id="channel-0"></div>
+                        </div>
+                    </div>
+                    <div id="chat-context-container">
+                        <div id="chat-seen-indicator" title="your last message has been read"></div>
+                        <div class="chat-context" id="chat-context-channel-0">
+                            <div class="single-server-message">
+                                now talking channel: root
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div id="typing-indicator-container"></div>
+            </div>
+            <div id="space-devider-42">
+                <div id="drag-resize-info"></div>
+                <div id="current-channel-description">
+                </div>
+                <div id="current-client-description">
+                    <div class="client-profile-header">
+                        <div id="current-client-avatar"></div>
+                        <div class="client-profile-identity">
+                            <p id="current-client-description-client-name"></p>
+                            <p id="current-client-description-meta"></p>
+                        </div>
+                    </div>
+                    <dl class="client-status-details">
+                        <div hidden><dt>Online since:</dt><dd id="current-client-connected"></dd></div>
+                    </dl>
+                    <div id="current-client-description-groups">
+                    </div>
+                </div>
+                <div id="member-list-container">
+                    <div id="member-list-header"></div>
+                    <div id="member-list-body"></div>
+                </div>
+            </div>
+            <div>
+            </div>
+            <div id="space-devider3">
+            </div>
+            <div id="space-devider4">
+                <div style="height: 10px;">
+                </div>
+                <div id="space-device4-1"></div>
+                <div id="chat-input-file-input-container">
+                    <div id="chat-reply-preview" hidden>
+                        <strong id="chat-reply-author"></strong>
+                        <span id="chat-reply-text"></span>
+                        <button type="button" id="chat-reply-cancel" aria-label="Cancel reply">&times;</button>
+                    </div>
+                    <label id="color-picker-selector-div">
+                        <input id="color-picker-input" type="color" style="display: none"/>
+                    </label>
+                    <input type="range" id="chat-input-font-size-range" min="12" max="30">
+                    <textarea spellcheck="false" id="chat-input-container-text-input" maxlength="900" placeholder="write a message ..."></textarea>
+                    <!-- the pending attachment previews (file chip, picture thumbnail) overlay the text
+                         box's top-left corner; attaching clears the typed text so the preview does not
+                         sit on top of it -->
+                    <div id="file-upload-preview" style="display: none;"></div>
+                    <div id="image-upload-preview" style="display: none;"><span id="image-upload-preview-remove" title="remove">&#10005;</span></div>
+                </div>
+                <div class="chat-controls-container">
+                    <div id="play-pause-song-container">
+                        <div>
+                            <label class="custom-file-upload-button" id="custom-file-upload-button-song">
+                                <input id="choose-song-file-input" type="file" onclick="this.value=null;" accept=".mp3" style="display: none">
+                            </label>
+                            <div id="stop-song"></div>
+                        </div>
+                    </div>
+                    <div id='upload-image-container'>
+                        <div>
+                            <label class="custom-file-upload-button" id="custom-file-upload-button-image">
+                                <input id="choose_image_input" onclick="this.value=null;" type="file" accept="image/*" style="display: none">
+                            </label>
+                        </div>
+                    </div>
+                    <!-- video streaming (video.js): hidden unless the server allows it, the channel toggle is on and nobody else streams here -->
+                    <div id="upload-video-stream-container" style="display: none;">
+                        <div>
+                            <label class="custom-file-upload-button" id="video-stream-button" title="stream your screen or a video file to this channel"></label>
+                            <input id="choose-video-stream-file-input" onclick="this.value=null;" type="file" accept="video/*" style="display: none">
+                        </div>
+                    </div>
+                    <div id='upload-file-container'>
+                        <div>
+                            <label class="custom-file-upload-button" id="custom-file-upload-button-file" title="attach a file">
+                                <input id="choose-file-input" onclick="this.value=null;" type="file" style="display: none">
+                            </label>
+                        </div>
+                    </div>
+                    <input type="button" id="chat-input-container-send-chat-input" value="send">
+                </div>
+            </div>
+        </div>
+        <input type="button" value="log" id="show-hide-log-button">
+        <input type="checkbox" id="toggle-microphone" class="offscreen">
+        <input type="button" id="microphone-push-to-talk-button-touch-device">
+        <label id="toggle-microphone-label" for="toggle-microphone"></label>
+        <!-- video streaming (video.js): the "screen or a video file" choice -->
+        <div id="video-stream-choice-container" style="display: none;">
+            <div id="video-stream-choice">
+                <p id="video-stream-choice-title">what do you want to stream to this channel?</p>
+                <input type="button" id="video-stream-choice-screen" value="share my screen">
+                <input type="button" id="video-stream-choice-file" value="share a video file">
+                <input type="button" id="video-stream-choice-cancel" value="cancel">
+            </div>
+        </div>
+        <!-- video streaming (video.js): the second question of a start, "stream the sound too?", asked before the browser's picker opens -->
+        <div id="video-stream-sound-choice-container" style="display: none;">
+            <div id="video-stream-sound-choice">
+                <p id="video-stream-sound-choice-title">stream the sound too?</p>
+                <input type="button" id="video-stream-sound-choice-with" value="with sound">
+                <input type="button" id="video-stream-sound-choice-without" value="without sound">
+                <input type="button" id="video-stream-sound-choice-cancel" value="cancel">
+            </div>
+        </div>
+        <!-- video streaming (video.js): the movable, resizable window; the streamer's preview or a viewer's picture -->
+        <div id="video-stream-popup" style="display: none;">
+            <div id="video-stream-popup-header">
+                <strong id="video-stream-popup-title">stream</strong>
+                <button type="button" id="video-stream-popup-close" class="close-button" aria-label="Close stream window" title="close (a viewer disconnects)"></button>
+            </div>
+            <div id="video-stream-popup-body">
+                <video id="video-stream-preview" autoplay muted playsinline style="display: none;"></video>
+                <canvas id="video-stream-canvas" style="display: none;"></canvas>
+                <p id="video-stream-popup-status" style="display: none;"></p>
+            </div>
+            <div id="video-stream-popup-requests" style="display: none;"></div>
+            <details id="video-stream-settings" hidden>
+                <summary>Stream settings</summary>
+                <div class="video-stream-settings-controls">
+                    <label>Frame rate <select id="video-stream-fps"><option value="24">24 FPS</option><option value="25">25 FPS</option><option value="30" selected>30 FPS</option><option value="60">60 FPS</option></select></label>
+                    <label>Resolution limit <select id="video-stream-resolution"><option value="640">360p</option><option value="854">480p</option><option value="1280" selected>720p</option><option value="1920">1080p</option></select></label>
+                    <label>Video bitrate <input id="video-stream-bitrate" type="number" min="0.2" max="20" step="0.1" value="2.5"> Mbps</label>
+                    <label><input id="video-stream-adaptive" type="checkbox" checked> Adjust quality automatically</label>
+                    <button type="button" id="video-stream-apply-settings" class="button-1">Apply</button>
+                </div>
+                <p>Automatic adjustment lowers quality when sending falls behind. Frame rate is a target; a movie keeps its original frame rate if it is lower.</p>
+                <output id="video-stream-throughput" aria-live="off"></output>
+            </details>
+            <div id="video-stream-popup-footer">
+                <input type="button" id="video-stream-connect-button" value="connect" style="display: none;">
+                <input type="button" id="video-stream-disconnect-button" value="disconnect" style="display: none;">
+                <input type="button" id="video-stream-stop-button" value="stop streaming" style="display: none;">
+                <input type="button" id="video-stream-fullscreen-button" value="fullscreen">
+                <label id="video-stream-sound-volume-label" title="the volume of the stream's sound" style="display: none;">sound <input type="range" id="video-stream-sound-volume" min="0" max="100" value="100"></label>
+                <label id="video-stream-monitor-label" title="play the sound of the file here as well" style="display: none;"><input type="checkbox" id="video-stream-monitor-checkbox"> hear my stream</label>
+                <span id="video-stream-viewer-count"></span>
+            </div>
+        </div>
+        <div id="contextmenus-container">
+        </div>
+        <div id="background-container">
+        </div>
+        <!-- shared icon picker (channel + group icons). must live at top level: it used to sit
+             inside the server-settings tab, and a display:none ancestor never renders its
+             children, so opening it from the channel-properties dialog showed nothing -->
+        <div id="group-icon-picker-popup" style="display: none;"></div>
+        <div id="channel-properties-edit-container">
+            <div id="channel-properties-edit" role="dialog" aria-labelledby="channel-properties-title">
+                <div id="menu-bar-container">
+                    <p class="dialog-title" id="channel-properties-title">Channel Properties</p>
+                    <button type="button" class="close-button" id="close-button" aria-label="Close channel settings"></button>
+                </div>
+                <div id="channel-properties-input-container">
+                    <div class="dialog-form-grid" id="channel-properties-input-container-enter">
+                        <label class="dialog-form-label" for="channel-properties-input-channel-name">Name</label>
+                        <div class="dialog-form-field channel-properties-name-field">
+                            <input class="text-input-not-pretty-2" id="channel-properties-input-channel-name" type="text" value="" required>
+                            <span id="channel-properties-icon-label-row" class="dialog-form-label" data-server-groups>Icon</span>
+                            <span id="channel-properties-icon-row" data-server-groups>
+                                <button type="button" class="button-1" id="channel-properties-icon-box" title="change the channel icon now" aria-label="Choose channel icon"></button>
+                                <button type="button" class="button-1" id="channel-properties-icon-remove-button" title="remove the channel icon now" aria-label="Remove channel icon">&times;</button>
+                            </span>
+                        </div>
+                        <label class="dialog-form-label" for="channel-properties-input-channel-password">Password</label>
+                        <div class="dialog-form-field">
+                            <input class="text-input-not-pretty-2" id="channel-properties-input-channel-password" type="text" value="">
+                            <label id="channel-properties-remove-password-label" hidden><input type="checkbox" id="channel-properties-remove-password"> remove</label>
+                        </div>
+                        <label class="dialog-form-label channel-properties-description-label" for="channel-properties-input-channel-description">Description</label>
+                        <div class="dialog-form-field">
+                            <textarea class="text-input-not-pretty-2" id="channel-properties-input-channel-description" rows="3"></textarea>
+                        </div>
+                    </div>
+                    <div id="channel-properties-tabs" role="tablist" aria-label="Channel settings">
+                        <input type="button" class="button-1" id="channel-properties-tab-channel" role="tab" aria-controls="channel-properties-panel-channel" aria-selected="true" value="Channel">
+                        <input type="button" class="button-1" id="channel-properties-tab-audio" role="tab" aria-controls="channel-properties-panel-audio" aria-selected="false" tabindex="-1" value="Audio &amp; video">
+                        <input type="button" class="button-1" id="channel-properties-tab-permissions" role="tab" aria-controls="channel-properties-panel-permissions" aria-selected="false" tabindex="-1" data-server-groups value="Permissions">
+                    </div>
+                    <div id="channel-properties-panels">
+                        <div id="channel-properties-panel-channel" role="tabpanel" aria-labelledby="channel-properties-tab-channel" aria-hidden="false">
+                            <fieldset class="channel-properties-section">
+                                <legend>Channel type</legend>
+                                <select class="text-input-not-pretty-2" id="channel-properties-type" aria-label="Channel type" aria-describedby="channel-properties-type-description">
+                                    <option value="permanent">Permanent</option>
+                                    <option value="temporary">Temporary</option>
+                                </select>
+                                <p id="channel-properties-type-description" class="channel-properties-help">Stays on the server until deleted.</p>
+                            </fieldset>
+                            <fieldset class="channel-properties-section">
+                                <legend>Clients</legend>
+                                <div class="channel-properties-option-row">
+                                    <label class="dialog-form-label" for="channel-properties-limit-clients-checkbox"><input type="checkbox" id="channel-properties-limit-clients-checkbox"> Limit clients</label>
+                                    <input class="text-input-not-pretty-2" id="channel-properties-input-max-clients" type="number" min="1" placeholder="max" value="" aria-label="Maximum clients" style="display: none;">
+                                </div>
+                            </fieldset>
+                        </div>
+                        <div id="channel-properties-panel-audio" role="tabpanel" aria-labelledby="channel-properties-tab-audio" aria-hidden="true" inert>
+                            <fieldset class="channel-properties-section">
+                                <legend>Audio &amp; video</legend>
+                                <div class="dialog-form-grid">
+                                    <label class="dialog-form-label" for="channel-properties-enable-audio-checkbox">Enable Audio</label>
+                                    <div class="dialog-form-field">
+                                        <input type="checkbox" id="channel-properties-enable-audio-checkbox" checked>
+                                    </div>
+                                    <label class="dialog-form-label" for="channel-properties-enable-video-checkbox" id="channel-properties-enable-video-label" style="display: none;">Enable Streaming</label>
+                                    <div class="dialog-form-field" id="channel-properties-enable-video-field" style="display: none;">
+                                        <input type="checkbox" id="channel-properties-enable-video-checkbox">
+                                    </div>
+                                </div>
+                            </fieldset>
+                        </div>
+                        <div id="channel-properties-panel-permissions" role="tabpanel" aria-labelledby="channel-properties-tab-permissions" aria-hidden="true" data-server-groups inert>
+                            <fieldset class="channel-properties-section">
+                                <legend>Required power</legend>
+                                <p class="channel-properties-help">0 allows everyone. These values only limit sending.</p>
+                                <div class="dialog-form-grid">
+                                    <label class="dialog-form-label" for="channel-properties-required-talk-power">Talk</label>
+                                    <div class="dialog-form-field">
+                                        <input class="text-input-not-pretty-2" id="channel-properties-required-talk-power" type="number" min="0" max="1000" step="1" value="0" required title="The user's highest talk power must reach this value to send audio. Receiving audio is not restricted. Zero allows everyone.">
+                                    </div>
+                                    <label class="dialog-form-label" for="channel-properties-required-stream-power">Video streaming</label>
+                                    <div class="dialog-form-field">
+                                        <input class="text-input-not-pretty-2" id="channel-properties-required-stream-power" type="number" min="0" max="1000" step="1" value="0" required title="The user's highest video streaming power must reach this value to share a screen or video file, including its sound. Watching is not restricted. Zero allows everyone.">
+                                    </div>
+                                    <label class="dialog-form-label" for="channel-properties-required-message-power">Messages</label>
+                                    <div class="dialog-form-field">
+                                        <input class="text-input-not-pretty-2" id="channel-properties-required-message-power" type="number" min="0" max="1000" step="1" value="0" required title="The user's highest channel message power must reach this value to send text here. Receiving messages is not restricted. Zero allows everyone.">
+                                    </div>
+                                    <label class="dialog-form-label" for="channel-properties-required-picture-power">Pictures</label>
+                                    <div class="dialog-form-field">
+                                        <input class="text-input-not-pretty-2" id="channel-properties-required-picture-power" type="number" min="0" max="1000" step="1" value="0" required title="The user's highest channel picture power must reach this value to upload pictures here. Receiving pictures and sending files are not restricted. Zero allows everyone.">
+                                    </div>
+                                </div>
+                            </fieldset>
+                        </div>
+                    </div>
+                    <input type="hidden" id="create-channel-hidden-parent-id" value="">
+                    <div class="dialog-form-actions">
+                        <input type="button" id="create-channel-button" class="button-1" value="create">
+                        <input type="button" id="edit-channel-button" class="button-1" value="save">
+                        <input type="button" id="cancel-channel-button" class="button-1" value="cancel">
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div id="channel-password-enter-container">
+            <div id="channel-password-enter">
+                <div id="menu-bar-container">
+                    <p class="dialog-title">Channel Password</p>
+                    <div class="close-button" id="close-button-enter-password">
+                    </div>
+                </div>
+                <div id="channel-password-input-container">
+                    <div style="display: inline-block;">
+                        <div style="display: inline-block;">
+                            <div class="text-input-container">
+                                <input type="text" disabled="" class="text-input-not-pretty" value="password">
+                            </div>
+                        </div>
+                        <div style="display: inline-block;">
+                            <div class="text-input-container">
+                                <input class="text-input-not-pretty" id="input-channel-password" type="password" value="">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div style="text-align: right;">
+                    <input type="button" id="join-passworded-channel-button" class="button-1" value="join" style="right: 20px;">
+                </div>
+            </div>
+        </div>
+        <div id="admin-password-enter-container">
+            <div id="admin-password-enter">
+                <div id="menu-bar-container">
+                    <p class="dialog-title">Admin Password</p>
+                    <div class="close-button" id="close-button-admin-password">
+                    </div>
+                </div>
+                <div id="admin-password-input-container">
+                    <div class="dialog-form-grid">
+                        <label class="dialog-form-label" for="input-admin-password">password</label>
+                        <div class="dialog-form-field">
+                            <input class="text-input-not-pretty-2" id="input-admin-password" type="password" value="" placeholder="admin password">
+                        </div>
+                    </div>
+                    <div class="dialog-form-actions">
+                        <input type="button" id="admin-password-send-button" class="button-1" value="send">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="poke-client-enter-container">
+            <div id="poke-client-enter">
+                <div id="menu-bar-container">
+                    <p class="dialog-title">Poke Client</p>
+                    <div class="close-button" id="close-button-poke-client">
+                    </div>
+                </div>
+                <div id="poke-client-input-container">
+                    <div style="display: inline-block;">
+                        <div style="display: inline-block;">
+                            <div class="text-input-container">
+                                <input class="text-input-not-pretty" placeholder="what to say" style="width: 263px;" id="input-poke-client" type="text" value="">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div style="text-align: right;">
+                    <input type="button" id="poke-client-send-button" class="button-1" value="send" style="right: 20px;">
+                </div>
+            </div>
+        </div>
+
+
+        <div id="android-settings-warning-container">
+            <div id="android-settings-warning">
+                <div id="menu-bar-container">
+                    <p class="dialog-title">Server Settings</p>
+                    <div class="close-button" id="close-button-android-settings-warning">
+                    </div>
+                </div>
+                <p id="android-settings-warning-text">You are connected right now. These settings hold the address and keys of the server you are on - changing them affects this connection.</p>
+                <div style="text-align: right;">
+                    <input type="button" id="android-settings-warning-cancel-button" class="button-1" value="cancel">
+                    <input type="button" id="android-settings-warning-continue-button" class="button-1" value="continue">
+                </div>
+            </div>
+        </div>
+
+        <div id="adjust-volume-container" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.45); z-index:100000;">
+            <div id="adjust-volume-card" style="position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); min-width:300px;">
+                <div id="menu-bar-container">
+                    <p class="dialog-title">Adjust Volume</p>
+                    <div class="close-button" id="close-button-adjust-volume"></div>
+                </div>
+                <div style="padding:18px; text-align:center;">
+                    <p id="adjust-volume-username-label" style="margin:0 0 12px 0; font-weight:bold;"></p>
+                    <input type="range" id="adjust-volume-slider" min="0" max="200" step="5" value="100" style="width:250px; vertical-align:middle;">
+                    <p id="adjust-volume-value-label" style="margin:10px 0 0 0; font-size:15px;">100%</p>
+                    <p style="margin:6px 0 0 0; font-size:11px; opacity:0.6;">local only &mdash; changes only your own playback</p>
+                </div>
+            </div>
+        </div>
+
+        <div id="set-new-username-enter-container">
+            <div id="set-new-username-enter">
+                <div id="menu-bar-container">
+                    <p class="dialog-title">Set Username</p>
+                    <div class="close-button" id="close-button-set-new-username">
+                    </div>
+                </div>
+                <div id="set-new-username-input-container">
+                    <div style="display: inline-block;">
+                        <div style="display: inline-block;">
+                            <div class="text-input-container">
+                                <input class="text-input-not-pretty" placeholder="enter new username here" style="width: 263px;" id="input-set-new-username" type="text" value="">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div style="text-align: right;">
+                    <input type="button" id="set-new-username-send-button" class="button-1" value="set" style="right: 20px;">
+                </div>
+            </div>
+        </div>
+
+
+        <dialog id="server-info-dialog" aria-labelledby="server-info-title">
+            <header id="server-info-header">
+                <h2 id="server-info-title" class="dialog-title">Server info</h2>
+                <button type="button" id="server-info-close-button" class="close-button" aria-label="Close server info" title="Close server info"></button>
+            </header>
+            <div id="server-info-body">
+                <section class="server-info-summary">
+                    <dl>
+                        <div data-server-info-field="slots" class="server-info-help" title="How many client slots are occupied, out of the server's limit."><dt class="server-info-help-label" tabindex="0" title="How many client slots are occupied, out of the server's limit.">Used slots</dt><dd data-server-slots>Unavailable</dd></div>
+                        <div data-server-info-field="uptime" class="server-info-help" title="How long this server has been running since its last start."><dt class="server-info-help-label" tabindex="0" title="How long this server has been running since its last start.">Uptime</dt><dd data-server-uptime>Unavailable</dd></div>
+                    </dl>
+                </section>
+                <dl id="server-info-features" data-server-info-field="features"></dl>
+            </div>
+        </dialog>
+
+        <div id="client-info-container">
+            <div id="client-info-enter">
+                <div id="menu-bar-container">
+                    <p class="dialog-title">Client Info</p>
+                    <div class="close-button" id="close-button-client-info">
+                    </div>
+                </div>
+                <div id="client-info-content">
+                    <p class="client-info-row"><span class="client-info-label">user</span><span id="client-info-username"></span></p>
+                    <p class="client-info-row"><span class="client-info-label">Connected for</span><span id="client-info-connected"></span></p>
+                    <p class="client-info-row"><span class="client-info-label">ip address</span><span id="client-info-ip"></span></p>
+                    <p class="client-info-row"><span class="client-info-label">country</span><span id="client-info-country"></span></p>
+                    <p class="client-info-row"><span class="client-info-label">last action</span><span id="client-info-last-action"></span></p>
+                    <p class="client-info-row"><span class="client-info-label">identity</span><span id="client-info-identity" class="client-info-identity"></span></p>
+                </div>
+            </div>
+        </div>
+
+        <div id="identity-string-use-container">
+            <div id="identity-string-use-container-enter">
+                <div id="menu-bar-container">
+                    <p class="dialog-title">Import Identity</p>
+                    <div class="close-button" id="close-button-identity-string-use">
+                    </div>
+                </div>
+                <div id="identity-file-mode">
+                    <p class="identity-dialog-explainer">
+                        An identity file (.lmn) contains a complete identity. Importing it makes this device connect as that identity, and any server that already knows it restores the associated groups and permissions. Select the file or drop it onto this dialog; nothing changes until you confirm. Rebuilding the key pair can take a moment. The file is read locally and never leaves this device.</p>
+                    <div class="identity-dialog-button-row">
+                        <input type="button" class="button-1" id="choose-identity-file-button" value="select identity file">
+                        <input type="file" id="identity-file-input" accept=".lmn" style="display: none;">
+                    </div>
+                    <p id="identity-file-status" class="identity-dialog-hint"></p>
+                    <div style="text-align: right;">
+                        <input type="button" id="identity-file-confirm-button" class="button-1" value="import this identity" style="right: 20px; display: none;">
+                    </div>
+                </div>
+                <div id="identity-string-mode" style="display: none;">
+                    <div class="text-input-container">
+                        <textarea spellcheck="false" id="identity-string-use-textarea" placeholder="An identity is an RSA key pair. A new random one is generated each time the client starts, so by default every session presents a different public key, which is fine for simply joining and chatting. Groups and permissions, however, are bound to the public key. Entering an identity passphrase here rebuilds exactly the same key pair, so the server recognizes you and restores them. Key generation can take a moment depending on the device. The passphrase is used locally only and is never sent to the server."></textarea>
+                    </div>
+                    <div style="text-align: right;">
+                        <input type="button" id="identity-string-use-confirm-button" class="button-1" value="use this passphrase" style="right: 20px;">
+                    </div>
+                </div>
+                <p id="identity-mode-toggle-link" class="identity-dialog-link">use an identity passphrase instead</p>
+            </div>
+        </div>
+
+        <!-- shown when the server rejected our key and told us which size it wants. only
+             appears when that server has the announcement turned on -->
+        <div id="rsa-key-too-weak-container" style="display: none;">
+            <div id="rsa-key-too-weak-container-enter">
+                <div id="menu-bar-container">
+                    <p class="dialog-title">Stronger Key Required</p>
+                    <div class="close-button" id="close-button-rsa-key-too-weak"></div>
+                </div>
+                <p class="identity-dialog-explainer" id="rsa-key-too-weak-text"></p>
+                <div class="identity-dialog-button-row" style="text-align: right;">
+                    <input type="button" class="button-1" id="rsa-key-too-weak-no-button" value="no">
+                    <input type="button" class="button-1" id="rsa-key-too-weak-yes-button" value="yes, use a bigger key">
+                </div>
+            </div>
+        </div>
+
+        <div id="secret-identity-string-container">
+            <div id="secret-identity-string-container-enter">
+                <div id="menu-bar-container">
+                    <p class="dialog-title">Export Identity</p>
+                    <div class="close-button" id="close-button-secret-identity-string">
+                    </div>
+                </div>
+                <p class="identity-dialog-explainer">
+                    This identity is the RSA key pair this device connects with; groups and permissions granted on a server are bound to it. Export it as a file to keep a backup or to move it to another device, where it can be imported. Treat the file and the passphrase below as secrets: anyone who holds them can act as you.</p>
+                <div class="identity-dialog-button-row">
+                    <input type="button" class="button-1" id="export-identity-file-button" value="export identity file">
+                    <span id="export-identity-file-name" class="identity-dialog-hint"></span>
+                </div>
+                <p id="p-secret-identity-string"></p>
+            </div>
+        </div>
+
+
+        <!-- music bot dialog: the song list of the selected music bot and the upload of a new song. it has the
+             same structure as the other dialogs (overlay container, dialog box, menu bar with title and close
+             button), so the shared rules in layout.style and the theme files paint it like the other dialogs,
+             and main.js centers it on open and lets it be dragged by its title bar. the ids of the elements
+             that scripts use are unchanged -->
+        <div id="musicbot-management-background-container">
+            <div id="musicbot-management-dialog">
+                <div id="menu-bar-container">
+                    <p class="dialog-title">Music Player</p>
+                    <div class="close-button" id="musicbot-management-close-button"></div>
+                </div>
+                <div id="musicbot-management-song-list-container">
+                    <table id="musicbot-management-song-table">
+                        <thead>
+                            <tr>
+                                <th class="musicbot-song-name-cell">song name</th>
+                                <th class="musicbot-song-duration-cell">duration (s)</th>
+                                <th class="musicbot-song-remove-cell"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="musicbot-management-background-container-tbody">
+                        </tbody>
+                    </table>
+                </div>
+                <div id="musicbot-management-upload-container">
+                    <input id="musicbot-management-background-container-file-input" onclick="this.value=null;" type="file" accept="audio/mpeg">
+                    <input type="button" id="musicbot-management-background-container-upload-button-confirm" class="button-1" value="confirm">
+                </div>
+            </div>
+        </div>
+        <!-- upload progress panel: chat.js shows it while a chat attachment is sent and the music bot dialog
+             while a song is sent. it stays outside the dialog, because the chat attachments are sent while the
+             dialog is hidden and an element inside a hidden container is never visible -->
+        <div id="upload-progress-overlay">
+            <p id="upload-progress-label">sending ...</p>
+            <div id="upload-progress-track">
+                <div id="upload-progress-bar"></div>
+            </div>
+            <p id="upload-progress-text">0%</p>
+        </div>
+        </div>
+
+
+        <input type="button" id="android-settings-button" />
+
+    </body>
+</html>

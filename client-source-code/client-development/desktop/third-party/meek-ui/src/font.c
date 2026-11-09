@@ -2,31 +2,12 @@
 // font.c - TTF loading + rasterization + atlas + text drawing.
 // ============================================================================
 // PIPELINE:
-// 1. register a family (TTF bytes stored, not yet rasterized).
-// 2. on first request for (family, size): use stb_truetype's packer
-// API to rasterize codepoints 32..255 into a 1024x1024 R8 atlas
-// bitmap with 3x horizontal oversampling.
-// 3. call renderer__create_atlas_r8 to upload the bitmap and get
-// a backend-specific texture handle.
-// 4. cache the whole rasterization under its (family, size) key.
-// 5. each glyph's uv rect + advance + bearing stored in a per-font
-// stbtt_packedchar array; looked up by codepoint at draw time.
-// font__draw walks a utf-8 string, asks stb_truetype for each glyph's
-// quad coordinates, and submits one textured quad per glyph via
-// renderer__submit_text_glyph. the font's atlas texture is bound
-// once before the glyph batch via renderer__set_text_atlas.
-// IMGUI-LEVEL QUALITY:
-// - 3x horizontal oversampling (stbtt_PackSetOversampling(3, 1)).
-// - stbtt_PackFontRange handles the packer + rasterizer in one call
-// (uses stb_rect_pack internally).
-// - atlas sampled with LINEAR filtering in the shader (set up by
-// each renderer backend).
-// - advances are stored as floats; pen positions stay fractional,
-// rounded only at final pixel write. this preserves subpixel
-// positioning across a line.
+// FreeType reads bounded font bytes and rasterizes glyphs. The existing atlas
+// cache owns R8 textures; drawing submits measured quads through the renderer.
+// Horizontal oversampling and fractional advances preserve small-text detail.
 // SIZE SEMANTICS:
 // - size_px is the em size, as CSS font-size: the font's unitsPerEm
-// map to size_px pixels (stbtt_ScaleForMappingEmToPixels). ascent,
+// map to size_px pixels. ascent,
 // descent and line gap are rounded to whole pixels individually, so
 // font__line_height is the normal line height a browser computes for
 // the same font and size (Roboto at 100 px: 105 + 27 + 0 = 132).
@@ -83,27 +64,25 @@
 #include "clib/stdlib.h"
 #include "clib/memory_manager.h"
 
-// stb_truetype reaches for the C runtime through these hooks unless they
-// are already defined: its heap goes to the memory manager (and so to the
-// host's heap), and its maths to the project's own, so a freestanding
-// build pulls in neither malloc nor libm through the font subsystem.
-#define STBTT_malloc(size, user)  ((void)(user), GUI_MALLOC_T((size), MM_TYPE__FONT))
-#define STBTT_free(ptr, user)     ((void)(user), GUI_FREE((ptr)))
-#define STBTT_ifloor(x)           ((int)stdlib__floorf((float)(x)))
-#define STBTT_iceil(x)            ((int)stdlib__ceilf((float)(x)))
-#define STBTT_sqrt(x)             stdlib__sqrtf((float)(x))
-#define STBTT_pow(x, y)           stdlib__powf((float)(x), (float)(y))
-#define STBTT_fmod(x, y)          stdlib__fmodf((float)(x), (float)(y))
-#define STBTT_cos(x)              stdlib__cosf((float)(x))
-#define STBTT_acos(x)             stdlib__acosf((float)(x))
-#define STBTT_fabs(x)             stdlib__fabsf((float)(x))
-#define STBTT_strlen(x)           ((int)stdlib__strlen((x)))
-#define STBTT_memcpy              stdlib__memcpy
-#define STBTT_memset              stdlib__memset
-#define STB_TRUETYPE_IMPLEMENTATION
-#define STBTT_STATIC
-#include "third_party/stb_truetype.h"
+#include "font_freetype.h"
 #include "clib/stdlib.h"
+
+static FT_Library g_font_library;
+
+static void font_get_quad(const font_packedchar* characters, int width, int height, int index,
+    float* x, float* y, font_quad* quad, int align)
+{
+    const font_packedchar* glyph = &characters[index];
+    quad->x0 = align ? stdlib__floorf(*x + glyph->xoff + 0.5f) : *x + glyph->xoff;
+    quad->y0 = align ? stdlib__floorf(*y + glyph->yoff + 0.5f) : *y + glyph->yoff;
+    quad->x1 = quad->x0 + glyph->xoff2 - glyph->xoff;
+    quad->y1 = quad->y0 + glyph->yoff2 - glyph->yoff;
+    quad->s0 = (float)glyph->x0 / width;
+    quad->t0 = (float)glyph->y0 / height;
+    quad->s1 = (float)glyph->x1 / width;
+    quad->t1 = (float)glyph->y1 / height;
+    *x += glyph->xadvance;
+}
 
 static gui_node_t* _font_internal__node = NULL_POINTER;
 static float _font_internal__tracking = 0.0f;
@@ -411,6 +390,7 @@ typedef struct _font_internal__family_t
     _font_bytes_source_e source; // drives cleanup behavior.
     fs_mapped_file_t     mapping; // populated only when source == _FONT_BYTES_MAPPED.
     boole              active;
+    FT_Face            face;
     // pixel_snap_h: force integer x-advance and 1x horizontal
     // oversampling for this family. auto-set for bitmap-designed
     // fonts (ProggyClean / ProggyTiny / kenvector_future) whose
@@ -424,7 +404,7 @@ typedef struct _font_internal__family_t
 
 // gui_font_t: a rasterization of one family at one size. holds the
 // atlas pixels (freed after upload), the renderer texture handle,
-// the packer output (one stbtt_packedchar per codepoint), and cached
+// the packer output (one font_packedchar per codepoint), and cached
 // metrics.
 struct gui_font_t
 {
@@ -437,7 +417,7 @@ struct gui_font_t
     // per-entry atlas dimensions. picked at rasterize time by
     // _font_internal__pick_atlas_dim based on size_px, so a small
     // font still uses a 1024^2 sheet while a 73 px one gets 4096^2.
-    // stbtt_GetPackedQuad needs these to compute correct UVs, so
+    // font_get_quad needs these to compute correct UVs, so
     // every call site that used to pass _FONT_INTERNAL__ATLAS_W/H
     // now passes f->atlas_w / f->atlas_h.
     int    atlas_w;
@@ -458,14 +438,14 @@ struct gui_font_t
     // EXTRA_COUNT entries hold the curated non-Latin extras
     // (slots 224..231 == _extra_codepoints[0..7]). _glyph_index()
     // returns the right slot for any supported codepoint.
-    stbtt_packedchar packed[_FONT_INTERNAL__TOTAL_PACKED];
+    font_packedchar packed[_FONT_INTERNAL__TOTAL_PACKED];
 
-    // kerning: the font's own info for stbtt_GetCodepointKernAdvance
+    // kerning: the font's FreeType face
     // (kern or GPOS pair adjustments, which browsers apply by default),
     // the em scale that turns its font units into pixels, and whether
     // there is anything to look up. Bitmap families (pixel_snap_h)
     // keep their integer advances and never kern.
-    stbtt_fontinfo info;
+    FT_Face face;
     float          em_scale;
     boole          has_kern;
 
@@ -512,7 +492,7 @@ static _font_internal__kern_entry_t _font_internal__kern_cache[_FONT_INTERNAL__K
 // ============================================================================
 
 static _font_internal__family_t* _font_internal__find_family(char* name);
-static int                     _font_internal__vmetrics(const stbtt_fontinfo* info, int* out_ascent, int* out_descent, int* out_line_gap);
+static int                     _font_internal__vmetrics(FT_Face face, int* out_ascent, int* out_descent, int* out_line_gap);
 static gui_font_t*               _font_internal__find_cached(int64 family_index, float size_px);
 static gui_font_t*               _font_internal__rasterize(int64 family_index, float size_px);
 static void                    _font_internal__scan_and_register_dir(char* dir_path);
@@ -533,6 +513,10 @@ boole font__init(void)
     if (_font_internal__initialized)
     {
         return TRUE;
+    }
+    if (FT_Init_FreeType(&g_font_library) != 0)
+    {
+        return FALSE;
     }
     stdlib__memset(_font_internal__families, 0, sizeof(_font_internal__families));
     stdlib__memset(_font_internal__fonts,    0, sizeof(_font_internal__fonts));
@@ -590,6 +574,11 @@ void font__shutdown(void)
     for (int64 i = 0; i < _font_internal__family_count; i++)
     {
         _font_internal__family_t* fam = &_font_internal__families[i];
+        if (fam->face != NULL_POINTER)
+        {
+            FT_Done_Face(fam->face);
+            fam->face = NULL_POINTER;
+        }
         switch (fam->source)
         {
             case _FONT_BYTES_MAPPED:
@@ -618,6 +607,11 @@ void font__shutdown(void)
     stdlib__memset(_font_internal__fonts,    0, sizeof(_font_internal__fonts));
     _font_internal__family_count = 0;
     _font_internal__font_count   = 0;
+    if (g_font_library != NULL_POINTER)
+    {
+        FT_Done_FreeType(g_font_library);
+        g_font_library = NULL_POINTER;
+    }
     _font_internal__initialized  = FALSE;
     stdlib__memset(_font_internal__measure_cache, 0, sizeof(_font_internal__measure_cache));
     stdlib__memset(_font_internal__kern_cache, 0, sizeof(_font_internal__kern_cache));
@@ -687,6 +681,33 @@ static void _font_internal__invalidate_family(int64 family_index)
     }
 }
 
+boole font__unregister(char* family)
+{
+    _font_internal__family_t* fam;
+    if (!_font_internal__initialized || family == NULL_POINTER)
+    {
+        return FALSE;
+    }
+    fam = _font_internal__find_family(family);
+    if (fam == NULL_POINTER)
+    {
+        return FALSE;
+    }
+    _font_internal__invalidate_family((int64)(fam - _font_internal__families));
+    FT_Done_Face(fam->face);
+    fam->face = NULL_POINTER;
+    if (fam->source == _FONT_BYTES_MAPPED)
+    {
+        fs__unmap_file(&fam->mapping);
+    }
+    else if (fam->source == _FONT_BYTES_HEAP && fam->ttf_bytes != NULL_POINTER)
+    {
+        GUI_FREE((void*)fam->ttf_bytes);
+    }
+    stdlib__memset(fam, 0, sizeof(*fam));
+    return TRUE;
+}
+
 /**
  * @brief register a font family from TTF bytes already in memory. The bytes are NOT copied -- caller guarantees they remain valid for the life of the font subsystem.
  *
@@ -703,13 +724,10 @@ boole font__register_from_memory(char* family, const ubyte* ttf_bytes, int64 ttf
         return FALSE;
     }
 
-    // sanity-check the TTF header via stb_truetype. fails early on
-    // bogus bytes before they can cause weirdness later.
-    stbtt_fontinfo info;
-    int offset = stbtt_GetFontOffsetForIndex(ttf_bytes, 0);
-    if (offset < 0 || stbtt_InitFont(&info, ttf_bytes, offset) == 0)
+    FT_Face face = NULL_POINTER;
+    if (!font_source_open(g_font_library, ttf_bytes, (long)ttf_size, &face))
     {
-        log_error("%s %s %s", "stbtt_InitFont failed for family '", family, "'");
+        log_error("%s %s", "Invalid or unsupported font: ", family);
         return FALSE;
     }
 
@@ -718,9 +736,21 @@ boole font__register_from_memory(char* family, const ubyte* ttf_bytes, int64 ttf
     _font_internal__family_t* fam = _font_internal__find_family(family);
     if (fam == NULL_POINTER)
     {
+        for (int64 i = 0; i < _font_internal__family_count; i++)
+        {
+            if (!_font_internal__families[i].active)
+            {
+                fam = &_font_internal__families[i];
+                break;
+            }
+        }
+    }
+    if (fam == NULL_POINTER)
+    {
         if (_font_internal__family_count >= _FONT_INTERNAL__MAX_FAMILIES)
         {
             log_error("%s %d %s", "family table full (max", _FONT_INTERNAL__MAX_FAMILIES, ")");
+            FT_Done_Face(face);
             return FALSE;
         }
         fam = &_font_internal__families[_font_internal__family_count++];
@@ -728,6 +758,7 @@ boole font__register_from_memory(char* family, const ubyte* ttf_bytes, int64 ttf
     else
     {
         _font_internal__invalidate_family((int64)(fam - _font_internal__families));
+        FT_Done_Face(fam->face);
         if (fam->source == _FONT_BYTES_MAPPED)
         {
             fs__unmap_file(&fam->mapping);
@@ -745,6 +776,7 @@ boole font__register_from_memory(char* family, const ubyte* ttf_bytes, int64 ttf
     }
     stdlib__memcpy(fam->name, family, n);
     fam->name[n]   = 0;
+    fam->face = face;
     fam->ttf_bytes = ttf_bytes;
     fam->ttf_size  = ttf_size;
     fam->source    = _FONT_BYTES_EXTERNAL;
@@ -787,36 +819,7 @@ boole font__register_from_file(char* family, char* path)
         return FALSE;
     }
 
-    // try the memory-mapped path first. fs__map_file produces a
-    // read-only view that every process mapping the same file shares
-    // via the kernel page cache -- a phone with N app instances pays
-    // for the fonts exactly once regardless of N. see fs.h for the
-    // cross-platform story.
-    // fall back to fs__read_entire_file (heap copy) only if mapping
-    // fails, which on Windows typically means the file is on a weird
-    // filesystem that doesn't support mappings.
-    fs_mapped_file_t mapping;
-    if (fs__map_file(path, &mapping))
-    {
-        // plug the mapped view into register_from_memory (it treats the
-        // bytes as external). then upgrade the family record so we know
-        // to unmap on shutdown instead of free().
-        if (font__register_from_memory(family, mapping.data, mapping.size) == FALSE)
-        {
-            fs__unmap_file(&mapping);
-            return FALSE;
-        }
-        _font_internal__family_t* fam = _font_internal__find_family(family);
-        if (fam != NULL_POINTER)
-        {
-            fam->source  = _FONT_BYTES_MAPPED;
-            fam->mapping = mapping;
-        }
-        return TRUE;
-    }
-
-    // mapping failed; try the heap-copy fallback. if that also fails,
-    // we bail.
+    // Keep a stable snapshot when the file is replaced or truncated during use.
     int64 size = 0;
     char* buf  = fs__read_entire_file(path, &size);
     if (buf == NULL_POINTER)
@@ -1031,7 +1034,7 @@ gui_font_t* font__at(char* family, float size_px)
     {
         for (int64 i = 0; i < _font_internal__family_count; i++)
         {
-            if (stdlib__strcmp(_font_internal__families[i].name, family) == 0)
+            if (_font_internal__families[i].active && stdlib__strcmp(_font_internal__families[i].name, family) == 0)
             {
                 family_index = i;
                 break;
@@ -1042,7 +1045,18 @@ gui_font_t* font__at(char* family, float size_px)
     {
         // fallback to the first registered family. matches the "no font
         // family specified" or "requested family not found" cases.
-        family_index = 0;
+        for (int64 i = 0; i < _font_internal__family_count; i++)
+        {
+            if (_font_internal__families[i].active)
+            {
+                family_index = i;
+                break;
+            }
+        }
+        if (family_index < 0)
+        {
+            return NULL_POINTER;
+        }
     }
 
     gui_font_t* cached = _font_internal__find_cached(family_index, size_px);
@@ -1101,13 +1115,13 @@ boole font__glyph(gui_font_t* f, uint codepoint, gui_glyph_t* out)
         return FALSE;
     }
 
-    // stbtt_GetPackedQuad computes the quad (screen rect + uv rect)
+    // font_get_quad computes the quad (screen rect + uv rect)
     // given a pen position. we ask at (0, 0) and pick off the raw
     // metrics; caller positions with its own pen.
-    stbtt_aligned_quad q;
+    font_quad q;
     float x = 0.0f;
     float y = 0.0f;
-    stbtt_GetPackedQuad(f->packed, f->atlas_w, f->atlas_h, index, &x, &y, &q, 1);
+    font_get_quad(f->packed, f->atlas_w, f->atlas_h, index, &x, &y, &q, 1);
 
     out->advance  = f->packed[index].xadvance + _font_internal__tracking;
     out->offset_x = q.x0; // bearing left relative to the pen origin we passed (0,0).
@@ -1377,7 +1391,7 @@ static void _font_internal__draw_n(gui_font_t* f, float x, float y, gui_color_t 
     // pixel-truncate the text origin before emitting glyphs. callers
     // pass bounds.x + bearing + ascent and such, which are routinely
     // fractional once the scene's scale slider is at something other
-    // than 1.0 -- and every glyph's stbtt_GetPackedQuad align_to_integer
+    // than 1.0 -- and every glyph's font_get_quad align_to_integer
     // step anchors relative to this origin, so a fractional pen_y
     // slides horizontal stems across two adjacent rows of pixels,
     // producing the classic "baseline drift softness" even though
@@ -1412,12 +1426,12 @@ static void _font_internal__draw_n(gui_font_t* f, float x, float y, gui_color_t 
         pen_x += _font_internal__kern(f, prev_cp, cp);
         prev_cp = cp;
 
-        // stbtt_GetPackedQuad bakes the oversampling adjustment into the
+        // font_get_quad bakes the oversampling adjustment into the
         // returned quad and advances the pen position by xadvance. this
         // is the "right" way to consume PackedChars -- doing it manually
         // is error-prone (easy to be off by half a pixel).
-        stbtt_aligned_quad q;
-        stbtt_GetPackedQuad(f->packed, f->atlas_w, f->atlas_h, index, &pen_x, &pen_y, &q, 1);
+        font_quad q;
+        font_get_quad(f->packed, f->atlas_w, f->atlas_h, index, &pen_x, &pen_y, &q, 1);
         pen_x += _font_internal__tracking;
 
         gui_rect_t rect;
@@ -1505,7 +1519,9 @@ static float _font_internal__kern(gui_font_t* f, uint prev_cp, uint cp)
         entry->generation = f->metrics_generation;
         entry->previous = prev_cp;
         entry->current = cp;
-        entry->adjustment = (float)stbtt_GetCodepointKernAdvance(&f->info, (int)prev_cp, (int)cp) * f->em_scale;
+        FT_Vector adjustment = {0, 0};
+        FT_Get_Kerning(f->face, FT_Get_Char_Index(f->face, prev_cp), FT_Get_Char_Index(f->face, cp), FT_KERNING_UNSCALED, &adjustment);
+        entry->adjustment = (float)adjustment.x * f->em_scale;
     }
     return entry->adjustment;
 }
@@ -1519,57 +1535,28 @@ static float _font_internal__kern(gui_font_t* f, uint prev_cp, uint cp)
 // reads hhea only, which disagrees with browsers for fonts whose tables
 // differ (Roboto-Medium, ProggyTiny, ArianaVioleta among the shipped ones).
 // Returns 0 for the hhea fallback, 1 for typo, 2 for win metrics.
-static int _font_internal__vmetrics(const stbtt_fontinfo* info, int* out_ascent, int* out_descent, int* out_line_gap)
+static int _font_internal__vmetrics(FT_Face face, int* out_ascent, int* out_descent, int* out_line_gap)
 {
-    int hhea_ascent = 0;
-    int hhea_descent = 0;
-    int hhea_gap = 0;
-    int typo_ascent = 0;
-    int typo_descent = 0;
-    int typo_gap = 0;
-    int win_ascent = 0;
-    int win_descent = 0;
-    int units_per_em = 0;
-    stbtt_uint32 os2 = 0;
-
-    stbtt_GetFontVMetrics(info, &hhea_ascent, &hhea_descent, &hhea_gap);
-    *out_ascent   = hhea_ascent;
-    *out_descent  = hhea_descent;
-    *out_line_gap = hhea_gap;
-
-    os2 = stbtt__find_table(info->data, info->fontstart, "OS/2");
-
-    if (os2 == 0)
+    TT_HoriHeader* hhea = FT_Get_Sfnt_Table(face, ft_sfnt_hhea);
+    TT_OS2* os2 = FT_Get_Sfnt_Table(face, ft_sfnt_os2);
+    *out_ascent = hhea ? hhea->Ascender : face->ascender;
+    *out_descent = hhea ? hhea->Descender : face->descender;
+    *out_line_gap = hhea ? hhea->Line_Gap : face->height - face->ascender + face->descender;
+    if (os2 && os2->version != 0xffff)
     {
-        return 0;
-    }
-
-    // fsSelection bit 7: USE_TYPO_METRICS
-    if ((ttUSHORT(info->data + os2 + 62) & 0x80) != 0)
-    {
-        if (stbtt_GetFontVMetricsOS2(info, &typo_ascent, &typo_descent, &typo_gap) != 0)
+        if (os2->fsSelection & 0x80)
         {
-            *out_ascent  = typo_ascent;
-            *out_descent = typo_descent;
+            *out_ascent = os2->sTypoAscender;
+            *out_descent = os2->sTypoDescender;
             return 1;
         }
-
-        return 0;
+        if (os2->usWinAscent + os2->usWinDescent >= face->units_per_EM * 3 / 5)
+        {
+            *out_ascent = os2->usWinAscent;
+            *out_descent = -(int)os2->usWinDescent;
+            return 2;
+        }
     }
-
-    win_ascent   = (int)ttUSHORT(info->data + os2 + 74);
-    win_descent  = (int)ttUSHORT(info->data + os2 + 76);
-    units_per_em = (int)ttUSHORT(info->data + info->head + 18);
-
-    // usWinAscent + usWinDescent below half the em is a broken table
-    // (Freedom.ttf: 0.51 em); browsers fall back to hhea for such fonts
-    if (win_ascent + win_descent >= units_per_em * 3 / 5)
-    {
-        *out_ascent  = win_ascent;
-        *out_descent = -win_descent;
-        return 2;
-    }
-
     return 0;
 }
 
@@ -1732,7 +1719,7 @@ static gui_font_t* _font_internal__rasterize(int64 family_index, float size_px)
     // pick an atlas size that should comfortably fit the full glyph
     // range for this font size. scaled dynamically rather than a fixed
     // constant so a 14 px body font keeps using 1024x1024 while a 73 px
-    // heading pulls up to 4096x4096 transparently. stbtt_GetPackedQuad
+    // heading pulls up to 4096x4096 transparently. font_get_quad
     // reads these back via f->atlas_w / f->atlas_h when drawing.
     f->atlas_w = _font_internal__pick_atlas_dim(size_px);
     f->atlas_h = f->atlas_w;
@@ -1764,60 +1751,20 @@ static gui_font_t* _font_internal__rasterize(int64 family_index, float size_px)
         _FONT_INTERNAL__RASTER_FAIL_CACHE();
     }
 
-    // stbtt packer handles rect-packing + rasterization in one pass.
-    // padding = 1 keeps adjacent glyphs from bleeding into each other
-    // under bilinear sampling.
-    stbtt_pack_context pc;
-    if (stbtt_PackBegin(&pc, f->atlas_pixels, f->atlas_w, f->atlas_h, 0, 1, NULL_POINTER) == 0)
-    {
-        log_error("%s %.1f %s %d %s %d %s", "stbtt_PackBegin failed for size", size_px, "(atlas", f->atlas_w, "x", f->atlas_h, ")");
-        _FONT_INTERNAL__RASTER_FAIL_CACHE();
-    }
-
-    // size-adaptive oversample. imgui's formula: 2x horizontal below
-    // 36 px, 1x at or above; 1x for pixel_snap_h families regardless
-    // of size. reason big sizes get 1x: at >36 px the atlas samples
-    // are already large enough that the GPU's LINEAR filter resolves
-    // subpixel positioning on its own, so the extra horizontal
-    // resolution just wastes atlas area. see
-    // _font_internal__pick_oversample comment for the full story.
     int ovs_h;
     int ovs_v;
+    int codepoints[_FONT_INTERNAL__TOTAL_PACKED];
     _font_internal__pick_oversample(size_px, fam->pixel_snap_h, &ovs_h, &ovs_v);
-    stbtt_PackSetOversampling(&pc, (unsigned int)ovs_h, (unsigned int)ovs_v);
-
-    // Pack two ranges into the same atlas:
-    // 1. The contiguous Latin-1 range 32..255 (NUM_CODEPOINTS glyphs).
-    // 2. The non-contiguous extras list (BULLET, arrows, etc.).
-    // stbtt_PackFontRanges handles both in one rect-pack pass so the
-    // extras don't fragment the atlas. chardata_for_range pointers
-    // share the same packed[] allocation -- range 1 writes [0..224),
-    // range 2 writes [224..232).
-    // first_unicode_codepoint_in_range + num_chars define range 1;
-    // array_of_unicode_codepoints + num_chars define range 2 (stb
-    // disambiguates via first_unicode_codepoint_in_range == 0).
-    int extras_array[_FONT_INTERNAL__EXTRA_COUNT];
+    for (int i = 0; i < _FONT_INTERNAL__NUM_CODEPOINTS; i++)
+    {
+        codepoints[i] = _FONT_INTERNAL__FIRST_CODEPOINT + i;
+    }
     for (int i = 0; i < _FONT_INTERNAL__EXTRA_COUNT; i++)
     {
-        extras_array[i] = _font_internal__extra_codepoints[i];
+        codepoints[_FONT_INTERNAL__NUM_CODEPOINTS + i] = _font_internal__extra_codepoints[i];
     }
-
-    stbtt_pack_range ranges[2];
-    stdlib__memset(ranges, 0, sizeof(ranges));
-    // negative: stb_truetype maps the em (unitsPerEm) to size_px pixels, the CSS meaning of font-size; positive would map ascent + descent instead
-    ranges[0].font_size                        = -size_px;
-    ranges[0].first_unicode_codepoint_in_range = _FONT_INTERNAL__FIRST_CODEPOINT;
-    ranges[0].array_of_unicode_codepoints      = NULL_POINTER;
-    ranges[0].num_chars                        = _FONT_INTERNAL__NUM_CODEPOINTS;
-    ranges[0].chardata_for_range               = &f->packed[0];
-    ranges[1].font_size                        = -size_px;
-    ranges[1].first_unicode_codepoint_in_range = 0;
-    ranges[1].array_of_unicode_codepoints      = extras_array;
-    ranges[1].num_chars                        = _FONT_INTERNAL__EXTRA_COUNT;
-    ranges[1].chardata_for_range               = &f->packed[_FONT_INTERNAL__NUM_CODEPOINTS];
-
-    int ok = stbtt_PackFontRanges(&pc, fam->ttf_bytes, 0, ranges, 2);
-    stbtt_PackEnd(&pc);
+    int ok = font_source_pack(fam->face, size_px, ovs_h, ovs_v, f->atlas_pixels,
+        f->atlas_w, f->atlas_h, codepoints, _FONT_INTERNAL__TOTAL_PACKED, f->packed);
 
     if (ok == FALSE)
     {
@@ -1825,7 +1772,7 @@ static gui_font_t* _font_internal__rasterize(int64 family_index, float size_px)
         // 4096x4096 via pick_atlas_dim). cache the failure so we don't
         // retry every frame -- a noisy text widget would otherwise
         // allocate + log + free 16 MiB per frame.
-        log_error("%s %.1f %s %d %s %d %s", "stbtt_PackFontRange failed for size", size_px, "at", f->atlas_w, "x", f->atlas_h, "; caching as failed");
+        log_error("%s %.1f %s %d %s %d %s", "FreeType atlas packing failed for size", size_px, "at", f->atlas_w, "x", f->atlas_h, "; caching as failed");
         _FONT_INTERNAL__RASTER_FAIL_CACHE();
     }
 
@@ -1846,16 +1793,14 @@ static gui_font_t* _font_internal__rasterize(int64 family_index, float size_px)
 
     // grab vertical metrics directly from the TTF so line spacing
     // matches what the font designer intended.
-    stbtt_fontinfo info;
-    stbtt_InitFont(&info, fam->ttf_bytes, stbtt_GetFontOffsetForIndex(fam->ttf_bytes, 0));
-    float scale = stbtt_ScaleForMappingEmToPixels(&info, size_px);
-    f->info     = info;
+    float scale = size_px / fam->face->units_per_EM;
+    f->face = fam->face;
     f->em_scale = scale;
-    f->has_kern = (boole)(fam->pixel_snap_h == FALSE && (info.kern != 0 || info.gpos != 0));
+    f->has_kern = (boole)(fam->pixel_snap_h == FALSE && FT_HAS_KERNING(fam->face));
     int   ascent_i;
     int   descent_i;
     int   line_gap_i;
-    int   metric_source = _font_internal__vmetrics(&info, &ascent_i, &descent_i, &line_gap_i);
+    int   metric_source = _font_internal__vmetrics(fam->face, &ascent_i, &descent_i, &line_gap_i);
     // ascent, descent and line gap rounded to whole pixels, each on its
     // own: that is how a browser derives a font's normal line height,
     // so text boxes here are the size the same text gets in HTML

@@ -9,7 +9,7 @@
 
 #include "../third-party/dave-g-json/cJSON.h" // needed by base.h
 #include "base.h"
-#include "metadata_crypto.h"
+#include "crypto/crypto_metadata.h"
 
 #include "../third-party/libdatachannel-0.24.2/include/rtc/rtc.h"
 #include "../third-party/rxi-log/log.h"
@@ -26,40 +26,41 @@
 
 #include "util.h"
 
-webrtc_peer_t* g_webrtc_peers_array = 0;
+webrtc_peer_t *g_webrtc_peers_array = 0;
 
 // Reserved before creating a peer, then transferred to the persistent cleanup worker.
 typedef struct webrtc_teardown_arg_t
 {
-    struct webrtc_teardown_arg_t* next;
+    struct webrtc_teardown_arg_t *next;
     int peer_connection_handle;
-    int data_channel_handle;       // the audio channel
+    int data_channel_handle; // the audio channel
     int video_data_channel_handle; // the video channel (see video_webrtc.c), 0 when none
 } webrtc_teardown_arg_t;
 
 static pthread_mutex_t g_webrtc_teardown_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t g_webrtc_teardown_changed = PTHREAD_COND_INITIALIZER;
-static webrtc_teardown_arg_t* g_webrtc_teardown_head = NULL_POINTER;
-static webrtc_teardown_arg_t* g_webrtc_teardown_tail = NULL_POINTER;
+static webrtc_teardown_arg_t *g_webrtc_teardown_head = NULL_POINTER;
+static webrtc_teardown_arg_t *g_webrtc_teardown_tail = NULL_POINTER;
 static boole g_webrtc_teardown_started = FALSE;
 
 // declarations
-void RTC_API audio_webrtc__peerconnection_on_setlocaldescription_callback(int pc, const char* sdp, const char* type, void* ptr);
-void RTC_API audio_webrtc__peerconnection_on_icecandidate_callback(int pc, const char* cand, const char* mid, void* ptr);
-void RTC_API audio_webrtc__peerconnection_on_statechanged_callback(int pc, rtcState state, void* ptr);
-void RTC_API audio_webrtc__peerconnection_on_gatheringstatechanged_callback(int pc, rtcGatheringState state, void* ptr);
-void RTC_API audio_webrtc__peerconnection_on_datachannel_callback(int pc, int dc, void* ptr);
-void RTC_API audio_webrtc__datachannel_on_open_callback(int id, void* ptr);
-void RTC_API audio_webrtc__datachannel_on_closed_callback(int id, void* ptr);
-void RTC_API audio_webrtc__datachannel_on_message_callback(int id, const char* message, int size, void* ptr);
+void RTC_API audio_webrtc__peerconnection_on_setlocaldescription_callback(int pc, const char *sdp, const char *type, void *ptr);
+void RTC_API audio_webrtc__peerconnection_on_icecandidate_callback(int pc, const char *cand, const char *mid, void *ptr);
+void RTC_API audio_webrtc__peerconnection_on_statechanged_callback(int pc, rtcState state, void *ptr);
+void RTC_API audio_webrtc__peerconnection_on_gatheringstatechanged_callback(int pc, rtcGatheringState state, void *ptr);
+void RTC_API audio_webrtc__peerconnection_on_datachannel_callback(int pc, int dc, void *ptr);
+void RTC_API audio_webrtc__datachannel_on_open_callback(int id, void *ptr);
+void RTC_API audio_webrtc__datachannel_on_closed_callback(int id, void *ptr);
+void RTC_API audio_webrtc__datachannel_on_message_callback(int id, const char *message, int size, void *ptr);
+
 // declarations
-static void _audio_webrtc_internal__send_public_candidate(const char* candidate, const char* mid, client_t* client);
-static char* _audio_webrtc_internal__state_print(rtcState state);
-static char* _audio_webrtc_internal__gathering_state_print(rtcGatheringState state);
-static void* _audio_webrtc_internal__teardown_thread(void* arg_void);
+static void _audio_webrtc_internal__send_public_candidate(const char *candidate, const char *mid, client_t *client);
+static char *_audio_webrtc_internal__state_print(rtcState state);
+static char *_audio_webrtc_internal__gathering_state_print(rtcGatheringState state);
+static void *_audio_webrtc_internal__teardown_thread(void *arg_void);
 static boole _audio_webrtc_internal__start_teardown_worker(void);
-static webrtc_teardown_arg_t* _audio_webrtc_internal__detach_peer(webrtc_peer_t* peer);
-static void _audio_webrtc_internal__queue_teardown(webrtc_teardown_arg_t* cleanup);
+static webrtc_teardown_arg_t *_audio_webrtc_internal__detach_peer(webrtc_peer_t *peer);
+static void _audio_webrtc_internal__queue_teardown(webrtc_teardown_arg_t *cleanup);
 
 /**
  * @brief error callback
@@ -70,14 +71,14 @@ static void _audio_webrtc_internal__queue_teardown(webrtc_teardown_arg_t* cleanu
  *
  * @return void
  */
-void RTC_API audio_webrtc__datachannel_on_error_callback(int id, const char* error, void* ptr)
+void RTC_API audio_webrtc__datachannel_on_error_callback(int id, const char *error, void *ptr)
 {
     DBG_AUDIO_WEBRTC log_info("%s %s %s", "DataChannel from %s error: %s\n", error, "\n");
 }
 
 /**
- * @brief Queues the server's WebRTC connection details when they are ready, so
- * they can be encrypted and delivered through the client's current chat socket.
+ * @brief Queues the server's WebRTC connection details when they are ready, so they can be
+ *        encrypted and delivered through the client's current chat socket.
  *
  * @param int pc -> peer connection handle
  * @param const char* sdp -> the local SDP description string
@@ -86,15 +87,13 @@ void RTC_API audio_webrtc__datachannel_on_error_callback(int id, const char* err
  *
  * @return void
  */
-void RTC_API audio_webrtc__peerconnection_on_setlocaldescription_callback(int pc, const char* sdp, const char* type, void* ptr)
+void RTC_API audio_webrtc__peerconnection_on_setlocaldescription_callback(int pc, const char *sdp, const char *type, void *ptr)
 {
-    cJSON* json_root_object = NULL_POINTER;
-    cJSON* json_message_object = NULL_POINTER;
-    cJSON* json_message_value = NULL_POINTER;
-    char* json_root_object_string = 0;
-    cJSON* json_type = NULL_POINTER;
-    cJSON* json_sdp = NULL_POINTER;
-    webrtc_peer_t* peer = 0;
+    cJSON *json_root_object = NULL_POINTER;
+    cJSON *json_message_object = NULL_POINTER;
+    cJSON *json_message_value = NULL_POINTER;
+    char *json_root_object_string = 0;
+    webrtc_peer_t *peer = 0;
     boole status = FALSE;
 
     DBG_AUDIO_WEBRTC log_info("%s", "audio_webrtc__peerconnection_on_setlocaldescription_callback \n");
@@ -107,7 +106,7 @@ void RTC_API audio_webrtc__peerconnection_on_setlocaldescription_callback(int pc
         goto label_descriptionCallback_end;
     }
 
-    peer = (webrtc_peer_t*)ptr;
+    peer = (webrtc_peer_t *)ptr;
 
     if (peer->is_existing == FALSE)
     {
@@ -138,36 +137,31 @@ void RTC_API audio_webrtc__peerconnection_on_setlocaldescription_callback(int pc
         DBG_AUDIO_WEBRTC log_info("%s", "we are creating offer \n");
         DBG_AUDIO_WEBRTC log_info("%s %p %s", "audio_webrtc__peerconnection_on_setlocaldescription_callback", peer, "\n");
 
-        json_root_object = cJSON_CreateObject();
-        json_message_object = cJSON_CreateObject();
-
-        json_message_value = cJSON_CreateObject(); // this object will be parsed to string down below, and converted to json again when received on client's side
-
-        DBG_AUDIO_WEBRTC log_info("%s", "test 2");
-
-        json_type = cJSON_CreateString(type);
-        cJSON_AddItemToObject(json_message_value, "type", json_type);
-        json_sdp = cJSON_CreateString(sdp);
-        cJSON_AddItemToObject(json_message_value, "sdp", json_sdp);
+        json_root_object = server_msg__delivery__new_message("sdp_offer", &json_message_object);
+        json_message_value = cJSON_CreateObject();
+        if (json_root_object == NULL_POINTER || json_message_value == NULL_POINTER || cJSON_AddStringToObject(json_message_value, "type", type) == NULL_POINTER || cJSON_AddStringToObject(json_message_value, "sdp", sdp) == NULL_POINTER)
+        {
+            goto label_descriptionCallback_end;
+        }
         json_root_object_string = cJSON_PrintUnformatted(json_message_value);
-
-        cJSON_AddStringToObject(json_message_object, "value", json_root_object_string);
+        if (json_root_object_string == NULL_POINTER || cJSON_AddStringToObject(json_message_object, "value", json_root_object_string) == NULL_POINTER)
+        {
+            goto label_descriptionCallback_end;
+        }
         cJSON_free(json_root_object_string);
-        cJSON_Delete(json_message_value);
-
-        cJSON_AddStringToObject(json_message_object, "type", "sdp_offer");
-        cJSON_AddItemToObject(json_root_object, "message", json_message_object);
-
         json_root_object_string = cJSON_PrintUnformatted(json_root_object);
-
-        server_msg__delivery__queue_text_to_client(&g_clients_array[peer->client_id], json_root_object_string);
-
-        util__free_json_message(json_root_object, json_root_object_string);
+        if (json_root_object_string != NULL_POINTER)
+        {
+            server_msg__delivery__queue_text_to_client(&g_clients_array[peer->client_id], json_root_object_string);
+        }
 
         DBG_AUDIO_WEBRTC log_info("%s", "test 3");
     }
 
 label_descriptionCallback_end:
+    cJSON_free(json_root_object_string);
+    cJSON_Delete(json_message_value);
+    cJSON_Delete(json_root_object);
 
     clib__unlock(&g_webrtc_peers_rwlock_guard);
     clib__unlock(&g_clients_global_rwlock_guard);
@@ -182,7 +176,7 @@ label_descriptionCallback_end:
  *
  * @return void
  */
-void RTC_API audio_webrtc__peerconnection_on_datachannel_callback(int pc, int dc, void* ptr)
+void RTC_API audio_webrtc__peerconnection_on_datachannel_callback(int pc, int dc, void *ptr)
 {
     (void)pc;
     (void)ptr;
@@ -208,17 +202,17 @@ void RTC_API audio_webrtc__peerconnection_on_datachannel_callback(int pc, int dc
  *
  * @return void
  */
-static void _audio_webrtc_internal__send_public_candidate(const char* candidate, const char* mid, client_t* client)
+static void _audio_webrtc_internal__send_public_candidate(const char *candidate, const char *mid, client_t *client)
 {
-    char foundation[64];
-    char component[8];
-    char transport[8];
-    char ip[64];
-    char port[16];
-    char typ[8];
-    char type[16];
-    unsigned long long priority = 0;
-    char rewritten[512];
+    char foundation[64] = { 0 };
+    char component[8] = { 0 };
+    char transport[8] = { 0 };
+    char ip[64] = { 0 };
+    char port[16] = { 0 };
+    char typ[8] = { 0 };
+    char type[16] = { 0 };
+    uint64 priority = 0;
+    char rewritten[512] = { 0 };
     uint64 i = 0;
     boole status0 = FALSE;
     boole status1 = FALSE;
@@ -272,9 +266,9 @@ static void _audio_webrtc_internal__send_public_candidate(const char* candidate,
     }
 
     // libjuice's type preferences are host 126 and srflx 100, each shifted by 24 bits into the priority
-    if (priority > ((unsigned long long)26 << 24))
+    if (priority > ((uint64)26 << 24))
     {
-        priority = priority - ((unsigned long long)26 << 24);
+        priority = priority - ((uint64)26 << 24);
     }
 
     clib__null_memory(rewritten, sizeof(rewritten));
@@ -297,16 +291,16 @@ static void _audio_webrtc_internal__send_public_candidate(const char* candidate,
  *
  * @return void
  */
-void RTC_API audio_webrtc__peerconnection_on_icecandidate_callback(int pc, const char* cand, const char* mid, void* ptr)
+void RTC_API audio_webrtc__peerconnection_on_icecandidate_callback(int pc, const char *cand, const char *mid, void *ptr)
 {
-    webrtc_peer_t* peer = 0;
+    webrtc_peer_t *peer = 0;
     boole is_client_valid = FALSE;
     boole status0 = FALSE;
     boole status1 = FALSE;
 
     DBG_AUDIO_WEBRTC log_info("%s", "audio_webrtc__peerconnection_on_icecandidate_callback \n");
 
-    peer = (webrtc_peer_t*)ptr;
+    peer = (webrtc_peer_t *)ptr;
 
     if (peer == NULL_POINTER)
     {
@@ -350,11 +344,13 @@ _label_peerconnection_on_icecandidate_callback_end:
 void audio_webrtc__set_is_client_sending_audio(uint64 client_id, boole is_active)
 {
     g_webrtc_peers_array[client_id].is_sending_audio_right_now = is_active;
+
     // to add lock?
 }
 
 /**
- * @brief runs when the peer connection state changes; updates the client's audio state and broadcasts it to the channel
+ * @brief runs when the peer connection state changes; updates the client's audio state and
+ *        broadcasts it to the channel
  *
  * @param int pc -> peer connection handle
  * @param rtcState state -> the new rtcState
@@ -362,17 +358,17 @@ void audio_webrtc__set_is_client_sending_audio(uint64 client_id, boole is_active
  *
  * @return void
  */
-void RTC_API audio_webrtc__peerconnection_on_statechanged_callback(int pc, rtcState state, void* ptr)
+void RTC_API audio_webrtc__peerconnection_on_statechanged_callback(int pc, rtcState state, void *ptr)
 {
-    webrtc_peer_t* peer = 0;
-    client_t* client = 0;
+    webrtc_peer_t *peer = 0;
+    client_t *client = 0;
     boole status = FALSE;
     boole status0 = FALSE;
     boole status1 = FALSE;
 
     DBG_AUDIO_WEBRTC log_info("%s", "entered this function");
 
-    peer = (webrtc_peer_t*)ptr;
+    peer = (webrtc_peer_t *)ptr;
 
     if (peer != NULL_POINTER)
     {
@@ -410,9 +406,7 @@ void RTC_API audio_webrtc__peerconnection_on_statechanged_callback(int pc, rtcSt
                 status1 = g_server_settings.is_audio_over_webrtc_allowed == TRUE;
                 if (status0 == TRUE && status1 == TRUE)
                 {
-                    client->audio_state = state == RTC_CONNECTED
-                        ? AUDIO_STATE__PUSH_TO_TALK_DISABLED_BUT_CAN_RECEIVE_AUDIO_FROM_OTHERS
-                        : AUDIO_STATE__AUDIO_COMPLETELY_DISABLED;
+                    client->audio_state = state == RTC_CONNECTED ? AUDIO_STATE__PUSH_TO_TALK_DISABLED_BUT_CAN_RECEIVE_AUDIO_FROM_OTHERS : AUDIO_STATE__AUDIO_COMPLETELY_DISABLED;
                 }
                 if (state != RTC_CONNECTED)
                 {
@@ -445,7 +439,7 @@ void RTC_API audio_webrtc__peerconnection_on_statechanged_callback(int pc, rtcSt
  *
  * @return void
  */
-void RTC_API audio_webrtc__peerconnection_on_gatheringstatechanged_callback(int pc, rtcGatheringState state, void* ptr)
+void RTC_API audio_webrtc__peerconnection_on_gatheringstatechanged_callback(int pc, rtcGatheringState state, void *ptr)
 {
     // log_info("%s %s %s", "audio_webrtc__peerconnection_on_gatheringstatechanged_callback", _audio_webrtc_internal__gathering_state_print(state), "\n");
 
@@ -453,7 +447,7 @@ void RTC_API audio_webrtc__peerconnection_on_gatheringstatechanged_callback(int 
 
     if (ptr != NULL_POINTER)
     {
-        DBG_AUDIO_WEBRTC log_info("%s %lld %s %s %s", "audio_webrtc__peerconnection_on_gatheringstatechanged_callback ", ((webrtc_peer_t*)ptr)->client_id, " to client ", _audio_webrtc_internal__gathering_state_print(state), "\n");
+        DBG_AUDIO_WEBRTC log_info("%s %lld %s %s %s", "audio_webrtc__peerconnection_on_gatheringstatechanged_callback ", ((webrtc_peer_t *)ptr)->client_id, " to client ", _audio_webrtc_internal__gathering_state_print(state), "\n");
     }
 
     if (state == RTC_GATHERING_COMPLETE)
@@ -469,10 +463,10 @@ void RTC_API audio_webrtc__peerconnection_on_gatheringstatechanged_callback(int 
  *
  * @return void
  */
-void RTC_API audio_webrtc__datachannel_on_open_callback(int id, void* ptr)
+void RTC_API audio_webrtc__datachannel_on_open_callback(int id, void *ptr)
 {
-    webrtc_peer_t* peer = (webrtc_peer_t*)ptr;
-    char buffer[256];
+    webrtc_peer_t *peer = (webrtc_peer_t *)ptr;
+    char buffer[256] = { 0 };
     boole status = FALSE;
 
     clib__null_memory(buffer, sizeof(buffer));
@@ -504,19 +498,15 @@ void RTC_API audio_webrtc__datachannel_on_open_callback(int id, void* ptr)
  * @param int id -> data channel handle
  * @param void* ptr -> the webrtc_peer_t this data channel belongs to
  *
- * @attention the slot may have been re-initialized since this data channel was created (the client retries
- *            the datachannel setup every 10 seconds and each retry overwrites the slot's handles). a stale
- *            data channel closing later must not clear the slot's CURRENT state - that silently removed the
- *            client from every audio relay loop while its live datachannel stayed open. only the handle
- *            that is still the slot's current one may clear the slot.
+ * @attention the slot may have been re-initialized since this data channel was created (the client retries the datachannel setup every 10 seconds and each retry overwrites the slot's handles). a stale data channel closing later must not clear the slot's CURRENT state - that silently removed the client from every audio relay loop while its live datachannel stayed open. only the handle that is still the slot's current one may clear the slot.
  *
  * @return void
  */
-void RTC_API audio_webrtc__datachannel_on_closed_callback(int id, void* ptr)
+void RTC_API audio_webrtc__datachannel_on_closed_callback(int id, void *ptr)
 {
-    webrtc_peer_t* peer = 0;
-    client_t* client = 0;
-    webrtc_teardown_arg_t* cleanup = NULL_POINTER;
+    webrtc_peer_t *peer = 0;
+    client_t *client = 0;
+    webrtc_teardown_arg_t *cleanup = NULL_POINTER;
     uint64 client_id = 0;
     boole status = FALSE;
     boole status0 = FALSE;
@@ -527,7 +517,7 @@ void RTC_API audio_webrtc__datachannel_on_closed_callback(int id, void* ptr)
     clib__write_lock(&g_clients_global_rwlock_guard);
     clib__write_lock(&g_webrtc_peers_rwlock_guard);
 
-    peer = (webrtc_peer_t*)ptr;
+    peer = (webrtc_peer_t *)ptr;
 
     if (peer != NULL_POINTER)
     {
@@ -575,8 +565,8 @@ void RTC_API audio_webrtc__datachannel_on_closed_callback(int id, void* ptr)
 }
 
 /**
- * @brief a voice frame from a client's data channel, handed to the shared relay with the handle it arrived on,
- *        or the client's one-byte liveness probe, which goes straight back
+ * @brief a voice frame from a client's data channel, handed to the shared relay with the handle it
+ *        arrived on, or the client's one-byte liveness probe, which goes straight back
  *
  * @param int id -> data channel handle the message arrived on
  * @param const char* message -> the received audio data
@@ -585,9 +575,9 @@ void RTC_API audio_webrtc__datachannel_on_closed_callback(int id, void* ptr)
  *
  * @return void
  */
-void RTC_API audio_webrtc__datachannel_on_message_callback(int id, const char* message, int size, void* ptr)
+void RTC_API audio_webrtc__datachannel_on_message_callback(int id, const char *message, int size, void *ptr)
 {
-    webrtc_peer_t* peer = ptr;
+    webrtc_peer_t *peer = ptr;
     uint64 sender_id = 0;
     boole status0 = FALSE;
     boole status1 = FALSE;
@@ -598,6 +588,7 @@ void RTC_API audio_webrtc__datachannel_on_message_callback(int id, const char* m
     {
         return;
     }
+
     // a one-byte frame is the client's liveness probe: it comes back on the same channel, so the client can
     // tell a transport that no longer works, while the browser still reports it open, from a quiet one
     if (size == 1)
@@ -606,9 +597,10 @@ void RTC_API audio_webrtc__datachannel_on_message_callback(int id, const char* m
         return;
     }
     base__count_webrtc_bytes((uint64)size, 0);
+
     // Peer slots never move. Derive the index without reading fields another callback can reset.
     sender_id = (uint64)(peer - g_webrtc_peers_array);
-    audio_channel__relay_voice(sender_id, NULL_POINTER, id, (const unsigned char*)message, (uint64)size);
+    audio_channel__relay_voice(sender_id, NULL_POINTER, id, (const ubyte *)message, (uint64)size);
 }
 
 /**
@@ -618,9 +610,10 @@ void RTC_API audio_webrtc__datachannel_on_message_callback(int id, const char* m
  *
  * @return char* static string naming the state, or 0 if unknown
  */
-static char* _audio_webrtc_internal__state_print(rtcState state)
+static char *_audio_webrtc_internal__state_print(rtcState state)
 {
-    char* str = NULL_POINTER;
+    char *str = NULL_POINTER;
+
     switch (state)
     {
     case RTC_NEW:
@@ -655,9 +648,10 @@ static char* _audio_webrtc_internal__state_print(rtcState state)
  *
  * @return char* static string naming the state, or 0 if unknown
  */
-static char* _audio_webrtc_internal__gathering_state_print(rtcGatheringState state)
+static char *_audio_webrtc_internal__gathering_state_print(rtcGatheringState state)
 {
-    char* str = NULL_POINTER;
+    char *str = NULL_POINTER;
+
     switch (state)
     {
     case RTC_GATHERING_NEW:
@@ -677,7 +671,8 @@ static char* _audio_webrtc_internal__gathering_state_print(rtcGatheringState sta
 }
 
 /**
- * @brief updates the client's webrtc peer with its new channel id when the client joins or switches a channel
+ * @brief updates the client's webrtc peer with its new channel id when the client joins or switches
+ *        a channel
  *
  * @attention takes the peers write lock
  *
@@ -685,9 +680,9 @@ static char* _audio_webrtc_internal__gathering_state_print(rtcGatheringState sta
  *
  * @return void
  */
-void audio_webrtc__process_client_channel_join(client_t* client)
+void audio_webrtc__process_client_channel_join(client_t *client)
 {
-    webrtc_peer_t* peer = NULL_POINTER;
+    webrtc_peer_t *peer = NULL_POINTER;
 
     clib__write_lock(&g_webrtc_peers_rwlock_guard);
 
@@ -712,9 +707,9 @@ label_audio_webrtc__process_client_channel_join_end:
  * @brief Deletes queued RTC objects without holding application or queue locks.
  * @param arg_void Unused; this process-lifetime worker owns each dequeued job.
  */
-static void* _audio_webrtc_internal__teardown_thread(void* arg_void)
+static void *_audio_webrtc_internal__teardown_thread(void *arg_void)
 {
-    webrtc_teardown_arg_t* cleanup = NULL_POINTER;
+    webrtc_teardown_arg_t *cleanup = NULL_POINTER;
 
     (void)arg_void;
     for (;;)
@@ -750,8 +745,8 @@ static void* _audio_webrtc_internal__teardown_thread(void* arg_void)
 }
 
 /**
- * @brief Starts cleanup before accepting ownership of the first RTC object.
- * A failed start leaves no RTC handles behind and a later setup may retry.
+ * @brief Starts cleanup before accepting ownership of the first RTC object. A failed start leaves
+ *        no RTC handles behind and a later setup may retry.
  */
 static boole _audio_webrtc_internal__start_teardown_worker(void)
 {
@@ -771,9 +766,9 @@ static boole _audio_webrtc_internal__start_teardown_worker(void)
  * @brief Transfers a peer's handles into its reserved cleanup job.
  * @attention The caller holds the peers write lock. No allocation is needed.
  */
-static webrtc_teardown_arg_t* _audio_webrtc_internal__detach_peer(webrtc_peer_t* peer)
+static webrtc_teardown_arg_t *_audio_webrtc_internal__detach_peer(webrtc_peer_t *peer)
 {
-    webrtc_teardown_arg_t* cleanup = peer->teardown;
+    webrtc_teardown_arg_t *cleanup = peer->teardown;
 
     if (cleanup != NULL_POINTER)
     {
@@ -798,10 +793,10 @@ static webrtc_teardown_arg_t* _audio_webrtc_internal__detach_peer(webrtc_peer_t*
 }
 
 /**
- * @brief Gives a reserved job to the worker without allocating or starting a thread.
- * The worker releases the queue lock before waiting for RTC callbacks to finish.
+ * @brief Gives a reserved job to the worker without allocating or starting a thread. The worker
+ *        releases the queue lock before waiting for RTC callbacks to finish.
  */
-static void _audio_webrtc_internal__queue_teardown(webrtc_teardown_arg_t* cleanup)
+static void _audio_webrtc_internal__queue_teardown(webrtc_teardown_arg_t *cleanup)
 {
     if (cleanup == NULL_POINTER)
     {
@@ -829,9 +824,9 @@ static void _audio_webrtc_internal__queue_teardown(webrtc_teardown_arg_t* cleanu
  *
  * @return void
  */
-void audio_webrtc__process_client_disconnect(client_t* client)
+void audio_webrtc__process_client_disconnect(client_t *client)
 {
-    webrtc_teardown_arg_t* cleanup = NULL_POINTER;
+    webrtc_teardown_arg_t *cleanup = NULL_POINTER;
 
     clib__write_lock(&g_webrtc_peers_rwlock_guard);
     cleanup = _audio_webrtc_internal__detach_peer(&g_webrtc_peers_array[client->client_id]);
@@ -844,9 +839,9 @@ void audio_webrtc__process_client_disconnect(client_t* client)
  * @param client_t* client -> client that owns the connection
  * @param cstring candidate -> checked candidate from the client's message
  */
-void audio_webrtc__add_remote_candidate(client_t* client, cstring candidate)
+void audio_webrtc__add_remote_candidate(client_t *client, cstring candidate)
 {
-    webrtc_peer_t* peer = NULL_POINTER;
+    webrtc_peer_t *peer = NULL_POINTER;
 
     clib__read_lock(&g_webrtc_peers_rwlock_guard);
     peer = &g_webrtc_peers_array[client->client_id];
@@ -863,9 +858,9 @@ void audio_webrtc__add_remote_candidate(client_t* client, cstring candidate)
  * @param cstring sdp -> checked session description from the client's message
  * @param cstring type -> checked description type from the client's message
  */
-void audio_webrtc__set_remote_description(client_t* client, cstring sdp, cstring type)
+void audio_webrtc__set_remote_description(client_t *client, cstring sdp, cstring type)
 {
-    webrtc_peer_t* peer = NULL_POINTER;
+    webrtc_peer_t *peer = NULL_POINTER;
 
     clib__write_lock(&g_webrtc_peers_rwlock_guard);
     peer = &g_webrtc_peers_array[client->client_id];
@@ -884,17 +879,15 @@ void audio_webrtc__set_remote_description(client_t* client, cstring sdp, cstring
  * Their reserved cleanup jobs are then passed to the cleanup worker.
  *
  * @param client_t* client -> client requesting the connection
- * @attention The caller holds the clients read or write lock. This function
- * takes the peers write lock while rebuilding the slot.
- * @return boole -> TRUE when both resources were created; FALSE when the client
- * is missing, inactive or unauthenticated, or setup fails.
+ * @attention The caller holds the clients read or write lock. This function takes the peers write lock while rebuilding the slot.
+ * @return boole -> TRUE when both resources were created; FALSE when the client is missing, inactive or unauthenticated, or setup fails.
  */
-boole audio_webrtc__initialize_datachannel_connection(client_t* client)
+boole audio_webrtc__initialize_datachannel_connection(client_t *client)
 {
-    webrtc_peer_t* peer = NULL_POINTER;
-    webrtc_teardown_arg_t* reserved = NULL_POINTER;
-    webrtc_teardown_arg_t* old_cleanup = NULL_POINTER;
-    webrtc_teardown_arg_t* failed_cleanup = NULL_POINTER;
+    webrtc_peer_t *peer = NULL_POINTER;
+    webrtc_teardown_arg_t *reserved = NULL_POINTER;
+    webrtc_teardown_arg_t *old_cleanup = NULL_POINTER;
+    webrtc_teardown_arg_t *failed_cleanup = NULL_POINTER;
     boole result = FALSE;
     boole status0 = FALSE;
     boole status1 = FALSE;
@@ -902,7 +895,7 @@ boole audio_webrtc__initialize_datachannel_connection(client_t* client)
     rtcDataChannelInit init;
     uint64 attempts = 0;
     uint64 cooldown = 0;
-    const char* ice_servers[1] = { "127.0.0.1:3478" };
+    const char *ice_servers[1] = { "127.0.0.1:3478" };
 
     if (client == NULL_POINTER)
     {
@@ -914,9 +907,10 @@ boole audio_webrtc__initialize_datachannel_connection(client_t* client)
     {
         return FALSE;
     }
+
     // Both failure-prone cleanup prerequisites come before creating any RTC
     // object or replacing the client's current transport.
-    reserved = (webrtc_teardown_arg_t*)memorymanager__allocate(sizeof(*reserved), MEMALLOC_WEBRTC_PEERS);
+    reserved = (webrtc_teardown_arg_t *)memorymanager__allocate(sizeof(*reserved), MEMALLOC_WEBRTC_PEERS);
     if (reserved == NULL_POINTER)
     {
         return FALSE;
@@ -932,8 +926,8 @@ boole audio_webrtc__initialize_datachannel_connection(client_t* client)
     config.iceServersCount = 1;
     if (g_server_settings.is_wireguard_mode_active == TRUE)
     {
-        config.portRangeBegin = (uint16_t)g_server_settings.webrtc_port_range_begin;
-        config.portRangeEnd = (uint16_t)g_server_settings.webrtc_port_range_end;
+        config.portRangeBegin = (ushort)g_server_settings.webrtc_port_range_begin;
+        config.portRangeEnd = (ushort)g_server_settings.webrtc_port_range_end;
     }
 
     clib__write_lock(&g_webrtc_peers_rwlock_guard);
@@ -1002,7 +996,7 @@ end:
  */
 boole audio_webrtc__is_connected(uint64 client_id)
 {
-    webrtc_peer_t* peer = &g_webrtc_peers_array[client_id];
+    webrtc_peer_t *peer = &g_webrtc_peers_array[client_id];
     boole status0 = FALSE;
     boole status1 = FALSE;
 
@@ -1023,7 +1017,7 @@ boole audio_webrtc__is_connected(uint64 client_id)
  */
 boole audio_webrtc__is_data_channel_current(uint64 client_id, int data_channel)
 {
-    webrtc_peer_t* peer = &g_webrtc_peers_array[client_id];
+    webrtc_peer_t *peer = &g_webrtc_peers_array[client_id];
     boole status0 = FALSE;
     boole status1 = FALSE;
     boole status2 = FALSE;
@@ -1038,16 +1032,16 @@ boole audio_webrtc__is_data_channel_current(uint64 client_id, int data_channel)
  * @brief sends one relayed audio packet over the client's data channel
  *
  * @param uint64 client_id -> slot of the receiving client
- * @param const unsigned char* packet -> the framed packet
+ * @param const ubyte* packet -> the framed packet
  * @param uint64 size -> its length in bytes
  *
  * @attention peers read lock required
  *
  * @return boole -> TRUE when the packet was handed to libdatachannel
  */
-boole audio_webrtc__send(uint64 client_id, const unsigned char* packet, uint64 size)
+boole audio_webrtc__send(uint64 client_id, const ubyte *packet, uint64 size)
 {
-    webrtc_peer_t* peer = &g_webrtc_peers_array[client_id];
+    webrtc_peer_t *peer = &g_webrtc_peers_array[client_id];
     boole status0 = FALSE;
     boole status1 = FALSE;
     boole status2 = FALSE;
@@ -1059,7 +1053,7 @@ boole audio_webrtc__send(uint64 client_id, const unsigned char* packet, uint64 s
     {
         return FALSE;
     }
-    if (rtcSendMessage(peer->data_channel_handle, (const char*)packet, (int)size) < 0)
+    if (rtcSendMessage(peer->data_channel_handle, (const char *)packet, (int)size) < 0)
     {
         return FALSE;
     }

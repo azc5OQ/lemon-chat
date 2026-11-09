@@ -26,6 +26,7 @@
 // and failed lookups stay for one minute. A queued result is discarded if its
 // client disconnected or replaced the connection while the lookup was running.
 #include "../definitions.h"
+#include "../clib/clib.h"
 #include "../../third-party/dave-g-json/cJSON.h"
 #include "url_resolver.h"
 #include "httpclient.h"
@@ -42,9 +43,9 @@
 
 typedef struct url_resolver_job_t
 {
-    struct url_resolver_job_t* next;
+    struct url_resolver_job_t *next;
     uint64 client_id;
-    ws_cli_conn_t* socket;
+    ws_cli_conn_t *socket;
     crypto_key_t session_authentication;
     char request_id[65];
     char url[2049];
@@ -54,27 +55,28 @@ typedef struct url_resolver_cache_t
 {
     char url[2049];
     uint64 expires;
-    cJSON* result;
+    cJSON *result;
 } url_resolver_cache_t;
 
 static pthread_mutex_t g_url_resolver_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t g_url_resolver_changed = PTHREAD_COND_INITIALIZER;
 static pthread_once_t g_url_resolver_once = PTHREAD_ONCE_INIT;
-static url_resolver_job_t* g_url_resolver_head = NULL_POINTER;
-static url_resolver_job_t* g_url_resolver_tail = NULL_POINTER;
-static unsigned int g_url_resolver_queued = 0;
-static unsigned int g_url_resolver_workers = 0;
+static url_resolver_job_t *g_url_resolver_head = NULL_POINTER;
+static url_resolver_job_t *g_url_resolver_tail = NULL_POINTER;
+static uint64 g_url_resolver_queued = 0;
+static uint64 g_url_resolver_workers = 0;
 static url_resolver_cache_t g_url_resolver_cache[URL_RESOLVER_CACHE_SIZE];
-static unsigned int g_url_resolver_cache_next = 0;
+static uint64 g_url_resolver_cache_next = 0;
 
 // declarations
-static boole _url_resolver_internal__same_session(const url_resolver_job_t* job);
-static cJSON* _url_resolver_internal__result(const char* url);
-static void* _url_resolver_internal__worker(void* unused);
+static boole _url_resolver_internal__same_session(const url_resolver_job_t *job);
+static cJSON *_url_resolver_internal__result(const char *url);
+static void *_url_resolver_internal__worker(void *unused);
 static void _url_resolver_internal__start(void);
 
 /**
- * @brief Checks whether the client that requested a URL preview still has the same connection and keys.
+ * @brief Checks whether the client that requested a URL preview still has the same connection and
+ *        keys.
  *
  * The client array can reuse a disconnected client's slot. Checking its socket and keys
  * prevents a finished preview from reaching another person or a replacement connection.
@@ -85,44 +87,56 @@ static void _url_resolver_internal__start(void);
  *
  * @return boole -> TRUE when the original authenticated session still exists, otherwise FALSE
  */
-static boole _url_resolver_internal__same_session(const url_resolver_job_t* job)
+static boole _url_resolver_internal__same_session(const url_resolver_job_t *job)
 {
+    client_t *client = NULL_POINTER;
+
     if (job->client_id >= g_server_settings.max_client_count)
     {
         return FALSE;
     }
-    client_t* client = &g_clients_array[job->client_id];
-    return client->is_existing && client->is_authenticated && client->session_keys.is_ready
-        && client->p_ws_connection == job->socket
-        && clib__memcmp(&client->session_keys.authentication, &job->session_authentication, sizeof(job->session_authentication)) == 0;
+    client = &g_clients_array[job->client_id];
+    return client->is_existing && client->is_authenticated && client->session_keys.is_ready && client->p_ws_connection == job->socket && clib__memcmp(&client->session_keys.authentication, &job->session_authentication, sizeof(job->session_authentication)) == 0;
 }
 
 /**
- * @brief Gets a URL preview from the cache, or downloads the page and saves a copy for later requests.
+ * @brief Gets a URL preview from the cache, or downloads the page and saves a copy for later
+ *        requests.
  *
  * @param const char* url -> the website URL to look up, limited to 2048 characters by the request handler
  *
  * @return cJSON* -> a new result object for the caller to delete, or NULL if allocation fails
  */
-static cJSON* _url_resolver_internal__result(const char* url)
+static cJSON *_url_resolver_internal__result(const char *url)
 {
+    uint64 index = 0;
+    url_resolver_cache_t *cached_entry = NULL_POINTER;
+    cJSON *cached_result = NULL_POINTER;
+    url_preview_t preview = { 0 };
+    boole succeeded = FALSE;
+    cJSON *result = NULL_POINTER;
+    url_resolver_cache_t *entry = NULL_POINTER;
     uint64 now = util__get_timestamp_ms();
+
+    // Check cached preview
     pthread_mutex_lock(&g_url_resolver_mutex);
-    for (unsigned int index = 0; index < URL_RESOLVER_CACHE_SIZE; index++)
+    for (index = 0; index < URL_RESOLVER_CACHE_SIZE; index++)
     {
-        url_resolver_cache_t* entry = &g_url_resolver_cache[index];
-        if (entry->result != NULL_POINTER && entry->expires > now && clib__strcmp(entry->url, url) == 0)
+        cached_entry = &g_url_resolver_cache[index];
+        if (cached_entry->result != NULL_POINTER && cached_entry->expires > now && clib__strcmp(cached_entry->url, url) == 0)
         {
-            cJSON* result = cJSON_Duplicate(entry->result, TRUE);
+            cached_result = cJSON_Duplicate(cached_entry->result, TRUE);
             pthread_mutex_unlock(&g_url_resolver_mutex);
-            return result;
+            return cached_result;
         }
     }
     pthread_mutex_unlock(&g_url_resolver_mutex);
 
-    url_preview_t preview;
-    int succeeded = url_preview__resolve(url, &preview);
-    cJSON* result = cJSON_CreateObject();
+    // Download missing preview
+    succeeded = url_preview__resolve(url, &preview);
+
+    // Build preview response
+    result = cJSON_CreateObject();
     cJSON_AddStringToObject(result, "status", succeeded ? "ok" : "unavailable");
     cJSON_AddStringToObject(result, "url", url);
     if (succeeded)
@@ -139,7 +153,9 @@ static cJSON* _url_resolver_internal__result(const char* url)
     url_preview__free(&preview);
 
     pthread_mutex_lock(&g_url_resolver_mutex);
-    url_resolver_cache_t* entry = &g_url_resolver_cache[g_url_resolver_cache_next++ % URL_RESOLVER_CACHE_SIZE];
+
+    // Cache preview result
+    entry = &g_url_resolver_cache[g_url_resolver_cache_next++ % URL_RESOLVER_CACHE_SIZE];
     cJSON_Delete(entry->result);
     clib__string_copy(entry->url, sizeof(entry->url), url);
     entry->expires = util__get_timestamp_ms() + (succeeded ? 600000 : 60000);
@@ -149,7 +165,8 @@ static cJSON* _url_resolver_internal__result(const char* url)
 }
 
 /**
- * @brief Waits for URL preview requests and sends each result only to the session that requested it.
+ * @brief Waits for URL preview requests and sends each result only to the session that requested
+ *        it.
  *
  * Website downloads run without the clients lock. The connection is checked before
  * downloading and again before replying because the client may disconnect meanwhile.
@@ -158,19 +175,26 @@ static cJSON* _url_resolver_internal__result(const char* url)
  *
  * @return void* -> this worker runs until the server exits and does not normally return
  */
-static void* _url_resolver_internal__worker(void* unused)
+static void *_url_resolver_internal__worker(void *unused)
 {
+    url_resolver_job_t *job = NULL_POINTER;
+    boole active = FALSE;
+    cJSON *result = NULL_POINTER;
     boole status = FALSE;
 
     (void)unused;
     for (;;)
     {
         pthread_mutex_lock(&g_url_resolver_mutex);
+
+        // Wait for work
         while (g_url_resolver_head == NULL_POINTER)
         {
             pthread_cond_wait(&g_url_resolver_changed, &g_url_resolver_mutex);
         }
-        url_resolver_job_t* job = g_url_resolver_head;
+
+        // Take queued request
+        job = g_url_resolver_head;
         g_url_resolver_head = job->next;
         if (g_url_resolver_head == NULL_POINTER)
         {
@@ -180,18 +204,23 @@ static void* _url_resolver_internal__worker(void* unused)
         pthread_mutex_unlock(&g_url_resolver_mutex);
 
         clib__read_lock(&g_clients_global_rwlock_guard);
-        boole active = _url_resolver_internal__same_session(job) && g_server_settings.is_link_preview_allowed;
+
+        // Check requesting session
+        active = _url_resolver_internal__same_session(job) && g_server_settings.is_link_preview_allowed;
         clib__unlock(&g_clients_global_rwlock_guard);
-        cJSON* result = active ? _url_resolver_internal__result(job->url) : NULL_POINTER;
+        result = active ? _url_resolver_internal__result(job->url) : NULL_POINTER;
 
         clib__read_lock(&g_clients_global_rwlock_guard);
+
+        // Recheck before replying
         status = _url_resolver_internal__same_session(job);
         if (status != FALSE)
         {
-            server_msg__chat__send_url_resolved_to_single_client(&g_clients_array[job->client_id], job->request_id, job->url,
-                g_server_settings.is_link_preview_allowed ? result : NULL_POINTER);
+            server_msg__chat__send_url_resolved_to_single_client(&g_clients_array[job->client_id], job->request_id, job->url, g_server_settings.is_link_preview_allowed ? result : NULL_POINTER);
         }
         clib__unlock(&g_clients_global_rwlock_guard);
+
+        // Release job memory
         cJSON_Delete(result);
         clib__memset(&job->session_authentication, 0, sizeof(job->session_authentication));
         free(job);
@@ -209,16 +238,20 @@ static void* _url_resolver_internal__worker(void* unused)
  */
 static void _url_resolver_internal__start(void)
 {
+    uint64 index = 0;
+    pthread_t thread = 0;
     pthread_attr_t attributes;
+
     if (pthread_attr_init(&attributes) != 0)
     {
         return;
     }
+
+    // Start detached workers
     if (pthread_attr_setdetachstate(&attributes, PTHREAD_CREATE_DETACHED) == 0)
     {
-        for (unsigned int index = 0; index < URL_RESOLVER_WORKERS; index++)
+        for (index = 0; index < URL_RESOLVER_WORKERS; index++)
         {
-            pthread_t thread;
             if (pthread_create(&thread, &attributes, _url_resolver_internal__worker, NULL_POINTER) == 0)
             {
                 g_url_resolver_workers++;
@@ -236,17 +269,16 @@ static void _url_resolver_internal__start(void)
  * @param ws_cli_conn_t* socket -> connection that sent the request
  * @attention The caller must not hold the clients lock. The queue copies the strings.
  */
-void url_resolver__queue_lookup(cstring url, cstring request_id, uint64 client_id, ws_cli_conn_t* socket)
+void url_resolver__queue_lookup(cstring url, cstring request_id, uint64 client_id, ws_cli_conn_t *socket)
 {
-    client_t* client = NULL_POINTER;
+    client_t *client = NULL_POINTER;
     uint64 now = 0;
-    url_resolver_job_t* job = NULL_POINTER;
+    url_resolver_job_t *job = NULL_POINTER;
     boole status = FALSE;
 
+    // Validate requesting session
     clib__write_lock(&g_clients_global_rwlock_guard);
-    if (client_id >= g_server_settings.max_client_count || !g_clients_array[client_id].is_existing
-        || !g_clients_array[client_id].is_authenticated || !g_clients_array[client_id].session_keys.is_ready
-        || g_clients_array[client_id].p_ws_connection != socket)
+    if (client_id >= g_server_settings.max_client_count || !g_clients_array[client_id].is_existing || !g_clients_array[client_id].is_authenticated || !g_clients_array[client_id].session_keys.is_ready || g_clients_array[client_id].p_ws_connection != socket)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
@@ -259,6 +291,8 @@ void url_resolver__queue_lookup(cstring url, cstring request_id, uint64 client_i
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
     }
+
+    // Limit request frequency
     if (now - client->timestamp_last_url_lookup < 500)
     {
         server_msg__chat__send_url_resolved_to_single_client(client, request_id, url, NULL_POINTER);
@@ -266,6 +300,8 @@ void url_resolver__queue_lookup(cstring url, cstring request_id, uint64 client_i
         return;
     }
     client->timestamp_last_url_lookup = now;
+
+    // Copy request details
     job = calloc(1, sizeof(*job));
     if (job != NULL_POINTER)
     {
@@ -286,6 +322,8 @@ void url_resolver__queue_lookup(cstring url, cstring request_id, uint64 client_i
     }
     pthread_once(&g_url_resolver_once, _url_resolver_internal__start);
     pthread_mutex_lock(&g_url_resolver_mutex);
+
+    // Check queue capacity
     if (g_url_resolver_workers == 0 || g_url_resolver_queued >= URL_RESOLVER_QUEUE_LIMIT)
     {
         pthread_mutex_unlock(&g_url_resolver_mutex);
@@ -300,6 +338,8 @@ void url_resolver__queue_lookup(cstring url, cstring request_id, uint64 client_i
         free(job);
         return;
     }
+
+    // Append queued request
     if (g_url_resolver_tail == NULL_POINTER)
     {
         g_url_resolver_head = job;
@@ -310,6 +350,8 @@ void url_resolver__queue_lookup(cstring url, cstring request_id, uint64 client_i
     }
     g_url_resolver_tail = job;
     g_url_resolver_queued++;
+
+    // Wake waiting worker
     pthread_cond_signal(&g_url_resolver_changed);
     pthread_mutex_unlock(&g_url_resolver_mutex);
 }

@@ -89,7 +89,7 @@ add_executable(chat-server
         base.c
         core/channel.c
         chat_websocket.c
-        core/client_login.c
+        crypto/auth_rsa.c
         core/client_session.c
         core/attachments.c
         core/identity_store.c
@@ -104,8 +104,19 @@ add_executable(chat-server
         core/audio_channel.c
         audio_webrtc.c
         audio_websocket.c
-        metadata_crypto.c
-        media_auth.c
+        crypto/ciphers.c
+        crypto/cipher_aes.c
+        crypto/cipher_camellia.c
+        crypto/cipher_chacha20.c
+        crypto/keys_session.c
+        crypto/cipher_twofish.c
+        crypto/cipher_serpent.c
+        crypto/cipher_trivium.c
+        crypto/auth_handshake.c
+        crypto/crypto_metadata.c
+        crypto/crypto_media.c
+        crypto/crypto_storage.c
+        core/musicbot_store.c
         core/video_channel.c
         video_websocket.c
         video_webrtc.c
@@ -146,12 +157,21 @@ add_executable(chat-server
         core/musicbot.c
         util.c
         httpserver/http_server.c
+        httpserver/http_gzip.c
+        ../third-party/miniz-3.1.2/miniz.c
+        ../third-party/miniz-3.1.2/miniz_tdef.c
         httpclient/httpclient.c
         httpclient/url_preview.c
         httpclient/url_resolver.c
         )
 
+# Only DEFLATE and CRC32 are needed for HTTP gzip responses; no archive or inflate code.
+set_source_files_properties(httpserver/http_gzip.c
+    ../third-party/miniz-3.1.2/miniz.c ../third-party/miniz-3.1.2/miniz_tdef.c
+    PROPERTIES COMPILE_DEFINITIONS "MINIZ_NO_INFLATE_APIS;MINIZ_NO_ZLIB_APIS;MINIZ_NO_STDIO;MINIZ_NO_TIME")
+
 target_include_directories(chat-server PRIVATE
+    ${PROJECT_SOURCE_DIR}/../third-party/libtomcrypt/src/headers
     ${PROJECT_SOURCE_DIR}/../third-party/libviolet-0.5.4/deps/libjuice/include
     ${PROJECT_SOURCE_DIR}/../third-party/libviolet-0.5.4/deps/libjuice/include/juice
     ${PROJECT_SOURCE_DIR}/../third-party/mbedtls-3.6.6/include)
@@ -285,11 +305,20 @@ if(SERVER_REGRESSION_TESTS)
             $<TARGET_FILE:chat-server>)
     add_test(NAME channel_keys
         COMMAND ${NODE_EXECUTABLE} "${PROJECT_SOURCE_DIR}/../../tests/browser/channel-keys.test.cjs")
-    set_tests_properties(channel_maintainer channel_keys PROPERTIES TIMEOUT 180)
+    set_tests_properties(channel_maintainer PROPERTIES TIMEOUT 180)
+    set_tests_properties(channel_keys PROPERTIES TIMEOUT 300)
 
     # Run the actual setup without opening ports or starting external programs.
     get_target_property(SETUP_TEST_SOURCES chat-server SOURCES)
     list(REMOVE_ITEM SETUP_TEST_SOURCES main.c)
+    add_executable(server-connection-crypto-check ${SETUP_TEST_SOURCES}
+        "${PROJECT_SOURCE_DIR}/../../tests/crypto/server-media.c" "${PROJECT_SOURCE_DIR}/../../tests/crypto/storage.c")
+    target_include_directories(server-connection-crypto-check PRIVATE
+        "${PROJECT_SOURCE_DIR}" $<TARGET_PROPERTY:chat-server,INCLUDE_DIRECTORIES>)
+    target_compile_definitions(server-connection-crypto-check PRIVATE
+        $<TARGET_PROPERTY:chat-server,COMPILE_DEFINITIONS>)
+    target_link_libraries(server-connection-crypto-check PRIVATE
+        $<TARGET_PROPERTY:chat-server,LINK_LIBRARIES>)
     add_executable(first-time-setup-driver ${SETUP_TEST_SOURCES}
         "${PROJECT_SOURCE_DIR}/../../tests/server/first-time-setup-driver.c")
     target_include_directories(first-time-setup-driver PRIVATE

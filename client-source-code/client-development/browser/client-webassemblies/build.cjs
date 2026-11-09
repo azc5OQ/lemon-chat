@@ -1,0 +1,144 @@
+const fs = require('node:fs');
+const path = require('node:path');
+const {spawnSync} = require('node:child_process');
+const projects =
+[
+    ['libopusjs', 'libopus.wasm', 'test/codec.cjs', 'Opus audio codec and resampler'],
+    ['mp3-to-pcm', 'mp3_decoder.wasm', 'test/decode.cjs', 'MP3 audio decoder'],
+    ['rsa-keygen', 'rsa_keygen.wasm', null, 'RSA identity keys and operations'],
+    ['connection-crypto', 'connection_crypto.wasm', 'test/ciphers.cjs', 'Connection ciphers and key derivation']
+];
+
+function run(script, arguments_ = [], env = process.env)
+{
+    const result = spawnSync(process.execPath, [script, ...arguments_], {stdio: 'inherit', env, windowsHide: true});
+    if (result.error || result.status !== 0)
+    {
+        throw result.error || new Error(path.basename(script) + ' failed (' + result.status + ')');
+    }
+}
+
+function build(compiler)
+{
+    const buildDirectory = path.join(__dirname, 'build');
+    fs.mkdirSync(buildDirectory, {recursive: true});
+    const lockFile = path.join(buildDirectory, 'build.lock');
+    let lock;
+    try
+    {
+        lock = fs.openSync(lockFile, 'wx');
+    }
+    catch (error)
+    {
+        if (error.code === 'EEXIST')
+        {
+            throw new Error('Another WebAssembly build holds ' + lockFile
+                + '. If it was interrupted, confirm it has stopped before removing the lock.');
+        }
+        throw error;
+    }
+    let temporary;
+    try
+    {
+        console.log('\nWebAssembly: building ' + projects.length + ' modules from source:');
+        for (const [index, [project, binary, test, description]] of projects.entries())
+        {
+            console.log('  ' + (index + 1) + '. ' + binary + ' - ' + description);
+        }
+        console.log('First compile all modules, then test them, then embed them in client.html.\n');
+        temporary = fs.mkdtempSync(path.join(buildDirectory, 'candidate-'));
+        const candidate = path.join(temporary, 'wasm');
+        fs.mkdirSync(candidate);
+        const env = {...process.env, ZIG: compiler};
+        for (const [index, [project, binary]] of projects.entries())
+        {
+            const step = '[WASM build ' + (index + 1) + '/' + projects.length + '] ';
+            console.log('\n' + step + 'Starting ' + binary + ' (' + project + ')');
+            run(path.join(__dirname, project, 'build.cjs'), [path.join(candidate, binary)], env);
+            console.log(step + 'Finished ' + binary + '. Modules left to build: ' + (projects.length - index - 1) + '.');
+        }
+        console.log('\nAll ' + projects.length + ' modules compiled. Starting tests.');
+        for (const [index, [project, binary, test]] of projects.entries())
+        {
+            const step = '[WASM test ' + (index + 1) + '/' + projects.length + '] ';
+            console.log('\n' + step + 'Testing ' + binary);
+            if (test)
+            {
+                run(path.join(__dirname, project, test), [path.join(candidate, binary)]);
+            }
+            else
+            {
+                const rsaEnv = {...process.env, LEMON_RSA_WASM: path.join(candidate, binary)};
+                for (const [index, bits] of [512, 1024, 2048].entries())
+                {
+                    console.log('  [RSA ' + (index + 1) + '/5] Checking ' + bits + '-bit identity vectors');
+                    run(path.join(__dirname, 'rsa-keygen/test/compare-wasm.js'),
+                        [path.join(__dirname, 'rsa-keygen/test/vectors-' + bits + '.json')], rsaEnv);
+                }
+                console.log('  [RSA 4/5] Checking modular arithmetic; this can take a while');
+                run(path.join(__dirname, 'rsa-keygen/test/rsa-ops.js'), [], rsaEnv);
+                console.log('  [RSA 5/5] Checking compatibility with the previous client');
+                run(path.join(__dirname, 'rsa-keygen/test/crypto-compat.js'), [], rsaEnv);
+            }
+            console.log(step + 'Passed ' + binary + '. Modules left to test: ' + (projects.length - index - 1) + '.');
+        }
+
+        // Publish a complete tested set. A compiler/test failure leaves main/wasm untouched.
+        console.log('\nPublishing the ' + projects.length + ' tested WebAssembly modules.');
+        const destination = path.resolve(__dirname, '../main/wasm');
+        const previous = path.join(temporary, 'previous');
+        if (fs.existsSync(destination))
+        {
+            fs.renameSync(destination, previous);
+        }
+        try
+        {
+            fs.renameSync(candidate, destination);
+        }
+        catch (error)
+        {
+            if (fs.existsSync(previous))
+            {
+                fs.renameSync(previous, destination);
+            }
+            throw error;
+        }
+        console.log('All four WebAssembly modules compiled, tested and published.');
+        return destination;
+    }
+    finally
+    {
+        try
+        {
+            if (temporary)
+            {
+                fs.rmSync(temporary, {recursive: true, force: true});
+            }
+        }
+        finally
+        {
+            fs.closeSync(lock);
+            fs.rmSync(lockFile, {force: true});
+        }
+    }
+}
+
+function backup()
+{
+    const directory = path.join(__dirname, 'prebuilt-backup');
+    const manifest = require(path.join(directory, 'sha256.json'));
+    const crypto = require('node:crypto');
+    for (const [file, expected] of Object.entries(manifest))
+    {
+        const actual = crypto.createHash('sha256').update(fs.readFileSync(path.join(directory, file))).digest('hex');
+        if (actual !== expected)
+        {
+            throw new Error('Prebuilt backup checksum mismatch: ' + file);
+        }
+    }
+    run(path.join(directory, 'check.cjs'));
+    console.log('Using the checked prebuilt modules and their matching Opus loader. C sources are NOT rebuilt.');
+    return directory;
+}
+
+module.exports = {build, backup};

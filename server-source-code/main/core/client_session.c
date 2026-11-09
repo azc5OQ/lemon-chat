@@ -3,8 +3,10 @@
 // attach a new WebSocket connection to the existing session. The socket callbacks
 // and incoming messages are handled in chat_websocket.c.
 #include "../../third-party/zhicheng/base64.h"
+#include "../crypto/ciphers.h"
 #include "channel.h"
 #include "client_session.h"
+#include "../crypto/crypto_metadata.h"
 #include "identity_store.h"
 #include "../definitions.h"
 #include "../../third-party/dave-g-json/cJSON.h"
@@ -74,9 +76,9 @@ void client_session__close_websocket_connection(uint64 client_index, boole use_r
 boole client_session__assign_username_for_newly_joined_client(uint64 client_index, cstring default_name)
 {
     boole status = FALSE;
-    char* public_key = 0;
-    char candidate_username[USERNAME_MAX_LENGTH];
-    char index_suffix_buffer[16];
+    char *public_key = 0;
+    char candidate_username[USERNAME_MAX_LENGTH] = { 0 };
+    char index_suffix_buffer[16] = { 0 };
     uint64 username_suffix_number = 0;
     uint64 i = 0;
     boole result = FALSE;
@@ -93,6 +95,7 @@ boole client_session__assign_username_for_newly_joined_client(uint64 client_inde
     else
     {
         DBG_AUTHENTICATION log_info("%s", "public key not present \n");
+
         // two assumptions for safe operation
         // default name won't be too long
         // max number of clients will fit into 16 digits (easy), edge cases will have 3 digits, extremely edge cases 4
@@ -148,6 +151,7 @@ final_check:
 
                 if ((i + 1) == g_server_settings.max_client_count)
                 { // if loop reached its end and username currently used in this loop was found to not be used by any of the clients
+
                     // go to end_loop where this newly found username will be assigned to client
                     DBG_AUTHENTICATION log_info("%s", "(i + 1) == g_server_settings.max_client_count goto end_loop \n");
                     result = TRUE;
@@ -201,9 +205,7 @@ int64 client_session__get_new_index_for_client(void)
  *
  * @return uint64 -> how many stale sessions were closed
  *
- * @attention call ONLY after the challenge response verified ownership: the public key is public,
- *            so acting on it any earlier would let anyone kick anyone off the server.
- *            the caller must hold the clients write lock
+ * @attention call ONLY after the challenge response verified ownership: the public key is public, so acting on it any earlier would let anyone kick anyone off the server. the caller must hold the clients write lock
  */
 uint64 client_session__disconnect_other_clients_with_same_public_key(uint64 client_index_to_keep, cstring public_key)
 {
@@ -250,16 +252,16 @@ uint64 client_session__disconnect_other_clients_with_same_public_key(uint64 clie
 }
 
 /**
- * @brief fast reconnect: hands the new socket to this identity's still-open session, so the session keeps
- *        its id, channel, name, groups and roles. the old socket is closed without any broadcast
+ * @brief fast reconnect: hands the new socket to this identity's still-open session, so the session
+ *        keeps its id, channel, name, groups and roles. the old socket is closed without any
+ *        broadcast
  *
  * @param uint64 new_client_index -> the entry the new socket got at _chat_websocket_internal__onopen; emptied on success
  * @param cstring public_key -> the key the new socket just proved it owns
  *
  * @return int64 -> index of the adopted session, -1 when this key has no open session
  *
- * @attention the caller must hold the clients write lock. same rule as the takeover: only after the
- *            challenge response verified ownership, the public key alone proves nothing
+ * @attention the caller must hold the clients write lock. same rule as the takeover: only after the challenge response verified ownership, the public key alone proves nothing
  */
 int64 client_session__adopt_socket_into_existing_session(uint64 new_client_index, cstring public_key)
 {
@@ -268,9 +270,9 @@ int64 client_session__adopt_socket_into_existing_session(uint64 new_client_index
     boole status2 = FALSE;
     uint64 i = 0;
     uint64 timestamp_now = 0;
-    client_t* old_session = NULL_POINTER;
-    client_t* new_entry = NULL_POINTER;
-    ws_cli_conn_t* old_ws_connection = NULL_POINTER;
+    client_t *old_session = NULL_POINTER;
+    client_t *new_entry = NULL_POINTER;
+    ws_cli_conn_t *old_ws_connection = NULL_POINTER;
 
     if (public_key == NULL_POINTER || public_key[0] == 0)
     {
@@ -311,8 +313,10 @@ int64 client_session__adopt_socket_into_existing_session(uint64 new_client_index
     old_session->is_public_key_challenge_sent = new_entry->is_public_key_challenge_sent;
     clib__copy_memory(new_entry->dh_shared_secret, old_session->dh_shared_secret, SHARED_SECRET_LENGTH, SHARED_SECRET_LENGTH);
     old_session->session_keys = new_entry->session_keys;
-    atomic_store_explicit(&old_session->media_send_counter,
-        atomic_load_explicit(&new_entry->media_send_counter, memory_order_relaxed), memory_order_relaxed);
+    crypto_metadata__release_passwords(old_session->password_keys);
+    old_session->password_keys = new_entry->password_keys;
+    new_entry->password_keys = NULL_POINTER;
+    atomic_store_explicit(&old_session->media_send_counter, atomic_load_explicit(&new_entry->media_send_counter, memory_order_relaxed), memory_order_relaxed);
     clib__copy_memory(new_entry->challenge_string, old_session->challenge_string, CHALLENGE_STRING_LENGTH, CHALLENGE_STRING_LENGTH);
     clib__null_memory(old_session->ip_address, sizeof(old_session->ip_address));
     clib__string_copy(old_session->ip_address, sizeof(old_session->ip_address), new_entry->ip_address);
@@ -320,6 +324,7 @@ int64 client_session__adopt_socket_into_existing_session(uint64 new_client_index
     clib__string_copy(old_session->country_iso_code, sizeof(old_session->country_iso_code), new_entry->country_iso_code);
     old_session->timestamp_last_maintain_connection_message_received = timestamp_now;
     old_session->timestamp_last_action = timestamp_now;
+
     // Replacing a socket must not move an idle client into root without a channel-join message.
     old_session->has_pending_maintainer_reset_vote = FALSE;
 
@@ -355,8 +360,8 @@ int64 client_session__adopt_socket_into_existing_session(uint64 new_client_index
 }
 
 /**
- * @brief tells whether some OTHER authenticated client holds this public key (identity takeover off:
- *        such a newcomer is refused instead of replacing that session)
+ * @brief tells whether some OTHER authenticated client holds this public key (identity takeover
+ *        off: such a newcomer is refused instead of replacing that session)
  *
  * @param uint64 client_index -> the newcomer, skipped
  * @param cstring public_key -> the key it just proved
@@ -404,6 +409,7 @@ boole client_session__is_there_a_client_with_same_public_key(cstring public_key)
 {
     boole result = FALSE;
     uint64 i = 0;
+
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
         if (g_clients_array[i].is_existing == FALSE)
@@ -427,7 +433,8 @@ boole client_session__is_there_a_client_with_same_public_key(cstring public_key)
 
 /**
  * @brief the socket-open half of the same-ip rule: only one handshake at a time per ip, so a flood
- *        from one address costs one slot and not the whole table, while an established session never counts
+ *        from one address costs one slot and not the whole table, while an established session
+ *        never counts
  *
  * @param cstring ip_address -> ip address of the socket that just opened
  *
@@ -456,8 +463,9 @@ boole client_session__is_there_an_unfinished_handshake_from_same_ip_address(cstr
 }
 
 /**
- * @brief the login half of the same-ip rule, checked only once the challenge proved the identity, so
- *        a returning client is refused because of a second person on the same ip and never because of its own dropped session
+ * @brief the login half of the same-ip rule, checked only once the challenge proved the identity,
+ *        so a returning client is refused because of a second person on the same ip and never
+ *        because of its own dropped session
  *
  * @param uint64 client_index -> the client being checked, never counted
  * @param cstring ip_address -> the client's ip address
@@ -465,8 +473,7 @@ boole client_session__is_there_an_unfinished_handshake_from_same_ip_address(cstr
  *
  * @return boole
  *
- * @attention the caller must hold the clients write lock. only authenticated sessions count: an unfinished
- *            handshake from the same ip is checked when it gets here itself, which lets exactly one of them in
+ * @attention the caller must hold the clients write lock. only authenticated sessions count: an unfinished handshake from the same ip is checked when it gets here itself, which lets exactly one of them in
  */
 boole client_session__is_there_another_authenticated_client_with_same_ip_address(uint64 client_index, cstring ip_address, cstring public_key)
 {
@@ -510,12 +517,14 @@ boole client_session__is_there_another_authenticated_client_with_same_ip_address
  */
 void client_session__process_client_disconnect(uint64 client_index)
 {
+    char last_seen_identity_hash[BASE64_ENCODE_OUT_SIZE(32)] = { 0 };
+    const char *disconnect_reason = NULL_POINTER;
     boole status = FALSE;
     uint64 channel_id = 0;
     boole is_client_also_channel_maintainer = FALSE;
     boole owns_temp_channel = FALSE;
     uint64 owned_temp_channel_id = 0;
-    client_t* client = NULL_POINTER;
+    client_t *client = NULL_POINTER;
 
     DBG_CLIENT_DISCONNECT log_info("%s %llu %s", "client_session__process_client_disconnect ", client_index, "\n");
 
@@ -531,7 +540,7 @@ void client_session__process_client_disconnect(uint64 client_index)
         // remember when this identity was last here, while the client struct still holds its key
         if (g_server_settings.is_last_seen_enabled == TRUE && client->public_key[0] != 0 && client->is_music_bot == FALSE)
         {
-            char last_seen_identity_hash[BASE64_ENCODE_OUT_SIZE(32)];
+            clib__memset(last_seen_identity_hash, 0, sizeof(last_seen_identity_hash));
             util__hash_password_to_base64(client->public_key, last_seen_identity_hash, sizeof(last_seen_identity_hash));
             identity_store__touch_identity_last_seen_by_hash(last_seen_identity_hash);
         }
@@ -573,15 +582,18 @@ void client_session__process_client_disconnect(uint64 client_index)
             client->base64_avatar = NULL_POINTER;
         }
 
-        clib__null_memory(client, sizeof(client_t));
+        disconnect_reason = client->is_disconnect_ban ? "ban" : NULL_POINTER;
+        crypto_metadata__release_passwords(client->password_keys);
+        ciphers__clear(client, sizeof(client_t));
 
-        server_msg__connection__send_client_disconnect_message_to_all_clients(client_index);
+        server_msg__connection__send_client_disconnect_message_to_all_clients(client_index, disconnect_reason);
 
         if (owns_temp_channel == TRUE)
         {
             // Remove any temporary channel this client still owns.
             channel__destroy_temp_channel(owned_temp_channel_id);
         }
+
         // After returning from idle, the client may maintain a different channel.
         if (is_client_also_channel_maintainer == TRUE && g_channel_array[channel_id].is_existing == TRUE)
         {
@@ -595,5 +607,3 @@ void client_session__process_client_disconnect(uint64 client_index)
         }
     }
 }
-
-

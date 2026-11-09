@@ -8,7 +8,7 @@ let crypto = require("crypto");
 let vectors_file = process.argv[2] || (__dirname + "/vectors-512.json");
 let vectors = JSON.parse(fs.readFileSync(vectors_file, "utf8"));
 
-let wasm_bytes = fs.readFileSync(__dirname + "/../build/rsa_keygen.wasm");
+let wasm_bytes = fs.readFileSync(process.env.LEMON_RSA_WASM || (__dirname + "/../build/rsa_keygen.wasm"));
 
 let field_names = ["n", "e", "d", "p", "q", "dmp1", "dmq1", "coeff"];
 

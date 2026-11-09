@@ -24,27 +24,27 @@
 #include <string.h>
 
 // declarations
-static uint _ip_tools_internal__add_local_ipv4(struct sockaddr* address, char addresses[][IPV4_ADDRESS_STRING_LENGTH], uint count, uint capacity);
+static uint64 _ip_tools_internal__add_local_ipv4(struct sockaddr *address, char addresses[][IPV4_ADDRESS_STRING_LENGTH], uint64 count, uint64 capacity);
 
 /**
  * @brief Adds one IPv4 address, skipping duplicates, loopback and unusable addresses.
  * @param struct sockaddr* address -> address supplied by the operating system
  * @param char[][IPV4_ADDRESS_STRING_LENGTH] addresses -> output list
- * @param uint count -> entries already written
- * @param uint capacity -> number of entries that fit in the list
- * @return uint -> updated number of entries
+ * @param uint64 count -> entries already written
+ * @param uint64 capacity -> number of entries that fit in the list
+ * @return uint64 -> updated number of entries
  */
-static uint _ip_tools_internal__add_local_ipv4(struct sockaddr* address, char addresses[][IPV4_ADDRESS_STRING_LENGTH], uint count, uint capacity)
+static uint64 _ip_tools_internal__add_local_ipv4(struct sockaddr *address, char addresses[][IPV4_ADDRESS_STRING_LENGTH], uint64 count, uint64 capacity)
 {
-    const unsigned char* bytes;
-    char text[IPV4_ADDRESS_STRING_LENGTH];
-    uint index;
+    const ubyte *bytes = NULL_POINTER;
+    char text[IPV4_ADDRESS_STRING_LENGTH] = { 0 };
+    uint64 index = 0;
 
     if (address == NULL_POINTER || address->sa_family != AF_INET || count >= capacity)
     {
         return count;
     }
-    bytes = (const unsigned char*)&((struct sockaddr_in*)address)->sin_addr;
+    bytes = (const ubyte *)&((struct sockaddr_in *)address)->sin_addr;
     if (bytes[0] == 0 || bytes[0] == 127 || bytes[0] >= 224 || (bytes[0] == 169 && bytes[1] == 254))
     {
         return count;
@@ -64,25 +64,25 @@ static uint _ip_tools_internal__add_local_ipv4(struct sockaddr* address, char ad
 /**
  * @brief Lists this machine's IPv4 addresses on active network interfaces without a DNS lookup.
  * @param char[][IPV4_ADDRESS_STRING_LENGTH] addresses -> receives addresses for startup links
- * @param uint capacity -> number of entries that fit in the output list
- * @return uint -> number written, or zero if none could be found
+ * @param uint64 capacity -> number of entries that fit in the output list
+ * @return uint64 -> number written, or zero if none could be found
  */
-uint ip_tools__get_local_ipv4_addresses(char addresses[][IPV4_ADDRESS_STRING_LENGTH], uint capacity)
+uint64 ip_tools__get_local_ipv4_addresses(char addresses[][IPV4_ADDRESS_STRING_LENGTH], uint64 capacity)
 {
-    uint count = 0;
+    uint64 count = 0;
 #ifdef _WIN32
-    IP_ADAPTER_ADDRESSES* adapters = NULL_POINTER;
-    IP_ADAPTER_ADDRESSES* adapter;
-    IP_ADAPTER_UNICAST_ADDRESS* address;
-    ULONG size = 15000;
-    ULONG result = ERROR_BUFFER_OVERFLOW;
-    uint attempt;
+    IP_ADAPTER_ADDRESSES *adapters = NULL_POINTER;
+    IP_ADAPTER_ADDRESSES *adapter = NULL_POINTER;
+    IP_ADAPTER_UNICAST_ADDRESS *address = NULL_POINTER;
+    ULONG size = 15000; // GetAdaptersAddresses writes an ULONG.
+    uint64 result = ERROR_BUFFER_OVERFLOW;
+    uint64 attempt = 0;
 #else
-    struct ifaddrs* interfaces = NULL_POINTER;
-    struct ifaddrs* interface;
+    struct ifaddrs *interfaces = NULL_POINTER;
+    struct ifaddrs *interface = NULL_POINTER;
 #endif
 
-    if (addresses == NULL_POINTER || capacity == 0)
+    if (addresses == NULL_POINTER || capacity == 0 || capacity > SIZE_MAX / sizeof(addresses[0]))
     {
         return 0;
     }
@@ -150,8 +150,10 @@ uint ip_tools__get_local_ipv4_addresses(char addresses[][IPV4_ADDRESS_STRING_LEN
  *
  * @return void
  */
-void append_to_string_buffer(StringBuffer* sb, const char* str)
+void append_to_string_buffer(StringBuffer *sb, const char *str)
 {
+    uint64 capacity = 0;
+    char *resized = NULL_POINTER;
     uint64 str_len = clib__strlen(str);
     uint64 new_length;
 
@@ -164,8 +166,8 @@ void append_to_string_buffer(StringBuffer* sb, const char* str)
     // Resize the buffer if necessary
     if (new_length >= sb->capacity)
     {
-        uint64 capacity = new_length < SIZE_MAX / 2 ? (new_length + 1) * 2 : new_length + 1;
-        char* resized = (char*)realloc(sb->buffer, capacity);
+        capacity = new_length < SIZE_MAX / 2 ? (new_length + 1) * 2 : new_length + 1;
+        resized = (char *)realloc(sb->buffer, capacity);
         if (resized == NULL_POINTER)
         {
             // Handle memory allocation failure
@@ -194,7 +196,7 @@ void append_to_string_buffer(StringBuffer* sb, const char* str)
  *
  * @return const char* -> pointer to the buffer's null-terminated contents
  */
-const char* get_string_from_buffer(const StringBuffer* sb)
+const char *get_string_from_buffer(const StringBuffer *sb)
 {
     return sb->buffer;
 }
@@ -210,7 +212,7 @@ const char* get_string_from_buffer(const StringBuffer* sb)
  *
  * @return void
  */
-void free_string_buffer(StringBuffer* sb)
+void free_string_buffer(StringBuffer *sb)
 {
     free(sb->buffer);
 }
@@ -226,11 +228,11 @@ void free_string_buffer(StringBuffer* sb)
  *
  * @return void
  */
-void init_string_buffer(StringBuffer* sb)
+void init_string_buffer(StringBuffer *sb)
 {
     sb->capacity = INITIAL_CAPACITY;
     sb->length = 0;
-    sb->buffer = (char*)malloc(sb->capacity);
+    sb->buffer = (char *)malloc(sb->capacity);
     if (sb->buffer == NULL_POINTER)
     {
         // Handle memory allocation failure
@@ -243,21 +245,19 @@ void init_string_buffer(StringBuffer* sb)
 /**
  * @brief Resolves an IP address to its country code. The output buffer needs 3 bytes.
  */
-void ip_tools_load_iso_country_code(char* ip_address_to_resolve, char* out_memory_to_write_country_code_to)
+void ip_tools_load_iso_country_code(char *ip_address_to_resolve, char *out_memory_to_write_country_code_to)
 {
 #ifdef DEBUG_ASSIGN_RANDOM_COUNTRY_CODE
     // offline/LAN testing: skip the GeoIP lookup entirely and hand out a real ISO code (same
     // uppercase 2-char form the MMDB path below writes) so country flags render. see definitions.h
     {
-        static const char* debug_iso_codes[] = {
-            "US", "GB", "DE", "FR", "JP", "BR", "CA", "AU", "IN", "IT",
-            "ES", "NL", "SE", "PL", "RU", "CN", "KR", "MX", "ZA", "TR"
-        };
+        static const char *debug_iso_codes[] = { "US", "GB", "DE", "FR", "JP", "BR", "CA", "AU", "IN", "IT", "ES", "NL", "SE", "PL", "RU", "CN", "KR", "MX", "ZA", "TR" };
+
         // deliberately NOT rand(): its state is per-thread on windows and every client is handled on a
         // fresh thread, so each one started from the default seed and always got the same code (GB)
         static pthread_mutex_t debug_iso_mutex = PTHREAD_MUTEX_INITIALIZER;
         static uint64 debug_iso_counter = 0;
-        const char* picked = NULL_POINTER;
+        const char *picked = NULL_POINTER;
         uint64 code_count = sizeof(debug_iso_codes) / sizeof(debug_iso_codes[0]);
         uint64 index = 0;
 
@@ -274,20 +274,20 @@ void ip_tools_load_iso_country_code(char* ip_address_to_resolve, char* out_memor
         return;
     }
 #endif
-    cJSON* json_root_object1 = 0;
-    cJSON* json_message_object = 0;
-    cJSON* json_country_iso_code = 0;
+    cJSON *json_root_object1 = 0;
+    cJSON *json_message_object = 0;
+    cJSON *json_country_iso_code = 0;
     char mmdb_file[] = "dbip-country-lite-2025-06.mmdb";
-    MMDB_s mmdb = {0};
-    int status = 0;
-    int gai_error = 0;
-    int mmdb_error = 0;
-    MMDB_lookup_result_s gresult;
-    MMDB_entry_data_list_s* gdata = NULL_POINTER;
-    int gstatus = 0;
+    MMDB_s mmdb = { 0 };
+    int64 status = 0;
+    int gai_error = 0; // MMDB_lookup_string writes an int.
+    int mmdb_error = 0; // MMDB_lookup_string writes an int.
+    MMDB_lookup_result_s gresult = { 0 };
+    MMDB_entry_data_list_s *gdata = NULL_POINTER;
+    int64 gstatus = 0;
     boole is_database_open = FALSE;
-    StringBuffer sb = {0};
-    char* json_mmdb_entry_data_list = 0;
+    StringBuffer sb = { 0 };
+    char *json_mmdb_entry_data_list = 0;
 
     if (ip_address_to_resolve == NULL_POINTER || out_memory_to_write_country_code_to == NULL_POINTER)
     {
@@ -338,6 +338,7 @@ void ip_tools_load_iso_country_code(char* ip_address_to_resolve, char* out_memor
     if (gstatus != MMDB_SUCCESS)
     {
         DBG_IP_TOOLS log_info("%s", "gstatus != MMDB_SUCCESS \n");
+
         // The common exit releases any partial entry list.
         goto label_ip_tools_load_iso_country_code_end;
     }

@@ -1268,6 +1268,8 @@ struct gui_node_t
     boole     has_background_color_override;
     gui_color_t font_color_override;
     boole     has_font_color_override;
+    char      font_family_override[64];
+    float     font_size_override;
     // Background-image override. Same applied-after-rules story as
     // the color overrides above, but for the bg-image filename.
     // 128 bytes matches gui_style_t.background_image[]. Set by hosts

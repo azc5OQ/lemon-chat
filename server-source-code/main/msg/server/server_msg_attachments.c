@@ -5,7 +5,7 @@
 #include "../../../third-party/rxi-log/log.h"
 
 // declarations
-static void _server_msg_attachments_internal__send_attachment_to_channel(cJSON* root, uint64 channel_id, client_t* except, cstring receive_type);
+static void _server_msg_attachments_internal__send_attachment_to_channel(cJSON *root, uint64 channel_id, client_t *except, cstring receive_type);
 
 /**
  * @brief Announces a channel attachment only to clients who will receive its data.
@@ -16,9 +16,9 @@ static void _server_msg_attachments_internal__send_attachment_to_channel(cJSON* 
  * @return void
  * @attention The caller holds the clients lock.
  */
-static void _server_msg_attachments_internal__send_attachment_to_channel(cJSON* root, uint64 channel_id, client_t* except, cstring receive_type)
+static void _server_msg_attachments_internal__send_attachment_to_channel(cJSON *root, uint64 channel_id, client_t *except, cstring receive_type)
 {
-    char* plaintext = cJSON_PrintUnformatted(root);
+    char *plaintext = cJSON_PrintUnformatted(root);
 
     server_msg__delivery__send_text_to_channel(plaintext, channel_id, except, receive_type);
     cJSON_free(plaintext);
@@ -36,10 +36,10 @@ static void _server_msg_attachments_internal__send_attachment_to_channel(cJSON* 
  *
  * @return void
  */
-void server_msg__attachments__send_channel_chat_picture_metadata_to_clients_in_same_channel(client_t* sender, uint64 channel_id, uint64 server_chat_message_id, uint64 encrypted_size)
+void server_msg__attachments__send_channel_chat_picture_metadata_to_clients_in_same_channel(client_t *sender, uint64 channel_id, uint64 server_chat_message_id, uint64 encrypted_size)
 {
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
@@ -48,6 +48,7 @@ void server_msg__attachments__send_channel_chat_picture_metadata_to_clients_in_s
     cJSON_AddNumberToObject(message, "sender_id", (double)sender->client_id);
     cJSON_AddNumberToObject(message, "channel_id", channel_id);
     cJSON_AddNumberToObject(message, "picture_id", server_chat_message_id);
+
     // the encrypted length the receiver counts its chunks against, for the progress ring
     cJSON_AddNumberToObject(message, "size", (double)encrypted_size);
 
@@ -68,10 +69,10 @@ void server_msg__attachments__send_channel_chat_picture_metadata_to_clients_in_s
  *
  * @return void
  */
-void server_msg__attachments__send_channel_chat_picture_to_clients_in_same_channel(client_t* sender, uint64 channel_id, uint64 server_chat_message_id, char* chat_message_value)
+void server_msg__attachments__send_channel_chat_picture_to_clients_in_same_channel(client_t *sender, uint64 channel_id, uint64 server_chat_message_id, char *chat_message_value)
 {
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
@@ -89,7 +90,8 @@ void server_msg__attachments__send_channel_chat_picture_to_clients_in_same_chann
 }
 
 /**
- * @brief This function sends the image status to the client that SENT the image, so the client knows that the server received and sent its message to the other clients / client
+ * @brief This function sends the image status to the client that SENT the image, so the client
+ *        knows that the server received and sent its message to the other clients / client
  *
  * @param client_t* receiver -> self explanatory
  * @param char* status -> status string that is put into the "value" field of the image_sent_status message
@@ -98,10 +100,10 @@ void server_msg__attachments__send_channel_chat_picture_to_clients_in_same_chann
  *
  * @return void
  */
-void server_msg__attachments__send_image_status_to_single_client(client_t* receiver, char* status)
+void server_msg__attachments__send_image_status_to_single_client(client_t *receiver, char *status)
 {
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
 
     root = server_msg__delivery__new_message("image_sent_status", &message);
 
@@ -125,10 +127,10 @@ void server_msg__attachments__send_image_status_to_single_client(client_t* recei
  *
  * @return void
  */
-void server_msg__attachments__send_chat_picture_metadata_to_single_client(client_t* receiver, client_t* sender, uint64 server_chat_message_id, uint64 encrypted_size)
+void server_msg__attachments__send_chat_picture_metadata_to_single_client(client_t *receiver, client_t *sender, uint64 server_chat_message_id, uint64 encrypted_size)
 {
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
@@ -137,6 +139,7 @@ void server_msg__attachments__send_chat_picture_metadata_to_single_client(client
     cJSON_AddStringToObject(message, "sender_username", sender->username);
     cJSON_AddNumberToObject(message, "sender_id", sender->client_id);
     cJSON_AddNumberToObject(message, "picture_id", server_chat_message_id);
+
     // the encrypted length the receiver counts its chunks against, for the progress ring
     cJSON_AddNumberToObject(message, "size", (double)encrypted_size);
 
@@ -159,10 +162,10 @@ void server_msg__attachments__send_chat_picture_metadata_to_single_client(client
  *
  * @return void
  */
-void server_msg__attachments__send_channel_chat_file_metadata_to_clients_in_same_channel(client_t* sender, uint64 channel_id, uint64 server_chat_message_id, char* file_header, uint64 encrypted_size)
+void server_msg__attachments__send_channel_chat_file_metadata_to_clients_in_same_channel(client_t *sender, uint64 channel_id, uint64 server_chat_message_id, char *file_header, uint64 encrypted_size)
 {
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
@@ -193,10 +196,10 @@ void server_msg__attachments__send_channel_chat_file_metadata_to_clients_in_same
  *
  * @return void
  */
-void server_msg__attachments__send_chat_file_metadata_to_single_client(client_t* receiver, client_t* sender, uint64 server_chat_message_id, char* file_header, uint64 encrypted_size)
+void server_msg__attachments__send_chat_file_metadata_to_single_client(client_t *receiver, client_t *sender, uint64 server_chat_message_id, char *file_header, uint64 encrypted_size)
 {
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
@@ -225,10 +228,10 @@ void server_msg__attachments__send_chat_file_metadata_to_single_client(client_t*
  *
  * @return void
  */
-void server_msg__attachments__send_file_send_error_to_single_client(client_t* receiver, char* reason, uint64 local_message_id)
+void server_msg__attachments__send_file_send_error_to_single_client(client_t *receiver, char *reason, uint64 local_message_id)
 {
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s %s %s", "server_msg__attachments__send_file_send_error_to_single_client", reason, "\n");
 
@@ -243,7 +246,8 @@ void server_msg__attachments__send_file_send_error_to_single_client(client_t* re
 }
 
 /**
- * @brief tells the client its file upload completed successfully, so it can send instructions on what to do with the file
+ * @brief tells the client its file upload completed successfully, so it can send instructions on
+ *        what to do with the file
  *
  * @param client_t* receiver -> the client whose file upload completed
  * @todo make image file upload use this function
@@ -252,10 +256,10 @@ void server_msg__attachments__send_file_send_error_to_single_client(client_t* re
  *
  * @return void
  */
-void server_msg__attachments__send_file_send_completed_status_to_single_client(client_t* receiver)
+void server_msg__attachments__send_file_send_completed_status_to_single_client(client_t *receiver)
 {
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
@@ -279,12 +283,12 @@ void server_msg__attachments__send_file_send_completed_status_to_single_client(c
  * @param uint64 current_size -> size counter of the transfer so far, not written into the message
  * @param uint64 server_chat_message_id -> id of the chat message this file belongs to
  *
- * @return void
+ * @return int64 -> 0 queued, 1 retry later, -1 connection unavailable
  */
-int server_msg__attachments__send_file_by_chunk_to_single_client(client_t* receiver, client_t* sender, char* chunk, uint64 current_size, uint64 server_chat_message_id)
+int64 server_msg__attachments__send_file_by_chunk_to_single_client(client_t *receiver, client_t *sender, char *chunk, uint64 current_size, uint64 server_chat_message_id)
 {
-    char* plaintext = server_msg__attachments__prepare_file_chunk(sender->client_id, chunk, server_chat_message_id);
-    int result = -1;
+    char *plaintext = server_msg__attachments__prepare_file_chunk(sender->client_id, chunk, server_chat_message_id);
+    int64 result = -1;
 
     if (plaintext != NULL_POINTER)
     {
@@ -301,11 +305,11 @@ int server_msg__attachments__send_file_by_chunk_to_single_client(client_t* recei
  * @param uint64 server_chat_message_id -> message containing the file
  * @return char* -> JSON text to release with cJSON_free, or NULL_POINTER on failure
  */
-char* server_msg__attachments__prepare_file_chunk(uint64 sender_id, char* chunk, uint64 server_chat_message_id)
+char *server_msg__attachments__prepare_file_chunk(uint64 sender_id, char *chunk, uint64 server_chat_message_id)
 {
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
-    char* plaintext = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
+    char *plaintext = NULL_POINTER;
 
     root = server_msg__delivery__new_message("file_receive_chunk", &message);
 
@@ -322,11 +326,11 @@ char* server_msg__attachments__prepare_file_chunk(uint64 sender_id, char* chunk,
  * @brief Tries to queue a file piece without waiting for a slow receiver.
  * @param client_t* receiver -> current connection, protected by the clients lock
  * @param const char* plaintext -> prepared message; the caller keeps its copy
- * @return int -> 0 queued, 1 retry later, -1 connection unavailable
+ * @return int64 -> 0 queued, 1 retry later, -1 connection unavailable
  */
-int server_msg__attachments__queue_file_chunk(client_t* receiver, const char* plaintext)
+int64 server_msg__attachments__queue_file_chunk(client_t *receiver, const char *plaintext)
 {
-    return server_msg__delivery__queue_text(receiver->p_ws_connection, &receiver->session_keys, plaintext, TRUE, FALSE);
+    return server_msg__delivery__queue_text(receiver->p_ws_connection, &receiver->session_keys, receiver->password_keys, plaintext, TRUE, FALSE);
 }
 
 /**
@@ -343,10 +347,10 @@ int server_msg__attachments__queue_file_chunk(client_t* receiver, const char* pl
  *
  * @return void
  */
-void server_msg__attachments__send_file_receive_completed_to_single_client(client_t* receiver, data_for_file_send_thread_t* info, char* receive_type)
+void server_msg__attachments__send_file_receive_completed_to_single_client(client_t *receiver, data_for_file_send_thread_t *info, char *receive_type)
 {
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 

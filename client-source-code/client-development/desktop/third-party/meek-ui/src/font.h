@@ -87,6 +87,8 @@ GUI_API boole font__register_from_memory(char* family, const ubyte* ttf_bytes, i
 GUI_API boole font__register_from_memory_copy(char* family, const ubyte* ttf_bytes, int64 ttf_size);
 
 GUI_API boole font__register_from_file(char* family, char* path);
+// Remove one family between frames; later lookups use the ordinary fallback.
+GUI_API boole font__unregister(char* family);
 
 GUI_API boole font__register_dir(char* dir_path);
 

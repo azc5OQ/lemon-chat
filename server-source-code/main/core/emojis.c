@@ -12,61 +12,30 @@ typedef struct
     char id[33];
     char name[33];
     char unicode[8];
-    char* base64;
+    char *base64;
 } server_emoji_t;
 
 static const struct
 {
     cstring name;
     cstring unicode;
-} default_emojis[] =
-{
-    { "like", "\xf0\x9f\x91\x8d" },
-    { "love", "\xe2\x9d\xa4\xef\xb8\x8f" },
-    { "laugh", "\xf0\x9f\x98\x82" },
-    { "surprise", "\xf0\x9f\x98\xae" },
-    { "sad", "\xf0\x9f\x98\xa2" },
-    { "celebrate", "\xf0\x9f\x8e\x89" },
-    { "grin", "\xf0\x9f\x98\x80" },
-    { "smile", "\xf0\x9f\x98\x84" },
-    { "affection", "\xf0\x9f\xa5\xb0" },
-    { "heart_eyes", "\xf0\x9f\x98\x8d" },
-    { "cool", "\xf0\x9f\x98\x8e" },
-    { "thinking", "\xf0\x9f\xa4\x94" },
-    { "mind_blown", "\xf0\x9f\xa4\xaf" },
-    { "sleep", "\xf0\x9f\x98\xb4" },
-    { "cry", "\xf0\x9f\x98\xad" },
-    { "angry", "\xf0\x9f\x98\xa1" },
-    { "eyes", "\xf0\x9f\x91\x80" },
-    { "raised_hands", "\xf0\x9f\x99\x8c" },
-    { "applause", "\xf0\x9f\x91\x8f" },
-    { "thanks", "\xf0\x9f\x99\x8f" },
-    { "strong", "\xf0\x9f\x92\xaa" },
-    { "fire", "\xf0\x9f\x94\xa5" },
-    { "hundred", "\xf0\x9f\x92\xaf" },
-    { "yes", "\xe2\x9c\x85" },
-    { "no", "\xe2\x9d\x8c" },
-    { "rocket", "\xf0\x9f\x9a\x80" },
-    { "music", "\xf0\x9f\x8e\xb5" },
-    { "lemon", "\xf0\x9f\x8d\x8b" },
-    { "dislike", "\xf0\x9f\x91\x8e" },
-    { "handshake", "\xf0\x9f\xa4\x9d" }
-};
+} default_emojis[] = { { "like", "\xf0\x9f\x91\x8d" }, { "love", "\xe2\x9d\xa4\xef\xb8\x8f" }, { "laugh", "\xf0\x9f\x98\x82" }, { "surprise", "\xf0\x9f\x98\xae" }, { "sad", "\xf0\x9f\x98\xa2" }, { "celebrate", "\xf0\x9f\x8e\x89" }, { "grin", "\xf0\x9f\x98\x80" }, { "smile", "\xf0\x9f\x98\x84" }, { "affection", "\xf0\x9f\xa5\xb0" }, { "heart_eyes", "\xf0\x9f\x98\x8d" }, { "cool", "\xf0\x9f\x98\x8e" }, { "thinking", "\xf0\x9f\xa4\x94" }, { "mind_blown", "\xf0\x9f\xa4\xaf" }, { "sleep", "\xf0\x9f\x98\xb4" }, { "cry", "\xf0\x9f\x98\xad" }, { "angry", "\xf0\x9f\x98\xa1" }, { "eyes", "\xf0\x9f\x91\x80" }, { "raised_hands", "\xf0\x9f\x99\x8c" }, { "applause", "\xf0\x9f\x91\x8f" }, { "thanks", "\xf0\x9f\x99\x8f" }, { "strong", "\xf0\x9f\x92\xaa" }, { "fire", "\xf0\x9f\x94\xa5" }, { "hundred", "\xf0\x9f\x92\xaf" }, { "yes", "\xe2\x9c\x85" }, { "no", "\xe2\x9d\x8c" }, { "rocket", "\xf0\x9f\x9a\x80" }, { "music", "\xf0\x9f\x8e\xb5" }, { "lemon", "\xf0\x9f\x8d\x8b" }, { "dislike", "\xf0\x9f\x91\x8e" }, { "handshake", "\xf0\x9f\xa4\x9d" } };
 
 static server_emoji_t server_emojis[MAX_SERVER_EMOJIS];
 static pthread_mutex_t server_emojis_mutex = PTHREAD_MUTEX_INITIALIZER;
+static uint64 server_emoji_image_bytes = 0; // protected by server_emojis_mutex
 
 static boole _emojis_internal__name_valid(cstring name);
-static uint _emojis_internal__read_be32(const ubyte* bytes);
-static boole _emojis_internal__png_valid(const ubyte* bytes, uint64 length);
-static boole _emojis_internal__jpeg_valid(const ubyte* bytes, uint64 length);
-static boole _emojis_internal__gif_blocks_valid(const ubyte* bytes, uint64 length, uint64* offset);
-static boole _emojis_internal__gif_valid(const ubyte* bytes, uint64 length);
+static uint64 _emojis_internal__read_be32(const ubyte *bytes);
+static boole _emojis_internal__png_valid(const ubyte *bytes, uint64 length);
+static boole _emojis_internal__jpeg_valid(const ubyte *bytes, uint64 length);
+static boole _emojis_internal__gif_blocks_valid(const ubyte *bytes, uint64 length, uint64 *offset);
+static boole _emojis_internal__gif_valid(const ubyte *bytes, uint64 length);
 static boole _emojis_internal__image_valid(cstring base64);
 static boole _emojis_internal__unicode_valid(cstring unicode);
-static boole _emojis_internal__new_id(char* id);
-static cstring _emojis_internal__store(cstring name, cstring base64, cstring unicode, cstring id);
-static cJSON* _emojis_internal__array(boole include_images);
+static boole _emojis_internal__new_id(char *id);
+static cstring _emojis_internal__store(cstring name, cstring base64, cstring unicode, cstring id, boole enforce_budget);
+static cJSON *_emojis_internal__array(boole include_images);
 
 /**
  * @brief Checks the lowercase name used to find an emoji.
@@ -74,7 +43,7 @@ static cJSON* _emojis_internal__array(boole include_images);
  */
 static boole _emojis_internal__name_valid(cstring name)
 {
-    uint i = 0;
+    uint64 i = 0;
 
     if (name == NULL_POINTER || name[0] == 0)
     {
@@ -96,7 +65,7 @@ static boole _emojis_internal__name_valid(cstring name)
  */
 boole emojis__is_id_valid(cstring id)
 {
-    uint i = 0;
+    uint64 i = 0;
 
     if (id == NULL_POINTER)
     {
@@ -116,9 +85,9 @@ boole emojis__is_id_valid(cstring id)
  * @brief Reads four image header bytes as an unsigned number.
  * @param bytes Four bytes stored with the largest part first.
  */
-static uint _emojis_internal__read_be32(const ubyte* bytes)
+static uint64 _emojis_internal__read_be32(const ubyte *bytes)
 {
-    return ((uint)bytes[0] << 24) | ((uint)bytes[1] << 16) | ((uint)bytes[2] << 8) | bytes[3];
+    return ((uint64)bytes[0] << 24) | ((uint64)bytes[1] << 16) | ((uint64)bytes[2] << 8) | bytes[3];
 }
 
 /**
@@ -126,18 +95,18 @@ static uint _emojis_internal__read_be32(const ubyte* bytes)
  * @param bytes Decoded PNG file.
  * @param length Number of bytes available.
  */
-static boole _emojis_internal__png_valid(const ubyte* bytes, uint64 length)
+static boole _emojis_internal__png_valid(const ubyte *bytes, uint64 length)
 {
     static const ubyte signature[8] = { 137, 80, 78, 71, 13, 10, 26, 10 };
     uint64 offset = 8;
     uint64 i = 0;
-    uint chunk = 0;
-    uint width = 0;
-    uint height = 0;
-    uint crc = 0;
-    uint bit = 0;
-    uint depth = 0;
-    uint color = 0;
+    uint64 chunk = 0;
+    uint64 width = 0;
+    uint64 height = 0;
+    uint64 crc = 0;
+    uint64 bit = 0;
+    uint64 depth = 0;
+    uint64 color = 0;
     boole valid_depth = FALSE;
     boole has_data = FALSE;
 
@@ -173,17 +142,14 @@ static boole _emojis_internal__png_valid(const ubyte* bytes, uint64 length)
             }
             depth = bytes[offset + 16];
             color = bytes[offset + 17];
-            valid_depth = (boole)((color == 0 && (depth == 1 || depth == 2 || depth == 4 || depth == 8 || depth == 16))
-                || ((color == 2 || color == 4 || color == 6) && (depth == 8 || depth == 16))
-                || (color == 3 && (depth == 1 || depth == 2 || depth == 4 || depth == 8)));
+            valid_depth = (boole)((color == 0 && (depth == 1 || depth == 2 || depth == 4 || depth == 8 || depth == 16)) || ((color == 2 || color == 4 || color == 6) && (depth == 8 || depth == 16)) || (color == 3 && (depth == 1 || depth == 2 || depth == 4 || depth == 8)));
             if (!valid_depth)
             {
                 return FALSE;
             }
             width = _emojis_internal__read_be32(bytes + offset + 8);
             height = _emojis_internal__read_be32(bytes + offset + 12);
-            if (width == 0 || width > 128 || height == 0 || height > 128
-                || bytes[offset + 18] != 0 || bytes[offset + 19] != 0 || bytes[offset + 20] > 1)
+            if (width == 0 || width > 128 || height == 0 || height > 128 || bytes[offset + 18] != 0 || bytes[offset + 19] != 0 || bytes[offset + 20] > 1)
             {
                 return FALSE;
             }
@@ -214,13 +180,13 @@ static boole _emojis_internal__png_valid(const ubyte* bytes, uint64 length)
  * @param bytes Decoded JPEG file.
  * @param length Number of bytes available.
  */
-static boole _emojis_internal__jpeg_valid(const ubyte* bytes, uint64 length)
+static boole _emojis_internal__jpeg_valid(const ubyte *bytes, uint64 length)
 {
     uint64 offset = 2;
-    uint marker = 0;
-    uint segment = 0;
-    uint width = 0;
-    uint height = 0;
+    uint64 marker = 0;
+    uint64 segment = 0;
+    uint64 width = 0;
+    uint64 height = 0;
     boole has_frame = FALSE;
 
     if (length < 4 || bytes[0] != 0xff || bytes[1] != 0xd8 || bytes[length - 2] != 0xff || bytes[length - 1] != 0xd9)
@@ -246,20 +212,19 @@ static boole _emojis_internal__jpeg_valid(const ubyte* bytes, uint64 length)
         {
             return FALSE;
         }
-        segment = ((uint)bytes[offset] << 8) | bytes[offset + 1];
+        segment = ((uint64)bytes[offset] << 8) | bytes[offset + 1];
         if (segment < 2 || segment > length - offset)
         {
             return FALSE;
         }
         if (marker == 0xc0 || marker == 0xc2)
         {
-            if (has_frame || segment < 8 || bytes[offset + 2] != 8 || bytes[offset + 7] == 0
-                || segment != 8 + 3 * (uint)bytes[offset + 7])
+            if (has_frame || segment < 8 || bytes[offset + 2] != 8 || bytes[offset + 7] == 0 || segment != 8 + 3 * (uint64)bytes[offset + 7])
             {
                 return FALSE;
             }
-            height = ((uint)bytes[offset + 3] << 8) | bytes[offset + 4];
-            width = ((uint)bytes[offset + 5] << 8) | bytes[offset + 6];
+            height = ((uint64)bytes[offset + 3] << 8) | bytes[offset + 4];
+            width = ((uint64)bytes[offset + 5] << 8) | bytes[offset + 6];
             if (width == 0 || width > 128 || height == 0 || height > 128)
             {
                 return FALSE;
@@ -281,9 +246,9 @@ static boole _emojis_internal__jpeg_valid(const ubyte* bytes, uint64 length)
  * @param length Number of bytes available.
  * @param offset First block size on entry and position after the last block on return.
  */
-static boole _emojis_internal__gif_blocks_valid(const ubyte* bytes, uint64 length, uint64* offset)
+static boole _emojis_internal__gif_blocks_valid(const ubyte *bytes, uint64 length, uint64 *offset)
 {
-    uint block = 0;
+    uint64 block = 0;
 
     while (*offset < length)
     {
@@ -306,27 +271,27 @@ static boole _emojis_internal__gif_blocks_valid(const ubyte* bytes, uint64 lengt
  * @param bytes Decoded GIF file.
  * @param length Number of bytes available.
  */
-static boole _emojis_internal__gif_valid(const ubyte* bytes, uint64 length)
+static boole _emojis_internal__gif_valid(const ubyte *bytes, uint64 length)
 {
     uint64 offset = 13;
-    uint width = 0;
-    uint height = 0;
-    uint left = 0;
-    uint top = 0;
-    uint frame_width = 0;
-    uint frame_height = 0;
-    uint packed = 0;
-    uint colors = 0;
-    uint frames = 0;
-    uint block = 0;
+    uint64 width = 0;
+    uint64 height = 0;
+    uint64 left = 0;
+    uint64 top = 0;
+    uint64 frame_width = 0;
+    uint64 frame_height = 0;
+    uint64 packed = 0;
+    uint64 colors = 0;
+    uint64 frames = 0;
+    uint64 block = 0;
     boole has_global_colors = FALSE;
 
     if (length < 14 || (clib__memcmp(bytes, "GIF87a", 6) != 0 && clib__memcmp(bytes, "GIF89a", 6) != 0))
     {
         return FALSE;
     }
-    width = bytes[6] | ((uint)bytes[7] << 8);
-    height = bytes[8] | ((uint)bytes[9] << 8);
+    width = bytes[6] | ((uint64)bytes[7] << 8);
+    height = bytes[8] | ((uint64)bytes[9] << 8);
     if (width == 0 || width > 128 || height == 0 || height > 128)
     {
         return FALSE;
@@ -357,8 +322,7 @@ static boole _emojis_internal__gif_valid(const ubyte* bytes, uint64 length)
             block = bytes[offset++];
             if (block == 0xf9)
             {
-                if (length - offset < 6 || bytes[offset] != 4 || bytes[offset + 5] != 0
-                    || (bytes[offset + 1] & 0xe0) != 0 || ((bytes[offset + 1] >> 2) & 7) > 3)
+                if (length - offset < 6 || bytes[offset] != 4 || bytes[offset + 5] != 0 || (bytes[offset + 1] & 0xe0) != 0 || ((bytes[offset + 1] >> 2) & 7) > 3)
                 {
                     return FALSE;
                 }
@@ -387,14 +351,13 @@ static boole _emojis_internal__gif_valid(const ubyte* bytes, uint64 length)
         {
             return FALSE;
         }
-        left = bytes[offset] | ((uint)bytes[offset + 1] << 8);
-        top = bytes[offset + 2] | ((uint)bytes[offset + 3] << 8);
-        frame_width = bytes[offset + 4] | ((uint)bytes[offset + 5] << 8);
-        frame_height = bytes[offset + 6] | ((uint)bytes[offset + 7] << 8);
+        left = bytes[offset] | ((uint64)bytes[offset + 1] << 8);
+        top = bytes[offset + 2] | ((uint64)bytes[offset + 3] << 8);
+        frame_width = bytes[offset + 4] | ((uint64)bytes[offset + 5] << 8);
+        frame_height = bytes[offset + 6] | ((uint64)bytes[offset + 7] << 8);
         packed = bytes[offset + 8];
         offset += 9;
-        if (frame_width == 0 || frame_height == 0 || left + frame_width > width || top + frame_height > height
-            || (packed & 0x18) != 0 || (!has_global_colors && (packed & 0x80) == 0))
+        if (frame_width == 0 || frame_height == 0 || left + frame_width > width || top + frame_height > height || (packed & 0x18) != 0 || (!has_global_colors && (packed & 0x80) == 0))
         {
             return FALSE;
         }
@@ -429,14 +392,14 @@ static boole _emojis_internal__image_valid(cstring base64)
     cstring alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     cstring payload = NULL_POINTER;
     cstring symbol = NULL_POINTER;
-    ubyte* bytes = NULL_POINTER;
+    ubyte *bytes = NULL_POINTER;
     uint64 length = 0;
     uint64 maximum_bytes = SERVER_EMOJI_MAX_BYTES;
-    size_t decoded = 0;
-    size_t written = 0;
+    uint64 decoded = 0;
+    size_t written = 0; // mbedTLS writes through a size_t pointer.
     uint64 i = 0;
-    uint padding = 0;
-    uint last = 0;
+    uint64 padding = 0;
+    uint64 last = 0;
     boole png = FALSE;
     boole gif = FALSE;
     boole valid = FALSE;
@@ -487,23 +450,23 @@ static boole _emojis_internal__image_valid(cstring base64)
         {
             return FALSE;
         }
-        last = (uint)(symbol - alphabet);
+        last = (uint64)(symbol - alphabet);
     }
     if ((padding == 1 && (last & 3) != 0) || (padding == 2 && (last & 15) != 0))
     {
         return FALSE;
     }
-    decoded = (size_t)(length / 4 * 3 - padding);
+    decoded = (uint64)(length / 4 * 3 - padding);
     if (decoded == 0 || decoded > maximum_bytes)
     {
         return FALSE;
     }
-    bytes = (ubyte*)malloc(decoded);
+    bytes = (ubyte *)malloc(decoded);
     if (bytes == NULL_POINTER)
     {
         return FALSE;
     }
-    if (mbedtls_base64_decode(bytes, decoded, &written, (const ubyte*)payload, (size_t)length) == 0 && written == decoded)
+    if (mbedtls_base64_decode(bytes, decoded, &written, (const ubyte *)payload, (uint64)length) == 0 && written == decoded)
     {
         if (gif)
         {
@@ -524,7 +487,7 @@ static boole _emojis_internal__image_valid(cstring base64)
  */
 static boole _emojis_internal__unicode_valid(cstring unicode)
 {
-    uint i = 0;
+    uint64 i = 0;
 
     if (unicode == NULL_POINTER)
     {
@@ -544,12 +507,12 @@ static boole _emojis_internal__unicode_valid(cstring unicode)
  * @brief Creates an identifier that stays with the emoji when settings are saved.
  * @param id Output buffer with room for 33 characters.
  */
-static boole _emojis_internal__new_id(char* id)
+static boole _emojis_internal__new_id(char *id)
 {
     boole status = FALSE;
     static const char hex[] = "0123456789abcdef";
-    ubyte random[16];
-    uint i = 0;
+    ubyte random[16] = { 0 };
+    uint64 i = 0;
 
     status = util__fill_secure_random_bytes(random, sizeof(random));
     if (status == FALSE)
@@ -571,27 +534,32 @@ static boole _emojis_internal__new_id(char* id)
  * @param base64 Image data URL or NULL for a text emoji.
  * @param unicode Default emoji text or NULL for an image.
  * @param id Stable identifier that will be saved with the emoji.
+ * @param enforce_budget New uploads obey the aggregate budget; existing saved images still restore.
  * @return Error description or NULL on success.
  */
-static cstring _emojis_internal__store(cstring name, cstring base64, cstring unicode, cstring id)
+static cstring _emojis_internal__store(cstring name, cstring base64, cstring unicode, cstring id, boole enforce_budget)
 {
-    uint i = 0;
-    uint available = MAX_SERVER_EMOJIS;
-    char* copy = NULL_POINTER;
+    uint64 i = 0;
+    uint64 available = MAX_SERVER_EMOJIS;
+    char *copy = NULL_POINTER;
     cstring error = NULL_POINTER;
+    uint64 image_bytes = 0;
 
     if (!_emojis_internal__name_valid(name))
     {
         return "Use one to 32 lowercase letters, digits or underscores for the name.";
     }
-    if (!emojis__is_id_valid(id) || (base64 == NULL_POINTER) == (unicode == NULL_POINTER)
-        || (unicode != NULL_POINTER && !_emojis_internal__unicode_valid(unicode)))
+    if (!emojis__is_id_valid(id) || (base64 == NULL_POINTER) == (unicode == NULL_POINTER) || (unicode != NULL_POINTER && !_emojis_internal__unicode_valid(unicode)))
     {
         return "This emoji record is invalid.";
     }
     if (base64 != NULL_POINTER && !_emojis_internal__image_valid(base64))
     {
         return "Choose an image up to 128 by 128 pixels. PNG and JPEG can use 30000 bytes. GIF can use 256 KiB and 200 frames.";
+    }
+    if (base64 != NULL_POINTER)
+    {
+        image_bytes = (uint64)clib__strlen(base64);
     }
     pthread_mutex_lock(&server_emojis_mutex);
     for (i = 0; i < MAX_SERVER_EMOJIS; i++)
@@ -613,11 +581,15 @@ static cstring _emojis_internal__store(cstring name, cstring base64, cstring uni
     {
         error = "This server already has 256 emojis.";
     }
+    if (error == NULL_POINTER && enforce_budget && (image_bytes > SERVER_EMOJI_STORAGE_MAX_BYTES || server_emoji_image_bytes > SERVER_EMOJI_STORAGE_MAX_BYTES - image_bytes))
+    {
+        error = "Emoji images have a combined 32 MiB encoded storage limit. Delete some images before uploading another.";
+    }
     if (error == NULL_POINTER)
     {
         if (base64 != NULL_POINTER)
         {
-            copy = (char*)malloc(clib__strlen(base64) + 1);
+            copy = (char *)malloc((uint64)image_bytes + 1);
         }
         if (base64 != NULL_POINTER && copy == NULL_POINTER)
         {
@@ -627,7 +599,7 @@ static cstring _emojis_internal__store(cstring name, cstring base64, cstring uni
         {
             if (base64 != NULL_POINTER)
             {
-                clib__string_copy(copy, clib__strlen(base64) + 1, base64);
+                clib__string_copy(copy, image_bytes + 1, base64);
             }
             if (unicode != NULL_POINTER)
             {
@@ -636,6 +608,7 @@ static cstring _emojis_internal__store(cstring name, cstring base64, cstring uni
             clib__string_copy(server_emojis[available].id, sizeof(server_emojis[available].id), id);
             clib__string_copy(server_emojis[available].name, sizeof(server_emojis[available].name), name);
             server_emojis[available].base64 = copy;
+            server_emoji_image_bytes += image_bytes;
         }
     }
     pthread_mutex_unlock(&server_emojis_mutex);
@@ -649,7 +622,7 @@ static cstring _emojis_internal__store(cstring name, cstring base64, cstring uni
  * @param id Output buffer with room for 33 characters.
  * @return Error description or NULL on success.
  */
-cstring emojis__add(cstring name, cstring base64, char* id)
+cstring emojis__add(cstring name, cstring base64, char *id)
 {
     boole status = FALSE;
 
@@ -658,7 +631,7 @@ cstring emojis__add(cstring name, cstring base64, char* id)
     {
         return "Could not create an emoji identifier.";
     }
-    return _emojis_internal__store(name, base64, NULL_POINTER, id);
+    return _emojis_internal__store(name, base64, NULL_POINTER, id, TRUE);
 }
 
 /**
@@ -667,7 +640,7 @@ cstring emojis__add(cstring name, cstring base64, char* id)
  */
 boole emojis__remove(cstring id)
 {
-    uint i = 0;
+    uint64 i = 0;
     boole removed = FALSE;
 
     if (!emojis__is_id_valid(id))
@@ -679,6 +652,10 @@ boole emojis__remove(cstring id)
     {
         if (server_emojis[i].id[0] != 0 && clib__strcmp(server_emojis[i].id, id) == 0)
         {
+            if (server_emojis[i].base64 != NULL_POINTER)
+            {
+                server_emoji_image_bytes -= (uint64)clib__strlen(server_emojis[i].base64);
+            }
             free(server_emojis[i].base64);
             clib__memset(&server_emojis[i], 0, sizeof(server_emojis[i]));
             removed = TRUE;
@@ -693,11 +670,11 @@ boole emojis__remove(cstring id)
  * @brief Copies the emoji list for a message or saved settings.
  * @param include_images TRUE includes image data for saving.
  */
-static cJSON* _emojis_internal__array(boole include_images)
+static cJSON *_emojis_internal__array(boole include_images)
 {
-    cJSON* array = cJSON_CreateArray();
-    cJSON* entry = NULL_POINTER;
-    uint i = 0;
+    cJSON *array = cJSON_CreateArray();
+    cJSON *entry = NULL_POINTER;
+    uint64 i = 0;
 
     if (array == NULL_POINTER)
     {
@@ -711,12 +688,7 @@ static cJSON* _emojis_internal__array(boole include_images)
             continue;
         }
         entry = cJSON_CreateObject();
-        if (entry == NULL_POINTER
-            || cJSON_AddStringToObject(entry, "id", server_emojis[i].id) == NULL_POINTER
-            || cJSON_AddStringToObject(entry, "name", server_emojis[i].name) == NULL_POINTER
-            || (server_emojis[i].unicode[0] != 0 && cJSON_AddStringToObject(entry, "unicode", server_emojis[i].unicode) == NULL_POINTER)
-            || (include_images && server_emojis[i].base64 != NULL_POINTER && cJSON_AddStringToObject(entry, "base64", server_emojis[i].base64) == NULL_POINTER)
-            || !cJSON_AddItemToArray(array, entry))
+        if (entry == NULL_POINTER || cJSON_AddStringToObject(entry, "id", server_emojis[i].id) == NULL_POINTER || cJSON_AddStringToObject(entry, "name", server_emojis[i].name) == NULL_POINTER || (server_emojis[i].unicode[0] != 0 && cJSON_AddStringToObject(entry, "unicode", server_emojis[i].unicode) == NULL_POINTER) || (include_images && server_emojis[i].base64 != NULL_POINTER && cJSON_AddStringToObject(entry, "base64", server_emojis[i].base64) == NULL_POINTER) || !cJSON_AddItemToArray(array, entry))
         {
             cJSON_Delete(entry);
             cJSON_Delete(array);
@@ -729,13 +701,13 @@ static cJSON* _emojis_internal__array(boole include_images)
 }
 
 /** @brief Copies the names and text emojis without sending uploaded images at login. */
-cJSON* emojis__catalogue(void)
+cJSON *emojis__catalogue(void)
 {
     return _emojis_internal__array(FALSE);
 }
 
 /** @brief Copies complete emoji records for server_settings.json. */
-cJSON* emojis__write(void)
+cJSON *emojis__write(void)
 {
     return _emojis_internal__array(TRUE);
 }
@@ -744,10 +716,10 @@ cJSON* emojis__write(void)
  * @brief Copies a requested image so sending it does not hold the emoji mutex.
  * @param id Identifier requested by a connected client.
  */
-cJSON* emojis__image(cstring id)
+cJSON *emojis__image(cstring id)
 {
-    cJSON* image = NULL_POINTER;
-    uint i = 0;
+    cJSON *image = NULL_POINTER;
+    uint64 i = 0;
 
     if (!emojis__is_id_valid(id))
     {
@@ -759,10 +731,7 @@ cJSON* emojis__image(cstring id)
         if (server_emojis[i].base64 != NULL_POINTER && clib__strcmp(server_emojis[i].id, id) == 0)
         {
             image = cJSON_CreateObject();
-            if (image == NULL_POINTER
-                || cJSON_AddStringToObject(image, "emoji_id", id) == NULL_POINTER
-                || cJSON_AddStringToObject(image, "name", server_emojis[i].name) == NULL_POINTER
-                || cJSON_AddStringToObject(image, "base64", server_emojis[i].base64) == NULL_POINTER)
+            if (image == NULL_POINTER || cJSON_AddStringToObject(image, "emoji_id", id) == NULL_POINTER || cJSON_AddStringToObject(image, "name", server_emojis[i].name) == NULL_POINTER || cJSON_AddStringToObject(image, "base64", server_emojis[i].base64) == NULL_POINTER)
             {
                 cJSON_Delete(image);
                 image = NULL_POINTER;
@@ -778,18 +747,19 @@ cJSON* emojis__image(cstring id)
  * @brief Restores saved emojis or adds the defaults when no list has been saved.
  * @param array Saved emoji list or NULL when the settings have no emojis member.
  */
-void emojis__load(cJSON* array)
+void emojis__load(cJSON *array)
 {
-    cJSON* entry = NULL_POINTER;
-    cJSON* id = NULL_POINTER;
-    cJSON* name = NULL_POINTER;
-    cJSON* base64 = NULL_POINTER;
-    cJSON* unicode = NULL_POINTER;
+    cJSON *entry = NULL_POINTER;
+    cJSON *id = NULL_POINTER;
+    cJSON *name = NULL_POINTER;
+    cJSON *base64 = NULL_POINTER;
+    cJSON *unicode = NULL_POINTER;
     static const char hex[] = "0123456789abcdef";
     char new_id[33] = "1e000000000000000000000000000000";
-    uint i = 0;
+    uint64 i = 0;
 
     pthread_mutex_lock(&server_emojis_mutex);
+    server_emoji_image_bytes = 0;
     for (i = 0; i < MAX_SERVER_EMOJIS; i++)
     {
         free(server_emojis[i].base64);
@@ -802,7 +772,7 @@ void emojis__load(cJSON* array)
         {
             new_id[30] = hex[(i + 1) >> 4];
             new_id[31] = hex[(i + 1) & 15];
-            _emojis_internal__store(default_emojis[i].name, NULL_POINTER, default_emojis[i].unicode, new_id);
+            _emojis_internal__store(default_emojis[i].name, NULL_POINTER, default_emojis[i].unicode, new_id, FALSE);
         }
         return;
     }
@@ -816,11 +786,9 @@ void emojis__load(cJSON* array)
         name = cJSON_GetObjectItemCaseSensitive(entry, "name");
         base64 = cJSON_GetObjectItemCaseSensitive(entry, "base64");
         unicode = cJSON_GetObjectItemCaseSensitive(entry, "unicode");
-        if (cJSON_IsString(id) && cJSON_IsString(name)
-            && ((cJSON_IsString(base64) && unicode == NULL_POINTER) || (cJSON_IsString(unicode) && base64 == NULL_POINTER)))
+        if (cJSON_IsString(id) && cJSON_IsString(name) && ((cJSON_IsString(base64) && unicode == NULL_POINTER) || (cJSON_IsString(unicode) && base64 == NULL_POINTER)))
         {
-            _emojis_internal__store(name->valuestring, cJSON_IsString(base64) ? base64->valuestring : NULL_POINTER,
-                cJSON_IsString(unicode) ? unicode->valuestring : NULL_POINTER, id->valuestring);
+            _emojis_internal__store(name->valuestring, cJSON_IsString(base64) ? base64->valuestring : NULL_POINTER, cJSON_IsString(unicode) ? unicode->valuestring : NULL_POINTER, id->valuestring, FALSE);
         }
     }
 }

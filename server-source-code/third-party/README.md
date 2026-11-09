@@ -29,7 +29,7 @@ toolchain (MinGW typically produces `.a`, while MSVC produces `.lib`).
 
 | Library | Linkage |
 | --- | --- |
-| libopus-1.5.2 | static |
+| libopus-1.6.1 | static |
 | mbedtls-3.6.6 | static |
 | libviolet | static |
 | theldus-websocket | static |
@@ -43,13 +43,21 @@ These are usually small (often just a few files) and are compiled directly into
 the main project. They previously lived in the main directory but were moved
 here for better organization.
 
+`miniz-3.1.2` supplies DEFLATE compression and CRC32 for HTTP gzip responses.
+Only its compression sources are built; see its [source notes](miniz-3.1.2/SOURCE.md).
+
 - zhicheng
 - rxi-log
 - ITH-SHA
 - dave-g-json
 - eteran-cvector
 - dr_mp3 (single header file)
-- kokke-tiny-aes-c
+- libtomcrypt (the pinned Twofish and Serpent sources; see its `SOURCE.md`)
+- kokke-tiny-aes-c (the existing small AES implementation)
+
+The small AES implementation remains in `kokke-tiny-aes-c`. The separate
+[`main/crypto/cipher_aes.c`](../main/crypto/cipher_aes.c) file adapts Mbed TLS for the negotiated
+connection ciphers, matching the other cipher adapters in that directory.
 
 ## stunnel (standalone TLS proxy)
 
@@ -80,10 +88,9 @@ uses libviolet directly.
 | dr_mp3 | Decodes MP3 files to PCM for music bots (when streaming songs) |
 | eteran-cvector | Lightweight `std::vector`-like container; currently experimental |
 | ITH-SHA | Cryptographic hash functions (SHA) |
-| kokke-tiny-aes-c | Small AES encryption implementation |
 | libdatachannel | Sends WebRTC DataChannel data (used for audio transmission) |
 | libmaxminddb-1.12.2 | Looks up an IP address's country from a local `.mmdb` file; used to show country flags when enabled |
-| libopus-1.5.2 | Encodes PCM audio to Opus format for music bots |
+| libopus-1.6.1 | Encodes PCM audio to Opus format for music bots |
 | libtom | Cryptographic functionality |
 | libviolet | TURN/STUN functionality for the main project; also a dependency of libdatachannel |
 | mbedtls-3.6.6 | Dependency of libdatachannel; also used for general cryptographic operations |

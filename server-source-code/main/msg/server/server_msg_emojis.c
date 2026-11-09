@@ -1,3 +1,4 @@
+#include "../../util.h"
 // This file sends the server emoji names and requested images to connected clients.
 #include "server_msg.h"
 #include "../../core/emojis.h"
@@ -6,11 +7,11 @@
  * @brief Sends emoji names without loading their images into the client's chat.
  * @param receiver Connected client receiving the list with the clients lock held.
  */
-void server_msg__emojis__send_list(client_t* receiver)
+void server_msg__emojis__send_list(client_t *receiver)
 {
-    cJSON* message = NULL_POINTER;
-    cJSON* root = NULL_POINTER;
-    cJSON* emojis = emojis__catalogue();
+    cJSON *message = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
+    cJSON *emojis = emojis__catalogue();
 
     if (emojis == NULL_POINTER)
     {
@@ -18,7 +19,7 @@ void server_msg__emojis__send_list(client_t* receiver)
         return;
     }
     root = server_msg__delivery__new_message("server_emoji_list", &message);
-    if (root == NULL_POINTER || !cJSON_AddItemToObject(message, "emojis", emojis))
+    if (root == NULL_POINTER || !util__json_add_owned_object(message, "emojis", emojis))
     {
         cJSON_Delete(emojis);
         cJSON_Delete(root);
@@ -33,10 +34,10 @@ void server_msg__emojis__send_list(client_t* receiver)
  * @param receiver Connected client receiving the image with the clients lock held.
  * @param id Stable emoji identifier.
  */
-void server_msg__emojis__send_image(client_t* receiver, cstring id)
+void server_msg__emojis__send_image(client_t *receiver, cstring id)
 {
-    cJSON* image = emojis__image(id);
-    cJSON* root = NULL_POINTER;
+    cJSON *image = emojis__image(id);
+    cJSON *root = NULL_POINTER;
 
     if (image == NULL_POINTER)
     {
@@ -44,9 +45,7 @@ void server_msg__emojis__send_image(client_t* receiver, cstring id)
         return;
     }
     root = cJSON_CreateObject();
-    if (root == NULL_POINTER
-        || cJSON_AddStringToObject(image, "type", "server_emoji_image") == NULL_POINTER
-        || !cJSON_AddItemToObject(root, "message", image))
+    if (root == NULL_POINTER || cJSON_AddStringToObject(image, "type", "server_emoji_image") == NULL_POINTER || !util__json_add_owned_object(root, "message", image))
     {
         cJSON_Delete(image);
         cJSON_Delete(root);
@@ -63,8 +62,8 @@ void server_msg__emojis__send_image(client_t* receiver, cstring id)
  */
 void server_msg__emojis__send_added(cstring id, cstring name)
 {
-    cJSON* message = NULL_POINTER;
-    cJSON* root = server_msg__delivery__new_message("server_emoji_added", &message);
+    cJSON *message = NULL_POINTER;
+    cJSON *root = server_msg__delivery__new_message("server_emoji_added", &message);
 
     cJSON_AddStringToObject(message, "id", id);
     cJSON_AddStringToObject(message, "name", name);
@@ -78,8 +77,8 @@ void server_msg__emojis__send_added(cstring id, cstring name)
  */
 void server_msg__emojis__send_deleted(cstring id)
 {
-    cJSON* message = NULL_POINTER;
-    cJSON* root = server_msg__delivery__new_message("server_emoji_deleted", &message);
+    cJSON *message = NULL_POINTER;
+    cJSON *root = server_msg__delivery__new_message("server_emoji_deleted", &message);
 
     cJSON_AddStringToObject(message, "emoji_id", id);
     server_msg__delivery__send_json_to_all_clients(root, NULL_POINTER);
@@ -93,11 +92,11 @@ void server_msg__emojis__send_deleted(cstring id)
  * @param reason Explanation shown by the client.
  * @param id Optional emoji identifier.
  */
-void server_msg__emojis__send_error(client_t* receiver, cstring operation, cstring reason, cstring id)
+void server_msg__emojis__send_error(client_t *receiver, cstring operation, cstring reason, cstring id)
 {
     boole status = FALSE;
-    cJSON* message = NULL_POINTER;
-    cJSON* root = server_msg__delivery__new_message("server_emoji_error", &message);
+    cJSON *message = NULL_POINTER;
+    cJSON *root = server_msg__delivery__new_message("server_emoji_error", &message);
 
     cJSON_AddStringToObject(message, "operation", operation);
     cJSON_AddStringToObject(message, "reason", reason);

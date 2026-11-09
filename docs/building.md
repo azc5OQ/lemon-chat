@@ -20,11 +20,33 @@ If you want to host a chat, build the server. When Node.js is installed, the ser
 
 ## Server
 
-The server scripts build the required libraries and the server, and rebuild `client.html` when Node.js is available. They collect the files needed to run the server in `buildresult` at the project root.
+The server scripts build the required libraries and the server, and attempt to rebuild `client.html` when Node.js is available. They collect the files needed to run the server in `buildresult` at the project root.
 
-Stop the server before rebuilding. Save any settings or other files you need from `buildresult`: the Linux and macOS scripts recreate that directory, and the Windows script can clear it when you choose a clean build.
+Stop the server before rebuilding. The Windows cleanup keeps settings, certificates and uploaded files in `buildresult`. The Linux and macOS scripts recreate that directory, so save any files you need before running them.
 
 If you build the server on a machine without Node.js, the scripts warn and skip rebuilding the browser client. They copy the existing `client-source-code/client.html` into `buildresult` if available; that page may not include your latest client source changes. If the file is missing, they warn that the bundled HTTP server has no page to serve, but still build the server. If Node.js is available but the client build fails, the scripts also warn and continue building the server, using the existing page if available. Node.js and a successful browser client rebuild are not server build requirements.
+
+### Opus and CPU optimizations
+
+The server uses Opus 1.6.1 to encode music bots' audio. It has its own copy in
+`server-source-code/third-party/libopus-1.6.1`. Voice packets from clients are
+forwarded without re-encoding them.
+
+Use a Release build for normal use. Debug builds leave compiler optimization
+off, which can produce Opus's "compiling without optimization" warning and make
+encoding much slower. Release builds use `-O3` on Windows, Linux and macOS.
+
+On x86, the build includes the CPU optimizations supported by the compiler.
+Opus selects a supported instruction set when it runs: an AVX2-capable machine
+can use AVX2, while an older processor can use an earlier instruction set.
+The build scripts reset cached x86 overrides to Opus's automatic defaults.
+
+The CMake feature list can be confusing. `OPUS_X86_MAY_HAVE_AVX2` enabled means
+AVX2 code is included and selected after checking the CPU.
+`OPUS_X86_PRESUME_AVX2` disabled means that check is still required; it does not
+disable AVX2. Likewise, `OPUS_DISABLE_INTRINSICS` disabled means CPU
+optimizations are allowed. These lines are configuration information, not
+performance warnings.
 
 ### Windows
 
@@ -37,6 +59,18 @@ windows_build_script.bat
 The script can download w64devkit, CMake, Ninja and Python when they are missing. It reuses installed tools when possible. The result is `buildresult/chat-server.exe` with its supporting files. Keep those files together.
 
 The optional stunnel build needs Git for Windows because it supplies Bash and Perl.
+
+If you want to rebuild the Windows server and its libraries from scratch, answer `y` to **Clean previous Windows build files?** The cleanup runs after you confirm the build. Answer `n` to reuse previous build files and compile only what changed.
+
+Cleanup removes compiled files and generated CMake/Ninja files, including those inside the libraries' subdirectories. It keeps source files, downloaded tools, IDE settings and the separate Linux, macOS and Android output directories. The Windows OpenSSL build and stunnel files are also cleaned when you choose to rebuild stunnel. If you skip stunnel, its existing files stay available.
+
+To see the files that would be removed, run this from the project directory:
+
+```bat
+python tools\clean.py --scope server-windows --dry-run
+```
+
+Add `--include-stunnel` to preview the optional stunnel cleanup too. The preview does not remove files. During the build, cleanup prints a file count and stops on a removal error, such as an executable still used by a running server.
 
 ### Linux
 
@@ -54,11 +88,11 @@ For hosting and public access after building, read the [self-hosting guide](../s
 
 ## Browser client
 
-Install Node.js, open `client-source-code/client-development/browser`, then run `build.bat` on Windows or `sh build.sh` on Linux and macOS. The result is `client-source-code/client.html`.
+Open `client-source-code/client-development/browser`, then run `build.bat` on Windows or `sh build.sh` on Linux and macOS. The result is `client-source-code/client.html`.
 
-Node.js runs the build script that assembles the source files, embeds WebAssembly and validates JavaScript. This is separate from the Android runtime: opening the finished `client.html` in a browser does not require Node.js.
+The wrappers offer to download missing Node.js and Zig tools locally. Node.js runs the build script; Zig 0.15.2 compiles all four WebAssembly projects from their own browser sources. The builder tests them, then assembles the page, embeds their bytes and validates JavaScript. This is separate from the Android runtime: opening the finished `client.html` in a browser does not require Node.js.
 
-The script offers readable and minified output. Minifying requires Terser; the readable build does not. The [browser build guide](../client-source-code/client-development/browser/README.md#building) explains the choices and direct `node build.cjs` commands.
+The script offers readable and minified output. Minifying requires optional Terser, which the script can also download; the readable build does not. Use `--download-tools` for unattended downloads or `--no-download-tools` to forbid them. `--prebuilt-wasm` explicitly uses the checked prebuilt binaries and matching loader after verifying their hashes and running compatibility and security regressions. Server builds disable client-tool downloads and continue if any client build step fails, including a missing Zig compiler. The [browser build guide](../client-source-code/client-development/browser/README.md#building) explains the choices and direct `node build.cjs` commands.
 
 ## Android client
 
@@ -98,4 +132,44 @@ The Windows server and desktop build for x86-64 with the supplied w64devkit setu
 
 ## Source formatting
 
-Formatting is separate from building. `server-source-code/main/windows_clangformat_script.bat` runs `clang-format` over the server C and C++ sources. It changes files in place and is not required for a build.
+To format the server sources on Windows, run `server-source-code/main/windows_clangformat_script.bat`. For the desktop client, run `client-source-code/client-development/desktop/main/windows_clangformat_script.bat`.
+
+Both scripts use the bundled `tools/clang-format.exe` and the `.clang-format` file in their own `main` directory. They apply Allman braces and explicit conditional and loop bodies. Run either script from any working directory; it formats only that application's source tree and skips build directories, bundled dependencies and directory links.
+
+Formatting changes source files in place. To check formatting without changing files, add `-Check` after the script name. The scripts stop and return an error if formatting or checking fails. Formatting is separate from building and is not required for a build.
+
+## Rebuilding browser WebAssembly
+
+Suppose you change a browser cipher. Edit its own source under
+`client-source-code/client-development/browser/client-webassemblies/connection-crypto/main/crypto`,
+then run the normal browser build. It now compiles and tests **all four** modules
+before embedding them; changing a C source no longer requires a separate manual
+binary-copy step. These browser projects do not compile desktop or server source.
+
+For a source build with tools already installed, run from the repository root:
+
+```powershell
+$env:ZIG = 'C:\tools\zig-0.15.2\zig.exe'
+node client-source-code/client-development/browser/build.cjs --unminified --no-download-tools
+```
+
+The generated modules have no external host imports. The client embeds them as
+Base64 and loads them from the page itself. Each project owns its required
+third-party libraries; the desktop and server retain their own separate sources.
+The [browser build guide](../client-source-code/client-development/browser/README.md#building)
+explains staging, tests, tool downloads, backups, rollback and failure handling.
+The [WebAssembly guide](../client-source-code/client-development/browser/client-webassemblies/README.md)
+lists the individual projects and isolated compile/test commands.
+
+If you cannot compile the modules, `--prebuilt-wasm` deliberately embeds the
+checked set from `client-webassemblies/prebuilt-backup`, with its matching older
+Opus loader. RSA and MP3 in that set include the current secret-clearing and
+input-bounds fixes. The build verifies hashes and compatibility before writing
+the page. That directory is never overwritten by a build, and a normal build
+does not fall back silently. A client build failure always remains optional for
+a server build: the server still builds and packages the existing page when
+available.
+
+The Android Node bundle is generated from browser sources, so regenerate that
+bundle and APK when shipping a protocol change. Node.js remains a browser build
+tool; users opening the HTML run its JavaScript and WebAssembly in their browser.

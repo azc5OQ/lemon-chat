@@ -13,10 +13,11 @@
 #include "../../../third-party/zhicheng/base64.h"
 
 // declarations
-static boole _client_msg_profile_internal__is_change_client_username_message_valid(cJSON* json_root, uint64 client_id);
+static boole _client_msg_profile_internal__is_change_client_username_message_valid(cJSON *json_root, uint64 client_id);
 
 /**
- * @brief This function checks if clients username change request json message has all nessecary fields
+ * @brief This function checks if clients username change request json message has all nessecary
+ *        fields
  *
  * @param cJSON* json_root -> the parsed client request
  * @param uint64 client_id -> id of the client
@@ -25,11 +26,11 @@ static boole _client_msg_profile_internal__is_change_client_username_message_val
  *
  * @return boole
  */
-static boole _client_msg_profile_internal__is_change_client_username_message_valid(cJSON* json_root, uint64 client_id)
+static boole _client_msg_profile_internal__is_change_client_username_message_valid(cJSON *json_root, uint64 client_id)
 {
-    cJSON* json_new_username = 0;
-    cJSON* json_client_id = 0;
-    cJSON* json_message_object = 0;
+    cJSON *json_new_username = 0;
+    cJSON *json_client_id = 0;
+    cJSON *json_message_object = 0;
     uint64 validated_client_id = 0;
 
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
@@ -48,8 +49,7 @@ static boole _client_msg_profile_internal__is_change_client_username_message_val
         DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client : ", client_id, " json_client_id == NULL_POINTER \n");
         return FALSE;
     }
-    if (g_server_settings.max_client_count == 0
-        || util__json_read_uint64(json_client_id, g_server_settings.max_client_count - 1, &validated_client_id) == FALSE)
+    if (g_server_settings.max_client_count == 0 || util__json_read_uint64(json_client_id, g_server_settings.max_client_count - 1, &validated_client_id) == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s", "_client_msg_profile_internal__is_change_client_username_message_valid cJSON_IsNumber(client_id) \n");
         return FALSE;
@@ -92,19 +92,17 @@ static boole _client_msg_profile_internal__is_change_client_username_message_val
  *
  * @return void
  */
-void client_msg__profile__process_change_client_username(cJSON* json_root, uint64 sender_client_id)
+void client_msg__profile__process_change_client_username(cJSON *json_root, uint64 sender_client_id)
 {
     boole status0 = FALSE;
     boole status = FALSE;
     boole does_client_have_permission_to_change_username = FALSE;
-    cJSON* json_message_value = 0;
-    cJSON* json_message_object = 0;
-    cJSON* json_client_id = 0;
+    cJSON *json_message_value = 0;
+    cJSON *json_message_object = 0;
+    cJSON *json_client_id = 0;
     boole is_username_taken = FALSE;
     boole is_change_success = FALSE;
-
-    client_t* client_to_alter = 0;
-
+    client_t *client_to_alter = 0;
     int64 new_username_length = 0;
     uint64 i = 0;
 
@@ -221,20 +219,19 @@ label_client_msg__process_change_client_username_end:
     clib__unlock(&g_clients_global_rwlock_guard);
 }
 
-
 /**
  * @brief Sends stored names and avatars when the server settings and the client's groups allow it.
  * @param json_root -> request with no additional fields
  * @param sender_client_id -> client requesting the list
  */
-void client_msg__profile__process_request_stored_clients(cJSON* json_root, uint64 sender_client_id)
+void client_msg__profile__process_request_stored_clients(cJSON *json_root, uint64 sender_client_id)
 {
     boole status = FALSE;
     boole status0 = FALSE;
     boole status1 = FALSE;
     boole status2 = FALSE;
     boole status3 = FALSE;
-    client_t* client = 0;
+    client_t *client = 0;
 
     (void)json_root; // the request has no fields to read
 
@@ -299,17 +296,17 @@ label_client_msg__process_request_stored_clients_end:
  *
  * @return void
  */
-void client_msg__profile__process_avatar_upload(cJSON* json_root, uint64 sender_client_id)
+void client_msg__profile__process_avatar_upload(cJSON *json_root, uint64 sender_client_id)
 {
     boole status = FALSE;
     boole status0 = FALSE;
     boole status1 = FALSE;
     boole status2 = FALSE;
     boole status3 = FALSE;
-    client_t* client = 0;
-    cJSON* json_message_object = 0;
-    cJSON* json_base64_avatar = 0;
-    char identity_hash[BASE64_ENCODE_OUT_SIZE(32)];
+    client_t *client = 0;
+    cJSON *json_message_object = 0;
+    cJSON *json_base64_avatar = 0;
+    char identity_hash[BASE64_ENCODE_OUT_SIZE(32)] = { 0 };
     uint64 base64_length = 0;
     uint64 max_base64_length = 0;
 
@@ -384,7 +381,7 @@ void client_msg__profile__process_avatar_upload(cJSON* json_root, uint64 sender_
         memorymanager__free((nuint)client->base64_avatar);
         client->base64_avatar = NULL_POINTER;
     }
-    client->base64_avatar = (char*)memorymanager__allocate(base64_length + 1, MEMALLOC_AVATAR);
+    client->base64_avatar = (char *)memorymanager__allocate(base64_length + 1, MEMALLOC_AVATAR);
     if (client->base64_avatar != NULL_POINTER)
     {
         clib__copy_memory(json_base64_avatar->valuestring, client->base64_avatar, base64_length, base64_length);
@@ -412,14 +409,14 @@ void client_msg__profile__process_avatar_upload(cJSON* json_root, uint64 sender_
  *
  * @return void
  */
-void client_msg__profile__process_delete_avatar(cJSON* json_root, uint64 sender_client_id)
+void client_msg__profile__process_delete_avatar(cJSON *json_root, uint64 sender_client_id)
 {
     boole status = FALSE;
     boole status0 = FALSE;
     boole status1 = FALSE;
     boole status2 = FALSE;
-    client_t* client = 0;
-    char identity_hash[BASE64_ENCODE_OUT_SIZE(32)];
+    client_t *client = 0;
+    char identity_hash[BASE64_ENCODE_OUT_SIZE(32)] = { 0 };
 
     (void)json_root;
 
@@ -483,16 +480,16 @@ void client_msg__profile__process_delete_avatar(cJSON* json_root, uint64 sender_
  *
  * @return void
  */
-void client_msg__profile__process_request_avatar_for_client(cJSON* json_root, uint64 sender_client_id)
+void client_msg__profile__process_request_avatar_for_client(cJSON *json_root, uint64 sender_client_id)
 {
     boole status0 = FALSE;
     boole status1 = FALSE;
     boole status2 = FALSE;
     boole status3 = FALSE;
-    client_t* sender = 0;
-    client_t* target = 0;
-    cJSON* json_message_object = 0;
-    cJSON* json_client_id = 0;
+    client_t *sender = 0;
+    client_t *target = 0;
+    cJSON *json_message_object = 0;
+    cJSON *json_client_id = 0;
     uint64 target_client_id = 0;
 
     if (g_server_settings.is_avatar_upload_allowed == FALSE)
@@ -507,8 +504,7 @@ void client_msg__profile__process_request_avatar_for_client(cJSON* json_root, ui
     }
 
     json_client_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "client_id");
-    if (g_server_settings.max_client_count == 0
-        || util__json_read_uint64(json_client_id, g_server_settings.max_client_count - 1, &target_client_id) == FALSE)
+    if (g_server_settings.max_client_count == 0 || util__json_read_uint64(json_client_id, g_server_settings.max_client_count - 1, &target_client_id) == FALSE)
     {
         return;
     }
@@ -552,16 +548,16 @@ void client_msg__profile__process_request_avatar_for_client(cJSON* json_root, ui
  *
  * @return void
  */
-void client_msg__profile__process_request_avatars_batch(cJSON* json_root, uint64 sender_client_id)
+void client_msg__profile__process_request_avatars_batch(cJSON *json_root, uint64 sender_client_id)
 {
     boole status0 = FALSE;
     boole status1 = FALSE;
     boole status2 = FALSE;
-    client_t* sender = 0;
-    client_t* target = 0;
-    cJSON* json_message_object = 0;
-    cJSON* json_client_ids = 0;
-    cJSON* json_id = 0;
+    client_t *sender = 0;
+    client_t *target = 0;
+    cJSON *json_message_object = 0;
+    cJSON *json_client_ids = 0;
+    cJSON *json_id = 0;
     uint64 target_client_id = 0;
     uint64 sent = 0;
 
@@ -604,8 +600,7 @@ void client_msg__profile__process_request_avatars_batch(cJSON* json_root, uint64
         {
             break; // cap one batch so a single request can't blast unbounded work
         }
-        if (g_server_settings.max_client_count == 0
-            || util__json_read_uint64(json_id, g_server_settings.max_client_count - 1, &target_client_id) == FALSE)
+        if (g_server_settings.max_client_count == 0 || util__json_read_uint64(json_id, g_server_settings.max_client_count - 1, &target_client_id) == FALSE)
         {
             continue;
         }

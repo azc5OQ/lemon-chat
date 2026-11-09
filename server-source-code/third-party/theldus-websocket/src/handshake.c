@@ -41,19 +41,26 @@
  * @brief Handshake routines.
  */
 
-/**
- * @brief Gets the field Sec-WebSocket-Accept on response, by
- * an previously informed key.
- *
- * @param wsKey Sec-WebSocket-Key
- * @param dest source to be stored the value.
- *
- * @return Returns 0 if success and a negative number
- * otherwise.
- *
- * @attention This is part of the internal API and is documented just
- * for completeness.
- */
+/** @brief Validates the canonical Base64 encoding of a 16-byte client nonce. */
+static bool valid_websocket_key(const char* key, size_t length)
+{
+    static const char alphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    if (length != WS_KEY_LEN || key[22] != '=' || key[23] != '=')
+    {
+        return false;
+    }
+    for (size_t index = 0; index < 22; index++)
+    {
+        const char* digit = strchr(alphabet, key[index]);
+        if (key[index] == '\0' || digit == NULL || (index == 21 && ((digit - alphabet) & 15) != 0))
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+/** @brief Allocates the accept value for a valid key; failure leaves the output null. */
 int get_handshake_accept(char *wsKey, unsigned char **dest)
 {
 	unsigned char hash[SHA1HashSize]; /* SHA-1 Hash.                   */
@@ -61,11 +68,16 @@ int get_handshake_accept(char *wsKey, unsigned char **dest)
 	char *str; /* WebSocket key + magic string. */
 
 	/* Invalid key. */
-	if (!wsKey)
+	if (!dest)
 	{
 		return (-1);
 	}
 
+	*dest = NULL;
+    if (wsKey == NULL || !valid_websocket_key(wsKey, strlen(wsKey)))
+    {
+        return -1;
+    }
 	str = calloc(1, sizeof(char) * (WS_KEY_LEN + WS_MS_LEN + 1));
 	if (!str)
 	{
@@ -80,51 +92,57 @@ int get_handshake_accept(char *wsKey, unsigned char **dest)
 	SHA1Result(&ctx, hash);
 
 	*dest = base64_encode(hash, SHA1HashSize, NULL);
-	*(*dest + strlen((const char *)*dest) - 1) = '\0';
 	free(str);
+	if (*dest == NULL)
+	{
+		return -1;
+	}
+	(*dest)[strcspn((const char*)*dest, "\r\n")] = '\0';
 	return (0);
 }
 
-/**
- * @brief Finds the ocorrence of @p needle in @p haystack, case
- * insensitive.
- *
- * @param haystack Target string to be searched.
- * @param needle   Substring to search for.
- *
- * @returns If found, returns a pointer at the beginning of the
- * found substring. Otherwise, returns NULL.
- */
-static char *strstricase(const char *haystack, const char *needle)
+/** @brief Matches one complete header name or token without regard to case. */
+static bool header_equals(const char* value, size_t length, const char* expected)
 {
-	size_t length;
-	for (length = strlen(needle); *haystack; haystack++)
-	{
-		if (!strncasecmp(haystack, needle, length))
-		{
-			return (char *)haystack;
-		}
-	}
-	return (NULL);
+    return strlen(expected) == length && strncasecmp(value, expected, length) == 0;
+}
+
+static bool header_has_token(const char* value, size_t length, const char* expected)
+{
+    const char* end = value + length;
+    while (value < end)
+    {
+        const char* token_end = memchr(value, ',', (size_t)(end - value));
+        const char* next = token_end != NULL ? token_end + 1 : end;
+        if (token_end == NULL)
+        {
+            token_end = end;
+        }
+        while (value < token_end && (*value == ' ' || *value == '\t'))
+        {
+            value++;
+        }
+        while (token_end > value && (token_end[-1] == ' ' || token_end[-1] == '\t'))
+        {
+            token_end--;
+        }
+        if (header_equals(value, (size_t)(token_end - value), expected))
+        {
+            return true;
+        }
+        value = next;
+    }
+    return false;
+}
+
+static bool header_name_byte(unsigned char value)
+{
+    return (value >= 'a' && value <= 'z') || (value >= 'A' && value <= 'Z')
+        || (value >= '0' && value <= '9') || (value != 0 && strchr("!#$%&'*+-.^_`|~", value) != NULL);
 }
 
 /**
- * @brief Gets the complete response to accomplish a succesfully
- * handshake.
- *
- * @param hsrequest  Client request.
- * @param hsresponse Server response.
- *
- * @return Returns 0 if success and a negative number
- * otherwise.
- *
- * @attention This is part of the internal API and is documented just
- * for completeness.
- */
-
-/**
- * @brief Gets the complete response to accomplish a succesfully
- * handshake.
+ * @brief Validates the complete HTTP upgrade and allocates its response.
  *
  * @param hsrequest  Client request.
  * @param hsresponse Server response.
@@ -137,39 +155,124 @@ static char *strstricase(const char *haystack, const char *needle)
  */
 int get_handshake_response(char *hsrequest, char **hsresponse)
 {
-	unsigned char *accept; /* Accept message.     */
-	char *saveptr; /* strtok_r() pointer. */
-	char *s; /* Current string.     */
-	int ret; /* Return value.       */
+    unsigned char* accept = NULL;
+    char key[WS_KEY_LEN + 1];
+    bool have_key = false;
+    bool have_host = false;
+    bool have_version = false;
+    bool have_upgrade = false;
+    bool have_connection = false;
 
-	saveptr = NULL;
-	for (s = strtok_r(hsrequest, "\r\n", &saveptr); s != NULL; s = strtok_r(NULL, "\r\n", &saveptr))
-	{
-		if (strstricase(s, WS_HS_REQ) != NULL)
-		{
-			break;
-		}
-	}
-
-	/* Ensure that we have a valid pointer. */
-	if (s == NULL)
-	{
-		return (-1);
-	}
-
-	saveptr = NULL;
-	s = strtok_r(s, " ", &saveptr);
-	s = strtok_r(NULL, " ", &saveptr);
-
-	ret = get_handshake_accept(s, &accept);
-	if (ret < 0)
-	{
-		return (ret);
-	}
+    if (hsresponse == NULL)
+    {
+        return -1;
+    }
+    *hsresponse = NULL;
+    if (hsrequest == NULL || strncmp(hsrequest, "GET ", 4) != 0)
+    {
+        return -1;
+    }
+    const char* line = hsrequest + 4;
+    const char* target_end = strchr(line, ' ');
+    if (target_end == NULL || target_end == line || strncmp(target_end, " HTTP/1.1\r\n", 11) != 0)
+    {
+        return -1;
+    }
+    for (const char* position = line; position < target_end; position++)
+    {
+        if ((unsigned char)*position <= 32 || (unsigned char)*position >= 127 || *position == '#')
+        {
+            return -1;
+        }
+    }
+    line = target_end + 11;
+    while (strncmp(line, "\r\n", 2) != 0)
+    {
+        const char* end = strstr(line, "\r\n");
+        const char* colon = end != NULL ? memchr(line, ':', (size_t)(end - line)) : NULL;
+        if (colon == NULL || colon == line)
+        {
+            return -1;
+        }
+        for (const char* position = line; position < colon; position++)
+        {
+            if (!header_name_byte((unsigned char)*position))
+            {
+                return -1;
+            }
+        }
+        const char* value = colon + 1;
+        const char* value_end = end;
+        for (const char* position = value; position < end; position++)
+        {
+            if (((unsigned char)*position < 32 && *position != '\t') || *position == 127)
+            {
+                return -1;
+            }
+        }
+        while (value < value_end && (*value == ' ' || *value == '\t'))
+        {
+            value++;
+        }
+        while (value_end > value && (value_end[-1] == ' ' || value_end[-1] == '\t'))
+        {
+            value_end--;
+        }
+        size_t name_length = (size_t)(colon - line);
+        size_t value_length = (size_t)(value_end - value);
+        if (header_equals(line, name_length, "Host"))
+        {
+            if (have_host || value_length == 0)
+            {
+                return -1;
+            }
+            for (const char* position = value; position < value_end; position++)
+            {
+                if ((unsigned char)*position <= 32 || (unsigned char)*position >= 127 || strchr("/@,\\?#", *position) != NULL)
+                {
+                    return -1;
+                }
+            }
+            have_host = true;
+        }
+        else if (header_equals(line, name_length, WS_HS_REQ))
+        {
+            if (have_key || !valid_websocket_key(value, value_length))
+            {
+                return -1;
+            }
+            memcpy(key, value, WS_KEY_LEN);
+            key[WS_KEY_LEN] = '\0';
+            have_key = true;
+        }
+        else if (header_equals(line, name_length, "Sec-WebSocket-Version"))
+        {
+            if (have_version || value_length != 2 || memcmp(value, "13", 2) != 0)
+            {
+                return -1;
+            }
+            have_version = true;
+        }
+        else if (header_equals(line, name_length, "Upgrade"))
+        {
+            have_upgrade |= header_has_token(value, value_length, "websocket");
+        }
+        else if (header_equals(line, name_length, "Connection"))
+        {
+            have_connection |= header_has_token(value, value_length, "upgrade");
+        }
+        line = end + 2;
+    }
+    if (line[2] != '\0' || !have_host || !have_key || !have_version || !have_upgrade || !have_connection
+        || get_handshake_accept(key, &accept) < 0)
+    {
+        return -1;
+    }
 
 	*hsresponse = calloc(sizeof(char) * WS_HS_ACCLEN, 1);
 	if (*hsresponse == NULL)
 	{
+		free(accept);
 		return (-1);
 	}
 

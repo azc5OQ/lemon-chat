@@ -92,7 +92,14 @@ typedef struct
 	const unsigned char *json;
 	size_t position;
 } error;
-static error global_error = { NULL, 0 };
+/* Socket workers parse concurrently; each error belongs to its calling thread. */
+#if defined(__cplusplus)
+static thread_local error global_error = { NULL, 0 };
+#elif defined(_MSC_VER)
+static __declspec(thread) error global_error = { NULL, 0 };
+#else
+static _Thread_local error global_error = { NULL, 0 };
+#endif
 
 CJSON_PUBLIC(const char *) cJSON_GetErrorPtr(void)
 {

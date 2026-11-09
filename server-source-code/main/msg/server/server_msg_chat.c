@@ -20,10 +20,10 @@
  *
  * @return void
  */
-void server_msg__chat__send_server_chat_message_id_for_local_chat_message_id_to_single_client(client_t* receiver, uint64 chat_message_id, uint64 local_message_id)
+void server_msg__chat__send_server_chat_message_id_for_local_chat_message_id_to_single_client(client_t *receiver, uint64 chat_message_id, uint64 local_message_id)
 {
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
 
     root = server_msg__delivery__new_message("server_chat_message_id_for_local_message_id", &message);
 
@@ -48,10 +48,10 @@ void server_msg__chat__send_server_chat_message_id_for_local_chat_message_id_to_
  *
  * @return void
  */
-void server_msg__chat__send_message_to_single_client(client_t* receiver, client_t* sender, uint64 server_chat_message_id, char* chat_message_value)
+void server_msg__chat__send_message_to_single_client(client_t *receiver, client_t *sender, uint64 server_chat_message_id, char *chat_message_value)
 {
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
@@ -78,10 +78,10 @@ void server_msg__chat__send_message_to_single_client(client_t* receiver, client_
  *
  * @return void
  */
-void server_msg__chat__send_message_to_clients_in_same_channel(client_t* sender, uint64 channel_id, uint64 server_chat_message_id, char* chat_message_value)
+void server_msg__chat__send_message_to_clients_in_same_channel(client_t *sender, uint64 channel_id, uint64 server_chat_message_id, char *chat_message_value)
 {
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
@@ -99,9 +99,10 @@ void server_msg__chat__send_message_to_clients_in_same_channel(client_t* sender,
 }
 
 /**
- * @brief sends a delete/edit action for a chat message to a SINGLE client (private/direct case). the action
- *        carries the target server chat id and the requester's public key + admin flag, so the receiver can
- *        decide for itself whether to honour it (author or admin). for an edit it also carries the new value.
+ * @brief sends a delete/edit action for a chat message to a SINGLE client (private/direct case).
+ *        the action carries the target server chat id and the requester's public key + admin flag,
+ *        so the receiver can decide for itself whether to honour it (author or admin). for an edit
+ *        it also carries the new value.
  *
  * @param client_t* receiver -> the client to send the action to
  * @param char* action_type -> "chat_message_delete" or "chat_message_edit"
@@ -114,10 +115,10 @@ void server_msg__chat__send_message_to_clients_in_same_channel(client_t* sender,
  *
  * @return void
  */
-void server_msg__chat__send_message_action_to_single_client(client_t* receiver, char* action_type, uint64 target_chat_message_id, char* requester_public_key, boole requester_is_admin, char* new_message_value)
+void server_msg__chat__send_message_action_to_single_client(client_t *receiver, char *action_type, uint64 target_chat_message_id, char *requester_public_key, boole requester_is_admin, char *new_message_value)
 {
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
 
     root = server_msg__delivery__new_message(action_type, &message);
 
@@ -134,8 +135,9 @@ void server_msg__chat__send_message_action_to_single_client(client_t* receiver, 
 }
 
 /**
- * @brief sends a delete/edit action for a chat message to every client in a channel (channel case). unlike a
- *        normal chat broadcast this does NOT skip the requester, so the message updates in their own view too.
+ * @brief sends a delete/edit action for a chat message to every client in a channel (channel case).
+ *        unlike a normal chat broadcast this does NOT skip the requester, so the message updates in
+ *        their own view too.
  *
  * @param uint64 receiving_channel_id -> the channel whose clients receive the action
  * @param char* action_type -> "chat_message_delete" or "chat_message_edit"
@@ -148,10 +150,10 @@ void server_msg__chat__send_message_action_to_single_client(client_t* receiver, 
  *
  * @return void
  */
-void server_msg__chat__send_message_action_to_clients_in_same_channel(uint64 receiving_channel_id, char* action_type, uint64 target_chat_message_id, char* requester_public_key, boole requester_is_admin, char* new_message_value)
+void server_msg__chat__send_message_action_to_clients_in_same_channel(uint64 receiving_channel_id, char *action_type, uint64 target_chat_message_id, char *requester_public_key, boole requester_is_admin, char *new_message_value)
 {
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
 
     root = server_msg__delivery__new_message(action_type, &message);
 
@@ -177,10 +179,10 @@ void server_msg__chat__send_message_action_to_clients_in_same_channel(uint64 rec
  *
  * @return void
  */
-void server_msg__chat__send_poke_to_single_client(client_t* receiver, client_t* sender, char* poke_message)
+void server_msg__chat__send_poke_to_single_client(client_t *receiver, client_t *sender, char *poke_message)
 {
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
@@ -194,9 +196,9 @@ void server_msg__chat__send_poke_to_single_client(client_t* receiver, client_t* 
 }
 
 /**
- * @brief tells the people a client is writing to that the client is typing. carries no message content at
- *        all - only who is typing and which conversation it belongs to, so the receiver can show it
- *        against the right chat and drop it again when it stops being refreshed.
+ * @brief tells the people a client is writing to that the client is typing. carries no message
+ *        content at all - only who is typing and which conversation it belongs to, so the receiver
+ *        can show it against the right chat and drop it again when it stops being refreshed.
  *
  * @param client_t* subject -> the client that is typing
  * @param char* receiver_type -> "channel" or "user", the kind of conversation being written to
@@ -206,13 +208,13 @@ void server_msg__chat__send_poke_to_single_client(client_t* receiver, client_t* 
  *
  * @return void
  */
-void server_msg__chat__send_typing_indicator(client_t* subject, char* receiver_type, uint64 receiver_id)
+void server_msg__chat__send_typing_indicator(client_t *subject, char *receiver_type, uint64 receiver_id)
 {
     uint64 i = 0;
     boole is_direct_message = FALSE;
-    client_t* client_in_loop = 0;
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
+    client_t *client_in_loop = 0;
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
@@ -273,11 +275,11 @@ void server_msg__chat__send_typing_indicator(client_t* subject, char* receiver_t
  *
  * @note takes g_offline_messages_mutex (leaf lock). caller holds the clients lock.
  */
-void server_msg__chat__send_queued_offline_messages_to_single_client(client_t* receiver)
+void server_msg__chat__send_queued_offline_messages_to_single_client(client_t *receiver)
 {
-    cJSON* root = NULL_POINTER;
-    cJSON* message = NULL_POINTER;
-    char recipient_identity_hash[BASE64_ENCODE_OUT_SIZE(32)];
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
+    char recipient_identity_hash[BASE64_ENCODE_OUT_SIZE(32)] = { 0 };
     uint64 i = 0;
     uint64 delivered_count = 0;
     uint64 lowest_sequence_number = 0;
@@ -366,11 +368,16 @@ void server_msg__chat__send_queued_offline_messages_to_single_client(client_t* r
  *
  * @return void
  */
-void server_msg__chat__send_url_resolved_to_single_client(client_t* client, const char* request_id, const char* url, const cJSON* result)
+void server_msg__chat__send_url_resolved_to_single_client(client_t *client, const char *request_id, const char *url, const cJSON *result)
 {
-    cJSON* root = cJSON_CreateObject();
-    cJSON* message = result != NULL_POINTER ? cJSON_Duplicate(result, TRUE) : cJSON_CreateObject();
-    cJSON_AddItemToObject(root, "message", message);
+    cJSON *root = cJSON_CreateObject();
+    cJSON *message = result != NULL_POINTER ? cJSON_Duplicate(result, TRUE) : cJSON_CreateObject();
+
+    if (!util__json_add_owned_object(root, "message", message))
+    {
+        cJSON_Delete(root);
+        return;
+    }
     cJSON_AddStringToObject(message, "type", "url_resolved");
     cJSON_AddStringToObject(message, "request_id", request_id);
     if (result == NULL_POINTER)

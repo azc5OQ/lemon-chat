@@ -259,95 +259,41 @@ if /i not "%pathsok%"=="y" (
 )
 
 :: =============================================================================
-:: CLEAN | Optional removal of previous build artifacts
+:: OPTIONS | Select cleanup and the optional TLS front-end
 :: =============================================================================
 
-:: Only this section removes previous build files. Answering n keeps the files
-:: so the build tools can compile just what is missing or has changed.
-:: Answering y also empties buildresult, including runtime files.
-set "choice=n"
-set /p choice= "clean files from previous build if any y/n [n]: "
-echo %choice%
-IF /i "%choice%"=="y" (
-    :: Remove generated CMake state, compiled libraries, and staged output.
-    rd "%THIRD_PARTY_DIRECTORY%\mbedtls-3.6.6\CMakeFiles"  /S /Q
-    rd "%THIRD_PARTY_DIRECTORY%\mbedtls-3.6.6\library\CMakeFiles"  /S /Q
-    del "%THIRD_PARTY_DIRECTORY%\mbedtls-3.6.6\CMakeCache.txt"
-    del "%ROOT_DIRECTORY%\*.o" /S /Q
-    del "%ROOT_DIRECTORY%\*.a" /S /Q
-    del "%ROOT_DIRECTORY%\*.ninja_deps" /S /Q
-    del "%ROOT_DIRECTORY%\*.ninja_log" /S /Q
-    rd "%THIRD_PARTY_DIRECTORY%\libdatachannel-0.24.2\CMakeFiles"  /S /Q
-    del "%THIRD_PARTY_DIRECTORY%\libdatachannel-0.24.2\CMakeCache.txt"
-    del "%THIRD_PARTY_DIRECTORY%\libdatachannel-0.24.2\libdatachannel-static.a"
-    del "%THIRD_PARTY_DIRECTORY%\libdatachannel-0.24.2\libdatachannel.dll"
-    del "%THIRD_PARTY_DIRECTORY%\libdatachannel-0.24.2\libdatachannel.dll.a"
-    rd "%THIRD_PARTY_DIRECTORY%\libdatachannel-0.24.2\deps\mbedtls\include" /Q /S
-    del "%THIRD_PARTY_DIRECTORY%\libdatachannel-0.24.2\deps\mbedtls\lib\libmbedcrypto.a"
-    del "%THIRD_PARTY_DIRECTORY%\libdatachannel-0.24.2\deps\mbedtls\lib\libmbedtls.a"
-    del "%THIRD_PARTY_DIRECTORY%\libdatachannel-0.24.2\deps\mbedtls\lib\libmbedx509.a"
-    rd "%THIRD_PARTY_DIRECTORY%\libtom\libtommath\cmake-build-release"   /S /Q
-    rd "%THIRD_PARTY_DIRECTORY%\libtom\libtommath\CMakeFiles"   /S /Q
-    del "%THIRD_PARTY_DIRECTORY%\libtom\libtommath\CMakeCache.txt"
-    del "%THIRD_PARTY_DIRECTORY%\libtom\libtommath\libtommath.a"
-    del "%THIRD_PARTY_DIRECTORY%\libtom\libtomcrypt\libtomcrypt.a"
-    rd "%THIRD_PARTY_DIRECTORY%\theldus-websocket\CMakeFiles"  /S /Q
-    del "%THIRD_PARTY_DIRECTORY%\theldus-websocket\CMakeCache.txt"
-    rd "%THIRD_PARTY_DIRECTORY%\libviolet-0.5.4\CMakeFiles"  /S /Q
-    del "%THIRD_PARTY_DIRECTORY%\libviolet-0.5.4\CMakeCache.txt"
-    del "%THIRD_PARTY_DIRECTORY%\libviolet-0.5.4\libviolet.a"
-    del "%THIRD_PARTY_DIRECTORY%\libmaxminddb-1.12.2\CMakeCache.txt"
-    rd "%THIRD_PARTY_DIRECTORY%\libmaxminddb-1.12.2\CMakeFiles" /S /Q
-    del "%THIRD_PARTY_DIRECTORY%\libmaxminddb-1.12.2\libmaxminddb.a"
-    del "%THIRD_PARTY_DIRECTORY%\libopus-1.5.2\CMakeCache.txt"
-    rd "%THIRD_PARTY_DIRECTORY%\libopus-1.5.2\CMakeFiles"  /S /Q
-    del "%THIRD_PARTY_DIRECTORY%\libopus-1.5.2\libopus.a"
-    del "%ROOT_DIRECTORY%\main\linkage-files\windows\*" /S /Q
-    del "%ROOT_DIRECTORY%\main\linkage-files\linux\*" /S /Q
-    if exist "%SERVER_BUILD_DIRECTORY%" rd "%SERVER_BUILD_DIRECTORY%" /S /Q
-    rd "%ROOT_DIRECTORY%\main\CMakeFiles"  /S /Q
-    del "%ROOT_DIRECTORY%\main\CMakeCache.txt"
-    del "%ROOT_DIRECTORY%\main\cmake_install.cmake"
-    del "%ROOT_DIRECTORY%\main\build.ninja"
-    del "%ROOT_DIRECTORY%\main\.ninja_deps"
-    del "%ROOT_DIRECTORY%\main\.ninja_log"
-    del "%ROOT_DIRECTORY%\main\liblemon-chat-server.dll.a"
-    del "%ROOT_DIRECTORY%\main\chat-server.exe"
-    del "%ROOT_DIRECTORY%\main\chat-server"
-    del "%ROOT_DIRECTORY%\main\cmake-build-debug"  /S /Q
-    del "%ROOT_DIRECTORY%\main\.cmake"  /S /Q
-    del "%ROOT_DIRECTORY%\main\.idea"  /S /Q
-    del "%ROOT_DIRECTORY%\main\libchat-server.dll.a"
-    del "%ROOT_DIRECTORY%\..\buildresult\*" /S /Q
-    rd "%ROOT_DIRECTORY%\main\.cmake" /S /Q
-    rd "%ROOT_DIRECTORY%\main\.idea" /S /Q
-    rd "%ROOT_DIRECTORY%\main\cmake-build-debug" /S /Q
-    :: stunnel + its OpenSSL dependency (binaries + build trees)
-    rd "%THIRD_PARTY_DIRECTORY%\stunnel\win-build" /S /Q
-    rd "%THIRD_PARTY_DIRECTORY%\stunnel\openssl" /S /Q
-    rd "%THIRD_PARTY_DIRECTORY%\stunnel\stunnel-5.75\obj" /S /Q
-    rd "%THIRD_PARTY_DIRECTORY%\stunnel\stunnel-5.75\bin" /S /Q
-    del "%ROOT_DIRECTORY%\..\buildresult\stunnel.exe"
-    del "%ROOT_DIRECTORY%\..\buildresult\tstunnel.exe"
-)
+:: A clean build recompiles the Windows server and its libraries. Settings,
+:: certificates, uploads, IDE preferences and other platforms' output are kept.
+set "CLEAN_BUILD=n"
+set /p CLEAN_BUILD= "Clean previous Windows build files? (y/n) [n]: "
 
-:: =============================================================================
-:: OPTIONS | Include stunnel before confirming the build
-:: =============================================================================
-
-:: The chat server can build without stunnel. Building stunnel also builds its
-:: OpenSSL dependency when needed, which can take a long time on the first run.
-:: Press Enter or answer n to skip both. Existing stunnel binaries stay in place
-:: if you chose to keep previous build files above.
+:: Keep existing stunnel files when its optional build is skipped.
 set "BUILD_STUNNEL=n"
 set /p BUILD_STUNNEL= "Build stunnel and its OpenSSL dependency too? (y/n) [n]: "
 
 set /p buildok= "Proceed with the build? (y/n): "
 if /i not "%buildok%"=="y" (
-    echo Build cancelled - no build performed.
+    echo Build cancelled - no build files were removed.
     pause
     exit /b 0
 )
+
+:: =============================================================================
+:: CLEAN | Remove recognised output once, after the build is confirmed
+:: =============================================================================
+
+if /i not "%CLEAN_BUILD%"=="y" goto cleanup_done
+set "CLEAN_STUNNEL_ARGUMENT="
+if /i "%BUILD_STUNNEL%"=="y" set "CLEAN_STUNNEL_ARGUMENT=--include-stunnel"
+echo Cleaning previous Windows build files...
+"%PYTHON_EXECUTABLE%" "%ROOT_DIRECTORY%..\tools\clean.py" --scope server-windows --quiet %CLEAN_STUNNEL_ARGUMENT%
+if errorlevel 1 (
+    echo ERROR: Cleanup failed. Stop the server and check the file or permission error above.
+    echo The build has not started.
+    pause
+    exit /b 1
+)
+:cleanup_done
 
 :: =============================================================================
 :: SETUP | Compiler flags shared by CMake projects
@@ -486,13 +432,14 @@ copy "%THIRD_PARTY_DIRECTORY%\libmaxminddb-1.12.2\libmaxminddb.a" "%ROOT_DIRECTO
 :: DEPENDENCY 8/8 | Opus: audio codec
 :: =============================================================================
 
-cd /d "%THIRD_PARTY_DIRECTORY%\libopus-1.5.2"
+cd /d "%THIRD_PARTY_DIRECTORY%\libopus-1.6.1"
 if errorlevel 1 goto build_failed
-call :configure_cmake
+:: Restore upstream CPU detection defaults, including runtime SSE4.1/AVX2 selection.
+call :configure_cmake -DOPUS_DISABLE_INTRINSICS=OFF -UOPUS_X86_*
 if errorlevel 1 goto build_failed
 cmake --build . -j%BUILD_JOBS% --target opus
 if errorlevel 1 goto build_failed
-copy "%THIRD_PARTY_DIRECTORY%\libopus-1.5.2\libopus.a" "%ROOT_DIRECTORY%\main\linkage-files\windows\libopus.a"
+copy "%THIRD_PARTY_DIRECTORY%\libopus-1.6.1\libopus.a" "%ROOT_DIRECTORY%\main\linkage-files\windows\libopus.a"
 
 :: =============================================================================
 :: CLIENT | Generate the browser page
@@ -502,7 +449,7 @@ copy "%THIRD_PARTY_DIRECTORY%\libopus-1.5.2\libopus.a" "%ROOT_DIRECTORY%\main\li
 where node >nul 2>nul
 if errorlevel 1 goto client_build_skipped
 echo Building the browser client client.html ...
-node "%ROOT_DIRECTORY%\..\client-source-code\client-development\browser\build.cjs"
+node "%ROOT_DIRECTORY%\..\client-source-code\client-development\browser\build.cjs" --no-download-tools
 if errorlevel 1 goto client_build_failed
 goto client_build_done
 

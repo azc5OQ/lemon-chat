@@ -32,6 +32,23 @@
 include_guard(GLOBAL)
 
 get_filename_component(MEEK_UI_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
+# Lemon's parent build already supplies this target. Standalone CMake hosts
+# compile the same bounded font parser from the adjacent vendored source.
+if(NOT TARGET freetype)
+    set(_meek_previous_shared "${BUILD_SHARED_LIBS}")
+    set(BUILD_SHARED_LIBS OFF)
+    set(FT_DISABLE_ZLIB ON CACHE BOOL "" FORCE)
+    set(FT_DISABLE_BZIP2 ON CACHE BOOL "" FORCE)
+    set(FT_DISABLE_PNG ON CACHE BOOL "" FORCE)
+    set(FT_DISABLE_HARFBUZZ ON CACHE BOOL "" FORCE)
+    set(FT_DISABLE_BROTLI ON CACHE BOOL "" FORCE)
+    set(FT_DISABLE_HVF ON CACHE BOOL "" FORCE)
+    add_subdirectory("${MEEK_UI_ROOT}/../freetype-2.15.0" "${CMAKE_BINARY_DIR}/meek-freetype" EXCLUDE_FROM_ALL)
+    set_target_properties(freetype PROPERTIES POSITION_INDEPENDENT_CODE ON)
+    set(BUILD_SHARED_LIBS "${_meek_previous_shared}")
+    link_libraries(freetype)
+endif()
+
 # Keep public header names usable by existing standalone and embedded hosts.
 set(MEEK_UI_INCLUDE_DIRS
     "${MEEK_UI_ROOT}/src"

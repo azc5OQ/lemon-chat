@@ -1,11 +1,9 @@
-/* Classic desktop theme. Copy this file to create another theme; keep main.ui unchanged. */
+/* Classic: flat light surfaces with a traditional left channel list. */
 window
 {
-    font-family: Desktop;
+    font-family: Inter;
     pad: 0;
-    font-size: 14;
-    background-color: #eef1f4;
-    font-color: #263441;
+    font-size: 12;
 }
 .column
 {
@@ -24,93 +22,73 @@ window
 #toolbar
 {
     align-items: center;
-    size: 0x44;
-    pad: 6 10;
-    gap: 3;
-    background-color: #eef1f4;
-    border-width: 0;
+    size: 0x34;
+    pad: 2 8;
+    gap: 4;
 }
 #workspace
 {
     size: 0x0;
+    pad: 6;
 }
 #sidebar
 {
-    size: 286x0;
-    pad: 10 8 8 10;
-    gap: 6;
-    background-color: #eef1f4;
+    size: 220x0;
+    pad: 4;
+    gap: 4;
 }
 #conversation
 {
     size: 0x0;
-    pad: 0 10 0 4;
+    pad: 0 0 0 4;
+    gap: 4;
 }
 .section
 {
-    font-family: Desktop-Bold;
+    font-family: "Manrope SemiBold";
 }
 .muted
 {
-    font-color: #778493;
     font-size: 12;
 }
 #channel-path
 {
-    font-family: Desktop-Bold;
-    size: 0x30;
-    pad: 6 5;
-    background-color: #eef1f4;
-    border-width: 0;
-    font-color: #263441;
+    font-family: "Manrope SemiBold";
+    size: 0x24;
+    pad: 2 6;
     font-size: 14;
 }
 #member-list
 {
     height: 100%;
     overflow-y: auto;
-    pad: 5 2;
-    background-color: #ffffff;
-    border: 1px solid #c3cbd4;
-    radius: 3;
+    pad: 3 2;
 }
 .member
 {
     display: flex;
     flex-direction: row;
     align-items: center;
-    size: 0x30;
-    pad: 3 4;
-    gap: 5;
+    size: 0x22;
+    pad: 0 3;
+    gap: 3;
 }
 .voice-icon, .voice-icon-active, .voice-icon-disabled, .voice-icon-muted
 {
-    size: 20x20;
-    font-color: #7a8490;
-}
-.voice-icon-active
-{
-    font-color: #248341;
-}
-.voice-icon-disabled, .voice-icon-muted
-{
-    font-color: #a64d4d;
+    size: 16x16;
 }
 .member-name
 {
-    size: 0x24;
-    font-color: #485d70;
+    size: 0x20;
 }
 .local .member-name
 {
-    font-family: Desktop-Bold;
-    font-color: #162733;
+    font-family: "Manrope SemiBold";
 }
 .member-state
 {
-    size: 60x24;
+    size: 48x20;
     font-size: 11;
-    font-color: #28733b;
 }
 .spacer
 {
@@ -119,167 +97,130 @@ window
 #chat-tabs
 {
     align-items: center;
-    size: 0x42;
-    pad: 5 0;
-    gap: 3;
-    background-color: #eef1f4;
+    size: 0x30;
+    pad: 0 4;
+    gap: 2;
 }
 #channel-title
 {
-    size: 190x28;
-    pad: 5 10;
-    background-color: #ffffff;
-    font-color: #202020;
-    border: 1px solid #999999;
+    size: 144x24;
+    pad: 3 6;
+    font-family: "Manrope SemiBold";
 }
 #messages
 {
     size: 0x0;
     overflow-y: auto;
-    pad: 14 18;
-    gap: 12;
-    background-color: #ffffff;
-    border-width: 0;
-    radius: 0;
+    pad: 10 12;
+    gap: 6;
 }
 .notice-title
 {
-    font-color: #263441;
-    font-size: 20;
-    font-family: Desktop;
+    font-size: 16;
+    font-family: Manrope;
 }
 #composer
 {
-    size: 0x96;
-    pad: 8 0;
-    gap: 8;
-    background-color: #eef1f4;
+    size: 0x80;
+    pad: 4;
+    gap: 4;
 }
 #composer-actions
 {
     width: 100%;
-    height: 34;
-    gap: 8;
+    height: 24;
+    gap: 4;
     align-items: center;
 }
 #composer-spacer
 {
     width: 100%;
-    height: 20;
+    height: 18;
     font-size: 12;
-    font-color: #778493;
     text-align: right;
 }
 #message-input, #message-edit-text
 {
-    size: 0x38;
-    pad: 8 10;
-    background-color: #ffffff;
-    border: 1px solid #c3cbd4;
-    radius: 3;
+    size: 0x32;
+    pad: 4 6;
 }
 #send-button
 {
-    size: 80x30;
-    pad: 5 10;
-    background-color: #3f6f96;
-    font-color: #ffffff;
-    border-width: 0;
-    radius: 3;
+    size: 64x24;
+    pad: 2 6;
 }
 #status-bar
 {
     font-size: 12;
-    size: 0x25;
-    pad: 3 10;
-    gap: 12;
-    background-color: #eef1f4;
-}
-#transport-warning
-{
-    size: 0x48;
-    pad: 6 10;
-    font-size: 12;
-    font-color: #684600;
-    background-color: #fff1c7;
+    size: 0x22;
+    pad: 0 8;
+    gap: 6;
 }
 #connection-status
 {
-    size: 0x20;
-    pad: 2 0;
-    font-color: #778493;
+    size: 0x18;
+    pad: 0;
     font-size: 12;
-    border-width: 0;
 }
 #received-status
 {
-    size: 220x20;
-    pad: 2 0;
-    font-color: #778493;
+    size: 180x18;
+    pad: 0;
     font-size: 12;
     text-align: right;
-    border-width: 0;
 }
 input
 {
-    size: 0x34;
-    pad: 7 9;
-    background-color: #ffffff;
-    border: 1px solid #c3cbd4;
-    radius: 3;
+    size: 0x24;
+    pad: 2 6;
 }
 button
 {
-    size: 0x32;
-    pad: 6 10;
-    background-color: #f7f9fb;
-    font-color: #263441;
-    border: 1px solid #c3cbd4;
-    radius: 3;
-}
-button:hover
-{
-    background-color: #e5eaf0;
+    size: 0x24;
+    pad: 2 6;
+    transition: all 140 ease-out;
+    font-family: "Inter Medium";
 }
 .menu-button
 {
-    border-width: 0;
-    size: 0x30;
-    pad: 5 10;
-    radius: 3;
-    background-color: #eef1f4;
-    font-color: #263441;
-}
-.menu-button:hover
-{
-    background-color: #e5eaf0;
+    size: 0x24;
+    pad: 2 8;
+    font-family: "Inter Medium";
 }
 .panel
 {
     position: absolute;
-    top: 48;
-    size: 430x580;
+    top: 36;
+    size: 380x460;
     z-index: 10;
-    border: 1px solid #c3cbd4;
-    radius: 4;
-    background-color: #f7f9fb;
 }
 #connection-panel
 {
-    left: 20;
-    width: 680;
-    height: 720;
+    left: 12;
+    width: 420;
+    height: 260;
+}
+#connection-panel .panel-body
+{
+    pad: 8;
+    gap: 4;
+}
+#identity-panel
+{
+    right: 12;
+    width: 540;
+    height: 0;
 }
 #bookmarks-panel
 {
-    left: 140;
-    height: 620;
+    left: 120;
+    height: 500;
 }
 #server-info-panel
 {
-    right: 20;
-    width: 560;
-    height: 650;
+    right: 12;
+    width: 480;
+    height: 500;
 }
 #server-info-features
 {
@@ -290,21 +231,15 @@ button:hover
 {
     width: 100%;
     select-style: list;
-    height: 34;
-    pad: 7 9;
-    border: 1px solid #c3cbd4;
-    radius: 3;
-    background-color: #ffffff;
-}
-.audio-device-select:hover, .server-key-type:hover
-{
-    border: 1px solid #36688f;
+    height: 24;
+    pad: 2 6;
+    select-rows: 8;
 }
 .server-info-row
 {
     width: 100%;
-    height: 32;
-    gap: 12;
+    height: 24;
+    gap: 6;
     align-items: center;
 }
 .server-info-label
@@ -319,9 +254,9 @@ button:hover
 #server-info-footer
 {
     width: 100%;
-    height: 112;
-    pad: 12 18;
-    gap: 8;
+    height: 76;
+    pad: 6 9;
+    gap: 4;
 }
 #server-info-footer button, #server-info-result
 {
@@ -331,29 +266,23 @@ button:hover
 {
     display: block;
     width: 100%;
-    height: 220;
+    height: 180;
     overflow-y: auto;
-    background-color: #ffffff;
-    border: 1px solid #a6bacb;
 }
 .bookmark-row, .bookmark-row:hover
 {
     width: 100%;
-    height: 32;
-    border-width: 0;
-    radius: 0;
-    background-color: #ffffff;
+    height: 24;
 }
 .bookmark-row.selected, .bookmark-row.selected:hover
 {
-    background-color: #dcebf8;
-    font-family: Desktop-Bold;
+    font-family: "Manrope SemiBold";
 }
 .bookmark-buttons
 {
     width: 100%;
-    height: 36;
-    gap: 8;
+    height: 24;
+    gap: 4;
 }
 .bookmark-buttons button
 {
@@ -365,24 +294,24 @@ button:hover
 }
 #join-panel
 {
-    left: 280;
-    height: 220;
+    left: 228;
+    height: 180;
 }
 #settings-panel
 {
-    right: 20;
+    right: 12;
 }
 #audio-panel
 {
-    right: 20;
-    height: 700;
+    right: 12;
+    height: 560;
 }
 #audio-footer
 {
     width: 100%;
-    height: 96;
-    pad: 12 18;
-    gap: 8;
+    height: 64;
+    pad: 6 9;
+    gap: 4;
 }
 #audio-footer button, #audio-result
 {
@@ -392,34 +321,32 @@ button:hover
 {
     width: 100%;
     height: 10;
-    background-color: #d9e1e8;
 }
 #input-meter-fill
 {
     width: 100%;
     height: 10;
-    background-color: #477b54;
 }
 #member-panel
 {
-    left: 280;
-    height: 460;
+    left: 228;
+    height: 280;
 }
 #action-panel, #confirm-panel, #move-panel
 {
-    right: 20;
-    height: 310;
+    right: 12;
+    height: 250;
     z-index: 12;
 }
 #move-panel
 {
-    height: 500;
+    height: 400;
 }
 #notice-panel
 {
-    right: 20;
-    top: 390;
-    height: 260;
+    right: 12;
+    top: 290;
+    height: 210;
     z-index: 14;
 }
 #action-value
@@ -432,47 +359,45 @@ button:hover
 }
 #move-destinations
 {
-    gap: 6;
+    gap: 3;
 }
 #channels-panel
 {
-    right: 20;
-    width: 760;
-    height: 650;
+    right: 12;
+    width: 640;
+    height: 520;
 }
 #channel-editor-layout
 {
     width: 100%;
     height: 100%;
-    pad: 14;
-    gap: 16;
+    pad: 7;
+    gap: 8;
 }
 #channel-editor-sidebar
 {
-    width: 200;
+    width: 170;
     height: 100%;
-    gap: 8;
+    gap: 4;
 }
 #channel-editor-list
 {
     width: 100%;
     height: 100%;
     overflow-y: auto;
-    border: 1px solid #a6bacb;
-    background-color: #ffffff;
 }
 #channel-editor-main
 {
     width: 100%;
     height: 100%;
-    gap: 12;
+    gap: 6;
 }
 #channel-editor-fields
 {
     width: 100%;
     height: 100%;
-    pad: 0 10 8 0;
-    gap: 10;
+    pad: 0 5 4 0;
+    gap: 5;
     overflow-y: auto;
 }
 #channel-editor-fields input, #channel-editor-fields textarea
@@ -481,10 +406,8 @@ button:hover
 }
 #channel-edit-description
 {
-    height: 64;
-    pad: 8;
-    background-color: #ffffff;
-    border: 1px solid #9eabb8;
+    height: 48;
+    pad: 4;
 }
 .channel-editor-item, #channel-add, #channel-remove, #channel-save
 {
@@ -492,25 +415,18 @@ button:hover
 }
 .channel-editor-item
 {
-    height: 34;
-    border-width: 0;
-    background-color: #ffffff;
-}
-.channel-editor-item:hover
-{
-    background-color: #ffffff;
+    height: 24;
 }
 .channel-editor-item.selected, .channel-editor-item.selected:hover
 {
-    background-color: #dcebf8;
-    font-family: Desktop-Bold;
+    font-family: "Manrope SemiBold";
 }
 .channel-number-row
 {
     width: 100%;
-    height: 34;
+    height: 24;
     align-items: center;
-    gap: 12;
+    gap: 6;
 }
 .channel-number-row label
 {
@@ -526,9 +442,9 @@ button:hover
 }
 #channel-delete-panel
 {
-    right: 40;
-    top: 90;
-    height: 310;
+    right: 24;
+    top: 60;
+    height: 250;
     z-index: 15;
 }
 /* Meek's block div owns scrolling; its flex layout does not calculate scroll extents. */
@@ -536,116 +452,91 @@ button:hover
 {
     display: block;
     scrollbar-size: 8;
-    scrollbar-track: #edf0f3;
-    scrollbar-thumb: #9eabb8;
 }
 #conversation-tabs
 {
     width: 100%;
-    height: 34;
-    gap: 4;
+    height: 24;
+    gap: 2;
     overflow-x: hidden;
 }
 .tab-close, .tab-scroll
 {
-    size: 22x28;
-    pad: 3;
-    border-width: 0;
-    background-color: transparent;
+    size: 20x24;
+    pad: 1;
 }
 .conversation-tab
 {
     gap: 0;
     align-items: center;
-    size: 190x32;
-    pad: 0 2;
-    background-color: #e5eaf0;
-    border: 1px solid #e5eaf0;
-    radius: 3;
+    size: 144x24;
+    pad: 0 1;
 }
 .conversation-tab.selected, .conversation-tab.selected:hover
 {
-    font-family: Desktop-Bold;
-    background-color: #ffffff;
-    border: 1px solid #c3cbd4;
-    font-color: #36688f;
-}
-button:disabled
-{
-    font-color: #89929a;
-    background-color: #edf0f3;
+    font-family: "Manrope SemiBold";
 }
 .audio-buttons
 {
-    size: 0x32;
-    gap: 6;
+    size: 0x24;
+    gap: 4;
 }
 .audio-buttons button
 {
     width: 50%;
-    height: 32;
-    pad: 5 8;
+    height: 24;
+    pad: 2 6;
 }
 slider
 {
-    size: 0x24;
+    size: 0x20;
     width: 100%;
-    slider-track-height: 5;
-    background-color: #a6bacb;
-    slider-thumb-width: 16;
-    slider-fill: #4f83ab;
-    accent-color: #356d99;
+    slider-track-height: 4;
+    slider-thumb-width: 13;
 }
 .panel-title
 {
-    gap: 6;
+    gap: 4;
     align-items: center;
-    size: 0x36;
-    pad: 4 5 4 14;
-    background-color: #e9eff5;
-    font-color: #263b4d;
+    size: 0x28;
+    pad: 2 4 2 8;
 }
 .panel-heading
 {
-    font-family: Desktop-Bold;
+    font-family: "Manrope SemiBold";
     app-region: drag;
-    size: 0x24;
-    font-color: #263b4d;
-    font-size: 14;
+    size: 0x20;
+    font-size: 13;
 }
 .close-button
 {
-    size: 28x28;
-    pad: 2;
+    size: 22x22;
+    pad: 0;
     font-family: Desktop;
-    font-size: 20;
-    background-color: transparent;
-    font-color: #778493;
-    border-width: 0;
-    radius: 3;
-}
-.close-button:hover
-{
-    background-color: #b74c4c;
-    font-color: #ffffff;
-    border-width: 0;
+    font-size: 16;
 }
 .panel-body
 {
     size: 0x0;
     overflow-y: auto;
-    pad: 16;
-    gap: 8;
+    pad: 8;
+    gap: 4;
 }
 #connection-buttons
 {
-    size: 0x36;
-    gap: 8;
+    size: 0x24;
+    gap: 4;
 }
 checkbox
 {
-    size: 0x32;
-    font-size: 14;
+    size: 0x22;
+    font-size: 12;
+    checkbox-track-width: 18;
+    checkbox-track-height: 18;
+    checkbox-track-radius: 2;
+    checkbox-track-border-width: 1;
+    checkbox-track-border-style: solid;
+    checkbox-mark-width: 2;
 }
 .hidden
 {
@@ -677,114 +568,86 @@ checkbox
 .channel-row
 {
     width: 100%;
-    border-width: 0;
-    size: 0x30;
-    pad: 3 4;
-    background-color: #ffffff;
-    font-color: #263441;
-}
-.channel-row:hover, .channel-row:pressed, .member:hover, .member:pressed
-{
-    background-color: #edf4fb;
+    size: 0x22;
+    pad: 0 3;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 3;
+    font-family: "Inter Medium";
 }
 .channel-row.selected
 {
-    font-family: Desktop-Bold;
-    background-color: #e2edf6;
-    font-color: #263441;
+    font-family: "Manrope SemiBold";
 }
 .channel-row.selected:hover, .channel-row.selected:pressed
 {
-    font-family: Desktop-Bold;
-    background-color: #cbdff1;
-    font-color: #263441;
+    font-family: "Manrope SemiBold";
 }
 #chat-history
 {
     width: 100%;
-    gap: 14;
+    gap: 8;
 }
 .chat-message
 {
     width: 100%;
-    gap: 4;
+    gap: 2;
 }
 .chat-sender
 {
-    font-family: Desktop-Bold;
-    font-color: #36688f;
-    font-size: 14;
+    font-family: "Manrope SemiBold";
+    font-size: 12;
 }
 .chat-text
 {
     width: 100%;
-    font-color: #263441;
-    font-size: 15;
+    font-size: 13;
+    font-family: Inter;
 }
 #server-keys
 {
     width: 100%;
-    gap: 8;
+    gap: 4;
 }
 .server-key-row
 {
-    height: 34;
+    height: 24;
 }
 #server-path
 {
     width: 100%;
 }
-checkbox
-{
-    checkbox-track-width: 18;
-    checkbox-track-height: 18;
-    checkbox-track-radius: 2;
-    checkbox-track-background: #ffffff;
-    checkbox-track-border-width: 1;
-    checkbox-track-border-style: solid;
-    checkbox-track-border-color: #8d9dad;
-    checkbox-mark-color: #2c628e;
-    checkbox-mark-width: 2;
-    font-size: 14;
-}
-checkbox:hover
-{
-    checkbox-track-border-color: #3d7ac8;
-}
 
 #attachment-panel
 {
-    width: 640;
-    height: 590;
-    left: 285;
-    top: 60;
+    width: 560;
+    height: 480;
+    left: 228;
+    top: 44;
 }
 #attachment-picker
 {
     width: 100%;
-    height: 330;
+    height: 260;
     overflow-y: auto;
-    background-color: #ffffff;
-    border: 1px solid #9eabb8;
 }
 #identity-file-panel
 {
-    width: 620;
-    height: 570;
-    left: 295;
-    top: 70;
+    width: 540;
+    height: 460;
+    left: 238;
+    top: 48;
 }
 #identity-file-picker
 {
     width: 100%;
-    height: 310;
+    height: 240;
     overflow-y: auto;
-    background-color: #ffffff;
-    border: 1px solid #9eabb8;
 }
 .identity-actions, #identity-file-actions
 {
-    gap: 8;
+    gap: 4;
 }
 .identity-actions button, #identity-file-actions button
 {
@@ -792,10 +655,10 @@ checkbox:hover
 }
 #chat-settings-panel
 {
-    width: 540;
-    height: 660;
-    left: 285;
-    top: 48;
+    width: 480;
+    height: 440;
+    left: 228;
+    top: 36;
 }
 #chat-settings-panel .panel-body
 {
@@ -803,7 +666,7 @@ checkbox:hover
 }
 .attachment-actions
 {
-    gap: 8;
+    gap: 4;
 }
 .attachment-actions button
 {
@@ -811,12 +674,12 @@ checkbox:hover
 }
 #chat-scale
 {
-    height: 30;
+    height: 22;
     width: 100%;
 }
 #picture-button, #file-button
 {
-    width: 76;
+    width: 64;
 }
 
 .tree-label
@@ -829,82 +692,49 @@ checkbox:hover
 }
 .tree-name
 {
-    size: 0x24;
+    size: 0x20;
     width: 100%;
-    font-color: #303030;
-    font-size: 13;
+    font-size: 12;
+    font-family: Inter;
 }
 .local .tree-name
 {
-    font-color: #000000;
-    font-family: Desktop-Bold;
+    font-family: "Inter Medium";
 }
 .tree-playing
 {
-    height: 44;
+    height: 38;
 }
 .tree-song
 {
-    size: 0x18;
+    size: 0x16;
     font-size: 12;
-    font-color: #687580;
 }
 .tree-icon, .tree-flag, .tree-channel-symbol, .tree-icon-space
 {
-    size: 18x18;
-    font-color: #58738b;
+    size: 16x16;
 }
 .tree-unread, .tree-unread-space
 {
-    size: 18x18;
+    size: 16x16;
 }
 .tree-more
 {
-    size: 24x20;
+    size: 22x18;
     font-size: 11;
-}
-.channel-row
-{
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    gap: 4;
-    size: 0x30;
-    pad: 3 4;
-    background-color: #ffffff;
-    font-color: #263441;
-}
-.member
-{
-    size: 0x30;
-    pad: 3 4;
-    gap: 5;
 }
 
 .tab-label, .tab-label:hover
 {
     width: 100%;
-    height: 32;
-    pad: 6;
-    background-color: transparent;
-    border-width: 0;
-}
-.tab-close:hover
-{
-    background-color: #eed8d8;
+    height: 18;
+    pad: 1 4;
 }
 #sidebar-divider
 {
     height: 100%;
     pad: 0;
-    radius: 0;
-    border-width: 0;
     width: 4;
-    background-color: #eef1f4;
-}
-#sidebar-divider:hover, #sidebar-divider:pressed
-{
-    background-color: #c3cbd4;
 }
 .context-menu
 {
@@ -912,21 +742,16 @@ checkbox:hover
     position: absolute;
     left: 0;
     top: 0;
-    width: 250;
+    width: 220;
     height: 398;
     overflow-y: auto;
     z-index: 100;
-    background-color: #f5f5f5;
-    font-color: #202020;
-    accent-color: #d3e4f5;
-    border: 1px solid #c3cbd4;
-    radius: 3;
-    item-height: 30;
+    item-height: 22;
 }
 #member-volume-panel
 {
-    left: 300;
-    height: 270;
+    left: 240;
+    height: 220;
 }
 .context-menu.hidden
 {
@@ -936,39 +761,28 @@ checkbox:hover
 {
     z-index: 101;
 }
-
-button:pressed
-{
-    border: 1px solid #36688f;
-    background-color: #e2edf6;
-}
-input:focus
-{
-    border: 1px solid #36688f;
-}
-
 label, button, input, textarea, checkbox, select, filepicker
 {
-    font-family: Desktop;
-    font-size: 14;
+    font-family: Inter;
+    font-size: 12;
 }
 
 /* Keep save controls visible while the appearance form scrolls. */
 #chat-settings-footer
 {
-    height: 96;
-    pad: 8 12;
-    gap: 6;
+    height: 72;
+    pad: 4 6;
+    gap: 4;
 }
 #chat-settings-result
 {
-    height: 36;
+    height: 28;
     width: 100%;
 }
 #chat-settings-buttons
 {
-    height: 30;
-    gap: 8;
+    height: 24;
+    gap: 4;
 }
 #chat-settings-buttons .spacer
 {
@@ -977,30 +791,29 @@ label, button, input, textarea, checkbox, select, filepicker
 #chat-settings-save
 {
     width: 116;
-    height: 30;
+    height: 24;
 }
 #chat-settings-close
 {
     width: 76;
-    height: 30;
+    height: 24;
 }
 .theme-file-fields
 {
     display: flex;
-    height: 90;
-    gap: 8;
+    height: 68;
+    gap: 4;
 }
 .theme-file-fields.hidden
 {
     display: none;
 }
 
-/* Web client toolbar artwork: browser/src/styles/theme-hybrid.style. */
-/* Browser SVGs rasterized at 2x; transparent padding centers each 18 px icon. */
+/* Rounded browser icon geometry, with desktop-owned SVG and 4x PNG assets. */
 .web-toolbar-icon
 {
-    width: 32;
-    height: 30;
+    width: 24;
+    height: 24;
     pad: 0;
     background-size: fill;
 }
@@ -1008,33 +821,33 @@ label, button, input, textarea, checkbox, select, filepicker
 /* Browser source: #local-settings-button; geometry retained. */
 #local-settings-button
 {
-    width: 32;
-    height: 30;
-    background-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAAA8CAYAAADWibxkAAAACXBIWXMAAAsTAAALEwEAmpwYAAABy0lEQVRoge3XTWoUQRQH8BcwOUN07Wqg6/9/U8zWuYDGC8RbBATBr53gBdS9Mt5CQVcxfuQAOUNcORBBeToNRcO0vTChP/4/KLqp6aZ5VVPvVZmJiIiIiIiIiMjlcPcbJJdxtSkhCZJfSP4q2kn029gBETvXjeDrth79IJD8XAcM4BzAu7gWfZ9sLNz9JsmzLbP9P9tZfMv6huTRFQRftyPrG5/6P6BDDvgO4H1ci75jm0AJXG+rAu6eimfvknwVg0TyZUrpjo1oEE7K4CP718HnnHdJrrYM0ip+tzHIOV9391uLxWK/7AfwtG3NA3hiA7ED4BDA/a6tqqoHJC/qYFNKH0i+SCl9LAbgIp4r3juMb1nfuPu9qyqD8S3rG5/6ANhmCZB81rUBeE7yZyM5vi6TZiyBzXP1O/1cAtvMZrO9+Xyeo8V98/dIcv+Y8Yc2RDnn3U1w5T5gHX1laWsrgwDeLJfLazZEJN+2zOqq+XxsfKICxIlxUwlu21C5+0FjJr8C+Fb2jWanV5v8YYg6DruOwy05INb/aSMHDDfJddFywvtT3mzs8t/6/hjAjyLwuH80miNuFxFs7AKrqppPKnAREREREREREeup3z+BXvkOhF4NAAAAAElFTkSuQmCC");
+    width: 24;
+    height: 24;
+    background-image: url("assets/icons/settings.png");
 }
 
 /* Browser source: --menu-icon-volume; geometry retained. */
 #audio-settings-button
 {
-    width: 32;
-    height: 30;
-    background-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAAA8CAYAAADWibxkAAAACXBIWXMAAAsTAAALEwEAmpwYAAACy0lEQVRoge2Zz2vUQBTHnz8qVvAgehTBgx7EIjRpnYmte/HmSdw9+GOz9bJU/AEtrDOZWUjRgyL4q5sK1W0PhVqPddV6E0QqVr2oIAhC60FpK/4DFRvJktlG7a4rSM0m7wNDIC+X7zfzXt68ACAIgiAIgiAIgiAIgqwAWnawSe8aMLwrxA0tfX2bnim80jOOq5tOEeJEa1d/p2Y6s2XxGcfVzMJkred32fY6yuVtykRRs+0N0MjomUJWNwsLSnw9BtBz0qBcuuXFxL1UKrUGGg2SutKsmYURJbr9xE23IztY9w4gTD5bMkHmoZFoP3Zjq55xppT4xMlb7vCjt25SjNVlgEcb55spl9OeAYSJb22c74RQVvX0QEJP9x9QSzOdI7rpzCvxh9ioW3o+7T59N1fVAC2bbfK2vXcN3jcsq5NyueibcAfChm46xWBu/7q6L993H7/+XBZfywCv2PnbvQQAq4IxwuW4Xwu+E5ZvgTChmYXJ5YR7+d43/KQi/E8GEC6HKvnOxdmfYizf4on3a8E1CKMBB3tH3KGJN5X1YGrmN/G1DOjgfBPh8qNvwFcjl9sYjBMmXpTTgIsPEEYDkmJsWcH1GuBBmHVU7QLCxelgjDLZp2KhKobaPzTA+9ZTJmd9oRPBGGVyfyVFrHwSomiAB2Xirp8GXyBAu5Tbq+2OSBlAuLjoC130miF1P2Hb6wMGXIDoGiAvKQOCPQHp6WmuGMDkeYhzClAmT0EUDUjY9lrCxZzf9T2sVgQNJg5DFA0wmHW82lsOfgb35vI7IGqNkNZrbyFcfKraCHH50jfmPUS9FSZMngnG9rH8HnUgolxchbgdhiiXJXUYopa1G+J0HCaWlVg6JMlRaNiBSPffD0TKdYGJGV/8QqiK30qPxAiTAuI6FCVcjoNtr4ZGpjXOY3FFrH+MKGL9awxBEARBEARBEARBEPjf/ABBQzP4tn2BMAAAAABJRU5ErkJggg==");
+    width: 24;
+    height: 24;
+    background-image: url("assets/icons/audio.png");
 }
 
 /* Browser source: --menu-icon-server-info; geometry retained. */
 #server-info-button
 {
-    width: 32;
-    height: 30;
-    background-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAAA8CAYAAADWibxkAAAACXBIWXMAAAsTAAALEwEAmpwYAAACLElEQVRoge2Zz0tbQRDHF/+A9g+xvbgbQYV6aY1YKgjai2ZfUov3XhoUIYjVWvVid6NUkOhB2qAeCmktWBrIJmC1J3/k6qG95J9wyrymgfijFeE9N+584AvZ7MK8mWT3zc4wRhAEQRAEQRAEQRDEdYl4uptLvSk89SNIoY2WmIoym2iJqajw1KnwNIQjdcpluovZAvd/eQ3tw0vQl1wPVGijGoQNZgtcqhI+VP/YezDlSqBCG2gLbTKbA7BR3IXErAc9ow/g2VzcHzsTgPzhLxiYeALRl+014Ri/x/mPuycwtvwNkktf/ylcg2sbLgDZQrHm+NB0b+1z1pT8eW9y68oHHq5tuADk9o6gO9lR9w/AcW7/2J+fXDUQSaT/6zyuwbUNFwBTrsB4ZqouAOOZaXfOAFPV6s42zHxYhLWdL7f7LSCkzuND9bxYg5XPB4EKbfhbROo8swUh9ZvwssCqpHrNbKF1cOGO8JQJz3ldQJvMKlKpJjG0eE/E3j4MUhGpm9HWTbtLEGdJpZp4XN0PegvgNrNuC/CRd3eF1MUQ6wHGqkNQeHrG6degcD0R4pekwplqKowp8a1OhfmFl6FXZy5DU+4EILd/XOf83+vwJ1euw9nLCiKFohsFkfzBz3MlsacTve6UxEy5Apul734x9PFoJwzPJ/yxM2eACVC2BmArrMZI2/M/jRFsxjCnW2Nx9YjZBJfprjCao9gSs855giAIgiAIgiAIgmANxW85rinVETOfbgAAAABJRU5ErkJggg==");
+    width: 24;
+    height: 24;
+    background-image: url("assets/icons/server.png");
 }
 
 /* Browser source: --menu-icon-username; geometry retained. */
 #profile-button
 {
-    width: 32;
-    height: 30;
-    background-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAAA8CAYAAADWibxkAAAACXBIWXMAAAsTAAALEwEAmpwYAAADR0lEQVRoge2YX0gUQRzHpx7UeiofdfcslR4MSZ3RDCN90YeIwMDI7GbO3fOC6kCCCgvyKb29kFxnvFKhK0gswj9ZD/ZgEr1EHRkE9tQfqCijeuolMzZm5c71Oskzw711PjD8bpfbYb/f+c3vN3cACAQCgUAgEAgEAoFAIFhpKkk4A2LqhYTeQpiN88iv+X3gdKCHliBM3yLCjPgBMX2D3HoxcCoQ63kQs69RwXuO9hq1Z/rNGDOBsC9lR7q2AicCCRuKCj3b+8CYePHReDQ1bcZzPeOWbKC3gdMoPBzaDAn7yQV62+6YwuOHcmF4zgBMZ3aQS5uAkyh1013RFaZDkYQGdA1GYllQQvRy4CRK17oBhZYtoLaNrL0twIGYDsaKYM/4giLYcsXhRZCDGkO51ja429djtkEerW1wJ7m8BTgV5NaLIWGvFzkIvSolrAg4nUoSzkAepkDCbppHYcwG+HW+X09f7XdLGTSva5+myGM8grVGQM0+EFCkGU2VDR75NbA7+X49vZSwBjPtCY0gQqd5QYSYPkGY9UPM6peyBazio8P2JiDC3AizD4kK34IiSOh76KHVSxF/sSnHuBc6aEbbmpDv19P56sYJ/Y4wm0CEXoeYhiGhD81782eA+38TH2zKMR4PnzQ+vwwbT0dPzZugyrOaV6oHdgERdm2+xfH+T4+X13VsiP8e9PVshJidQISNJcqA+JXnorn46FhggiLNtDe6csFqAwn1W/r7ZLFCs5Yzz9/E29KAcrUjM5rWELNPZQ26tJx5Fkv7RcWr8mxAkQ6B1QZh2hLb05juX1PiOeZ/e3MFbQoAYx1IEk3N3pts2tumA5Q16JKlop9fzhyaKj1LSfEcSLoqYgZ4upN+sQ5VytQU+RcXN9pdl1riORB318xX/+4akCTBRqk2esKL3D2dGnt+JQ0IqFKnWfi8LuPdZMgUPj111SyCtl75lTJAU+XnXCRt3m5M3PAZA+3VRuexbalz7of/YIB1/yce0g9bi+dAQqssP26qQBIEVVfFH6IV6ZumSCOBRrk56JPzgN0pqGtNQ4T18cE/J/Nsa11BWkCR+wKqPGQK9mYVtbaC9f/vbQUCgUAgEAgEAoFAIBCAOX4DEW91lNxwM2cAAAAASUVORK5CYII=");
+    width: 24;
+    height: 24;
+    background-image: url("assets/icons/profile.png");
 }
 
 #toolbar-spacer
@@ -1042,34 +855,31 @@ label, button, input, textarea, checkbox, select, filepicker
     width: 100%;
     height: 1;
 }
-
 #audio-dock
 {
-    height: 64;
-    gap: 6;
-    pad: 2 0;
+    height: 52;
+    gap: 4;
+    pad: 4 3;
 }
-
 #view-caption
 {
-    height: 34;
-    pad: 8 12;
-    font-color: #778493;
-    background-color: #ffffff;
+    height: 22;
+    pad: 3 7;
     font-size: 12;
+    width: 100%;
 }
 
 .chat-empty
 {
     width: 100%;
-    pad: 42 20;
-    gap: 12;
+    pad: 20 10;
+    gap: 6;
 }
 
 .connection-address-row, .connection-key-heading, .server-key-row
 {
     width: 100%;
-    gap: 8;
+    gap: 4;
 }
 .connection-host, .server-key-value
 {
@@ -1086,82 +896,509 @@ label, button, input, textarea, checkbox, select, filepicker
 .server-key-number
 {
     width: 18;
-    pad: 8 0;
+    pad: 4 0;
 }
 .server-key-type
 {
     width: 110;
-    height: 34;
+    height: 24;
 }
 .server-key-remove
 {
-    width: 78;
-    height: 34;
+    width: 64;
+    height: 24;
 }
 #server-key-add
 {
     width: 100;
 }
 
-#connection-footer
+#connection-footer, #identity-footer
 {
     width: 100%;
-    height: 90;
-    pad: 10 16;
-    gap: 8;
+    height: 64;
+    pad: 5 8;
+    gap: 4;
 }
 
 #channels-button
 {
-    width: 32;
-    height: 30;
-    background-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAAA8CAYAAADWibxkAAAACXBIWXMAAAsTAAALEwEAmpwYAAADCUlEQVRoge2ZS0wTURSGr3Eha93p1iULcUrSGZRuYMrChKg0IunDCARIMBHDTBWjpYmJL6DqTKkt7UYEwyMmBItBF02YAIkGNYVgAgsXPlnoVjd6zRk6UzW8aidhOpwvOcnNvZNmzj/n3P/OlBAEQRAEQRAEQRAEQZA8KfVI+2yesMPmuVeRV7h7i12u4d2kUCg5K+23eaUnNp9MjQvpW6lPPkPMzsFzd/cwPmnB2OSzYXoRGI90QbvZxhtjNDr+hiYm0nnFrcFZ6miJqb/JeOWvpm4HxiuPwo1WtCbo1MIXqiyuGBI3B2ezleDuLSZmhfFK03CTNR2PDEseoi+Z1gVgvGGemBUGBZCwAmxrtEB8Ik1PXR6ix/0DW4rWniRNzX+2Tgu4O0dytrz+54vWESC+0ytAQRdYQRtUdvI5IL7BHgDzsG5pAdybuACsr5X4iDJDOxJBeiJQTXnxiBqVQvknXmQjVX62hFi1AlLzH6gYu0Kr/GXUKXLrxS9eYOOOgKOIWMkFUun3tKGrXk+06mIZbblTR4P9bWo0h06rc9o6L7CKaURgDBDA33dVT66x20UnXw3Q6bdjtO7aMTVgPDk3QBu6XNlqENgYsYIAw8qMXvaQ/MvlJH397hkdUSJ6sjCGuRfLSVp/e1UEXuB+VrZzhwr+e8CleFAve3jykCjE0FRWABhr80/nHurtwItc2AwCtGk7e8P13L8InQxUq8lAn0Opjyr31SceepxtCxjDHKzBNc2hWm1tqcC/CUqqzUEysNlBv2/gAGrANcEH5zMVwP4ghOzabg2I3Rs5wPjk8f8RwCkczVmAzowAToH9bgoBNOz13Xtz/V+Aby//mGsLNPWYqAXyxSmwvfomOLfFTTDjGrzAyaTQcQr2w3DCg4TA5ze3wRpz2aAROEUuoSULPg9P+d+DEMxpyWciSqyCI+Ao4kV2Sj8K+8vUPteOwk2h2r/eEeBa0xyFjQISguMtlPZ6DpBZi1ou+T+Bvs5sjEvg82B1q2MubJmeRxAEQRAEQRAEIdvIbwdP04SkClgBAAAAAElFTkSuQmCC");
+    width: 24;
+    height: 24;
+    background-image: url("assets/icons/channels.png");
 }
 
 #idle-button
 {
-    width: 32;
-    height: 30;
-    background-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAAA8CAYAAADWibxkAAAACXBIWXMAAAsTAAALEwEAmpwYAAADRklEQVRoge2YS0hUURjHz8ZtDyKiKFq2kDD97kxEQfR0UUlRi2qac0aTicSSbJSCoIfYg6Ka+c61JshKzTIqe0kYaZllLYwkLBSzTaUmbSLojSfOdc54xxdugpnr+cG3v///+Z6XEI1Go9FoNBqNRqPRaDSa/4SL8mS3JziTjDfAE54OFCsMhn3A+Ne5m0smk/GC4TUXA+NfDMZFJH6NGwOA8g1SsE28AIZVZDwALLQQKP6wi7eCYgZxOins1CSDYZcU7Mo0RUagImIA9rm8OIU4HWBoqhc/dLFRbD9+N/L6vJc4HcNnzgLG/0jB6/dWioY3PYIV3eivf4ptxOkAw2L1+pdqW0Xj288i+8jtSAPkH4jTAcbbpdiMgnJLvIxdwdroCAR/OIk4eeExIq+/92xd1IBjlc8HxiANuYlTSfNiuhIavtcSNeB6Y4fNAH6QOBWgJlVCqxraowbIWL27TE2CT44tA8Nr5igDbjW9jzHgSMUz+zIUIE4EKN+kRFbWt8UYUPe6S6zcUaoWom9GVskc4jTSfKGlygCsbo4xQMaZO69sazF2zMsMTiVOAvzhicDwrxSYj7VDDJARMB/EmOC4TDAofynFLc89Lxpau4cYIDfD7MP9i1G0HCgGxtoY5Sktbw0SrxgU85Q4Xv1y2Cx40tozKBMsI7oMhkUuLy4YbIYsFWChtQbl16xlivGvcftnKaX/EvwmRaXnXbCa33AmqJ4w0BhjTubf0hCg2DnoZ8rAVUl5MolXgIUK1cfmnqwZ0QA1HY5WNIk1gcieMIYAimUkngF/OAkob1EfvO/co1FNUHHz6Ttx/MoLq4FuO3ZHZBVXi5wTNWJNoNyWHbx3/tbT00i8k5rFZwPlPfZMGK0cRuoV+0sbhNtnKvE/wcsXkUQBfJgGFLuVCSvzLlj7wXDTYXCU3m8V6/ZU2v4l8u+yEZJEI9XKBHxlr+FluaXWiYw3m8Xl+jZR3dQprj5ut5piYclDsSo/th8Aw4+whc8niQr4w0kG4wVqOow55DSgPOT2BCcQ52yKfKfBsFltjMN3ef4GGB5IzcIZxKm4PcEJQM0lBsONBkO/i3EP+HBFQnR4jUaj0Wg0Go1Go9FoNCTR+Qf5xG7qIMVx1AAAAABJRU5ErkJggg==");
+    width: 24;
+    height: 24;
+    background-image: url("assets/icons/away.png");
 }
 
 #toolbar-hint
 {
     width: 140;
-    height: 20;
+    height: 18;
     text-align: right;
 }
 
 #message-edit-panel
 {
-    right: 20;
-    height: 390;
+    right: 12;
+    height: 290;
 }
 #message-edit-text
 {
     width: 100%;
-    height: 210;
+    height: 140;
 }
 .chat-message-heading
 {
     width: 100%;
-    height: 28;
-    gap: 8;
+    height: 22;
+    gap: 4;
     align-items: center;
 }
 .chat-edit-button
 {
-    width: 26;
-    height: 26;
+    width: 20;
+    height: 20;
     pad: 0;
-    font-color: #58738b;
     visibility: hidden;
 }
-.member.marked, .channel-row.marked
+
+/* Chat formatting controls; font files are discovered from the adjacent fonts directory. */
+#chat-format-controls
 {
-    background-color: #d3e5f5;
+    width: 100%;
+    height: 24;
+    gap: 4;
+    align-items: center;
 }
-.member.marked:hover, .member.marked:pressed, .channel-row.marked:hover, .channel-row.marked:pressed
+#chat-font
 {
-    background-color: #bdd7ee;
+    width: 60%;
+    height: 24;
+    pad: 2 6;
+    select-style: list;
+    select-rows: 8;
+    popup-width: 250;
+    option-height: 22;
+    border-radius: 7;
+}
+#chat-color-button
+{
+    width: 32;
+    height: 24;
+    font-size: 14;
+}
+#chat-font-size
+{
+    width: 35%;
+    height: 18;
+    slider-thumb-width: 18;
+    slider-track-height: 3;
+}
+#chat-font-size-label
+{
+    width: 44;
+    height: 20;
+    font-size: 12;
+    pad: 1 0;
+}
+#chat-format-reset
+{
+    width: 65;
+    height: 24;
+}
+#chat-color-panel
+{
+    width: 330;
+    height: 290;
+    right: 12;
+}
+#chat-color-picker
+{
+    width: 100%;
+    height: 190;
+}
+#chat-color-value
+{
+    width: 100%;
+    height: 24;
+    gap: 4;
+}
+#chat-color-hex-field
+{
+    width: 110;
+    height: 24;
+}
+#chat-color-hex
+{
+    width: 100%;
+    height: 24;
+}
+#chat-color-value button
+{
+    width: 70;
+    height: 24;
+}
+
+#audio-status
+{
+    font-size: 11;
+}
+
+#tree-caption
+{
+    font-size: 11;
+    pad: 0 2;
+}
+
+#connection-status, #received-status, #toolbar-hint
+{
+    font-size: 11;
+}
+
+#toolbar-trim
+{
+    height: 2;
+    width: 100%;
+}
+
+.tree-channel-symbol
+{
+    background-image: url("assets/icons/channel.png");
+    background-size: fill;
+}
+
+#connection-footer
+{
+    height: 64;
+    pad: 4 6;
+    gap: 4;
+}
+
+.web-toolbar-icon:disabled
+{
+    opacity: 0.45;
+}
+
+/* Keep the close control inside the compact tab border. */
+.tab-close
+{
+    height: 18;
+    pad: 0;
+    font-size: 10;
+}
+
+/* Keep message entry and its Send button on one row. */
+#composer-input-row
+{
+    width: 100%;
+    height: 32;
+    gap: 4;
+    align-items: center;
+}
+#chat-format-toggle
+{
+    width: 64;
+    height: 24;
+    pad: 2 6;
+}
+
+/* Theme surfaces and controls. */
+window, label, button, input, textarea, checkbox, select, filepicker
+{
+    font-color: #303a33;
+}
+window, #workspace, #sidebar, #conversation
+{
+    background-color: #edf0ed;
+}
+#toolbar
+{
+    background-color: #35413a;
+    border-width: 0;
+    radius: 0;
+}
+#toolbar-trim
+{
+    background-color: #c9d0c9;
+}
+#sidebar, #audio-dock, #composer, #status-bar, #chat-tabs, #view-caption
+{
+    background-color: #f5f7f4;
+    border-width: 0;
+    radius: 0;
+}
+#member-list, #messages, #bookmark-list, #channel-editor-list
+{
+    background-color: #ffffff;
+    border: 1px solid #c9d0c9;
+    radius: 2;
+}
+#channel-path
+{
+    background-color: transparent;
+    font-color: #303a33;
+    border-width: 0;
+    font-size: 12;
+}
+.member, .channel-row, .bookmark-row, .channel-editor-item
+{
+    background-color: transparent;
+    font-color: #303a33;
+    border-width: 0;
+    radius: 0;
+}
+.member:hover, .channel-row:hover, .channel-row:pressed, .bookmark-row:hover, .channel-editor-item:hover
+{
+    background-color: #e7eee7;
+}
+.channel-row.selected, .channel-row.selected:hover, .channel-row.selected:pressed, .channel-row.marked, .channel-row.marked:hover, .member.marked, .member.marked:hover, .bookmark-row.selected, .bookmark-row.selected:hover, .channel-editor-item.selected, .channel-editor-item.selected:hover
+{
+    background-color: #dce9df;
+    font-color: #254431;
+}
+.member-name, .tree-name, .local .member-name, .local .tree-name, .chat-text, .notice-title
+{
+    font-color: #303a33;
+}
+.channel-row.selected .tree-name, .channel-row.marked .tree-name, .member.marked .tree-name, .member.marked .member-name
+{
+    font-color: #254431;
+}
+.muted, .tree-song, .member-state, #tree-caption, #audio-status, #connection-status, #received-status, #toolbar-hint, #composer-spacer, #chat-font-size-label
+{
+    font-color: #647168;
+}
+.chat-sender
+{
+    font-color: #44735a;
+}
+.voice-icon
+{
+    font-color: #5686b3;
+}
+.voice-icon-active
+{
+    font-color: #399cfa;
+}
+.voice-icon-disabled, .voice-icon-muted
+{
+    font-color: #7795b0;
+}
+button
+{
+    background-color: #f5f7f4;
+    font-color: #303a33;
+    border: 1px solid #c9d0c9;
+    radius: 2;
+}
+button:hover
+{
+    background-color: #e7eee7;
+}
+button:pressed
+{
+    background-color: #dce9df;
+}
+button:disabled, #send-button:disabled, .tab-scroll:disabled
+{
+    background-color: #f5f7f4;
+    font-color: #647168;
+    border: 1px solid #c9d0c9;
+}
+.menu-button
+{
+    background-color: #35413a;
+    font-color: #f3f6f1;
+    border: 1px solid #c9d0c9;
+    radius: 2;
+}
+.menu-button:hover, .menu-button:pressed
+{
+    background-color: #f5f7f4;
+    font-color: #303a33;
+}
+.web-toolbar-icon
+{
+    background-color: transparent;
+    border-width: 0;
+    radius: 0;
+}
+input, textarea, #message-input, #message-edit-text, #channel-edit-description, .audio-device-select, .server-key-type, #chat-font
+{
+    background-color: #ffffff;
+    font-color: #303a33;
+    border: 1px solid #c9d0c9;
+    radius: 2;
+}
+input:focus, textarea:focus, #message-input:focus, #message-edit-text:focus
+{
+    border: 1px solid #44735a;
+}
+#send-button
+{
+    background-color: #446e56;
+    font-color: #ffffff;
+    border: 1px solid #446e56;
+    radius: 2;
+}
+#send-button:hover
+{
+    background-color: #44735a;
+    font-color: #edf0ed;
+}
+#channel-title, .conversation-tab
+{
+    background-color: #f5f7f4;
+    font-color: #303a33;
+    border: 1px solid #c9d0c9;
+    radius: 2;
+}
+.conversation-tab.selected, .conversation-tab.selected:hover
+{
+    background-color: #dce9df;
+    font-color: #254431;
+}
+.tab-label, .tab-label:hover, .tab-close, .tab-close:hover, .tab-scroll, .chat-edit-button
+{
+    background-color: transparent;
+    font-color: #303a33;
+    border-width: 0;
+    radius: 0;
+}
+.tab-close:hover, .tab-scroll:hover, .chat-edit-button:hover
+{
+    background-color: #e7eee7;
+}
+.panel, .context-menu
+{
+    background-color: #f5f7f4;
+    font-color: #303a33;
+    border: 1px solid #c9d0c9;
+    radius: 2;
+    box-shadow: 0 0 0 #00000000;
+}
+.panel-title
+{
+    background-color: #35413a;
+    font-color: #f3f6f1;
+    border-width: 0;
+    radius: 0;
+}
+.panel-heading, .close-button
+{
+    font-color: #f3f6f1;
+}
+.close-button
+{
+    background-color: transparent;
+    border-width: 0;
+    radius: 0;
+}
+.close-button:hover
+{
+    background-color: #446e56;
+}
+.context-menu
+{
+    accent-color: #dce9df;
+}
+#member-list, #messages, .panel-body, #channel-editor-fields, #channel-editor-list
+{
+    scrollbar-track: #f5f7f4;
+    scrollbar-thumb: #c9d0c9;
+}
+.audio-device-select, .server-key-type, #chat-font
+{
+    popup-background: #f5f7f4;
+    popup-blur: 0;
+    popup-duration: 0;
+    option-color: #303a33;
+    option-current-background: #dce9df;
+    option-current-color: #254431;
+    option-hover-background: #e7eee7;
+    option-hover-color: #303a33;
+}
+checkbox
+{
+    checkbox-track-background: #ffffff;
+    checkbox-track-border-color: #c9d0c9;
+    checkbox-mark-color: #44735a;
+}
+slider, #chat-font-size
+{
+    background-color: #c9d0c9;
+    accent-color: #44735a;
+    slider-fill: #44735a;
+    radius: 0;
+}
+#input-meter-track
+{
+    background-color: #c9d0c9;
+    radius: 0;
+}
+#input-meter-fill
+{
+    background-color: #44735a;
+    radius: 0;
+}
+#sidebar-divider
+{
+    background-color: #c9d0c9;
+    border-width: 0;
+    radius: 0;
+}
+#sidebar-divider:hover, #sidebar-divider:pressed
+{
+    background-color: #44735a;
+}
+
+/* Workspace arrangement for this preset. */
+#workspace
+{
+    flex-direction: row;
+    pad: 6;
+}
+#sidebar
+{
+    size: 220x0;
+    pad: 4;
+    gap: 4;
+}
+#conversation
+{
+    pad: 0 0 0 4;
+    gap: 4;
+}
+
+.web-toolbar-icon:hover
+{
+    background-color: #446e56;
+}
+
+#microphone-button
+{
+    width: 100%;
+}
+#audio-disabled-warning
+{
+    size: 170x20;
+    gap: 4;
+    pad: 0;
+}
+#audio-disabled-label
+{
+    size: 66x18;
+    font-size: 11;
+    pad: 0;
+}
+#enable-audio-button
+{
+    size: 100x20;
+    font-size: 11;
+    pad: 1 4;
 }

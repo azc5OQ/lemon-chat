@@ -1,0 +1,312 @@
+/* Keep navigation and Save visible while a settings page scrolls. */
+:root #server-settings-tab.server-administration
+{
+    position: fixed;
+    z-index: 60;
+    color: var(--set-text, #e8e8e8);
+    box-sizing: border-box;
+    width: min(1000px, calc(100vw - 24px));
+    height: min(760px, calc(100dvh - 24px));
+    min-width: 0 !important;
+    min-height: 0 !important;
+    max-width: calc(100vw - 24px);
+    max-height: calc(100dvh - 24px);
+    overflow: hidden;
+}
+
+:root #server-settings-tab.server-administration > #menu-bar-container
+{
+    height: 36px !important;
+    min-height: 0;
+}
+
+:root #server-settings-tab.server-administration .dialog-title
+{
+    line-height: 36px;
+}
+
+:root #server-settings-tab.server-administration > #server-settings-tab-subcontainer
+{
+    position: absolute;
+    display: block;
+    top: 36px;
+    bottom: 0;
+    left: 0;
+    width: 176px !important;
+    height: auto !important;
+    margin: 0 !important;
+    padding: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+:root #server-settings-tab.server-administration > #server-settings-tab-subcontainer2
+{
+    position: absolute;
+    top: 36px;
+    bottom: 0;
+    left: 176px;
+    right: 0;
+    width: auto !important;
+    height: auto !important;
+    min-width: 0;
+    margin: 0 !important;
+    overflow: hidden;
+}
+
+:root #server-settings-tab.server-administration #server-settings-tab-subcontainer .server-settings-tab-ul
+{
+    display: block;
+    width: auto;
+    margin: 0;
+    padding: 10px 8px;
+}
+
+:root #server-settings-tab.server-administration #server-settings-tab-subcontainer .server-settings-management-nav
+{
+    border-top: 1px solid var(--set-line, rgba(255, 255, 255, 0.14));
+}
+
+:root #server-settings-tab.server-administration .server-settings-page-picker
+{
+    display: none;
+}
+
+:root #server-settings-tab.server-administration #server-settings-tab-subcontainer .server-settings-tab-li
+{
+    display: block;
+    box-sizing: border-box;
+    width: auto;
+    min-height: 0;
+    height: auto;
+    margin: 0 0 2px;
+    padding: 9px 10px;
+    border: 0;
+    border-left: 2px solid transparent;
+    background: transparent;
+    color: var(--set-text, inherit);
+    font-family: inherit;
+    font-size: 12px;
+    line-height: 1.35;
+    white-space: normal;
+    cursor: pointer;
+}
+
+:root #server-settings-tab.server-administration #server-settings-tab-subcontainer .server-settings-tab-li:hover
+{
+    background: var(--set-row-hover, rgba(255, 255, 255, 0.07));
+    filter: none;
+}
+
+:root #server-settings-tab.server-administration #server-settings-tab-subcontainer .server-settings-tab-li-selected
+{
+    background: var(--set-selected, rgba(255, 255, 255, 0.11));
+    border-left-color: var(--set-accent, #5a8cff);
+    color: var(--set-selected-text, inherit);
+}
+
+:root #server-settings-tab.server-administration .server-settings-tab-li:focus-visible
+{
+    outline: 2px solid var(--set-accent, #5a8cff);
+    outline-offset: -2px;
+}
+
+:root #server-settings-tab.server-administration #server-settings-tab-general-settings
+{
+    position: relative;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+}
+
+:root #server-settings-tab.server-administration #server-settings-general-settings-container
+{
+    position: absolute;
+    top: 0;
+    bottom: 72px;
+    left: 0;
+    right: 0;
+    box-sizing: border-box;
+    width: auto;
+    height: auto !important;
+    min-width: 0;
+    min-inline-size: 0;
+    margin: 0;
+    padding: 16px 18px;
+    border: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+:root #server-settings-tab.server-administration .server-settings-page[hidden]
+{
+    display: none !important;
+}
+
+:root #server-settings-tab.server-administration .server-settings-page
+{
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+:root #server-settings-tab.server-administration .server-settings-page > .server-settings-general-header
+{
+    margin-top: 0;
+}
+
+:root #server-settings-tab.server-administration .server-settings-general-row > span
+{
+    min-width: 0;
+}
+
+:root #server-settings-tab.server-administration .server-settings-page :is(input, select, textarea, button)
+{
+    box-sizing: border-box;
+    max-width: 100%;
+}
+
+:root #server-settings-tab.server-administration #server-encryption-password-rows .server-settings-general-row
+{
+    flex-wrap: wrap;
+}
+
+:root #server-settings-tab.server-administration #server-encryption-password-rows :is(select, input)
+{
+    flex: 1 1 160px;
+    min-width: 0;
+}
+
+:root #server-settings-tab.server-administration #server-settings-footer
+{
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    box-sizing: border-box;
+    height: 72px;
+    padding: 12px 18px;
+    border-top: 1px solid var(--set-line, rgba(255, 255, 255, 0.14));
+    background: var(--set-panel, #36393f);
+}
+
+:root #server-settings-tab.server-administration #save-server-settings-button
+{
+    flex: 0 0 auto;
+    margin: 0;
+}
+
+:root #server-settings-tab.server-administration #server-settings-save-status
+{
+    flex: 1 1 auto;
+    min-width: 0;
+    margin: 0;
+    color: var(--set-text, inherit);
+    font-size: 12px;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
+:root #server-settings-tab.server-administration :is(#server-settings-tab-groups, #server-settings-tab-emojis, #server-settings-tab-bans, #server-settings-tab-log)
+{
+    box-sizing: border-box;
+    height: 100%;
+    min-width: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+}
+
+:root #server-settings-tab.server-administration #server-settings-tab-groups
+{
+    padding: 16px 18px;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+:root #server-settings-tab.server-administration #server-settings-groups-title
+{
+    margin-top: 0;
+}
+
+/* A section dropdown leaves more room for the form on narrow screens. */
+@media (max-width: 800px)
+{
+    :root #server-settings-tab.server-administration
+    {
+        left: 6px !important;
+        top: 6px !important;
+        width: calc(100vw - 12px) !important;
+        height: calc(100dvh - 12px) !important;
+        max-width: calc(100vw - 12px) !important;
+        max-height: calc(100dvh - 12px) !important;
+        resize: none;
+    }
+
+    :root #server-settings-tab.server-administration > #server-settings-tab-subcontainer
+    {
+        bottom: auto;
+        right: 0;
+        width: auto !important;
+        height: 52px !important;
+        border-right: 0;
+        border-bottom: 1px solid var(--set-line, rgba(255, 255, 255, 0.14));
+    }
+
+    :root #server-settings-tab.server-administration > #server-settings-tab-subcontainer2
+    {
+        top: 88px;
+        left: 0;
+    }
+
+    :root #server-settings-tab.server-administration #server-settings-tab-subcontainer .server-settings-tab-ul
+    {
+        display: none;
+    }
+
+    :root #server-settings-tab.server-administration .server-settings-page-picker
+    {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        box-sizing: border-box;
+        height: 100%;
+        padding: 8px 12px;
+    }
+
+    :root #server-settings-tab.server-administration .server-settings-page-picker > label
+    {
+        flex: 0 0 auto;
+        font-size: 12px;
+    }
+
+    :root #server-settings-tab.server-administration #server-settings-page-select
+    {
+        flex: 1 1 auto;
+        min-width: 0;
+        width: 100%;
+        height: 36px;
+        min-height: 0;
+        margin: 0;
+        font-size: 16px;
+    }
+
+    :root #server-settings-tab.server-administration #server-settings-general-settings-container
+    {
+        padding: 12px;
+    }
+
+    :root #server-settings-tab.server-administration #server-settings-footer
+    {
+        gap: 10px;
+        padding: 10px 12px;
+    }
+
+    :root #server-settings-tab.server-administration .server-settings-general-row-number
+    {
+        flex-wrap: wrap;
+    }
+}

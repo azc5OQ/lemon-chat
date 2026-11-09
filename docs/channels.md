@@ -28,7 +28,7 @@ Channel creation and editing are controlled by [permissions](permissions.md). Fu
 
 To create a meeting room, right-click the channel that should contain it and choose **create**. To change an existing room, right-click that room and choose **edit**. Both actions open the channel window below.
 
-Permanent channels remain on the running server when their creator leaves. Selecting **save server settings** also keeps them for the next server start.
+Permanent channels remain on the running server when their creator leaves. Selecting **Save all settings** in Server administration also keeps them for the next server start.
 
 Temporary channels belong to an owner and remain only while that owner stays in the channel. When the owner leaves or disconnects, the server deletes the channel and moves its remaining members to root.
 
@@ -80,15 +80,21 @@ Pictures and files follow the server's upload settings. The server can also let 
 
 Channel conversations are encrypted with keys shared by the channel's members. One client creates those keys and sends them to the others. This client is called the **maintainer**.
 
-The server chooses the maintainer automatically, **at random from the available clients in the channel**. It is a role for distributing encryption keys and gives no permission to edit the channel or manage the server.
+The server chooses the maintainer automatically, giving equal priority to **channel admins**, server admins, and the owner of that temporary channel. If any available clients have one of these roles, it chooses **at random from those clients**. Otherwise, it chooses **at random from the other available clients**. Being the maintainer gives no permission to edit the channel or manage the server.
 
-Available clients are those that have completed login and are in that channel. Music bots cannot be chosen. During replacement, the server also excludes the client that left or was removed from the role.
+Available clients are connected users who have completed login, are in that channel and are not idle. Music bots cannot be chosen. During replacement, the server also excludes the client that left or was removed from the role.
+
+A channel admin has the built-in **Channel Admin** role in that channel. Custom permissions to edit a channel do not give this priority for maintainer selection.
 
 In an empty channel, the first user becomes the maintainer because there is no other client to choose. Its client creates four random encryption keys and keeps a copy for itself.
 
 It then sends a separate encrypted copy to every other member who is not idle or a music bot. Each delivery uses that member's public key so the matching private key is needed to read it. The server forwards these private messages without receiving readable copies of the channel keys.
 
-If the maintainer leaves, the server chooses another available client at random. The replacement creates new keys. An empty channel has no maintainer.
+If a channel admin, server admin, or the owner of that temporary channel joins while a regular member is the maintainer, the server selects someone with one of those roles to take over. The selected maintainer's client automatically generates new channel keys and sends them to the other members. If the current maintainer already has one of those roles, another user with the same priority joining does not replace it.
+
+Changing one of these roles while the user is already in the channel does not itself choose a new maintainer. The server uses the current roles the next time it makes a selection.
+
+If the maintainer leaves, the server chooses another available client with one of these roles at random, or another available member at random if none remain. The replacement creates new keys. An empty channel has no maintainer.
 
 Each assignment or removal changes `maintainer_generation`, the number sent with the maintainer announcement. Clients check the sender, channel and this number before accepting keys. This prevents a delayed delivery from a previous maintainer from replacing the current keys.
 
@@ -104,7 +110,9 @@ For example, a channel with four people needs three votes. Two votes are not eno
 
 A vote belongs to the client's current channel and `maintainer_generation`. Changing channels or changing the maintainer removes that vote from the count.
 
-Once enough votes arrive, the server chooses another available client at random and announces it. That client must then create and send the new keys. If it also fails to send them, clients still have to wait for keys or another replacement.
+Once enough votes arrive, the server selects a replacement using the priority rule above. If the maintainer is a channel admin, server admin, or the owner of that temporary channel, a vote can replace them only with another available user who has one of those roles. If nobody else has one of those roles, the maintainer stays even when enough members vote. This restriction applies to voting; if the maintainer leaves, another member can take over.
+
+The server announces the replacement, whose client must create and send new keys. If it also fails to send them, clients still have to wait for keys or another replacement. A vote changes only who distributes the keys; it does not grant or remove permissions.
 
 ## Keys in large channels
 
@@ -137,4 +145,4 @@ Read [Encryption](encryption.md) for more about the keys, or [Channel keys in la
 - [Channel state and maintainer selection](../server-source-code/main/core/channel.c)
 - [Incoming channel requests](../server-source-code/main/msg/client/client_msg_channel.c)
 - [Channel announcements](../server-source-code/main/msg/server/server_msg_channel.c)
-- [Client key handling](../client-source-code/client-development/browser/src/scripts/app/keys.js)
+- [Client key handling](../client-source-code/client-development/browser/main/scripts/app/crypto/keys.js)

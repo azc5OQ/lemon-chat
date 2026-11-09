@@ -25,7 +25,7 @@ typedef struct
     attachment_intent_t intent;
     cstring intent_name;
     cstring song_name;
-    char* file_header;
+    char *file_header;
     uint64 receiver_id;
     uint64 local_message_id;
 } attachment_completion_t;
@@ -37,18 +37,18 @@ typedef struct
  * @param ws_cli_conn_t* socket -> connection that sent the request
  * @return void
  */
-void client_msg__attachments__process_attachment_receive_preferences(cJSON* json_root, uint64 sender_client_id, ws_cli_conn_t* socket)
+void client_msg__attachments__process_attachment_receive_preferences(cJSON *json_root, uint64 sender_client_id, ws_cli_conn_t *socket)
 {
     boole status0 = FALSE;
     boole status1 = FALSE;
     boole status2 = FALSE;
     boole status3 = FALSE;
-    cJSON* message = cJSON_GetObjectItemCaseSensitive(json_root, "message");
-    cJSON* direct_pictures = cJSON_GetObjectItemCaseSensitive(message, "block_direct_chat_pictures");
-    cJSON* direct_files = cJSON_GetObjectItemCaseSensitive(message, "block_direct_chat_files");
-    cJSON* channel_pictures = cJSON_GetObjectItemCaseSensitive(message, "block_channel_chat_pictures");
-    cJSON* channel_files = cJSON_GetObjectItemCaseSensitive(message, "block_channel_chat_files");
-    client_t* client = NULL_POINTER;
+    cJSON *message = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    cJSON *direct_pictures = cJSON_GetObjectItemCaseSensitive(message, "block_direct_chat_pictures");
+    cJSON *direct_files = cJSON_GetObjectItemCaseSensitive(message, "block_direct_chat_files");
+    cJSON *channel_pictures = cJSON_GetObjectItemCaseSensitive(message, "block_channel_chat_pictures");
+    cJSON *channel_files = cJSON_GetObjectItemCaseSensitive(message, "block_channel_chat_files");
+    client_t *client = NULL_POINTER;
 
     status0 = !cJSON_IsBool(direct_pictures);
     if (status0 == FALSE)
@@ -126,7 +126,7 @@ static attachment_intent_t _client_msg_attachments_internal__read_intent(cstring
 /**
  * @brief Returns the current policy rejection, while the caller holds the clients lock.
  */
-static char* _client_msg_attachments_internal__policy_error(attachment_intent_t intent, uint64 length)
+static char *_client_msg_attachments_internal__policy_error(attachment_intent_t intent, uint64 length)
 {
     uint64 maximum_length = MAX_CLIENT_FILE_UPLOAD_LENGTH;
 
@@ -134,8 +134,7 @@ static char* _client_msg_attachments_internal__policy_error(attachment_intent_t 
     {
         return "invalid_upload_intent";
     }
-    if ((intent == ATTACHMENT_INTENT_DIRECT_PICTURE || intent == ATTACHMENT_INTENT_DIRECT_FILE)
-        && g_server_settings.is_private_messaging_allowed == FALSE)
+    if ((intent == ATTACHMENT_INTENT_DIRECT_PICTURE || intent == ATTACHMENT_INTENT_DIRECT_FILE) && g_server_settings.is_private_messaging_allowed == FALSE)
     {
         return "private_messages_disabled";
     }
@@ -166,7 +165,7 @@ static char* _client_msg_attachments_internal__policy_error(attachment_intent_t 
  * @brief Releases the current upload and clears its routing and length state.
  * @attention The caller holds the clients write lock.
  */
-static void _client_msg_attachments_internal__discard_upload(client_t* client)
+static void _client_msg_attachments_internal__discard_upload(client_t *client)
 {
     if (client->file_upload_extension.file_upload_buffer != NULL_POINTER)
     {
@@ -175,19 +174,37 @@ static void _client_msg_attachments_internal__discard_upload(client_t* client)
     clib__null_memory(&client->file_upload_extension, sizeof(client->file_upload_extension));
 }
 
+static uint64 _client_msg_attachments_internal__upload_time(void)
+{
+    uint64 now = 0;
+
+    util__get_monotonic_ms(&now);
+    return now;
+}
+
+// Caller holds the clients write lock; expiry is independent of keepalive traffic.
+void client_msg__attachments__expire_upload(client_t *client, uint64 now)
+{
+    if (client->file_upload_extension.file_upload_buffer != NULL_POINTER && (now == 0 || now - client->file_upload_extension.last_progress_ms >= 30000 || now - client->file_upload_extension.started_ms >= 300000))
+    {
+        _client_msg_attachments_internal__discard_upload(client);
+    }
+}
+
 /**
- * @brief Receives a bounded file chunk after validating its numeric length and current upload policy.
+ * @brief Receives a bounded file chunk after validating its numeric length and current upload
+ *        policy.
  */
-void client_msg__attachments__process_file_send_request(cJSON* json_root, uint64 sender_client_id)
+void client_msg__attachments__process_file_send_request(cJSON *json_root, uint64 sender_client_id)
 {
     boole status = FALSE;
     boole status0 = FALSE;
-    cJSON* message = cJSON_GetObjectItemCaseSensitive(json_root, "message");
-    cJSON* new_file = cJSON_GetObjectItemCaseSensitive(message, "is_new_file");
+    cJSON *message = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    cJSON *new_file = cJSON_GetObjectItemCaseSensitive(message, "is_new_file");
     cstring data = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(message, "data_part_base64"));
     cstring intent_name = NULL_POINTER;
-    char* policy_error = NULL_POINTER;
-    client_t* sender = NULL_POINTER;
+    char *policy_error = NULL_POINTER;
+    client_t *sender = NULL_POINTER;
     attachment_intent_t intent = ATTACHMENT_INTENT_INVALID;
     uint64 total_length = 0;
     uint64 maximum_chunk_length = 0;
@@ -221,6 +238,7 @@ void client_msg__attachments__process_file_send_request(cJSON* json_root, uint64
         goto end;
     }
     sender = &g_clients_array[sender_client_id];
+    client_msg__attachments__expire_upload(sender, _client_msg_attachments_internal__upload_time());
     if (sender->is_authenticated == FALSE || sender->is_existing == FALSE || sender->is_idle == TRUE)
     {
         goto end;
@@ -250,7 +268,7 @@ void client_msg__attachments__process_file_send_request(cJSON* json_root, uint64
         maximum_chunk_length = 16384;
     }
     data_length = clib__utf8_string_length_check_max_length(data, maximum_chunk_length);
-    if (data_length < 0 || (uint64)data_length > total_length)
+    if (data_length <= 0 || (uint64)data_length > total_length)
     {
         _client_msg_attachments_internal__discard_upload(sender);
         goto end;
@@ -265,29 +283,30 @@ void client_msg__attachments__process_file_send_request(cJSON* json_root, uint64
             goto end;
         }
         _client_msg_attachments_internal__discard_upload(sender);
-        sender->file_upload_extension.file_upload_buffer = (ubyte*)memorymanager__allocate(total_length + 1, MEMALLOC_FILE_UPLOAD_BY_PARTS);
+        sender->file_upload_extension.file_upload_buffer = (ubyte *)memorymanager__allocate(total_length + 1, MEMALLOC_FILE_UPLOAD_BY_PARTS);
         if (sender->file_upload_extension.file_upload_buffer == NULL_POINTER)
         {
+            server_msg__attachments__send_file_send_error_to_single_client(sender, "server_busy", 0);
             goto end;
         }
         clib__string_copy(sender->file_upload_extension.intent, sizeof(sender->file_upload_extension.intent), intent_name);
         sender->file_upload_extension.expected_file_length = total_length;
+        sender->file_upload_extension.started_ms = _client_msg_attachments_internal__upload_time();
     }
-    else if (sender->file_upload_extension.file_upload_buffer == NULL_POINTER
-        || sender->file_upload_extension.expected_file_length != total_length)
+    else if (sender->file_upload_extension.file_upload_buffer == NULL_POINTER || sender->file_upload_extension.expected_file_length != total_length)
     {
         _client_msg_attachments_internal__discard_upload(sender);
         goto end;
     }
 
-    if (sender->file_upload_extension.buffer_cursor > total_length
-        || (uint64)data_length > total_length - sender->file_upload_extension.buffer_cursor)
+    if (sender->file_upload_extension.buffer_cursor > total_length || (uint64)data_length > total_length - sender->file_upload_extension.buffer_cursor)
     {
         _client_msg_attachments_internal__discard_upload(sender);
         goto end;
     }
     clib__copy_memory(data, sender->file_upload_extension.file_upload_buffer + sender->file_upload_extension.buffer_cursor, data_length, data_length);
     sender->file_upload_extension.buffer_cursor += (uint64)data_length;
+    sender->file_upload_extension.last_progress_ms = _client_msg_attachments_internal__upload_time();
     if (sender->file_upload_extension.buffer_cursor == total_length)
     {
         server_msg__attachments__send_file_send_completed_status_to_single_client(sender);
@@ -298,14 +317,15 @@ end:
 }
 
 /**
- * @brief Validates every required completion field before routing, even when its feature is disabled.
+ * @brief Validates every required completion field before routing, even when its feature is
+ *        disabled.
  * @attention The caller holds the clients lock and owns the JSON throughout delivery.
  */
-static boole _client_msg_attachments_internal__read_completion(cJSON* json_root, attachment_completion_t* completion)
+static boole _client_msg_attachments_internal__read_completion(cJSON *json_root, attachment_completion_t *completion)
 {
     boole status0 = FALSE;
-    cJSON* message = cJSON_GetObjectItemCaseSensitive(json_root, "message");
-    cJSON* extra = cJSON_GetObjectItemCaseSensitive(message, "file_send_intent_extra_data");
+    cJSON *message = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    cJSON *extra = cJSON_GetObjectItemCaseSensitive(message, "file_send_intent_extra_data");
     uint64 receiver_count = g_server_settings.max_client_count;
     int64 string_length = 0;
 
@@ -374,17 +394,17 @@ static boole _client_msg_attachments_internal__read_completion(cJSON* json_root,
 /**
  * @brief Routes a completed upload only after validating metadata and rechecking current policy.
  */
-void client_msg__attachments__process_file_send_completed_request(cJSON* json_root, uint64 sender_client_id)
+void client_msg__attachments__process_file_send_completed_request(cJSON *json_root, uint64 sender_client_id)
 {
     boole status = FALSE;
     boole status0 = FALSE;
     boole status1 = FALSE;
     boole status2 = FALSE;
-    attachment_completion_t completion = {0};
-    client_t* sender = NULL_POINTER;
-    client_t* music_bot = NULL_POINTER;
-    musicbot_add_song_arg_struct_t* arguments = NULL_POINTER;
-    char* policy_error = NULL_POINTER;
+    attachment_completion_t completion = { 0 };
+    client_t *sender = NULL_POINTER;
+    client_t *music_bot = NULL_POINTER;
+    musicbot_add_song_arg_struct_t *arguments = NULL_POINTER;
+    char *policy_error = NULL_POINTER;
 
     clib__write_lock(&g_clients_global_rwlock_guard);
     if (sender_client_id >= g_server_settings.max_client_count || base__is_current_client_request(sender_client_id) == FALSE)
@@ -392,6 +412,7 @@ void client_msg__attachments__process_file_send_completed_request(cJSON* json_ro
         goto end;
     }
     sender = &g_clients_array[sender_client_id];
+    client_msg__attachments__expire_upload(sender, _client_msg_attachments_internal__upload_time());
     if (sender->is_authenticated == FALSE || sender->is_existing == FALSE || sender->is_idle == TRUE)
     {
         goto end;
@@ -418,8 +439,7 @@ void client_msg__attachments__process_file_send_completed_request(cJSON* json_ro
         server_msg__attachments__send_file_send_error_to_single_client(sender, policy_error, completion.local_message_id);
         goto discard;
     }
-    if (clib__strcmp(sender->file_upload_extension.intent, completion.intent_name) != 0
-        || permissions__can_upload(sender, completion.intent_name) == FALSE)
+    if (clib__strcmp(sender->file_upload_extension.intent, completion.intent_name) != 0 || permissions__can_upload(sender, completion.intent_name) == FALSE)
     {
         server_msg__administration__send_access_denied_to_single_client(sender, NULL_POINTER);
         server_msg__attachments__send_file_send_error_to_single_client(sender, "insufficient_permissions", completion.local_message_id);
@@ -433,7 +453,7 @@ void client_msg__attachments__process_file_send_completed_request(cJSON* json_ro
         {
             goto discard;
         }
-        arguments = (musicbot_add_song_arg_struct_t*)memorymanager__allocate(sizeof(musicbot_add_song_arg_struct_t), MEMALLOC_MUSICBOT_SONG);
+        arguments = (musicbot_add_song_arg_struct_t *)memorymanager__allocate(sizeof(musicbot_add_song_arg_struct_t), MEMALLOC_MUSICBOT_SONG);
         if (arguments == NULL_POINTER)
         {
             goto discard;

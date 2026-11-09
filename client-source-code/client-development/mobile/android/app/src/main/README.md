@@ -9,8 +9,8 @@ They come from:
 
 | generated file | built by | from |
 |---|---|---|
-| `assets/client.html` | `client-development/browser/build.cjs` | `client-development/browser/src/` (template.html, scripts/, styles/) |
-| `assets/nodejs-project/` | `client-development/mobile/nodejs-client/build-node.py` | `nodejs-client/` + the same `browser/src/scripts/` |
+| `assets/client.html` | `client-development/browser/build.cjs` | `client-development/browser/main/` (template.html, scripts/, styles/) |
+| `assets/nodejs-project/` | `client-development/mobile/nodejs-client/build-node.py` | `nodejs-client/` + the same `browser/main/scripts/` |
 
 The gradle build runs both scripts before packaging, so a normal `assembleDebug` always
 ships a fresh copy. Edit the sources under `client-source-code/`, never the assets.

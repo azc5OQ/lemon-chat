@@ -214,7 +214,7 @@ extern "C" {
 	 * @brief Debug
 	 */
 
-	
+
 	//#define DEBUG_THELDUS_WEBSOCKET if (1) //->activated debug
 	#define DEBUG_THELDUS_WEBSOCKET if (0) //-> deactivates debug
 
@@ -230,6 +230,7 @@ extern "C" {
 
 	/* Opaque client connection type. */
 	typedef struct ws_connection ws_cli_conn_t;
+    void ws_set_incoming_limit(ws_cli_conn_t* client, uint64_t limit);
 
 	/**
 	 * @brief events Web Socket events types.
@@ -282,6 +283,7 @@ extern "C" {
 	extern int ws_sendframe_bin(ws_cli_conn_t *cli, const char *msg, uint64_t size);
 	extern int ws_get_state(ws_cli_conn_t *cli);
 	extern int ws_close_client(ws_cli_conn_t *cli);
+    extern int ws_close_client_with_code(ws_cli_conn_t* client, uint16_t code);
     extern const char* ws_get_close_reason(ws_cli_conn_t* client);
 	extern int ws_socket(struct ws_events *evs, uint16_t port, int thread_loop,uint32_t timeout_ms);
 	/* Call once before ws_socket; live capacity changes are rejected. */

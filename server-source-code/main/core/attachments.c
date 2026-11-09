@@ -14,12 +14,62 @@
 #include "../../third-party/zhicheng/base64.h"
 #include "../../third-party/mbedtls-3.6.6/include/mbedtls/platform_util.h"
 
+// Admission is independent of reusable client slots and follows each worker's argument.
+static pthread_mutex_t g_download_mutex = PTHREAD_MUTEX_INITIALIZER;
+static data_for_file_send_thread_t *g_downloads[8];
+static uint64 g_song_upload_workers; // protected by the clients write lock
+
+static boole _admit_download(data_for_file_send_thread_t *arg)
+{
+    uint64 i = 0;
+    int64 available = -1;
+    uint64 sender_count = 0;
+
+    pthread_mutex_lock(&g_download_mutex);
+    for (i = 0; i < 8; i++)
+    {
+        if (g_downloads[i] == NULL_POINTER)
+        {
+            available = i;
+        }
+        else if (g_downloads[i]->client_sender_id == arg->client_sender_id)
+        {
+            sender_count++;
+        }
+    }
+    if (available >= 0 && sender_count < 2)
+    {
+        g_downloads[available] = arg;
+    }
+    else
+    {
+        available = -1;
+    }
+    pthread_mutex_unlock(&g_download_mutex);
+    return available >= 0;
+}
+
+static void _release_download(data_for_file_send_thread_t *arg)
+{
+    uint64 i = 0;
+
+    pthread_mutex_lock(&g_download_mutex);
+    for (i = 0; i < 8; i++)
+    {
+        if (g_downloads[i] == arg)
+        {
+            g_downloads[i] = NULL_POINTER;
+        }
+    }
+    pthread_mutex_unlock(&g_download_mutex);
+}
+
 // declarations
-static void* _file_transfer_internal__add_song_thread(void* argument);
-static void _file_transfer_internal__start_file_download(data_for_file_send_thread_t* arg);
-static boole _file_transfer_internal__file_client_is_current(uint64 client_id, const crypto_key_t* authentication_key);
-static int _file_transfer_internal__queue_file_chunk(data_for_file_send_thread_t* arg, uint64 receiver_id, const crypto_key_t* receiver_key, const char* plaintext);
-static void* _file_transfer_internal__file_download_thread(void* argument);
+static void *_file_transfer_internal__add_song_thread(void *argument);
+static void _file_transfer_internal__start_file_download(data_for_file_send_thread_t *arg);
+static boole _file_transfer_internal__file_client_is_current(uint64 client_id, const crypto_key_t *authentication_key);
+static int64 _file_transfer_internal__queue_file_chunk(data_for_file_send_thread_t *arg, uint64 receiver_id, const crypto_key_t *receiver_key, const char *plaintext);
+static void *_file_transfer_internal__file_download_thread(void *argument);
 
 /**
  * @brief Checks that a file recipient or sender still uses the original connection.
@@ -27,7 +77,7 @@ static void* _file_transfer_internal__file_download_thread(void* argument);
  * @param const crypto_key_t* authentication_key -> key copied when delivery began
  * @return boole -> TRUE for the original authenticated connection
  */
-static boole _file_transfer_internal__file_client_is_current(uint64 client_id, const crypto_key_t* authentication_key)
+static boole _file_transfer_internal__file_client_is_current(uint64 client_id, const crypto_key_t *authentication_key)
 {
     boole status0 = FALSE;
     boole status1 = FALSE;
@@ -57,11 +107,11 @@ static boole _file_transfer_internal__file_client_is_current(uint64 client_id, c
  * @param uint64 receiver_id -> receiving client slot
  * @param const crypto_key_t* receiver_key -> recipient's original connection key
  * @param const char* plaintext -> prepared message to copy into the queue
- * @return int -> 0 queued, 1 retry later, -1 connection unavailable
+ * @return int64 -> 0 queued, 1 retry later, -1 connection unavailable
  */
-static int _file_transfer_internal__queue_file_chunk(data_for_file_send_thread_t* arg, uint64 receiver_id, const crypto_key_t* receiver_key, const char* plaintext)
+static int64 _file_transfer_internal__queue_file_chunk(data_for_file_send_thread_t *arg, uint64 receiver_id, const crypto_key_t *receiver_key, const char *plaintext)
 {
-    int result = -1;
+    int64 result = -1;
 
     clib__read_lock(&g_clients_global_rwlock_guard);
     if (_file_transfer_internal__file_client_is_current(arg->client_sender_id, &arg->sender_authentication_key) && _file_transfer_internal__file_client_is_current(receiver_id, receiver_key))
@@ -77,9 +127,11 @@ static int _file_transfer_internal__queue_file_chunk(data_for_file_send_thread_t
  * @param void* argument -> owned data_for_file_send_thread_t with the buffer, recipients and message ids
  * @return void* -> NULL_POINTER after releasing the upload buffer and arguments
  */
-static void* _file_transfer_internal__file_download_thread(void* argument)
+static void *_file_transfer_internal__file_download_thread(void *argument)
 {
-    data_for_file_send_thread_t* arg = (data_for_file_send_thread_t*)argument;
+    data_for_file_send_thread_t *arg = (data_for_file_send_thread_t *)argument;
+    uint64 deadline_ms = 0;
+    uint64 now_ms = 0;
     uint64 chunk_size = 16384;
     uint64 offset = 0;
     boole is_sender_valid = FALSE;
@@ -91,15 +143,16 @@ static void* _file_transfer_internal__file_download_thread(void* argument)
     uint64 waiting_count = 0;
     uint64 started_ms = 0;
     uint64 i = 0;
-    int result = 0;
-    char* chunk = NULL_POINTER;
-    char* plaintext = NULL_POINTER;
-    boole* queued = calloc(receiver_count > 0 ? receiver_count : 1, sizeof(boole));
+    int64 result = 0;
+    char *chunk = NULL_POINTER;
+    char *plaintext = NULL_POINTER;
+    boole *queued = calloc(receiver_count > 0 ? receiver_count : 1, sizeof(boole));
 
-    if (queued == NULL_POINTER)
+    if (queued == NULL_POINTER || !util__get_monotonic_ms(&deadline_ms))
     {
         goto file_download_end;
     }
+    deadline_ms += 120000;
 
     while (offset < arg->size)
     {
@@ -125,6 +178,10 @@ static void* _file_transfer_internal__file_download_thread(void* argument)
         started_ms = util__get_timestamp_ms();
         do
         {
+            if (!util__get_monotonic_ms(&now_ms) || now_ms >= deadline_ms)
+            {
+                goto file_download_end;
+            }
             waiting_count = 0;
             for (i = 0; i < receiver_count; i++)
             {
@@ -209,6 +266,7 @@ static void* _file_transfer_internal__file_download_thread(void* argument)
         clib__unlock(&g_clients_global_rwlock_guard);
     }
 file_download_end:
+    _release_download(arg);
     free(queued);
     cJSON_free(plaintext);
     mbedtls_platform_zeroize(arg->receiver_authentication_keys, (arg->send_type == FILE_SEND_TYPE_TO_CHANNEL ? arg->receiving_clients_count : 1) * sizeof(crypto_key_t));
@@ -225,12 +283,20 @@ file_download_end:
  * @return void
  * @attention Takes ownership of arg and its buffer even when thread creation fails.
  */
-static void _file_transfer_internal__start_file_download(data_for_file_send_thread_t* arg)
+static void _file_transfer_internal__start_file_download(data_for_file_send_thread_t *arg)
 {
     boole status = FALSE;
     uint64 count = arg->send_type == FILE_SEND_TYPE_TO_CHANNEL ? arg->receiving_clients_count : 1;
     uint64 i = 0;
     uint64 receiver_id = 0;
+
+    if (!_admit_download(arg))
+    {
+        server_msg__attachments__send_file_send_error_to_single_client(&g_clients_array[arg->client_sender_id], "server_busy", arg->local_chat_message_id);
+        memorymanager__free((nuint)arg->buffer);
+        memorymanager__free((nuint)arg);
+        return;
+    }
 
     // If someone changes their receive settings while a file is downloading,
     // let that file finish. The new settings apply to later files.
@@ -263,6 +329,7 @@ static void _file_transfer_internal__start_file_download(data_for_file_send_thre
     }
     if (arg->receiver_authentication_keys == NULL_POINTER || util__start_detached_thread(_file_transfer_internal__file_download_thread, arg) == FALSE)
     {
+        _release_download(arg);
         server_msg__attachments__send_file_send_error_to_single_client(&g_clients_array[arg->client_sender_id], "server_busy", arg->local_chat_message_id);
         if (arg->receiver_authentication_keys != NULL_POINTER)
         {
@@ -284,7 +351,7 @@ static void _file_transfer_internal__start_file_download(data_for_file_send_thre
  *
  * @return void
  */
-void file_transfer__process_channel_chat_picture(uint64 client_sender_id, uint64 local_message_id, char* message_value)
+void file_transfer__process_channel_chat_picture(uint64 client_sender_id, uint64 local_message_id, char *message_value)
 {
     boole status0 = FALSE;
     boole status1 = FALSE;
@@ -293,8 +360,9 @@ void file_transfer__process_channel_chat_picture(uint64 client_sender_id, uint64
     boole is_channel_existing = FALSE;
     uint64 channel_id = 0;
     uint64 server_chat_message_id = 0;
-    data_for_file_send_thread_t* arg = NULL_POINTER;
+    data_for_file_send_thread_t *arg = NULL_POINTER;
     uint64 buffer_to_send_total_size = 0;
+
     if (client_sender_id >= g_server_settings.max_client_count || message_value == NULL_POINTER)
     {
         return;
@@ -302,7 +370,7 @@ void file_transfer__process_channel_chat_picture(uint64 client_sender_id, uint64
     status0 = g_clients_array[client_sender_id].is_existing == FALSE;
     status1 = g_clients_array[client_sender_id].is_authenticated == FALSE;
     status2 = g_clients_array[client_sender_id].is_idle == TRUE;
-    status3 = message_value != (char*)g_clients_array[client_sender_id].file_upload_extension.file_upload_buffer;
+    status3 = message_value != (char *)g_clients_array[client_sender_id].file_upload_extension.file_upload_buffer;
     if (status0 == TRUE || status1 == TRUE || status2 == TRUE || status3 == TRUE)
     {
         return;
@@ -328,6 +396,7 @@ void file_transfer__process_channel_chat_picture(uint64 client_sender_id, uint64
     DBG_CLIENT_MESSAGE log_info("%s", "file_transfer__process_channel_chat_picture got here \n");
 
     channel_id = g_clients_array[client_sender_id].channel_id;
+
     // bounds check, channel_id is not validated anywhere
     is_channel_existing = (channel_id < g_server_settings.max_channel_count) && g_channel_array[channel_id].is_existing;
 
@@ -342,12 +411,13 @@ void file_transfer__process_channel_chat_picture(uint64 client_sender_id, uint64
         buffer_to_send_total_size = g_clients_array[client_sender_id].file_upload_extension.expected_file_length;
         server_msg__attachments__send_channel_chat_picture_metadata_to_clients_in_same_channel(&g_clients_array[client_sender_id], channel_id, server_chat_message_id, buffer_to_send_total_size);
 
-        arg = (data_for_file_send_thread_t*)memorymanager__allocate(sizeof(data_for_file_send_thread_t) + sizeof(uint64) * g_server_settings.max_client_count, MEMALLOC_FILE_DOWNLOAD_BY_PARTS);
+        arg = (data_for_file_send_thread_t *)memorymanager__allocate(sizeof(data_for_file_send_thread_t) + sizeof(uint64) * g_server_settings.max_client_count, MEMALLOC_FILE_DOWNLOAD_BY_PARTS);
         if (arg == NULL_POINTER)
         {
             return;
         }
         clib__null_memory(arg, sizeof(data_for_file_send_thread_t));
+
         // Give the worker the completed upload instead of copying the whole picture.
         arg->buffer = message_value;
         g_clients_array[client_sender_id].file_upload_extension.file_upload_buffer = NULL_POINTER;
@@ -379,15 +449,16 @@ void file_transfer__process_channel_chat_picture(uint64 client_sender_id, uint64
  *
  * @return void
  */
-void file_transfer__process_direct_chat_picture(uint64 sender_client_id, uint64 receiver_id, uint64 local_message_id, char* message_value)
+void file_transfer__process_direct_chat_picture(uint64 sender_client_id, uint64 receiver_id, uint64 local_message_id, char *message_value)
 {
     boole status0 = FALSE;
     boole status1 = FALSE;
     boole status2 = FALSE;
     boole status3 = FALSE;
     uint64 server_chat_message_id = 0;
-    data_for_file_send_thread_t* arg = NULL_POINTER;
+    data_for_file_send_thread_t *arg = NULL_POINTER;
     uint64 buffer_to_send_total_size = 0;
+
     if (sender_client_id >= g_server_settings.max_client_count || message_value == NULL_POINTER)
     {
         return;
@@ -395,7 +466,7 @@ void file_transfer__process_direct_chat_picture(uint64 sender_client_id, uint64 
     status0 = g_clients_array[sender_client_id].is_existing == FALSE;
     status1 = g_clients_array[sender_client_id].is_authenticated == FALSE;
     status2 = g_clients_array[sender_client_id].is_idle == TRUE;
-    status3 = message_value != (char*)g_clients_array[sender_client_id].file_upload_extension.file_upload_buffer;
+    status3 = message_value != (char *)g_clients_array[sender_client_id].file_upload_extension.file_upload_buffer;
     if (status0 == TRUE || status1 == TRUE || status2 == TRUE || status3 == TRUE)
     {
         return;
@@ -456,7 +527,7 @@ void file_transfer__process_direct_chat_picture(uint64 sender_client_id, uint64 
         buffer_to_send_total_size = g_clients_array[sender_client_id].file_upload_extension.expected_file_length;
         server_msg__attachments__send_chat_picture_metadata_to_single_client(&g_clients_array[receiver_id], &g_clients_array[sender_client_id], server_chat_message_id, buffer_to_send_total_size);
 
-        arg = (data_for_file_send_thread_t*)memorymanager__allocate(sizeof(data_for_file_send_thread_t), MEMALLOC_FILE_DOWNLOAD_BY_PARTS);
+        arg = (data_for_file_send_thread_t *)memorymanager__allocate(sizeof(data_for_file_send_thread_t), MEMALLOC_FILE_DOWNLOAD_BY_PARTS);
         if (arg == NULL_POINTER)
         {
             return;
@@ -477,8 +548,9 @@ void file_transfer__process_direct_chat_picture(uint64 sender_client_id, uint64 
 }
 
 /**
- * @brief relays an uploaded chat file to everybody in the sender's channel: the encrypted header goes
- *        out in the metadata right away, the encrypted body follows in chunks from the relay thread
+ * @brief relays an uploaded chat file to everybody in the sender's channel: the encrypted header
+ *        goes out in the metadata right away, the encrypted body follows in chunks from the relay
+ *        thread
  *
  * @param uint64 client_sender_id -> id of the client that sent the file
  * @param uint64 local_message_id -> the client-side message id of the file
@@ -489,7 +561,7 @@ void file_transfer__process_direct_chat_picture(uint64 sender_client_id, uint64 
  *
  * @return void
  */
-void file_transfer__process_channel_chat_file(uint64 client_sender_id, uint64 local_message_id, char* message_value, char* file_header)
+void file_transfer__process_channel_chat_file(uint64 client_sender_id, uint64 local_message_id, char *message_value, char *file_header)
 {
     boole status0 = FALSE;
     boole status1 = FALSE;
@@ -498,8 +570,9 @@ void file_transfer__process_channel_chat_file(uint64 client_sender_id, uint64 lo
     boole is_channel_existing = FALSE;
     uint64 channel_id = 0;
     uint64 server_chat_message_id = 0;
-    data_for_file_send_thread_t* arg = NULL_POINTER;
+    data_for_file_send_thread_t *arg = NULL_POINTER;
     uint64 buffer_to_send_total_size = 0;
+
     if (client_sender_id >= g_server_settings.max_client_count || message_value == NULL_POINTER)
     {
         return;
@@ -507,7 +580,7 @@ void file_transfer__process_channel_chat_file(uint64 client_sender_id, uint64 lo
     status0 = g_clients_array[client_sender_id].is_existing == FALSE;
     status1 = g_clients_array[client_sender_id].is_authenticated == FALSE;
     status2 = g_clients_array[client_sender_id].is_idle == TRUE;
-    status3 = message_value != (char*)g_clients_array[client_sender_id].file_upload_extension.file_upload_buffer;
+    status3 = message_value != (char *)g_clients_array[client_sender_id].file_upload_extension.file_upload_buffer;
     if (status0 == TRUE || status1 == TRUE || status2 == TRUE || status3 == TRUE)
     {
         return;
@@ -550,7 +623,7 @@ void file_transfer__process_channel_chat_file(uint64 client_sender_id, uint64 lo
     base__increment_chat_message_id();
     server_msg__attachments__send_channel_chat_file_metadata_to_clients_in_same_channel(&g_clients_array[client_sender_id], channel_id, server_chat_message_id, file_header, buffer_to_send_total_size);
 
-    arg = (data_for_file_send_thread_t*)memorymanager__allocate(sizeof(data_for_file_send_thread_t) + sizeof(uint64) * g_server_settings.max_client_count, MEMALLOC_FILE_DOWNLOAD_BY_PARTS);
+    arg = (data_for_file_send_thread_t *)memorymanager__allocate(sizeof(data_for_file_send_thread_t) + sizeof(uint64) * g_server_settings.max_client_count, MEMALLOC_FILE_DOWNLOAD_BY_PARTS);
     if (arg == NULL_POINTER)
     {
         return;
@@ -583,7 +656,7 @@ void file_transfer__process_channel_chat_file(uint64 client_sender_id, uint64 lo
  *
  * @return void
  */
-void file_transfer__process_direct_chat_file(uint64 sender_client_id, uint64 receiver_id, uint64 local_message_id, char* message_value, char* file_header)
+void file_transfer__process_direct_chat_file(uint64 sender_client_id, uint64 receiver_id, uint64 local_message_id, char *message_value, char *file_header)
 {
     boole status0 = FALSE;
     boole status1 = FALSE;
@@ -591,8 +664,9 @@ void file_transfer__process_direct_chat_file(uint64 sender_client_id, uint64 rec
     boole status3 = FALSE;
     boole status4 = FALSE;
     uint64 server_chat_message_id = 0;
-    data_for_file_send_thread_t* arg = NULL_POINTER;
+    data_for_file_send_thread_t *arg = NULL_POINTER;
     uint64 buffer_to_send_total_size = 0;
+
     if (sender_client_id >= g_server_settings.max_client_count || message_value == NULL_POINTER)
     {
         return;
@@ -600,7 +674,7 @@ void file_transfer__process_direct_chat_file(uint64 sender_client_id, uint64 rec
     status0 = g_clients_array[sender_client_id].is_existing == FALSE;
     status1 = g_clients_array[sender_client_id].is_authenticated == FALSE;
     status2 = g_clients_array[sender_client_id].is_idle == TRUE;
-    status3 = message_value != (char*)g_clients_array[sender_client_id].file_upload_extension.file_upload_buffer;
+    status3 = message_value != (char *)g_clients_array[sender_client_id].file_upload_extension.file_upload_buffer;
     if (status0 == TRUE || status1 == TRUE || status2 == TRUE || status3 == TRUE)
     {
         return;
@@ -663,7 +737,7 @@ void file_transfer__process_direct_chat_file(uint64 sender_client_id, uint64 rec
     base__increment_chat_message_id();
     server_msg__attachments__send_chat_file_metadata_to_single_client(&g_clients_array[receiver_id], &g_clients_array[sender_client_id], server_chat_message_id, file_header, buffer_to_send_total_size);
 
-    arg = (data_for_file_send_thread_t*)memorymanager__allocate(sizeof(data_for_file_send_thread_t), MEMALLOC_FILE_DOWNLOAD_BY_PARTS);
+    arg = (data_for_file_send_thread_t *)memorymanager__allocate(sizeof(data_for_file_send_thread_t), MEMALLOC_FILE_DOWNLOAD_BY_PARTS);
     if (arg == NULL_POINTER)
     {
         return;
@@ -683,10 +757,10 @@ void file_transfer__process_direct_chat_file(uint64 sender_client_id, uint64 rec
 }
 
 /**
- * @brief the longest encrypted chat file body the server accepts, derived from the admin's raw-byte limit
+ * @brief the longest encrypted chat file body the server accepts, derived from the admin's raw-byte
+ *        limit
  *
- * @note raw bytes -> base64 data (4/3) -> json wrapper -> aes -> base64 again (4/3). the constant covers
- *       the json field names, the mime/name strings and the rsa-wrapped keys of a direct chat file
+ * @note raw bytes -> base64 data (4/3) -> json wrapper -> aes -> base64 again (4/3). the constant covers the json field names, the mime/name strings and the rsa-wrapped keys of a direct chat file
  *
  * @return uint64 -> length in base64 chars
  */
@@ -696,7 +770,8 @@ uint64 file_transfer__get_max_chat_file_encrypted_length(void)
 }
 
 /**
- * @brief the longest encrypted inline picture the server accepts, derived from the admin's raw-byte limit
+ * @brief the longest encrypted inline picture the server accepts, derived from the admin's raw-byte
+ *        limit
  *
  * @note same expansion as a chat file, without the name/mime header
  *
@@ -741,21 +816,20 @@ uint64 file_transfer__get_max_file_upload_length(void)
     return longest;
 }
 
-
 /**
  * @brief Decodes an uploaded song outside the clients lock, then adds it to the music bot.
  * @param void* argument -> owned musicbot_add_song_arg_struct_t containing the base64 upload
  * @return void* -> NULL_POINTER when the worker finishes
  */
-static void* _file_transfer_internal__add_song_thread(void* argument)
+static void *_file_transfer_internal__add_song_thread(void *argument)
 {
-    musicbot_add_song_arg_struct_t* upload = argument;
-    client_t* bot = upload->music_bot;
+    musicbot_add_song_arg_struct_t *upload = argument;
+    client_t *bot = upload->music_bot;
     uint64 decoded_length = 0;
 
     // Decoded bytes take less space than the base64 text. Write them into the
     // same buffer; the decoder reads each character before overwriting it.
-    decoded_length = zchg_base64_decode((char*)upload->mp3_data_buffer, upload->mp3_data_buffer_length, upload->mp3_data_buffer);
+    decoded_length = zchg_base64_decode((char *)upload->mp3_data_buffer, upload->mp3_data_buffer_length, upload->mp3_data_buffer);
     if (decoded_length > 0)
     {
         upload->mp3_data_buffer_length = decoded_length;
@@ -768,27 +842,34 @@ static void* _file_transfer_internal__add_song_thread(void* argument)
     }
     clib__write_lock(&g_clients_global_rwlock_guard);
     bot->music_bot_client_extension.pending_song_uploads--;
+    g_song_upload_workers--;
     clib__unlock(&g_clients_global_rwlock_guard);
     return NULL_POINTER;
 }
-
-
 
 /**
  * @brief Starts a thread to decode an uploaded song and add it to the music bot.
  * @param musicbot_add_song_arg_struct_t* arguments -> song and buffer owned by this function
  * @attention The caller holds the clients write lock.
  */
-void file_transfer__add_uploaded_song(musicbot_add_song_arg_struct_t* arguments)
+void file_transfer__add_uploaded_song(musicbot_add_song_arg_struct_t *arguments)
 {
     boole status = FALSE;
 
+    if (g_song_upload_workers >= 4 || arguments->music_bot->music_bot_client_extension.pending_song_uploads >= 1)
+    {
+        memorymanager__free((nuint)arguments->mp3_data_buffer);
+        memorymanager__free((nuint)arguments);
+        return;
+    }
+    g_song_upload_workers++;
     arguments->music_bot->music_bot_client_extension.pending_song_uploads++;
     status = util__start_detached_thread(_file_transfer_internal__add_song_thread, arguments);
     if (status == FALSE)
     {
         memorymanager__free((nuint)arguments->mp3_data_buffer);
         arguments->music_bot->music_bot_client_extension.pending_song_uploads--;
+        g_song_upload_workers--;
         memorymanager__free((nuint)arguments);
     }
 }

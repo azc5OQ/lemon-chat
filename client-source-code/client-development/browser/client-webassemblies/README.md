@@ -1,136 +1,229 @@
-# Client WebAssembly files
+# Browser WebAssembly projects
 
-`client.html` uses three WebAssembly modules that are embedded directly as
-Base64 strings. This way the client does not need to load any external
-resources — everything lives inside the single `client.html` file.
+The browser client uses C compiled to **WebAssembly (wasm) for speed** in audio
+processing, encryption and RSA key generation. The build compiles four `.wasm`
+modules and embeds them in `client.html`. JavaScript loads and calls them when
+the page runs.
 
-The three modules are **minimp3**, **libopus** and **rsa-keygen**.
+This directory contains the C sources, their libraries, build scripts and tests.
+Each project owns its sources and dependencies. The browser build does not read
+C files from the desktop client or server.
 
-## minimp3 — MP3 streaming
+## Why Zig
 
-Lets the client pick an MP3 file from disk (similar to selecting an image) and
-stream it to the other clients in the channel.
+**`zig cc` is a C compiler based on Clang/LLVM.** These projects use ordinary
+`.c` and `.h` files. Zig also has its own programming language, but that language
+is not used here.
 
-This feature predates the music-bot feature. Now that music bots exist, it is
-arguably redundant. The original idea was to let users easily grab an MP3 from
-their system and send it to everyone in the channel — much like the old
-TeamSpeak days when people streamed music through their microphone.
+Zig includes the compiler, linker and C-library support needed to build these
+modules for WebAssembly. One portable installation can build all four projects.
+This replaces the old Opus setup that required WSL, Emscripten and CMake, and
+allows the Windows build to run directly on Windows. The Linux and macOS scripts
+use the same compiler commands.
 
-## libopus (Opus) — microphone & voice audio
+The build uses **Zig 0.15.2**, the version verified with the module tests.
+Node.js runs the build scripts and tests, then assembles the HTML. Node's role
+here is independent of the Android bridge. Neither Node nor Zig is needed to
+open the finished client in a browser.
 
-Enables the client to use the microphone and to receive audio from other
-clients. Received audio is decrypted with the channel keys into Opus, then
-decoded into PCM and played back.
+## Modules
 
-## rsa-keygen — identity keypair generation and runtime RSA
+### libopusjs
 
-Since 2026-08-30 this module is the client's *only* RSA implementation. The
-vendored `jsbn.js`, `rsa.js`, `rsa-sign.js`, `cryptico.js` and `biginteger.js`
-were removed; `src/scripts/app/rsa-crypto.js` (the global `lemon_crypto`)
-replaces all five using this wasm for the modular exponentiation, native
-`BigInt` for Diffie-Hellman, `aes-js` for AES-CBC and `crypto.getRandomValues`
-for key material. The five removed libraries are kept in
-`rsa-keygen/test/legacy-reference/` as the oracle `test/crypto-compat.js`
-compares against; they are not part of the client any more.
+Opus encodes outgoing voice and audio streams and decodes incoming audio. It
+also provides packet-loss concealment, which estimates replacement audio for
+short gaps caused by missing packets.
 
-There is no JavaScript fallback left, so this module is now required.
+The project includes the SpeexDSP resampler to convert microphone sample rates,
+such as 44.1 kHz, to the 48 kHz rate used by the client's Opus encoder.
 
+The libraries are Opus **1.6.1** and SpeexDSP **1.2.1**. The build includes the
+mono/stereo codec and standalone resampler. Optional neural speech enhancements
+and 96 kHz extensions are disabled. The resulting packets remain compatible
+with the previous Opus 1.5.2 module.
 
-Generates the RSA identity keypair from the passphrase ~100x faster than the
-vendored JavaScript (jsbn/cryptico) path. It reproduces the JavaScript prime
-walk **bit for bit** — same passphrase, same keypair — which the golden-vector
-tests in `rsa-keygen/test/` prove at 512/1024/2048 bits.
+### mp3-to-pcm
 
-The same module also carries a generic `modpow` export that the client's
-`doPublic`/`doPrivate` (message-key encrypt/decrypt, challenge decrypt,
-signatures) run through — ~4x faster than jsbn at 2048 bits, value-identical
-(`rsa-keygen/test/rsa-ops.js`). The DH handshake stays on biginteger.js, which
-uses native BigInt and is already fast.
+This module uses minimp3 to decode an MP3 selected in the browser into PCM
+(uncompressed audio samples). The client can then pass those samples to the
+Opus encoder for streaming.
 
-If the module fails to instantiate, the client automatically falls back to the
-JavaScript paths and produces identical values, just slower. Unlike the audio
-modules it is built with plain clang (`rsa-keygen/build.bat`, Windows, no
-emscripten needed).
+### rsa-keygen
 
-## Identity randomness (assessment, 2026-08-29)
+This module generates the RSA keypair from an identity passphrase and performs
+the RSA operations used for authentication and message-key handling. Doing the
+large-number calculations in WebAssembly makes them faster than the previous
+JavaScript implementation.
 
-The keypair adds no randomness of its own — by design. `sha256(passphrase)`
-seeds the whole prime walk, so a keypair is exactly as random as its
-passphrase, and never more than 256 bits (the size of that hash).
+The same passphrase must produce exactly the same keypair after a rebuild.
+Changing that result would change the user's identity. Tests compare every key
+component with recorded results from the old implementation.
 
-- **User-entered passphrase:** whatever entropy the string has; the UI
-  requires 199+ characters.
-- **Random identity (the default):** `randomstring(200)` in `main.js` draws
-  from `Math.random()`, not `crypto.getRandomValues`. The first identity in a
-  worker comes from V8's xorshift128+ (OS-seeded, ~128-bit ceiling). That is
-  hard to guess, but it is key material from a non-cryptographic PRNG — the DH
-  code in `main.js` states itself that `Math.random` must never make key
-  material, and uses `crypto.getRandomValues` instead.
-- **Second and later random identities in the same worker (js path only):**
-  `generateRSAKey` runs `Math.seedrandom`, which permanently replaces
-  `Math.random` in that worker. Every later "random" passphrase was therefore
-  a deterministic continuation of the previous keypair's stream — no fresh
-  entropy at all. The wasm path seeds its own internal arc4 and never touches
-  `Math.random`, so it does not have this problem; the js fallback still does.
-- **AES message keys:** jsbn's SecureRandom pool, filled once at worker load
-  from pre-hijack native `Math.random` plus a timestamp — the same ~128-bit
-  grade as the first identity.
+The compiler flag `-ffp-contract=off` preserves intermediate rounding in the
+seeded number generator. Its exact output determines the keypair, so an
+optimization that changes that output would break existing identities.
+[The RSA README](rsa-keygen/README.md) explains the calculation.
 
-Recommended fix (not yet applied): draw `randomstring` from
-`crypto.getRandomValues`, as the DH code already does. Existing identities are
-unaffected — the passphrase-to-keypair mapping does not change.
+The old JavaScript RSA libraries are kept in `rsa-keygen/test/legacy-reference`
+for compatibility tests. They are not included in the client as a fallback;
+the wasm module is required.
 
-## FAQ
+### connection-crypto
 
-### What is WebAssembly?
+This module contains the supported ciphers, hashing helpers and connection-key
+derivation code. The JavaScript wrappers in `../main/scripts/app/crypto` call
+its functions.
 
-A file with a `.wasm` extension that modern browsers can load for tasks that
-need near-native performance. It is commonly used for things like web-based
-emulators (e.g. Flash emulators). Audio processing is hard to do efficiently in
-pure JavaScript, so WebAssembly is used instead.
+The browser's cipher implementations are in `connection-crypto/main/crypto`.
+Mbed TLS and LibTomCrypt are under that project's `third-party` directory.
+The desktop client and server maintain their own implementations separately.
 
-### Is it possible to remove them from `client.html`?
+## Building the client
 
-Yes — it is quite easy.
+From this `client-webassemblies` directory, run on Windows:
 
-**To remove libopus:**
+```bat
+..\build.bat --unminified
+```
 
-1. Open `client.html` in VS Code or a similar editor.
-2. Locate the function `instantiate_libopus_webassembly_from_base64`.
-3. Remove or comment out `libopus_webassembly_base64`.
+On Linux or macOS:
 
-This breaks audio sending and receiving, but text chat still works.
+```sh
+sh ../build.sh --unminified
+```
 
-**To remove minimp3** (likely unnecessary anyway):
+`--unminified` keeps the assembled JavaScript and CSS readable. Use `--minified`
+for smaller HTML, or omit the option to choose interactively. Both modes compile
+all four WebAssembly projects from source.
 
-1. Locate the function `mp3_to_pcm_worker_onmessage`.
-2. As with Opus, remove or comment out the WebAssembly variable.
+An interactive build offers to download missing Node.js and Zig tools into
+`browser/.build-tools`. Terser, which minifies JavaScript, is optional and can
+also be downloaded. Use `--download-tools` to allow unattended downloads or
+`--no-download-tools` to disable downloads and their prompts. The
+[browser build guide](../README.md#building) covers tool installation and all
+build options.
 
-**rsa-keygen cannot be removed.** It is the client's only RSA implementation
-since the vendored JavaScript stack was deleted, so without it there is no
-keypair, no login challenge and no message encryption.
+The build runs in this order:
 
-### How large are they?
+1. Compile all four projects into a temporary build directory.
+2. Test the compiled modules. If compilation or a test fails, keep the previous
+   modules in `../main/wasm` and leave the existing HTML unchanged.
+3. Replace `../main/wasm` with the tested set, then assemble the page's source
+   files and embed the modules as Base64.
+4. Validate the assembled scripts, apply minification if selected, and write
+   `client-source-code/client.html`. Also update `buildresult/client.html` when
+   that directory exists.
 
-| Module     | Size in `client.html` (Base64-encoded) |
-| ---------- | -------------------------------------- |
-| libopus    | ~380 KB                                |
-| minimp3    | ~30 KB                                 |
-| rsa-keygen | ~31 KB                                 |
+Base64 stores the binary wasm data as text inside the HTML. The browser converts
+it back to bytes before loading the modules, so no separate wasm download is
+needed. Changes to the C sources take effect after rebuilding and opening the
+updated HTML.
 
-### How are these files built?
+The modules do not require JavaScript implementations of operating-system
+functions such as file access. The Opus loader is
+`../main/scripts/app/audio/opus-runtime.js`; it also updates JavaScript's views of
+the module's memory when that memory grows.
 
-The build must be done on **Linux**, but the resulting files can be used
-anywhere.
+## Source layout
 
-1. Download [Emscripten (emsdk)](https://emscripten.org/) and follow its setup
-   instructions.
-2. Extract the WebAssembly source archives shipped here and build them:
-   - `libopusjs/libopus-workingbuild.tar.gz`
-   - `mp3-to-pcm/minimp3-wasm.tar.gz`
-3. The build produces a `.wasm` file.
-4. Replace the matching binary under `../src/wasm/`, then run the browser
-   builder (`node ../build.cjs`). It embeds the binary as base64 automatically.
+| Project | Sources and libraries | Output |
+| --- | --- | --- |
+| `libopusjs` | Opus and SpeexDSP under its own `third-party`; `sources.json` lists the compiled Opus C files | `libopus.wasm` |
+| `mp3-to-pcm` | `main/decoder.c` and `third-party/minimp3/minimp3.h` | `mp3_decoder.wasm` |
+| `rsa-keygen` | `main/rsa_keygen.c` | `rsa_keygen.wasm` |
+| `connection-crypto` | `main/crypto`, plus local Mbed TLS and LibTomCrypt subsets under `third-party` | `connection_crypto.wasm` |
 
-The archives of both projects the WebAssembly files were built from are
-included in this directory.
+The audio sources are unpacked and can be edited directly. Unused demo players,
+Git histories, large test-media collections and old build tools have been
+removed. Each library retains its required sources, license and upstream
+version information.
+
+Each project's `build.cjs` lists its sources and compiler options.
+`compiler.cjs` handles the common compiler invocation. The `build.cjs` in this
+directory builds all four projects, runs their tests and replaces the published
+modules. Algorithm implementations stay inside their own projects.
+
+## Tests
+
+Compilation checks whether the code builds. The module tests check its results
+and compatibility with existing clients. Every normal build runs:
+
+- **Opus:** new encoder with old decoder and old encoder with new decoder;
+  mono/stereo audio; all six supported packet durations; bitrate changes;
+  reset; two missing packets; resampling; and memory growth.
+- **MP3:** sample rate, channel count, sample count and PCM values compared with
+  the previous decoder; repeated files; empty and invalid input.
+- **Ciphers:** known expected outputs, encryption/decryption round trips, and
+  comparison with Node's OpenSSL implementation for AES, Camellia and ChaCha20.
+- **RSA:** recorded 512-, 1024- and 2048-bit keypairs, large-number operations,
+  and compatibility with messages from the old JavaScript implementation.
+  The small key sizes are test fixtures.
+
+Full-page browser tests run separately. The normal build's tests do not use a
+physical microphone or speakers.
+
+## Using the backup modules
+
+`prebuilt-backup` holds four checked wasm files and the matching loader for its
+older Opus binary. RSA and MP3 were refreshed to include the current
+secret-clearing and input-bounds fixes. The Opus loader also handles failed
+allocations safely. Normal builds never overwrite this set. Its
+[provenance guide](prebuilt-backup/README.md) records the changes.
+
+If you cannot compile the modules, run from this directory:
+
+```sh
+node ../build.cjs --unminified --prebuilt-wasm --output prebuilt-modules.html
+```
+
+This writes `prebuilt-modules.html` in the current directory. It verifies the
+hashes and runs `prebuilt-backup/check.cjs` against the actual browser JavaScript
+and saved modules before assembling the page. The checks cover RSA operations
+and cleanup, MP3 input bounds, connection ciphers, and Opus audio and allocation
+cleanup. It skips C compilation and leaves `../main/wasm` unchanged. It includes
+the older Opus loader because that binary requires its matching runtime functions.
+
+A normal build does not fall back automatically. On failure it reports the
+error and keeps the existing HTML. Use `--prebuilt-wasm` when you want the backup
+set; omit it to compile the current sources.
+
+A failed client build does not stop a server build. The server scripts warn and
+continue, packaging an existing `client.html` when available. Node and Zig are
+not server build requirements.
+
+## Building one module
+
+Individual build scripts compile only their own project. Put Zig 0.15.2 on PATH
+or set `ZIG` to the full path of its executable. From this directory:
+
+```sh
+node connection-crypto/build.cjs
+node connection-crypto/test/ciphers.cjs
+```
+
+These commands write `connection-crypto/build/connection_crypto.wasm` and test
+that file. They do not update `../main/wasm` or `client.html`. Run the normal
+browser build to publish the tested modules and rebuild the page.
+
+The commands for the other projects are:
+
+```sh
+node libopusjs/build.cjs
+node libopusjs/test/codec.cjs
+
+node mp3-to-pcm/build.cjs
+node mp3-to-pcm/test/decode.cjs
+
+node rsa-keygen/build.cjs
+node rsa-keygen/test/compare-wasm.js rsa-keygen/test/vectors-2048.json
+```
+
+Individual compile commands accept an optional output filename:
+
+```sh
+node connection-crypto/build.cjs preview.wasm
+```
+
+The parent builder uses this option to write candidate modules into its
+temporary directory. It runs the full test set, including the additional RSA
+operation and message-compatibility tests.

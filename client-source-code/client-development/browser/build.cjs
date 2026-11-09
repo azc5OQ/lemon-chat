@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Assemble readable sources into one HTML file. Terser is an optional external tool.
+// Compile and test the WebAssembly projects, then assemble one self-contained HTML file.
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
@@ -8,11 +8,11 @@ const crypto = require('node:crypto');
 const {spawnSync} = require('node:child_process');
 const readline = require('node:readline/promises');
 
-const sourceDirectory = path.join(__dirname, 'src');
+const sourceDirectory = path.join(__dirname, 'main');
 const defaultOutput = path.resolve(__dirname, '../../client.html');
 const threadMarker = 'var THREAD_NAME = ';
 const exportSeam = '// the export seam for the headless node build:';
-const installHint = 'Install Node.js from https://nodejs.org/ and run: npm install --global terser';
+const installHint = 'Use build.bat / sh build.sh to offer tool downloads, or install Node.js, Zig 0.15.2 and optional Terser yourself.';
 const cssTokens = /(?<comment>\/\*[\s\S]*?\*\/)|(?<url>url\(\s*(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|(?:\\.|[^)\\])*)\s*\))|(?<string>"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')|(?<escape>\\[\s\S])|(?<space>\s+)|(?<plain>[^\s])/gi;
 
 function rawElements(html, tag)
@@ -31,7 +31,7 @@ function rawElements(html, tag)
     return elements;
 }
 
-function assemble()
+function assemble(wasmDirectory = path.join(sourceDirectory, 'wasm'), prebuilt = false)
 {
     let includes = 0;
     let assemblies = 0;
@@ -43,12 +43,15 @@ function assemble()
             return line;
         }
         includes++;
-        return fs.readFileSync(path.join(sourceDirectory, match[1].trim()), 'utf8');
+        const included = match[1].trim();
+        const file = prebuilt && included === 'scripts/app/audio/opus-runtime.js'
+            ? path.join(wasmDirectory, 'libopus.emscripten.js') : path.join(sourceDirectory, included);
+        return fs.readFileSync(file, 'utf8');
     }).join('\n');
     html = html.replace(/@@WASM:([^@]+)@@/g, (_match, file) =>
     {
         assemblies++;
-        return fs.readFileSync(path.join(sourceDirectory, file.trim())).toString('base64');
+        return fs.readFileSync(path.join(wasmDirectory, path.basename(file.trim()))).toString('base64');
     });
     return {html, includes, assemblies};
 }
@@ -80,10 +83,10 @@ function checkHtml(html)
     }
 }
 
-// Locate an installation, never download or unpack a runtime/package into this project.
+// Prefer the locally downloaded minifier, then existing installations.
 function findMinifier()
 {
-    const candidates = ['terser'];
+    const candidates = [path.join(__dirname, '.build-tools/terser/node_modules/terser'), 'terser'];
     const probe = process.platform === 'win32'
         ? spawnSync(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', 'npm root -g'],
             {encoding: 'utf8', windowsHide: true, timeout: 10000})
@@ -420,7 +423,7 @@ function writeAtomic(file, content)
 
 function options(arguments_)
 {
-    const result = {mode: null, output: null, serverCopy: true, check: false};
+    const result = {mode: null, output: null, serverCopy: true, check: false, prebuilt: false, downloads: 'ask'};
     const modes = {'--minified': 'minified', '--minify-js': 'minified', '--unminified': 'unminified',
         '--no-optimize': 'unminified', '--no-minify-js': 'assets'};
     for (let index = 0; index < arguments_.length; index++)
@@ -441,6 +444,19 @@ function options(arguments_)
         else if (argument === '--no-server-copy')
         {
             result.serverCopy = false;
+        }
+        else if (argument === '--prebuilt-wasm')
+        {
+            result.prebuilt = true;
+        }
+        else if (argument === '--download-tools' || argument === '--no-download-tools')
+        {
+            const policy = argument === '--download-tools' ? 'yes' : 'no';
+            if (result.downloads !== 'ask' && result.downloads !== policy)
+            {
+                throw new Error('Choose only one tool-download policy.');
+            }
+            result.downloads = policy;
         }
         else if (argument === '--check')
         {
@@ -497,7 +513,10 @@ async function main(arguments_ = process.argv.slice(2))
     if (arguments_.includes('--help'))
     {
         console.log('node build.cjs [--minified | --unminified] [--output file] [--no-server-copy]\n'
-            + 'node build.cjs --check\nnode build.cjs --check-minifier\n' + installHint);
+            + '  [--download-tools | --no-download-tools] [--prebuilt-wasm]\n'
+            + 'Normal builds compile and test all four WebAssembly modules before embedding.\n'
+            + '--prebuilt-wasm verifies and uses the checked prebuilt modules explicitly.\n'
+            + 'node build.cjs --check (syntax only; no compilation or downloads)\nnode build.cjs --check-minifier\n' + installHint);
         return;
     }
     if (arguments_.includes('--check-minifier'))
@@ -512,25 +531,49 @@ async function main(arguments_ = process.argv.slice(2))
         return;
     }
     const settings = options(arguments_);
-    const tool = !settings.check && (!settings.mode || settings.mode === 'minified') ? findMinifier() : null;
+    let tool = !settings.check && (!settings.mode || settings.mode === 'minified') ? findMinifier() : null;
+    const setup = require('./tools/setup.cjs');
     if (!settings.check)
     {
+        if (!tool && (!settings.mode || settings.mode === 'minified') && await setup.installMinifier(settings.downloads))
+        {
+            tool = findMinifier();
+        }
         settings.mode ||= await chooseMode(tool);
         if (settings.mode === 'minified' && !tool)
         {
             throw new Error('Minification disabled. ' + installHint);
         }
     }
-    const assembled = assemble();
+    const webassemblies = require('./client-webassemblies/build.cjs');
+    let wasmDirectory = path.join(sourceDirectory, 'wasm');
+    if (settings.prebuilt)
+    {
+        wasmDirectory = webassemblies.backup();
+    }
+    else if (!settings.check)
+    {
+        wasmDirectory = webassemblies.build(await setup.ensureZig(settings.downloads));
+    }
+    if (!settings.check)
+    {
+        console.log('\nAssembling client.html and embedding the four WebAssembly modules as Base64.');
+    }
+    const assembled = assemble(wasmDirectory, settings.prebuilt);
     checkHtml(assembled.html);
     if (settings.check)
     {
         console.log('Client syntax and worker patch checks passed. No files written.');
         return;
     }
+    if (settings.mode !== 'unminified')
+    {
+        console.log('Optimizing styles and embedded fonts.');
+    }
     let html = settings.mode === 'unminified' ? assembled.html : optimizeStyles(assembled.html);
     if (settings.mode === 'minified')
     {
+        console.log('Minifying JavaScript with Terser ' + tool.version + '.');
         for (const script of rawElements(html, 'script').reverse())
         {
             if (!script.body.trim() || /\bid\s*=\s*["']lemon-cfg["']|\bsrc\s*=/i.test(script.header))

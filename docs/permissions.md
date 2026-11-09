@@ -30,7 +30,7 @@ The group system is controlled by `is_permission_system_enabled` in `server_sett
 
 With the setting at `false`, the client hides group and icon controls and the server stops applying group permissions. The saved groups remain in the settings file. Admin access then comes from the admin password, while server settings control what other users can do.
 
-Admins can open **Server groups** from server settings in every theme. Hybrid V1 and Hybrid V2 also have shortcuts in the toolbar, local settings and user menus. A theme changes where the controls appear; it does not change the permission checks.
+Admins can choose **Groups** in Server administration, then select **Open Groups**, in every theme. Hybrid V1 and Hybrid V2 also have shortcuts in the toolbar, local settings and user menus. A theme changes where the controls appear; it does not change the permission checks.
 
 ![Server groups editor with Normal selected, Simple view showing permission settings, and the Members panel on the right.](images/server-groups-simple.jpg)
 
@@ -244,7 +244,7 @@ In the server group editor, choose **Icon** beside the group's name. In the chan
 
 **Delete icon** deletes the shared image from the server after confirmation. Other groups and channels using that image also lose it. **Delete group** removes the group and its memberships.
 
-The server's administration log is in the **log** tab in server settings.
+The server's administration log is in **Server administration → Log**.
 
 ## Complete permission reference
 
@@ -294,7 +294,7 @@ When groups are disabled, the server ignores these requirements and the client h
 
 A channel group gives an identity permissions in a particular channel. Its editing and moderation rights apply while the user is there, alongside the user's server group permissions. This allows someone to manage one channel without giving them the same rights across the server.
 
-Open **Server settings > Server groups > Manage groups**. At the top of the window, select **Channel groups** beside **Server groups**.
+Open **Server administration → Groups**, then select **Open Groups**. At the top of the Groups window, select **Channel groups** beside **Server groups**.
 
 ![Channel groups editor with Channel Admin selected, its channel permissions in the center and the Members panel on the right.](images/channel-groups.jpg)
 
@@ -362,7 +362,7 @@ Before making a channel temporary, join it. You become its owner and cannot alre
 
 Making a temporary channel permanent removes temporary ownership. With groups enabled, the owner's Channel Admin assignment remains.
 
-Use **Save server settings** to save the configuration. Temporary channels are not included. A request that does not specify a type keeps the current type. When connected to an older server, the selector is read-only.
+Use **Save all settings** in Server administration to save the configuration. Temporary channels are not included. A request that does not specify a type keeps the current type. When connected to an older server, the selector is read-only.
 
 ## Bypass channel passwords
 

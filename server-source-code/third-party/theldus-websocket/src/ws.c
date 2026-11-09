@@ -91,6 +91,14 @@ typedef int socklen_t;
 static struct ws_events cli_events;
 static atomic_uint_fast64_t ws_received_bytes;
 static atomic_uint_fast64_t ws_sent_bytes;
+static atomic_uint_fast64_t ws_incoming_bytes;
+#define WS_INCOMING_TOTAL_BYTES (256ULL * 1024 * 1024)
+#define WS_PRELOGIN_MESSAGE_BYTES (256U * 1024U)
+#define WS_MESSAGE_DEADLINE_MS 30000
+#define WS_MESSAGE_PROGRESS_MS 10000
+#ifndef WS_HANDSHAKE_TIMEOUT_MS
+#define WS_HANDSHAKE_TIMEOUT_MS 10000
+#endif
 static int forwarded_ip_mode = WS_FORWARDED_IP_NONE;
 
 /**
@@ -99,14 +107,14 @@ static int forwarded_ip_mode = WS_FORWARDED_IP_NONE;
  */
 void ws_set_forwarded_ip_mode(int mode)
 {
-    if (mode == WS_FORWARDED_IP_STUNNEL || mode == WS_FORWARDED_IP_FUNNEL)
-    {
-        forwarded_ip_mode = mode;
-    }
-    else
-    {
-        forwarded_ip_mode = WS_FORWARDED_IP_NONE;
-    }
+	if (mode == WS_FORWARDED_IP_STUNNEL || mode == WS_FORWARDED_IP_FUNNEL)
+	{
+		forwarded_ip_mode = mode;
+	}
+	else
+	{
+		forwarded_ip_mode = WS_FORWARDED_IP_NONE;
+	}
 }
 
 /**
@@ -115,7 +123,7 @@ void ws_set_forwarded_ip_mode(int mode)
  */
 uint64_t ws_get_received_bytes(void)
 {
-    return atomic_load_explicit(&ws_received_bytes, memory_order_relaxed);
+	return atomic_load_explicit(&ws_received_bytes, memory_order_relaxed);
 }
 
 /**
@@ -124,7 +132,7 @@ uint64_t ws_get_received_bytes(void)
  */
 uint64_t ws_get_sent_bytes(void)
 {
-    return atomic_load_explicit(&ws_sent_bytes, memory_order_relaxed);
+	return atomic_load_explicit(&ws_sent_bytes, memory_order_relaxed);
 }
 
 // the frames waiting for a media socket's writer thread are kept in a byte buffer that is written in a circle
@@ -152,23 +160,23 @@ uint64_t ws_get_sent_bytes(void)
 static int set_socket_timeout(int sock, int option, uint32_t milliseconds);
 struct ws_chat_job;
 static size_t _ws_internal__chat_cpu_count(void);
-static void _ws_internal__chat_defer_release(struct ws_chat_job* jobs);
-static struct ws_chat_job* _ws_internal__chat_take_cancelled_locked(void);
+static void _ws_internal__chat_defer_release(struct ws_chat_job *jobs);
+static struct ws_chat_job *_ws_internal__chat_take_cancelled_locked(void);
 
 struct ws_media_buffer
 {
-    pthread_mutex_t mutex;
-    pthread_cond_t ready;
-    pthread_t writer;
-    bool stopping;
-    bool is_bound;          // the socket is attached to a client
-    uint64_t next_keepalive_at; // monotonic deadline, protected by mutex; outgoing media never postpones it
-    size_t head;            // offset of the oldest record in the ring
-    size_t used;            // bytes of the ring in use
-    size_t ring_bytes;      // the ring's size, by the socket's purpose
-    size_t frame_max;       // the largest frame received or queued, by the socket's purpose
-    unsigned char* received;
-    unsigned char* ring;
+	pthread_mutex_t mutex;
+	pthread_cond_t ready;
+	pthread_t writer;
+	bool stopping;
+	bool is_bound; // the socket is attached to a client
+	uint64_t next_keepalive_at; // monotonic deadline, protected by mutex; outgoing media never postpones it
+	size_t head; // offset of the oldest record in the ring
+	size_t used; // bytes of the ring in use
+	size_t ring_bytes; // the ring's size, by the socket's purpose
+	size_t frame_max; // the largest frame received or queued, by the socket's purpose
+	unsigned char *received;
+	unsigned char *ring;
 };
 
 #ifndef INET6_ADDRSTRLEN
@@ -180,14 +188,17 @@ struct ws_media_buffer
  */
 struct ws_connection
 {
+	struct ws_chat_queue *chat;
+	bool chat_mode;
+	atomic_uint_fast64_t incoming_limit;
+	uint64_t incoming_deadline;
+	uint64_t incoming_progress_deadline;
+	uint64_t media_hello_deadline;
+	_Atomic(const char *) close_reason;
 
-    struct ws_chat_queue* chat;
-    bool chat_mode;
-    _Atomic(const char*) close_reason;
-
-    int media_purpose;      // WS_MEDIA_PURPOSE_NONE for the chat socket, else the /audio or /video socket
-    uint64_t media_client_id;
-    struct ws_media_buffer* media;
+	int media_purpose; // WS_MEDIA_PURPOSE_NONE for the chat socket, else the /audio or /video socket
+	uint64_t media_client_id;
+	struct ws_media_buffer *media;
 	int client_sock; /**< Client socket FD.        */
 	int state; /**< WebSocket current state. */
 
@@ -204,6 +215,7 @@ struct ws_connection
 	char ip[INET6_ADDRSTRLEN];
 
 	bool is_using_forwarded_ip_address;
+
 	/* IP address and port. */
 	char forwarded_ip_address[INET6_ADDRSTRLEN]; /* NI_MAXHOST. */
 
@@ -216,7 +228,7 @@ struct ws_connection
 /**
  * @brief Clients list.
  */
-static struct ws_connection* client_socks = NULL;
+static struct ws_connection *client_socks = NULL;
 static uint32_t client_capacity = 0;
 
 /**
@@ -224,14 +236,23 @@ static uint32_t client_capacity = 0;
  * @param client -> live connection owned by the caller
  * @param reason -> static literal that remains valid for the connection lifetime
  */
-static void record_close_reason(ws_cli_conn_t* client, const char* reason)
+static void record_close_reason(ws_cli_conn_t *client, const char *reason)
 {
-    const char* expected = NULL;
+	const char *expected = NULL;
 
-    if (client != NULL)
-    {
-        atomic_compare_exchange_strong(&client->close_reason, &expected, reason);
-    }
+	if (client != NULL)
+	{
+		atomic_compare_exchange_strong(&client->close_reason, &expected, reason);
+	}
+}
+
+/** @brief Sets the maximum complete incoming chat message before any payload allocation. */
+void ws_set_incoming_limit(ws_cli_conn_t *client, uint64_t limit)
+{
+	if (client != NULL && limit > 0 && limit <= MAX_FRAME_LENGTH)
+	{
+		atomic_store(&client->incoming_limit, limit);
+	}
 }
 
 /**
@@ -239,34 +260,39 @@ static void record_close_reason(ws_cli_conn_t* client, const char* reason)
  * @param client -> connection, normally inspected during onclose
  * @return const char* -> static description; no message contents are included
  */
-const char* ws_get_close_reason(ws_cli_conn_t* client)
+const char *ws_get_close_reason(ws_cli_conn_t *client)
 {
-    const char* reason = client != NULL ? atomic_load(&client->close_reason) : NULL;
-    return reason != NULL ? reason : "connection closed without transport detail";
+	const char *reason = client != NULL ? atomic_load(&client->close_reason) : NULL;
+
+	return reason != NULL ? reason : "connection closed without transport detail";
 }
 
 size_t ws_client_slot_size(void)
 {
-    return sizeof(struct ws_connection);
+	return sizeof(struct ws_connection);
 }
 
 int ws_init_client_slots(uint32_t capacity)
 {
-    uint32_t i;
-    /* Slot addresses are retained by connection threads and must never move. */
-    if (client_socks != NULL || capacity == 0 || capacity > SIZE_MAX / sizeof(*client_socks))
-    {
-        return -1;
-    }
-    client_socks = calloc(capacity, sizeof(*client_socks));
-    if (client_socks == NULL) { return -1; }
-    client_capacity = capacity;
-    for (i = 0; i < capacity; i++)
-    {
-        client_socks[i].client_sock = -1;
-        atomic_init(&client_socks[i].close_reason, NULL);
-    }
-    return 0;
+	uint32_t i;
+
+	/* Slot addresses are retained by connection threads and must never move. */
+	if (client_socks != NULL || capacity == 0 || capacity > SIZE_MAX / sizeof(*client_socks))
+	{
+		return -1;
+	}
+	client_socks = calloc(capacity, sizeof(*client_socks));
+	if (client_socks == NULL)
+	{
+		return -1;
+	}
+	client_capacity = capacity;
+	for (i = 0; i < capacity; i++)
+	{
+		client_socks[i].client_sock = -1;
+		atomic_init(&client_socks[i].close_reason, NULL);
+	}
+	return 0;
 }
 
 /**
@@ -274,153 +300,145 @@ int ws_init_client_slots(uint32_t capacity)
  */
 static uint32_t timeout;
 
-static void _ws_internal__chat_abort(ws_cli_conn_t* client);
-static int _ws_internal__queue_text(ws_cli_conn_t* client, void* context, size_t charged_bytes,
-    char* (*encode)(void* context, size_t* encoded_size),
-    void (*release_context)(void* context), void (*release_encoded)(char* encoded), bool bulk, bool priority);
-static int _ws_internal__chat_start(ws_cli_conn_t* client);
-static void _ws_internal__chat_stop(ws_cli_conn_t* client);
-static int _ws_internal__chat_queue_frame(ws_cli_conn_t* client, const char* data, size_t size, int type);
+static void _ws_internal__chat_abort(ws_cli_conn_t *client);
+static int _ws_internal__queue_text(ws_cli_conn_t *client, void *context, size_t charged_bytes, char *(*encode)(void *context, size_t *encoded_size), void (*release_context)(void *context), void (*release_encoded)(char *encoded), bool bulk, bool priority);
+static int _ws_internal__chat_start(ws_cli_conn_t *client);
+static void _ws_internal__chat_stop(ws_cli_conn_t *client);
+static int _ws_internal__chat_queue_frame(ws_cli_conn_t *client, const char *data, size_t size, int type);
 
 static uint64_t audio_clock_ms(void)
 {
-    struct timespec now;
+	struct timespec now;
 
-    clock_gettime(CLOCK_MONOTONIC, &now);
-    return (uint64_t)now.tv_sec * 1000 + now.tv_nsec / 1000000;
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	return (uint64_t)now.tv_sec * 1000 + now.tv_nsec / 1000000;
 }
 
-int ws_media_purpose(ws_cli_conn_t* client)
+int ws_media_purpose(ws_cli_conn_t *client)
 {
-    return client->media_purpose;
+	return client->media_purpose;
 }
 
-uint64_t ws_media_client_id(ws_cli_conn_t* client)
+uint64_t ws_media_client_id(ws_cli_conn_t *client)
 {
-    return client->media_client_id;
+	return client->media_client_id;
 }
 
-void ws_media_bind(ws_cli_conn_t* client, uint64_t id)
+void ws_media_bind(ws_cli_conn_t *client, uint64_t id)
 {
-    client->media_client_id = id;
-    set_socket_timeout(client->client_sock, SO_RCVTIMEO, WS_AUDIO_IDLE_TIMEOUT_MS);
-    if (client->media != NULL)
-    {
-        pthread_mutex_lock(&client->media->mutex);
-        client->media->next_keepalive_at = audio_clock_ms() + WS_AUDIO_KEEPALIVE_INTERVAL_MS;
-        client->media->is_bound = true;
-        pthread_mutex_unlock(&client->media->mutex);
-    }
+	client->media_client_id = id;
+	client->media_hello_deadline = 0;
+	set_socket_timeout(client->client_sock, SO_RCVTIMEO, WS_AUDIO_IDLE_TIMEOUT_MS);
+	if (client->media != NULL)
+	{
+		pthread_mutex_lock(&client->media->mutex);
+		client->media->next_keepalive_at = audio_clock_ms() + WS_AUDIO_KEEPALIVE_INTERVAL_MS;
+		client->media->is_bound = true;
+		pthread_mutex_unlock(&client->media->mutex);
+	}
 }
 
 // Shutdown wakes the reader. Only that reader may release and reuse the slot.
-void ws_abort_client(ws_cli_conn_t* client)
+void ws_abort_client(ws_cli_conn_t *client)
 {
-    record_close_reason(client, "application aborted connection");
-    if (client != NULL && client->chat_mode)
-    {
-        _ws_internal__chat_abort(client);
-        return;
-    }
-    if (client != NULL && client->client_sock != -1)
-    {
-        shutdown(client->client_sock, 2);
-    }
+	record_close_reason(client, "application aborted connection");
+	if (client != NULL && client->chat_mode)
+	{
+		_ws_internal__chat_abort(client);
+		return;
+	}
+	if (client != NULL && client->client_sock != -1)
+	{
+		shutdown(client->client_sock, 2);
+	}
 }
 
 /** @brief copies bytes into the ring buffer at an offset, continuing at its start when its end is reached */
-static void media_ring_write(struct ws_media_buffer* media, size_t offset, const unsigned char* source, size_t size)
+static void media_ring_write(struct ws_media_buffer *media, size_t offset, const unsigned char *source, size_t size)
 {
-    size_t first = 0;
+	size_t first = 0;
 
-    offset = offset % media->ring_bytes;
-    first = media->ring_bytes - offset;
-    if (first > size)
-    {
-        first = size;
-    }
-    memcpy(media->ring + offset, source, first);
-    if (size > first)
-    {
-        memcpy(media->ring, source + first, size - first);
-    }
+	offset = offset % media->ring_bytes;
+	first = media->ring_bytes - offset;
+	if (first > size)
+	{
+		first = size;
+	}
+	memcpy(media->ring + offset, source, first);
+	if (size > first)
+	{
+		memcpy(media->ring, source + first, size - first);
+	}
 }
 
 /** @brief copies bytes out of the ring buffer from an offset, continuing at its start when its end is reached */
-static void media_ring_read(struct ws_media_buffer* media, size_t offset, unsigned char* destination, size_t size)
+static void media_ring_read(struct ws_media_buffer *media, size_t offset, unsigned char *destination, size_t size)
 {
-    size_t first = 0;
+	size_t first = 0;
 
-    offset = offset % media->ring_bytes;
-    first = media->ring_bytes - offset;
-    if (first > size)
-    {
-        first = size;
-    }
-    memcpy(destination, media->ring + offset, first);
-    if (size > first)
-    {
-        memcpy(destination + first, media->ring, size - first);
-    }
+	offset = offset % media->ring_bytes;
+	first = media->ring_bytes - offset;
+	if (first > size)
+	{
+		first = size;
+	}
+	memcpy(destination, media->ring + offset, first);
+	if (size > first)
+	{
+		memcpy(destination + first, media->ring, size - first);
+	}
 }
 
 /** @brief reads the header of the record at an offset: when it was queued, its payload size and its kind */
-static void media_ring_header(struct ws_media_buffer* media, size_t offset, uint64_t* queued_at, size_t* size, int* kind)
+static void media_ring_header(struct ws_media_buffer *media, size_t offset, uint64_t *queued_at, size_t *size, int *kind)
 {
-    unsigned char header[WS_MEDIA_RECORD_HEADER];
-    int i = 0;
+	unsigned char header[WS_MEDIA_RECORD_HEADER];
+	int i = 0;
 
-    media_ring_read(media, offset, header, sizeof(header));
-    *queued_at = 0;
-    for (i = 0; i < 8; i++)
-    {
-        *queued_at = (*queued_at << 8) | header[i];
-    }
-    *size = ((size_t)header[8] << 8) | header[9];
-    *kind = header[10];
+	media_ring_read(media, offset, header, sizeof(header));
+	*queued_at = 0;
+	for (i = 0; i < 8; i++)
+	{
+		*queued_at = (*queued_at << 8) | header[i];
+	}
+	*size = ((size_t)header[8] << 8) | header[9];
+	*kind = header[10];
 }
 
 /** @brief drops every queued media frame; the control frames stay. used when the client changes channel, so nothing of the old channel follows it */
-void ws_media_clear_queue(ws_cli_conn_t* client)
+void ws_media_clear_queue(ws_cli_conn_t *client)
 {
-    struct ws_media_buffer* media = client->media;
-    unsigned char* kept = NULL;
-    size_t kept_size = 0;
-    size_t offset = 0;
-    size_t walked = 0;
-    uint64_t queued_at = 0;
-    size_t size = 0;
-    int kind = 0;
+	struct ws_media_buffer *media = client->media;
+	unsigned char kept[WS_VIDEO_FRAME_MAX + WS_MEDIA_RECORD_HEADER];
+	size_t kept_size = 0;
+	size_t offset = 0;
+	size_t walked = 0;
+	uint64_t queued_at = 0;
+	size_t size = 0;
+	int kind = 0;
 
-    if (media == NULL)
-    {
-        return;
-    }
-    pthread_mutex_lock(&media->mutex);
-    kept = malloc(media->used > 0 ? media->used : 1);
-    if (kept != NULL)
-    {
-        offset = media->head;
-        while (walked < media->used)
-        {
-            media_ring_header(media, offset, &queued_at, &size, &kind);
-            if (kind == WS_MEDIA_KIND_CONTROL)
-            {
-                media_ring_read(media, offset, kept + kept_size, WS_MEDIA_RECORD_HEADER + size);
-                kept_size += WS_MEDIA_RECORD_HEADER + size;
-            }
-            offset += WS_MEDIA_RECORD_HEADER + size;
-            walked += WS_MEDIA_RECORD_HEADER + size;
-        }
-        media->head = 0;
-        media->used = kept_size;
-        if (kept_size > 0)
-        {
-            memcpy(media->ring, kept, kept_size);
-        }
-        free(kept);
-    }
-    pthread_mutex_unlock(&media->mutex);
+	if (media == NULL)
+	{
+		return;
+	}
+	pthread_mutex_lock(&media->mutex);
+	offset = media->head;
+	while (walked < media->used)
+	{
+		media_ring_header(media, offset, &queued_at, &size, &kind);
+		if (kind == WS_MEDIA_KIND_CONTROL)
+		{
+			// Copy a whole record before moving it backwards in the logical ring.
+			// This cannot overwrite an unread record, including across the wrap.
+			media_ring_read(media, offset, kept, WS_MEDIA_RECORD_HEADER + size);
+			media_ring_write(media, media->head + kept_size, kept, WS_MEDIA_RECORD_HEADER + size);
+			kept_size += WS_MEDIA_RECORD_HEADER + size;
+		}
+		offset += WS_MEDIA_RECORD_HEADER + size;
+		walked += WS_MEDIA_RECORD_HEADER + size;
+	}
+	media->used = kept_size;
+	pthread_mutex_unlock(&media->mutex);
 }
 
 /**
@@ -436,54 +454,54 @@ void ws_media_clear_queue(ws_cli_conn_t* client)
  *
  * @return int -> 0 when queued or dropped for a control frame, -1 when the socket has no queue or the frame is too large
  */
-int ws_media_queue_frame(ws_cli_conn_t* client, const unsigned char* data, size_t size, int kind)
+int ws_media_queue_frame(ws_cli_conn_t *client, const unsigned char *data, size_t size, int kind)
 {
-    struct ws_media_buffer* media = client->media;
-    unsigned char header[WS_MEDIA_RECORD_HEADER];
-    size_t record_size = WS_MEDIA_RECORD_HEADER + size;
-    uint64_t now = audio_clock_ms();
-    uint64_t oldest_queued_at = 0;
-    size_t oldest_size = 0;
-    int oldest_kind = 0;
-    int i = 0;
+	struct ws_media_buffer *media = client->media;
+	unsigned char header[WS_MEDIA_RECORD_HEADER];
+	size_t record_size = WS_MEDIA_RECORD_HEADER + size;
+	uint64_t now = audio_clock_ms();
+	uint64_t oldest_queued_at = 0;
+	size_t oldest_size = 0;
+	int oldest_kind = 0;
+	int i = 0;
 
-    if (media == NULL || size > media->frame_max || record_size > media->ring_bytes)
-    {
-        return -1;
-    }
-    pthread_mutex_lock(&media->mutex);
-    if (media->stopping)
-    {
-        pthread_mutex_unlock(&media->mutex);
-        return -1;
-    }
-    while (media->used + record_size > media->ring_bytes)
-    {
-        media_ring_header(media, media->head, &oldest_queued_at, &oldest_size, &oldest_kind);
-        if (oldest_kind == WS_MEDIA_KIND_CONTROL)
-        {
-            pthread_mutex_unlock(&media->mutex);
-            return 0;
-        }
-        media->head = (media->head + WS_MEDIA_RECORD_HEADER + oldest_size) % media->ring_bytes;
-        media->used -= WS_MEDIA_RECORD_HEADER + oldest_size;
-    }
-    for (i = 0; i < 8; i++)
-    {
-        header[i] = (unsigned char)(now >> (56 - i * 8));
-    }
-    header[8] = (unsigned char)(size >> 8);
-    header[9] = (unsigned char)size;
-    header[10] = (unsigned char)kind;
-    media_ring_write(media, media->head + media->used, header, sizeof(header));
-    if (size > 0)
-    {
-        media_ring_write(media, media->head + media->used + WS_MEDIA_RECORD_HEADER, data, size);
-    }
-    media->used += record_size;
-    pthread_cond_signal(&media->ready);
-    pthread_mutex_unlock(&media->mutex);
-    return 0;
+	if (media == NULL || size > media->frame_max || record_size > media->ring_bytes)
+	{
+		return -1;
+	}
+	pthread_mutex_lock(&media->mutex);
+	if (media->stopping)
+	{
+		pthread_mutex_unlock(&media->mutex);
+		return -1;
+	}
+	while (media->used + record_size > media->ring_bytes)
+	{
+		media_ring_header(media, media->head, &oldest_queued_at, &oldest_size, &oldest_kind);
+		if (oldest_kind == WS_MEDIA_KIND_CONTROL)
+		{
+			pthread_mutex_unlock(&media->mutex);
+			return 0;
+		}
+		media->head = (media->head + WS_MEDIA_RECORD_HEADER + oldest_size) % media->ring_bytes;
+		media->used -= WS_MEDIA_RECORD_HEADER + oldest_size;
+	}
+	for (i = 0; i < 8; i++)
+	{
+		header[i] = (unsigned char)(now >> (56 - i * 8));
+	}
+	header[8] = (unsigned char)(size >> 8);
+	header[9] = (unsigned char)size;
+	header[10] = (unsigned char)kind;
+	media_ring_write(media, media->head + media->used, header, sizeof(header));
+	if (size > 0)
+	{
+		media_ring_write(media, media->head + media->used + WS_MEDIA_RECORD_HEADER, data, size);
+	}
+	media->used += record_size;
+	pthread_cond_signal(&media->ready);
+	pthread_mutex_unlock(&media->mutex);
+	return 0;
 }
 
 /* Only the HTTP upgrade read is timed; established idle clients use the
@@ -494,6 +512,7 @@ static int set_socket_timeout(int sock, int option, uint32_t milliseconds)
 	DWORD value = milliseconds;
 #else
 	struct timeval value;
+
 	value.tv_sec = milliseconds / 1000;
 	value.tv_usec = (milliseconds % 1000) * 1000;
 #endif
@@ -514,39 +533,74 @@ struct ws_frame_data
 	 * @brief Frame read.
 	 */
 	unsigned char frm[MESSAGE_LENGTH];
+
 	/**
 	 * @brief Processed message at the moment.
 	 */
 	unsigned char *msg;
+
 	/**
 	 * @brief Control frame payload
 	 */
-	unsigned char msg_ctrl[125];
+	unsigned char msg_ctrl[126];
+
 	/**
 	 * @brief Current byte position.
 	 */
 	size_t cur_pos;
+
 	/**
 	 * @brief Amount of read bytes.
 	 */
 	size_t amt_read;
+
 	/**
 	 * @brief Frame type, like text or binary.
 	 */
 	int frame_type;
+
 	/**
 	 * @brief Frame size.
 	 */
 	uint64_t frame_size;
+	uint64_t reserved_bytes;
+
 	/**
 	 * @brief Error flag, set when a read was not possible.
 	 */
 	int error;
+
 	/**
 	 * @brief Client connection structure.
 	 */
 	ws_cli_conn_t *client;
 };
+
+/** @brief Reserves owned incoming bytes until parsing and the application callback finish. */
+static bool reserve_incoming(struct ws_frame_data *frame, uint64_t needed)
+{
+	uint_fast64_t used = atomic_load(&ws_incoming_bytes);
+	uint64_t extra = needed - frame->reserved_bytes;
+
+	do
+	{
+		if (extra > WS_INCOMING_TOTAL_BYTES || used > WS_INCOMING_TOTAL_BYTES - extra)
+		{
+			return false;
+		}
+	} while (!atomic_compare_exchange_weak(&ws_incoming_bytes, &used, used + extra));
+	frame->reserved_bytes = needed;
+	return true;
+}
+
+/** @brief Releases a reservation exactly once on completion, close or any parser error. */
+static void release_incoming(struct ws_frame_data *frame)
+{
+	atomic_fetch_sub(&ws_incoming_bytes, frame->reserved_bytes);
+	frame->reserved_bytes = 0;
+	frame->client->incoming_deadline = 0;
+	frame->client->incoming_progress_deadline = 0;
+}
 
 /**
  * @brief Global mutex.
@@ -558,9 +612,9 @@ static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
  *
  * @param s Error message.
  */
-#define panic(s)           \
-	do                 \
-	{                  \
+#define panic(s)   \
+	do             \
+	{              \
 		perror(s); \
 		exit(-1);  \
 	} while (0);
@@ -570,8 +624,7 @@ static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
  *
  * @param fd Socket file descriptor to be closed.
  *
- * @attention This is part of the internal API and is documented just
- * for completeness.
+ * @attention This is part of the internal API and is documented just for completeness.
  */
 static void close_socket(int fd)
 {
@@ -584,8 +637,8 @@ static void close_socket(int fd)
 }
 
 /**
- * @brief Shuts a socket down for reading and writing WITHOUT closing the
- * file descriptor or touching any client state.
+ * @brief Shuts a socket down for reading and writing WITHOUT closing the file descriptor or
+ *        touching any client state.
  *
  * Used by the ping-timeout path: it wakes the client's own connection
  * thread out of recv(), which then leaves its read loop, fires the onclose
@@ -594,8 +647,7 @@ static void close_socket(int fd)
  *
  * @param fd Socket file descriptor to be shut down.
  *
- * @attention This is part of the internal API and is documented just
- * for completeness.
+ * @attention This is part of the internal API and is documented just for completeness.
  */
 static void shutdown_socket(int fd)
 {
@@ -612,12 +664,8 @@ static void shutdown_socket(int fd)
 // message has been released. The socket slot cannot be reused before that point.
 #define WS_CHAT_CLIENT_BYTES (32U * 1024U * 1024U)
 #ifndef WS_CHAT_TOTAL_BYTES
-#if SIZE_MAX <= UINT32_MAX
-// The 32-bit build leaves address space for connections, uploads and libraries.
+// A finite default also keeps per-client byte/message limits active on 64-bit hosts.
 #define WS_CHAT_TOTAL_BYTES (512U * 1024U * 1024U)
-#else
-#define WS_CHAT_TOTAL_BYTES SIZE_MAX
-#endif
 #endif
 #define WS_CHAT_KEEPALIVE_RESERVE (8U * 1024U * 1024U)
 #define WS_CHAT_CLIENT_MESSAGES 1024U
@@ -632,38 +680,38 @@ static void shutdown_socket(int fd)
 
 struct ws_chat_job
 {
-    struct ws_chat_job* next;
-    struct ws_chat_queue* queue;
-    void* context;
-    char* (*encode)(void* context, size_t* size);
-    void (*release_context)(void* context);
-    void (*release_encoded)(char* encoded);
-    char* encoded;
-    size_t size;
-    size_t charge;
-    size_t written;
-    unsigned char header[10];
-    size_t header_size;
-    int type;
-    bool encoding;
-    bool ready;
-    bool bulk;
-    bool priority;
-    uint64_t last_progress;
+	struct ws_chat_job *next;
+	struct ws_chat_queue *queue;
+	void *context;
+	char *(*encode)(void *context, size_t *size);
+	void (*release_context)(void *context);
+	void (*release_encoded)(char *encoded);
+	char *encoded;
+	size_t size;
+	size_t charge;
+	size_t written;
+	unsigned char header[10];
+	size_t header_size;
+	int type;
+	bool encoding;
+	bool ready;
+	bool bulk;
+	bool priority;
+	uint64_t last_progress;
 };
 
 struct ws_chat_queue
 {
-    struct ws_chat_queue* next;
-    ws_cli_conn_t* client;
-    struct ws_chat_job* first;
-    struct ws_chat_job* last;
-    size_t bytes;
-    size_t messages;
-    bool stopped;
-    bool writer_active;
-    bool close_requested;
-    uint64_t close_deadline;
+	struct ws_chat_queue *next;
+	ws_cli_conn_t *client;
+	struct ws_chat_job *first;
+	struct ws_chat_job *last;
+	size_t bytes;
+	size_t messages;
+	bool stopped;
+	bool writer_active;
+	bool close_requested;
+	uint64_t close_deadline;
 };
 
 #ifdef _WIN32
@@ -677,10 +725,10 @@ static pthread_cond_t chat_encode_ready = PTHREAD_COND_INITIALIZER;
 static pthread_cond_t chat_write_ready = PTHREAD_COND_INITIALIZER;
 static pthread_cond_t chat_cleanup_changed = PTHREAD_COND_INITIALIZER;
 static pthread_once_t chat_once = PTHREAD_ONCE_INIT;
-static struct ws_chat_queue* chat_first = NULL;
-static struct ws_chat_queue* chat_last = NULL;
-static struct ws_chat_job* chat_cancelled_first = NULL;
-static struct ws_chat_job* chat_cancelled_last = NULL;
+static struct ws_chat_queue *chat_first = NULL;
+static struct ws_chat_queue *chat_last = NULL;
+static struct ws_chat_job *chat_cancelled_first = NULL;
+static struct ws_chat_job *chat_cancelled_last = NULL;
 static size_t chat_bytes = 0;
 static const size_t chat_byte_limit = WS_CHAT_TOTAL_BYTES;
 static size_t chat_messages = 0;
@@ -695,47 +743,45 @@ static volatile size_t chat_failures_stall = 0;
 #endif
 static bool chat_workers_running = false;
 static bool chat_workers_stopping = false;
-static pthread_t* chat_workers = NULL;
+static pthread_t *chat_workers = NULL;
 static size_t chat_worker_count = 0;
 static pthread_t chat_writer;
-static ws_pollfd_t* chat_pollfds = NULL;
-static struct ws_chat_queue** chat_polled_queues = NULL;
+static ws_pollfd_t *chat_pollfds = NULL;
+static struct ws_chat_queue **chat_polled_queues = NULL;
 
 /**
  * @brief Waits until one of the supplied sockets is ready for reading or writing.
  *
- * @param ws_pollfd_t* descriptors -> Socket entries with the events to wait for. The operating
- * system writes the events that occurred into these same entries.
+ * @param ws_pollfd_t* descriptors -> Socket entries with the events to wait for. The operating system writes the events that occurred into these same entries.
  * @param size_t count -> Number of socket entries in descriptors.
  * @param int milliseconds -> Maximum time to wait, or -1 to wait without a time limit.
  *
  * @return int -> Number of sockets with events, 0 when the wait expires, or -1 on error.
  */
-static int _ws_internal__chat_poll(ws_pollfd_t* descriptors, size_t count, int milliseconds)
+static int _ws_internal__chat_poll(ws_pollfd_t *descriptors, size_t count, int milliseconds)
 {
 #ifdef _WIN32
-    return WSAPoll(descriptors, (ULONG)count, milliseconds);
+	return WSAPoll(descriptors, (ULONG)count, milliseconds);
 #else
-    return poll(descriptors, (nfds_t)count, milliseconds);
+	return poll(descriptors, (nfds_t)count, milliseconds);
 #endif
 }
 
 /**
  * @brief Checks whether the last socket operation can be tried again.
  *
- * @return bool -> true when the socket could not accept the operation yet or the
- * operation was interrupted; false for other errors.
+ * @return bool -> true when the socket could not accept the operation yet or the operation was interrupted; false for other errors.
  *
- * @attention Call this immediately after a failed socket operation on the same
- * thread, before another operation can replace the operating system error.
+ * @attention Call this immediately after a failed socket operation on the same thread, before another operation can replace the operating system error.
  */
 static bool _ws_internal__socket_would_block(void)
 {
 #ifdef _WIN32
-    int error = WSAGetLastError();
-    return error == WSAEWOULDBLOCK || error == WSAEINTR;
+	int error = WSAGetLastError();
+
+	return error == WSAEWOULDBLOCK || error == WSAEINTR;
 #else
-    return errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR;
+	return errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR;
 #endif
 }
 
@@ -743,65 +789,109 @@ static bool _ws_internal__socket_would_block(void)
 // incoming bytes, but the shared writer can leave a full socket alone and send
 // to another client. Audio and video keep their existing receive timeouts.
 /**
- * @brief Reads bytes from a socket and waits for more data when a chat socket
- * cannot provide any bytes yet.
+ * @brief Reads bytes from a socket and waits for more data when a chat socket cannot provide any
+ *        bytes yet.
  *
  * @param ws_cli_conn_t* client -> Connection whose socket supplies the incoming bytes.
  * @param void* buffer -> Destination buffer for the bytes that were received.
  * @param size_t length -> Maximum number of bytes that fit in buffer.
  *
- * @return ssize_t -> Number of bytes received, 0 when the peer closes its connection, or
- * -1 on error. Audio and video sockets keep their existing receive behavior.
+ * @return ssize_t -> Number of bytes received, 0 when the peer closes its connection, or -1 on error. Audio and video sockets keep their existing receive behavior.
  *
- * @attention The connection's reader owns this call. Do not hold application
- * locks while waiting for incoming bytes.
+ * @attention The connection's reader owns this call. Do not hold application locks while waiting for incoming bytes.
  */
-static ssize_t _ws_internal__receive_bytes(ws_cli_conn_t* client, void* buffer, size_t length)
+static ssize_t _ws_internal__receive_bytes(ws_cli_conn_t *client, void *buffer, size_t length)
 {
-    ssize_t received;
-    ws_pollfd_t descriptor;
+	uint64_t now = 0;
+	uint64_t wait = 0;
+	ssize_t received;
+	ws_pollfd_t descriptor;
 #ifdef _WIN32
-    bool stopped;
-    const int poll_timeout_ms = 1000;
+	bool stopped;
+	const int poll_timeout_ms = 1000;
 #else
-    const int poll_timeout_ms = -1;
+	const int poll_timeout_ms = 1000;
 #endif
 
-    for (;;)
-    {
-        received = recv(client->client_sock, buffer, length, 0);
-        if (received > 0)
-        {
-            atomic_fetch_add_explicit(&ws_received_bytes, (uint64_t)received, memory_order_relaxed);
-        }
-        if (received >= 0 || !client->chat_mode || !_ws_internal__socket_would_block())
-        {
-            if (received <= 0)
-            {
-                record_close_reason(client, received == 0 ? "peer closed TCP connection" : "socket receive failed");
-            }
-            return received;
-        }
-        memset(&descriptor, 0, sizeof(descriptor));
-        descriptor.fd = client->client_sock;
-        descriptor.events = POLLIN;
-        if (_ws_internal__chat_poll(&descriptor, 1, poll_timeout_ms) < 0 && !_ws_internal__socket_would_block())
-        {
-            record_close_reason(client, "socket receive poll failed");
-            return -1;
-        }
+	for (;;)
+	{
+		now = audio_clock_ms();
+		if (client->media_hello_deadline != 0 && now >= client->media_hello_deadline)
+		{
+			record_close_reason(client, "media attachment deadline exceeded");
+			return -1;
+		}
+		if (client->incoming_deadline != 0 && (now >= client->incoming_deadline || now >= client->incoming_progress_deadline))
+		{
+			record_close_reason(client, "incoming message deadline exceeded");
+			return -1;
+		}
+		if (client->media_purpose != WS_MEDIA_PURPOSE_NONE)
+		{
+			wait = WS_AUDIO_IDLE_TIMEOUT_MS;
+			if (client->media_hello_deadline != 0 && client->media_hello_deadline - now < wait)
+			{
+				wait = client->media_hello_deadline - now;
+			}
+			if (client->incoming_deadline != 0)
+			{
+				if (client->incoming_deadline - now < wait)
+				{
+					wait = client->incoming_deadline - now;
+				}
+				if (client->incoming_progress_deadline - now < wait)
+				{
+					wait = client->incoming_progress_deadline - now;
+				}
+			}
+			if (set_socket_timeout(client->client_sock, SO_RCVTIMEO, (uint32_t)wait) != 0)
+			{
+				return -1;
+			}
+		}
+		received = recv(client->client_sock, buffer, length, 0);
+		now = audio_clock_ms();
+		if ((client->media_hello_deadline != 0 && now >= client->media_hello_deadline) || (client->incoming_deadline != 0 && (now >= client->incoming_deadline || now >= client->incoming_progress_deadline)))
+		{
+			record_close_reason(client, "incoming message or attachment deadline exceeded");
+			return -1;
+		}
+		if (received > 0)
+		{
+			atomic_fetch_add_explicit(&ws_received_bytes, (uint64_t)received, memory_order_relaxed);
+			if (client->incoming_deadline != 0)
+			{
+				client->incoming_progress_deadline = audio_clock_ms() + WS_MESSAGE_PROGRESS_MS;
+			}
+		}
+		if (received >= 0 || !client->chat_mode || !_ws_internal__socket_would_block())
+		{
+			if (received <= 0)
+			{
+				record_close_reason(client, received == 0 ? "peer closed TCP connection" : "socket receive failed");
+			}
+			return received;
+		}
+		memset(&descriptor, 0, sizeof(descriptor));
+		descriptor.fd = client->client_sock;
+		descriptor.events = POLLIN;
+		if (_ws_internal__chat_poll(&descriptor, 1, poll_timeout_ms) < 0 && !_ws_internal__socket_would_block())
+		{
+			record_close_reason(client, "socket receive poll failed");
+			return -1;
+		}
 #ifdef _WIN32
-        // WSAPoll may stay asleep after another thread shuts down this socket.
-        // Check cancellation periodically so a silent peer cannot retain its slot.
-        pthread_mutex_lock(&chat_mutex);
-        stopped = client->chat != NULL && client->chat->stopped;
-        pthread_mutex_unlock(&chat_mutex);
-        if (stopped)
-        {
-            return -1;
-        }
+		// WSAPoll may stay asleep after another thread shuts down this socket.
+		// Check cancellation periodically so a silent peer cannot retain its slot.
+		pthread_mutex_lock(&chat_mutex);
+		stopped = client->chat != NULL && client->chat->stopped;
+		pthread_mutex_unlock(&chat_mutex);
+		if (stopped)
+		{
+			return -1;
+		}
 #endif
-    }
+	}
 }
 
 /**
@@ -811,110 +901,104 @@ static ssize_t _ws_internal__receive_bytes(ws_cli_conn_t* client, void* buffer, 
  *
  * @return void
  *
- * @attention The caller must hold chat_mutex. The mutex is held again when this
- * function returns, including when the wait ends without a notification.
+ * @attention The caller must hold chat_mutex. The mutex is held again when this function returns, including when the wait ends without a notification.
  */
-static void _ws_internal__chat_wait_briefly(pthread_cond_t* condition)
+static void _ws_internal__chat_wait_briefly(pthread_cond_t *condition)
 {
-    struct timespec until;
+	struct timespec until;
 
-    clock_gettime(CLOCK_REALTIME, &until);
-    until.tv_nsec += 10000000;
-    if (until.tv_nsec >= 1000000000)
-    {
-        until.tv_nsec -= 1000000000;
-        until.tv_sec++;
-    }
-    pthread_cond_timedwait(condition, &chat_mutex, &until);
+	clock_gettime(CLOCK_REALTIME, &until);
+	until.tv_nsec += 10000000;
+	if (until.tv_nsec >= 1000000000)
+	{
+		until.tv_nsec -= 1000000000;
+		until.tv_sec++;
+	}
+	pthread_cond_timedwait(condition, &chat_mutex, &until);
 }
 
 /**
  * @brief Builds the WebSocket frame header for an outgoing message.
  *
- * @param struct ws_chat_job* job -> Message containing the frame type, encoded bytes and byte count.
- * The generated header and its length are stored in this same message.
+ * @param struct ws_chat_job* job -> Message containing the frame type, encoded bytes and byte count. The generated header and its length are stored in this same message.
  *
- * @return bool -> true when the message can be sent as a frame; false when its size or
- * contents do not meet the frame requirements.
+ * @return bool -> true when the message can be sent as a frame; false when its size or contents do not meet the frame requirements.
  *
  * @attention The caller must own this message while changing its header.
  */
-static bool _ws_internal__chat_make_header(struct ws_chat_job* job)
+static bool _ws_internal__chat_make_header(struct ws_chat_job *job)
 {
-    size_t i;
+	size_t i;
 
-    if (job->size > MAX_FRAME_LENGTH || (job->size > 0 && job->encoded == NULL)
-        || (job->type >= WS_FR_OP_CLSE && job->size > 125))
-    {
-        return false;
-    }
-    job->header[0] = WS_FIN | job->type;
-    if (job->size <= 125)
-    {
-        job->header[1] = (unsigned char)job->size;
-        job->header_size = 2;
-    }
-    else if (job->size <= 65535)
-    {
-        job->header[1] = 126;
-        job->header[2] = (unsigned char)(job->size >> 8);
-        job->header[3] = (unsigned char)job->size;
-        job->header_size = 4;
-    }
-    else
-    {
-        job->header[1] = 127;
-        for (i = 0; i < 8; i++)
-        {
-            job->header[2 + i] = (unsigned char)((uint64_t)job->size >> (56 - 8 * i));
-        }
-        job->header_size = 10;
-    }
-    return true;
+	if (job->size > MAX_FRAME_LENGTH || (job->size > 0 && job->encoded == NULL) || (job->type >= WS_FR_OP_CLSE && job->size > 125))
+	{
+		return false;
+	}
+	job->header[0] = WS_FIN | job->type;
+	if (job->size <= 125)
+	{
+		job->header[1] = (unsigned char)job->size;
+		job->header_size = 2;
+	}
+	else if (job->size <= 65535)
+	{
+		job->header[1] = 126;
+		job->header[2] = (unsigned char)(job->size >> 8);
+		job->header[3] = (unsigned char)job->size;
+		job->header_size = 4;
+	}
+	else
+	{
+		job->header[1] = 127;
+		for (i = 0; i < 8; i++)
+		{
+			job->header[2 + i] = (unsigned char)((uint64_t)job->size >> (56 - 8 * i));
+		}
+		job->header_size = 10;
+	}
+	return true;
 }
 
 // Removing a job from the list does not release the connection yet. Its count
 // stays charged until its buffers and callback context have also been freed.
 // This lets the reader safely wait without holding any application lock.
 /**
- * @brief Frees one outgoing message and removes its reserved memory from the
- * queue's totals after all of its buffers have been released.
+ * @brief Frees one outgoing message and removes its reserved memory from the queue's totals after
+ *        all of its buffers have been released.
  *
- * @param struct ws_chat_job* job -> Detached message to release, including its callback data and any
- * encoded bytes. The message must no longer be in use by an encoder or writer.
+ * @param struct ws_chat_job* job -> Detached message to release, including its callback data and any encoded bytes. The message must no longer be in use by an encoder or writer.
  *
  * @return void
  *
- * @attention Do not hold chat_mutex when calling this function. Release callbacks
- * run before that mutex is acquired to update the queue's totals.
+ * @attention Do not hold chat_mutex when calling this function. Release callbacks run before that mutex is acquired to update the queue's totals.
  */
-static void _ws_internal__chat_release_job(struct ws_chat_job* job)
+static void _ws_internal__chat_release_job(struct ws_chat_job *job)
 {
-    struct ws_chat_queue* queue = job->queue;
-    size_t charge = job->charge;
+	struct ws_chat_queue *queue = job->queue;
+	size_t charge = job->charge;
 
-    if (job->release_context != NULL)
-    {
-        job->release_context(job->context);
-    }
-    if (job->encoded != NULL && job->release_encoded != NULL)
-    {
-        job->release_encoded(job->encoded);
-    }
-    free(job);
-    if (queue != NULL)
-    {
-        pthread_mutex_lock(&chat_mutex);
-        queue->bytes -= charge;
-        queue->messages--;
-        chat_bytes -= charge;
-        chat_messages--;
-        if (queue->stopped && queue->messages == 0)
-        {
-            pthread_cond_broadcast(&chat_cleanup_changed);
-        }
-        pthread_mutex_unlock(&chat_mutex);
-    }
+	if (job->release_context != NULL)
+	{
+		job->release_context(job->context);
+	}
+	if (job->encoded != NULL && job->release_encoded != NULL)
+	{
+		job->release_encoded(job->encoded);
+	}
+	free(job);
+	if (queue != NULL)
+	{
+		pthread_mutex_lock(&chat_mutex);
+		queue->bytes -= charge;
+		queue->messages--;
+		chat_bytes -= charge;
+		chat_messages--;
+		if (queue->stopped && queue->messages == 0)
+		{
+			pthread_cond_broadcast(&chat_cleanup_changed);
+		}
+		pthread_mutex_unlock(&chat_mutex);
+	}
 }
 
 /**
@@ -924,55 +1008,54 @@ static void _ws_internal__chat_release_job(struct ws_chat_job* job)
  *
  * @return void
  *
- * @attention Do not hold chat_mutex. No encoder or writer may still be using
- * any message in this list.
+ * @attention Do not hold chat_mutex. No encoder or writer may still be using any message in this list.
  */
-static void _ws_internal__chat_release_list(struct ws_chat_job* jobs)
+static void _ws_internal__chat_release_list(struct ws_chat_job *jobs)
 {
-    struct ws_chat_job* next;
+	struct ws_chat_job *next;
 
-    while (jobs != NULL)
-    {
-        next = jobs->next;
-        _ws_internal__chat_release_job(jobs);
-        jobs = next;
-    }
+	while (jobs != NULL)
+	{
+		next = jobs->next;
+		_ws_internal__chat_release_job(jobs);
+		jobs = next;
+	}
 }
 
 /**
  * @brief Lets outgoing workers free cancelled messages after the caller returns.
  * @param struct ws_chat_job* jobs -> detached messages no encoder or writer is using
  */
-static void _ws_internal__chat_defer_release(struct ws_chat_job* jobs)
+static void _ws_internal__chat_defer_release(struct ws_chat_job *jobs)
 {
-    struct ws_chat_job* last = jobs;
+	struct ws_chat_job *last = jobs;
 
-    if (jobs == NULL)
-    {
-        return;
-    }
-    while (last->next != NULL)
-    {
-        last = last->next;
-    }
-    pthread_mutex_lock(&chat_mutex);
-    if (!chat_workers_running || chat_workers_stopping)
-    {
-        pthread_mutex_unlock(&chat_mutex);
-        _ws_internal__chat_release_list(jobs);
-        return;
-    }
-    if (chat_cancelled_last != NULL)
-    {
-        chat_cancelled_last->next = jobs;
-    }
-    else
-    {
-        chat_cancelled_first = jobs;
-    }
-    chat_cancelled_last = last;
-    pthread_cond_broadcast(&chat_encode_ready);
-    pthread_mutex_unlock(&chat_mutex);
+	if (jobs == NULL)
+	{
+		return;
+	}
+	while (last->next != NULL)
+	{
+		last = last->next;
+	}
+	pthread_mutex_lock(&chat_mutex);
+	if (!chat_workers_running || chat_workers_stopping)
+	{
+		pthread_mutex_unlock(&chat_mutex);
+		_ws_internal__chat_release_list(jobs);
+		return;
+	}
+	if (chat_cancelled_last != NULL)
+	{
+		chat_cancelled_last->next = jobs;
+	}
+	else
+	{
+		chat_cancelled_first = jobs;
+	}
+	chat_cancelled_last = last;
+	pthread_cond_broadcast(&chat_encode_ready);
+	pthread_mutex_unlock(&chat_mutex);
 }
 
 /**
@@ -980,28 +1063,28 @@ static void _ws_internal__chat_defer_release(struct ws_chat_job* jobs)
  * @return struct ws_chat_job* -> detached messages; their counts still keep each connection alive
  * @attention The caller holds chat_mutex and frees the messages after unlocking.
  */
-static struct ws_chat_job* _ws_internal__chat_take_cancelled_locked(void)
+static struct ws_chat_job *_ws_internal__chat_take_cancelled_locked(void)
 {
-    struct ws_chat_job* first = chat_cancelled_first;
-    struct ws_chat_job* last = first;
-    size_t count = 1;
+	struct ws_chat_job *first = chat_cancelled_first;
+	struct ws_chat_job *last = first;
+	size_t count = 1;
 
-    if (first == NULL)
-    {
-        return NULL;
-    }
-    while (last->next != NULL && count < 64)
-    {
-        last = last->next;
-        count++;
-    }
-    chat_cancelled_first = last->next;
-    if (chat_cancelled_first == NULL)
-    {
-        chat_cancelled_last = NULL;
-    }
-    last->next = NULL;
-    return first;
+	if (first == NULL)
+	{
+		return NULL;
+	}
+	while (last->next != NULL && count < 64)
+	{
+		last = last->next;
+		count++;
+	}
+	chat_cancelled_first = last->next;
+	if (chat_cancelled_first == NULL)
+	{
+		chat_cancelled_last = NULL;
+	}
+	last->next = NULL;
+	return first;
 }
 
 /**
@@ -1012,24 +1095,23 @@ static struct ws_chat_job* _ws_internal__chat_take_cancelled_locked(void)
  *
  * @return void
  *
- * @attention The caller must own both lists. This function only links the lists
- * together; their messages and buffers are freed separately.
+ * @attention The caller must own both lists. This function only links the lists together; their messages and buffers are freed separately.
  */
-static void _ws_internal__chat_collect(struct ws_chat_job** collected, struct ws_chat_job* jobs)
+static void _ws_internal__chat_collect(struct ws_chat_job **collected, struct ws_chat_job *jobs)
 {
-    struct ws_chat_job* last;
+	struct ws_chat_job *last;
 
-    if (jobs == NULL)
-    {
-        return;
-    }
-    last = jobs;
-    while (last->next != NULL)
-    {
-        last = last->next;
-    }
-    last->next = *collected;
-    *collected = jobs;
+	if (jobs == NULL)
+	{
+		return;
+	}
+	last = jobs;
+	while (last->next != NULL)
+	{
+		last = last->next;
+	}
+	last->next = *collected;
+	*collected = jobs;
 }
 
 /**
@@ -1037,66 +1119,61 @@ static void _ws_internal__chat_collect(struct ws_chat_job** collected, struct ws
  *
  * @param struct ws_chat_queue* queue -> Connection queue whose first message will be removed.
  *
- * @return struct ws_chat_job* -> Removed message, or NULL when the queue was empty. The caller must
- * release the returned message when it is no longer needed.
+ * @return struct ws_chat_job* -> Removed message, or NULL when the queue was empty. The caller must release the returned message when it is no longer needed.
  *
- * @attention The caller must hold chat_mutex. The removed message remains counted
- * in the queue's reserved memory until its buffers have been released.
+ * @attention The caller must hold chat_mutex. The removed message remains counted in the queue's reserved memory until its buffers have been released.
  */
-static struct ws_chat_job* _ws_internal__chat_remove_first(struct ws_chat_queue* queue)
+static struct ws_chat_job *_ws_internal__chat_remove_first(struct ws_chat_queue *queue)
 {
-    struct ws_chat_job* job = queue->first;
+	struct ws_chat_job *job = queue->first;
 
-    if (job != NULL)
-    {
-        queue->first = job->next;
-        if (queue->first == NULL)
-        {
-            queue->last = NULL;
-        }
-        job->next = NULL;
-    }
-    return job;
+	if (job != NULL)
+	{
+		queue->first = job->next;
+		if (queue->first == NULL)
+		{
+			queue->last = NULL;
+		}
+		job->next = NULL;
+	}
+	return job;
 }
 
 // Called with chat_mutex held. The active encoder or writer keeps its first
 // job; it will notice stopping and release that job itself. Everything after
 // it can be cancelled immediately without waiting for either worker.
 /**
- * @brief Stops a connection and detaches the queued messages that can be freed
- * immediately.
+ * @brief Stops a connection and detaches the queued messages that can be freed immediately.
  *
  * @param struct ws_chat_queue* queue -> Connection queue to stop and cancel.
  *
- * @return struct ws_chat_job* -> Detached messages for the caller to release after unlocking chat_mutex,
- * or NULL when no messages can be released immediately.
+ * @return struct ws_chat_job* -> Detached messages for the caller to release after unlocking chat_mutex, or NULL when no messages can be released immediately.
  *
- * @attention The caller must hold chat_mutex. A message still being encoded or
- * written stays in the queue until its worker has finished using it.
+ * @attention The caller must hold chat_mutex. A message still being encoded or written stays in the queue until its worker has finished using it.
  */
-static struct ws_chat_job* _ws_internal__chat_abort_locked(struct ws_chat_queue* queue)
+static struct ws_chat_job *_ws_internal__chat_abort_locked(struct ws_chat_queue *queue)
 {
-    struct ws_chat_job* cancelled;
+	struct ws_chat_job *cancelled;
 
-    if (!queue->stopped)
-    {
-        queue->stopped = true;
-        shutdown_socket(queue->client->client_sock);
-    }
-    cancelled = queue->first;
-    if (cancelled != NULL && (cancelled->encoding || queue->writer_active))
-    {
-        cancelled = queue->first->next;
-        queue->first->next = NULL;
-        queue->last = queue->first;
-    }
-    else
-    {
-        queue->first = NULL;
-        queue->last = NULL;
-    }
-    pthread_cond_broadcast(&chat_cleanup_changed);
-    return cancelled;
+	if (!queue->stopped)
+	{
+		queue->stopped = true;
+		shutdown_socket(queue->client->client_sock);
+	}
+	cancelled = queue->first;
+	if (cancelled != NULL && (cancelled->encoding || queue->writer_active))
+	{
+		cancelled = queue->first->next;
+		queue->first->next = NULL;
+		queue->last = queue->first;
+	}
+	else
+	{
+		queue->first = NULL;
+		queue->last = NULL;
+	}
+	pthread_cond_broadcast(&chat_cleanup_changed);
+	return cancelled;
 }
 
 /**
@@ -1106,158 +1183,150 @@ static struct ws_chat_job* _ws_internal__chat_abort_locked(struct ws_chat_queue*
  *
  * @return void
  *
- * @attention The caller must keep client alive and must not hold chat_mutex.
- * This function leaves final connection cleanup to the connection's reader.
+ * @attention The caller must keep client alive and must not hold chat_mutex. This function leaves final connection cleanup to the connection's reader.
  */
-static void _ws_internal__chat_abort(ws_cli_conn_t* client)
+static void _ws_internal__chat_abort(ws_cli_conn_t *client)
 {
-    struct ws_chat_job* cancelled = NULL;
+	struct ws_chat_job *cancelled = NULL;
 
-    pthread_mutex_lock(&chat_mutex);
-    if (client->chat != NULL)
-    {
-        cancelled = _ws_internal__chat_abort_locked(client->chat);
-    }
-    pthread_mutex_unlock(&chat_mutex);
-    _ws_internal__chat_defer_release(cancelled);
+	pthread_mutex_lock(&chat_mutex);
+	if (client->chat != NULL)
+	{
+		cancelled = _ws_internal__chat_abort_locked(client->chat);
+	}
+	pthread_mutex_unlock(&chat_mutex);
+	_ws_internal__chat_defer_release(cancelled);
 }
 
 /**
- * @brief Adds a message to a connection's outgoing queue while checking the
- * per-connection and server-wide memory and message limits.
+ * @brief Adds a message to a connection's outgoing queue while checking the per-connection and
+ *        server-wide memory and message limits.
  *
  * @param ws_cli_conn_t* client -> Connection that should receive the message.
  * @param struct ws_chat_job* job -> Message whose ownership transfers to this function on every return.
  *
- * @return int -> 0 when the message was queued or a duplicate close was handled;
- * -1 when the message could not be queued.
+ * @return int -> 0 when the message was queued or a duplicate close was handled; -1 when the message could not be queued.
  *
- * @attention The caller must keep client alive and must not hold chat_mutex.
- * Exceeding a queue limit stops that connection and cancels its waiting messages.
+ * @attention The caller must keep client alive and must not hold chat_mutex. Exceeding a queue limit stops that connection and cancels its waiting messages.
  */
-static int _ws_internal__chat_add_job(ws_cli_conn_t* client, struct ws_chat_job* job)
+static int _ws_internal__chat_add_job(ws_cli_conn_t *client, struct ws_chat_job *job)
 {
-    struct ws_chat_queue* queue;
-    struct ws_chat_job* cancelled = NULL;
-    struct ws_chat_job* previous = NULL;
-    struct ws_chat_job* next = NULL;
-    size_t byte_limit;
-    size_t client_byte_limit;
-    size_t client_message_limit;
-    size_t message_limit;
-    bool unlimited;
-    int result = -1;
+	struct ws_chat_queue *queue;
+	struct ws_chat_job *cancelled = NULL;
+	struct ws_chat_job *previous = NULL;
+	struct ws_chat_job *next = NULL;
+	size_t byte_limit;
+	size_t client_byte_limit;
+	size_t client_message_limit;
+	size_t message_limit;
+	bool unlimited;
+	int result = -1;
 
-    pthread_mutex_lock(&chat_mutex);
-    queue = client != NULL ? client->chat : NULL;
-    unlimited = chat_byte_limit == SIZE_MAX;
-    byte_limit = chat_byte_limit - (job->priority || unlimited ? 0 : WS_CHAT_KEEPALIVE_RESERVE);
-    client_byte_limit = unlimited ? SIZE_MAX : WS_CHAT_CLIENT_BYTES;
-    client_message_limit = unlimited ? SIZE_MAX : WS_CHAT_CLIENT_MESSAGES + (job->priority ? 16 : 0);
-    message_limit = unlimited ? SIZE_MAX : WS_CHAT_TOTAL_MESSAGES + (job->priority ? 8192 : 0);
-    if (queue != NULL && !queue->stopped && !queue->close_requested)
-    {
-        // If a receiver falls behind, tell the file-sending thread to wait.
-        // Leave room for keepalives and other messages while it catches up.
-        if (job->bulk && (queue->messages >= 4
-            || job->charge > client_byte_limit || queue->bytes > client_byte_limit - job->charge
-            || job->charge > chat_byte_limit / 4
-            || chat_bytes > chat_byte_limit / 4 - job->charge))
-        {
-            result = 2;
-        }
-        else if (job->charge > client_byte_limit || queue->bytes > client_byte_limit - job->charge
-            || job->charge > byte_limit || chat_bytes > byte_limit - job->charge
-            || queue->messages >= client_message_limit
-            || chat_messages >= message_limit)
-        {
+	pthread_mutex_lock(&chat_mutex);
+	queue = client != NULL ? client->chat : NULL;
+	unlimited = chat_byte_limit == SIZE_MAX;
+	byte_limit = chat_byte_limit - (job->priority || unlimited ? 0 : WS_CHAT_KEEPALIVE_RESERVE);
+	client_byte_limit = unlimited ? SIZE_MAX : WS_CHAT_CLIENT_BYTES;
+	client_message_limit = unlimited ? SIZE_MAX : WS_CHAT_CLIENT_MESSAGES + (job->priority ? 16 : 0);
+	message_limit = unlimited ? SIZE_MAX : WS_CHAT_TOTAL_MESSAGES + (job->priority ? 8192 : 0);
+	if (queue != NULL && !queue->stopped && !queue->close_requested)
+	{
+		// If a receiver falls behind, tell the file-sending thread to wait.
+		// Leave room for keepalives and other messages while it catches up.
+		if (job->bulk && (queue->messages >= 4 || job->charge > client_byte_limit || queue->bytes > client_byte_limit - job->charge || job->charge > chat_byte_limit / 4 || chat_bytes > chat_byte_limit / 4 - job->charge))
+		{
+			result = 2;
+		}
+		else if (job->charge > client_byte_limit || queue->bytes > client_byte_limit - job->charge || job->charge > byte_limit || chat_bytes > byte_limit - job->charge || queue->messages >= client_message_limit || chat_messages >= message_limit)
+		{
 #ifdef WS_CHAT_TEST_COUNTERS
-            chat_failures_client_bytes += job->charge > client_byte_limit || queue->bytes > client_byte_limit - job->charge;
-            chat_failures_total_bytes += job->charge > byte_limit || chat_bytes > byte_limit - job->charge;
-            chat_failures_client_messages += queue->messages >= client_message_limit;
-            chat_failures_total_messages += chat_messages >= message_limit;
+			chat_failures_client_bytes += job->charge > client_byte_limit || queue->bytes > client_byte_limit - job->charge;
+			chat_failures_total_bytes += job->charge > byte_limit || chat_bytes > byte_limit - job->charge;
+			chat_failures_client_messages += queue->messages >= client_message_limit;
+			chat_failures_total_messages += chat_messages >= message_limit;
 #endif
-            record_close_reason(client, "outgoing queue limit exceeded");
-            cancelled = _ws_internal__chat_abort_locked(queue);
-        }
-        else
-        {
-            job->queue = queue;
-            if (job->priority)
-            {
-                next = queue->first;
-                // Finish the message already being prepared or sent before
-                // sending the keepalive, so its bytes do not interrupt that message.
-                if (next != NULL && (next->encoding || queue->writer_active || next->written != 0))
-                {
-                    previous = next;
-                    next = next->next;
-                }
-                while (next != NULL && next->priority)
-                {
-                    previous = next;
-                    next = next->next;
-                }
-                job->next = next;
-                if (previous != NULL)
-                {
-                    previous->next = job;
-                }
-                else
-                {
-                    queue->first = job;
-                }
-                if (next == NULL)
-                {
-                    queue->last = job;
-                }
-            }
-            else
-            {
-                if (queue->last != NULL)
-                {
-                    queue->last->next = job;
-                }
-                else
-                {
-                    queue->first = job;
-                }
-                queue->last = job;
-            }
-            queue->bytes += job->charge;
-            queue->messages++;
-            chat_bytes += job->charge;
-            chat_messages++;
-            if (job->type == WS_FR_OP_CLSE)
-            {
-                queue->close_requested = true;
-                queue->close_deadline = audio_clock_ms() + WS_CHAT_CLOSE_DRAIN_MS;
-            }
-            if (queue->first == job)
-            {
-                if (job->ready)
-                {
-                    pthread_cond_signal(&chat_write_ready);
-                }
-                else
-                {
-                    pthread_cond_signal(&chat_encode_ready);
-                }
-            }
-            result = 0;
-        }
-    }
-    else if (queue != NULL && !queue->stopped && queue->close_requested && job->type == WS_FR_OP_CLSE)
-    {
-        result = 1;
-    }
-    pthread_mutex_unlock(&chat_mutex);
-    _ws_internal__chat_defer_release(cancelled);
-    if (result != 0)
-    {
-        _ws_internal__chat_release_job(job);
-    }
-    return result == 2 ? 1 : result < 0 ? -1 : 0;
+			record_close_reason(client, "outgoing queue limit exceeded");
+			cancelled = _ws_internal__chat_abort_locked(queue);
+		}
+		else
+		{
+			job->queue = queue;
+			if (job->priority)
+			{
+				next = queue->first;
+
+				// Finish the message already being prepared or sent before
+				// sending the keepalive, so its bytes do not interrupt that message.
+				if (next != NULL && (next->encoding || queue->writer_active || next->written != 0))
+				{
+					previous = next;
+					next = next->next;
+				}
+				while (next != NULL && next->priority)
+				{
+					previous = next;
+					next = next->next;
+				}
+				job->next = next;
+				if (previous != NULL)
+				{
+					previous->next = job;
+				}
+				else
+				{
+					queue->first = job;
+				}
+				if (next == NULL)
+				{
+					queue->last = job;
+				}
+			}
+			else
+			{
+				if (queue->last != NULL)
+				{
+					queue->last->next = job;
+				}
+				else
+				{
+					queue->first = job;
+				}
+				queue->last = job;
+			}
+			queue->bytes += job->charge;
+			queue->messages++;
+			chat_bytes += job->charge;
+			chat_messages++;
+			if (job->type == WS_FR_OP_CLSE)
+			{
+				queue->close_requested = true;
+				queue->close_deadline = audio_clock_ms() + WS_CHAT_CLOSE_DRAIN_MS;
+			}
+			if (queue->first == job)
+			{
+				if (job->ready)
+				{
+					pthread_cond_signal(&chat_write_ready);
+				}
+				else
+				{
+					pthread_cond_signal(&chat_encode_ready);
+				}
+			}
+			result = 0;
+		}
+	}
+	else if (queue != NULL && !queue->stopped && queue->close_requested && job->type == WS_FR_OP_CLSE)
+	{
+		result = 1;
+	}
+	pthread_mutex_unlock(&chat_mutex);
+	_ws_internal__chat_defer_release(cancelled);
+	if (result != 0)
+	{
+		_ws_internal__chat_release_job(job);
+	}
+	return result == 2 ? 1 : result < 0 ? -1 : 0;
 }
 
 /**
@@ -1272,38 +1341,35 @@ static int _ws_internal__chat_add_job(ws_cli_conn_t* client, struct ws_chat_job*
  * @param priority -> lets an independent keepalive reply pass waiting messages
  * @return int -> 0 queued, 1 busy for bulk delivery, -1 closed or failed
  */
-static int _ws_internal__queue_text(ws_cli_conn_t* client, void* context, size_t charged_bytes,
-    char* (*encode)(void* context, size_t* encoded_size),
-    void (*release_context)(void* context), void (*release_encoded)(char* encoded), bool bulk, bool priority)
+static int _ws_internal__queue_text(ws_cli_conn_t *client, void *context, size_t charged_bytes, char *(*encode)(void *context, size_t *encoded_size), void (*release_context)(void *context), void (*release_encoded)(char *encoded), bool bulk, bool priority)
 {
-    struct ws_chat_job* job = NULL;
+	struct ws_chat_job *job = NULL;
 
-    if (encode != NULL && release_context != NULL && release_encoded != NULL
-        && charged_bytes <= SIZE_MAX - sizeof(*job))
-    {
-        job = calloc(1, sizeof(*job));
-    }
-    if (job == NULL)
-    {
-        if (release_context != NULL)
-        {
-            release_context(context);
-        }
-        if (!bulk)
-        {
-            ws_abort_client(client);
-        }
-        return -1;
-    }
-    job->context = context;
-    job->encode = encode;
-    job->release_context = release_context;
-    job->release_encoded = release_encoded;
-    job->charge = charged_bytes + sizeof(*job);
-    job->type = WS_FR_OP_TXT;
-    job->bulk = bulk;
-    job->priority = priority;
-    return _ws_internal__chat_add_job(client, job);
+	if (encode != NULL && release_context != NULL && release_encoded != NULL && charged_bytes <= SIZE_MAX - sizeof(*job))
+	{
+		job = calloc(1, sizeof(*job));
+	}
+	if (job == NULL)
+	{
+		if (release_context != NULL)
+		{
+			release_context(context);
+		}
+		if (!bulk)
+		{
+			ws_abort_client(client);
+		}
+		return -1;
+	}
+	job->context = context;
+	job->encode = encode;
+	job->release_context = release_context;
+	job->release_encoded = release_encoded;
+	job->charge = charged_bytes + sizeof(*job);
+	job->type = WS_FR_OP_TXT;
+	job->bulk = bulk;
+	job->priority = priority;
+	return _ws_internal__chat_add_job(client, job);
 }
 
 /**
@@ -1311,11 +1377,9 @@ static int _ws_internal__queue_text(ws_cli_conn_t* client, void* context, size_t
  * @param client, context, charged_bytes, encode, release_context, release_encoded -> connection, owned data, memory budget and callbacks described in _ws_internal__queue_text
  * @return int -> 0 queued, 1 busy (retry with a new context), -1 closed or failed
  */
-int ws_try_queue_text(ws_cli_conn_t* client, void* context, size_t charged_bytes,
-    char* (*encode)(void* context, size_t* encoded_size),
-    void (*release_context)(void* context), void (*release_encoded)(char* encoded))
+int ws_try_queue_text(ws_cli_conn_t *client, void *context, size_t charged_bytes, char *(*encode)(void *context, size_t *encoded_size), void (*release_context)(void *context), void (*release_encoded)(char *encoded))
 {
-    return _ws_internal__queue_text(client, context, charged_bytes, encode, release_context, release_encoded, true, false);
+	return _ws_internal__queue_text(client, context, charged_bytes, encode, release_context, release_encoded, true, false);
 }
 
 /**
@@ -1323,11 +1387,9 @@ int ws_try_queue_text(ws_cli_conn_t* client, void* context, size_t charged_bytes
  * @param client, context, charged_bytes, encode, release_context, release_encoded -> connection, owned data, memory budget and callbacks described in _ws_internal__queue_text
  * @return int -> 0 queued, -1 closed or failed
  */
-int ws_queue_text(ws_cli_conn_t* client, void* context, size_t charged_bytes,
-    char* (*encode)(void* context, size_t* encoded_size),
-    void (*release_context)(void* context), void (*release_encoded)(char* encoded))
+int ws_queue_text(ws_cli_conn_t *client, void *context, size_t charged_bytes, char *(*encode)(void *context, size_t *encoded_size), void (*release_context)(void *context), void (*release_encoded)(char *encoded))
 {
-    return _ws_internal__queue_text(client, context, charged_bytes, encode, release_context, release_encoded, false, false);
+	return _ws_internal__queue_text(client, context, charged_bytes, encode, release_context, release_encoded, false, false);
 }
 
 /**
@@ -1335,11 +1397,9 @@ int ws_queue_text(ws_cli_conn_t* client, void* context, size_t charged_bytes,
  * @param client, context, charged_bytes, encode, release_context, release_encoded -> connection, owned data, memory budget and callbacks described in _ws_internal__queue_text
  * @return int -> 0 queued, -1 closed or failed
  */
-int ws_queue_keepalive(ws_cli_conn_t* client, void* context, size_t charged_bytes,
-    char* (*encode)(void* context, size_t* encoded_size),
-    void (*release_context)(void* context), void (*release_encoded)(char* encoded))
+int ws_queue_keepalive(ws_cli_conn_t *client, void *context, size_t charged_bytes, char *(*encode)(void *context, size_t *encoded_size), void (*release_context)(void *context), void (*release_encoded)(char *encoded))
 {
-    return _ws_internal__queue_text(client, context, charged_bytes, encode, release_context, release_encoded, false, true);
+	return _ws_internal__queue_text(client, context, charged_bytes, encode, release_context, release_encoded, false, true);
 }
 
 /**
@@ -1349,9 +1409,9 @@ int ws_queue_keepalive(ws_cli_conn_t* client, void* context, size_t charged_byte
  *
  * @return void
  */
-static void _ws_internal__chat_free_encoded(char* bytes)
+static void _ws_internal__chat_free_encoded(char *bytes)
 {
-    free(bytes);
+	free(bytes);
 }
 
 /**
@@ -1364,364 +1424,357 @@ static void _ws_internal__chat_free_encoded(char* bytes)
  *
  * @return int -> 0 when the frame was accepted, or -1 when it could not be queued.
  *
- * @attention The caller keeps ownership of data and must keep client alive.
- * Do not hold chat_mutex. Allocation or frame validation failure aborts the
- * connection instead of leaving its outgoing message sequence incomplete.
+ * @attention The caller keeps ownership of data and must keep client alive. Do not hold chat_mutex. Allocation or frame validation failure aborts the connection instead of leaving its outgoing message sequence incomplete.
  */
-static int _ws_internal__chat_queue_frame(ws_cli_conn_t* client, const char* data, size_t size, int type)
+static int _ws_internal__chat_queue_frame(ws_cli_conn_t *client, const char *data, size_t size, int type)
 {
-    struct ws_chat_job* job;
+	struct ws_chat_job *job;
 
-    if (size > SIZE_MAX - sizeof(*job) || (size != 0 && data == NULL))
-    {
-        ws_abort_client(client);
-        return -1;
-    }
-    job = calloc(1, sizeof(*job));
-    if (job == NULL)
-    {
-        ws_abort_client(client);
-        return -1;
-    }
-    if (size != 0)
-    {
-        job->encoded = malloc(size);
-        if (job->encoded == NULL)
-        {
-            free(job);
-            ws_abort_client(client);
-            return -1;
-        }
-        memcpy(job->encoded, data, size);
-    }
-    job->release_encoded = _ws_internal__chat_free_encoded;
-    job->size = size;
-    job->charge = size + sizeof(*job);
-    job->type = type;
-    job->ready = true;
-    if (!_ws_internal__chat_make_header(job))
-    {
-        _ws_internal__chat_release_job(job);
-        ws_abort_client(client);
-        return -1;
-    }
-    return _ws_internal__chat_add_job(client, job);
+	if (size > SIZE_MAX - sizeof(*job) || (size != 0 && data == NULL))
+	{
+		ws_abort_client(client);
+		return -1;
+	}
+	job = calloc(1, sizeof(*job));
+	if (job == NULL)
+	{
+		ws_abort_client(client);
+		return -1;
+	}
+	if (size != 0)
+	{
+		job->encoded = malloc(size);
+		if (job->encoded == NULL)
+		{
+			free(job);
+			ws_abort_client(client);
+			return -1;
+		}
+		memcpy(job->encoded, data, size);
+	}
+	job->release_encoded = _ws_internal__chat_free_encoded;
+	job->size = size;
+	job->charge = size + sizeof(*job);
+	job->type = type;
+	job->ready = true;
+	if (!_ws_internal__chat_make_header(job))
+	{
+		_ws_internal__chat_release_job(job);
+		ws_abort_client(client);
+		return -1;
+	}
+	return _ws_internal__chat_add_job(client, job);
 }
 
 /**
- * @brief Converts queued messages into outgoing bytes without holding the chat
- * queue mutex or waiting for sockets to accept data.
+ * @brief Converts queued messages into outgoing bytes without holding the chat queue mutex or
+ *        waiting for sockets to accept data.
  *
  * @param void* unused -> Unused thread argument, passed as NULL when the worker starts.
  *
  * @return void* -> NULL when the shared workers are asked to stop.
  *
- * @attention Each connection has at most one message being encoded at a time.
- * The message count keeps its queue alive until encoding and cleanup finish.
+ * @attention Each connection has at most one message being encoded at a time. The message count keeps its queue alive until encoding and cleanup finish.
  */
-static void* _ws_internal__chat_encode_worker(void* unused)
+static void *_ws_internal__chat_encode_worker(void *unused)
 {
-    struct ws_chat_queue* queue;
-    struct ws_chat_queue* previous;
-    struct ws_chat_job* job;
-    struct ws_chat_job* cancelled;
-    char* encoded;
-    size_t encoded_size;
-    bool valid;
-    bool cleanup_turn = true;
+	struct ws_chat_queue *queue;
+	struct ws_chat_queue *previous;
+	struct ws_chat_job *job;
+	struct ws_chat_job *cancelled;
+	char *encoded;
+	size_t encoded_size;
+	bool valid;
+	bool cleanup_turn = true;
 
-    (void)unused;
-    for (;;)
-    {
-        pthread_mutex_lock(&chat_mutex);
-        cancelled = NULL;
-        for (;;)
-        {
-            if (chat_cancelled_first != NULL && cleanup_turn)
-            {
-                cancelled = _ws_internal__chat_take_cancelled_locked();
-                break;
-            }
-            if (chat_workers_stopping)
-            {
-                pthread_mutex_unlock(&chat_mutex);
-                return NULL;
-            }
-            previous = NULL;
-            queue = chat_first;
-            while (queue != NULL)
-            {
-                job = queue->first;
-                if (!queue->stopped && job != NULL && !job->ready && !job->encoding)
-                {
-                    break;
-                }
-                previous = queue;
-                queue = queue->next;
-            }
-            if (queue != NULL)
-            {
-                break;
-            }
-            if (chat_cancelled_first != NULL)
-            {
-                cancelled = _ws_internal__chat_take_cancelled_locked();
-                break;
-            }
-            pthread_cond_wait(&chat_encode_ready, &chat_mutex);
-        }
-        if (cancelled != NULL)
-        {
-            pthread_mutex_unlock(&chat_mutex);
-            _ws_internal__chat_release_list(cancelled);
-            cleanup_turn = false;
-            continue;
-        }
-        cleanup_turn = true;
-        job = queue->first;
-        job->encoding = true;
-        // Move the chosen connection to the end so one busy sender cannot
-        // keep taking every worker while other clients have messages waiting.
-        if (queue != chat_last)
-        {
-            if (previous != NULL)
-            {
-                previous->next = queue->next;
-            }
-            else
-            {
-                chat_first = queue->next;
-            }
-            chat_last->next = queue;
-            chat_last = queue;
-            queue->next = NULL;
-        }
-        pthread_mutex_unlock(&chat_mutex);
+	(void)unused;
+	for (;;)
+	{
+		pthread_mutex_lock(&chat_mutex);
+		cancelled = NULL;
+		for (;;)
+		{
+			if (chat_cancelled_first != NULL && cleanup_turn)
+			{
+				cancelled = _ws_internal__chat_take_cancelled_locked();
+				break;
+			}
+			if (chat_workers_stopping)
+			{
+				pthread_mutex_unlock(&chat_mutex);
+				return NULL;
+			}
+			previous = NULL;
+			queue = chat_first;
+			while (queue != NULL)
+			{
+				job = queue->first;
+				if (!queue->stopped && job != NULL && !job->ready && !job->encoding)
+				{
+					break;
+				}
+				previous = queue;
+				queue = queue->next;
+			}
+			if (queue != NULL)
+			{
+				break;
+			}
+			if (chat_cancelled_first != NULL)
+			{
+				cancelled = _ws_internal__chat_take_cancelled_locked();
+				break;
+			}
+			pthread_cond_wait(&chat_encode_ready, &chat_mutex);
+		}
+		if (cancelled != NULL)
+		{
+			pthread_mutex_unlock(&chat_mutex);
+			_ws_internal__chat_release_list(cancelled);
+			cleanup_turn = false;
+			continue;
+		}
+		cleanup_turn = true;
+		job = queue->first;
+		job->encoding = true;
 
-        encoded_size = 0;
-        encoded = job->encode(job->context, &encoded_size);
-        job->release_context(job->context);
-        job->context = NULL;
-        job->release_context = NULL;
-        job->encoded = encoded;
-        job->size = encoded_size;
-        valid = encoded != NULL && encoded_size <= job->charge - sizeof(*job) && _ws_internal__chat_make_header(job);
+		// Move the chosen connection to the end so one busy sender cannot
+		// keep taking every worker while other clients have messages waiting.
+		if (queue != chat_last)
+		{
+			if (previous != NULL)
+			{
+				previous->next = queue->next;
+			}
+			else
+			{
+				chat_first = queue->next;
+			}
+			chat_last->next = queue;
+			chat_last = queue;
+			queue->next = NULL;
+		}
+		pthread_mutex_unlock(&chat_mutex);
 
-        pthread_mutex_lock(&chat_mutex);
-        job->encoding = false;
-        cancelled = NULL;
-        if (!valid || queue->stopped)
-        {
+		encoded_size = 0;
+		encoded = job->encode(job->context, &encoded_size);
+		job->release_context(job->context);
+		job->context = NULL;
+		job->release_context = NULL;
+		job->encoded = encoded;
+		job->size = encoded_size;
+		valid = encoded != NULL && encoded_size <= job->charge - sizeof(*job) && _ws_internal__chat_make_header(job);
+
+		pthread_mutex_lock(&chat_mutex);
+		job->encoding = false;
+		cancelled = NULL;
+		if (!valid || queue->stopped)
+		{
 #ifdef WS_CHAT_TEST_COUNTERS
-            chat_failures_encoding += !valid;
+			chat_failures_encoding += !valid;
 #endif
-            if (!valid)
-            {
-                record_close_reason(queue->client, "outgoing message encoding failed");
-            }
-            cancelled = _ws_internal__chat_abort_locked(queue);
-        }
-        else
-        {
-            job->ready = true;
-            pthread_cond_signal(&chat_write_ready);
-        }
-        pthread_mutex_unlock(&chat_mutex);
-        _ws_internal__chat_release_list(cancelled);
-    }
+			if (!valid)
+			{
+				record_close_reason(queue->client, "outgoing message encoding failed");
+			}
+			cancelled = _ws_internal__chat_abort_locked(queue);
+		}
+		else
+		{
+			job->ready = true;
+			pthread_cond_signal(&chat_write_ready);
+		}
+		pthread_mutex_unlock(&chat_mutex);
+		_ws_internal__chat_release_list(cancelled);
+	}
 }
 
 /**
- * @brief Sends one small part of the first queued frame without waiting for
- * the socket to accept more bytes.
+ * @brief Sends one small part of the first queued frame without waiting for the socket to accept
+ *        more bytes.
  *
  * @param struct ws_chat_queue* queue -> Connection queue whose first frame is ready to be written.
  *
- * @return bool -> true when sending can continue, including when the socket must wait
- * until a later attempt; false when the connection can no longer be written.
+ * @return bool -> true when sending can continue, including when the socket must wait until a later attempt; false when the connection can no longer be written.
  *
- * @attention The writer must mark the queue as writer_active before releasing
- * chat_mutex and calling this function. That mark keeps the socket and first
- * message alive until the writer finishes using them.
+ * @attention The writer must mark the queue as writer_active before releasing chat_mutex and calling this function. That mark keeps the socket and first message alive until the writer finishes using them.
  */
-static bool _ws_internal__chat_write_piece(struct ws_chat_queue* queue)
+static bool _ws_internal__chat_write_piece(struct ws_chat_queue *queue)
 {
-    struct ws_chat_job* job = queue->first;
-    unsigned char first_piece[WS_CHAT_WRITE_CHUNK];
-    const char* bytes;
-    size_t remaining;
-    size_t header_bytes;
-    ssize_t written;
+	struct ws_chat_job *job = queue->first;
+	unsigned char first_piece[WS_CHAT_WRITE_CHUNK];
+	const char *bytes;
+	size_t remaining;
+	size_t header_bytes;
+	ssize_t written;
 
-    remaining = job->header_size + job->size - job->written;
-    if (remaining > WS_CHAT_WRITE_CHUNK)
-    {
-        remaining = WS_CHAT_WRITE_CHUNK;
-    }
-    if (job->written < job->header_size)
-    {
-        // Keep the WebSocket header and first data bytes in one send, so small
-        // messages do not need a separate socket call just for the header.
-        header_bytes = job->header_size - job->written;
-        memcpy(first_piece, job->header + job->written, header_bytes);
-        if (remaining > header_bytes)
-        {
-            memcpy(first_piece + header_bytes, job->encoded, remaining - header_bytes);
-        }
-        bytes = (const char*)first_piece;
-    }
-    else
-    {
-        bytes = job->encoded + job->written - job->header_size;
-    }
-    written = send(queue->client->client_sock, bytes, remaining, MSG_NOSIGNAL);
-    if (written < 0 && _ws_internal__socket_would_block())
-    {
-        return true;
-    }
-    if (written <= 0)
-    {
-        return false;
-    }
-    job->written += (size_t)written;
-    atomic_fetch_add_explicit(&ws_sent_bytes, (uint64_t)written, memory_order_relaxed);
-    job->last_progress = audio_clock_ms();
-    return true;
+	remaining = job->header_size + job->size - job->written;
+	if (remaining > WS_CHAT_WRITE_CHUNK)
+	{
+		remaining = WS_CHAT_WRITE_CHUNK;
+	}
+	if (job->written < job->header_size)
+	{
+		// Keep the WebSocket header and first data bytes in one send, so small
+		// messages do not need a separate socket call just for the header.
+		header_bytes = job->header_size - job->written;
+		memcpy(first_piece, job->header + job->written, header_bytes);
+		if (remaining > header_bytes)
+		{
+			memcpy(first_piece + header_bytes, job->encoded, remaining - header_bytes);
+		}
+		bytes = (const char *)first_piece;
+	}
+	else
+	{
+		bytes = job->encoded + job->written - job->header_size;
+	}
+	written = send(queue->client->client_sock, bytes, remaining, MSG_NOSIGNAL);
+	if (written < 0 && _ws_internal__socket_would_block())
+	{
+		return true;
+	}
+	if (written <= 0)
+	{
+		return false;
+	}
+	job->written += (size_t)written;
+	atomic_fetch_add_explicit(&ws_sent_bytes, (uint64_t)written, memory_order_relaxed);
+	job->last_progress = audio_clock_ms();
+	return true;
 }
 
 /**
- * @brief Sends queued frames to sockets that are ready and checks for connections
- * that have stopped accepting data or have exceeded their closing deadline.
+ * @brief Sends queued frames to sockets that are ready and checks for connections that have stopped
+ *        accepting data or have exceeded their closing deadline.
  *
  * @param void* unused -> Unused thread argument, passed as NULL when the writer starts.
  *
  * @return void* -> NULL when the shared workers are asked to stop.
  *
- * @attention This is the only writer for queued chat frames. Each selected queue
- * is kept alive while its socket is checked and written outside chat_mutex.
+ * @attention This is the only writer for queued chat frames. Each selected queue is kept alive while its socket is checked and written outside chat_mutex.
  */
-static void* _ws_internal__chat_socket_writer(void* unused)
+static void *_ws_internal__chat_socket_writer(void *unused)
 {
-    struct ws_chat_queue* queue;
-    struct ws_chat_job* retired;
-    struct ws_chat_job* job;
-    uint64_t now;
-    size_t count;
-    size_t i;
-    int poll_result;
-    bool write_ok;
+	struct ws_chat_queue *queue;
+	struct ws_chat_job *retired;
+	struct ws_chat_job *job;
+	uint64_t now;
+	size_t count;
+	size_t i;
+	int poll_result;
+	bool write_ok;
 
-    (void)unused;
-    for (;;)
-    {
-        pthread_mutex_lock(&chat_mutex);
-        if (chat_workers_stopping)
-        {
-            pthread_mutex_unlock(&chat_mutex);
-            return NULL;
-        }
-        count = 0;
-        retired = NULL;
-        now = audio_clock_ms();
-        for (queue = chat_first; queue != NULL; queue = queue->next)
-        {
-            if (!queue->stopped && queue->close_requested && now >= queue->close_deadline)
-            {
-                record_close_reason(queue->client, "close handshake timed out");
-                _ws_internal__chat_collect(&retired, _ws_internal__chat_abort_locked(queue));
-            }
-            job = queue->first;
-            if (queue->stopped || job == NULL || !job->ready || job->encoding)
-            {
-                continue;
-            }
-            if (job->last_progress == 0)
-            {
-                job->last_progress = now;
-            }
-            if (now - job->last_progress >= WS_CHAT_STALL_TIMEOUT_MS)
-            {
+	(void)unused;
+	for (;;)
+	{
+		pthread_mutex_lock(&chat_mutex);
+		if (chat_workers_stopping)
+		{
+			pthread_mutex_unlock(&chat_mutex);
+			return NULL;
+		}
+		count = 0;
+		retired = NULL;
+		now = audio_clock_ms();
+		for (queue = chat_first; queue != NULL; queue = queue->next)
+		{
+			if (!queue->stopped && queue->close_requested && now >= queue->close_deadline)
+			{
+				record_close_reason(queue->client, "close handshake timed out");
+				_ws_internal__chat_collect(&retired, _ws_internal__chat_abort_locked(queue));
+			}
+			job = queue->first;
+			if (queue->stopped || job == NULL || !job->ready || job->encoding)
+			{
+				continue;
+			}
+			if (job->last_progress == 0)
+			{
+				job->last_progress = now;
+			}
+			if (now - job->last_progress >= WS_CHAT_STALL_TIMEOUT_MS)
+			{
 #ifdef WS_CHAT_TEST_COUNTERS
-                chat_failures_stall++;
+				chat_failures_stall++;
 #endif
-                record_close_reason(queue->client, "outgoing socket stalled (no send progress)");
-                _ws_internal__chat_collect(&retired, _ws_internal__chat_abort_locked(queue));
-                continue;
-            }
-            queue->writer_active = true;
-            memset(&chat_pollfds[count], 0, sizeof(chat_pollfds[count]));
-            chat_pollfds[count].fd = queue->client->client_sock;
-            chat_pollfds[count].events = POLLOUT;
-            chat_polled_queues[count] = queue;
-            count++;
-        }
-        if (count == 0 && retired == NULL)
-        {
-            _ws_internal__chat_wait_briefly(&chat_write_ready);
-        }
-        pthread_mutex_unlock(&chat_mutex);
-        _ws_internal__chat_release_list(retired);
-        if (count == 0)
-        {
-            continue;
-        }
+				record_close_reason(queue->client, "outgoing socket stalled (no send progress)");
+				_ws_internal__chat_collect(&retired, _ws_internal__chat_abort_locked(queue));
+				continue;
+			}
+			queue->writer_active = true;
+			memset(&chat_pollfds[count], 0, sizeof(chat_pollfds[count]));
+			chat_pollfds[count].fd = queue->client->client_sock;
+			chat_pollfds[count].events = POLLOUT;
+			chat_polled_queues[count] = queue;
+			count++;
+		}
+		if (count == 0 && retired == NULL)
+		{
+			_ws_internal__chat_wait_briefly(&chat_write_ready);
+		}
+		pthread_mutex_unlock(&chat_mutex);
+		_ws_internal__chat_release_list(retired);
+		if (count == 0)
+		{
+			continue;
+		}
 
-        // Each listed queue is pinned by writer_active until this poll result
-        // is consumed. Its reader cannot close or reuse its socket meanwhile.
-        poll_result = _ws_internal__chat_poll(chat_pollfds, count, 10);
-        retired = NULL;
-        pthread_mutex_lock(&chat_mutex);
-        for (i = 0; i < count; i++)
-        {
-            queue = chat_polled_queues[i];
-            job = queue->first;
-            if (!queue->stopped && poll_result > 0
-                && (chat_pollfds[i].revents & (POLLERR | POLLHUP | POLLNVAL)) != 0)
-            {
-                record_close_reason(queue->client, "outgoing socket poll reported error or hangup");
-                _ws_internal__chat_collect(&retired, _ws_internal__chat_abort_locked(queue));
-            }
-            else if (!queue->stopped && poll_result > 0 && (chat_pollfds[i].revents & POLLOUT) != 0)
-            {
-                // The pin keeps this first job and its socket alive while the
-                // mutex is released. Even a batch of hundreds of ready sockets
-                // must not make application threads wait behind their sends.
-                pthread_mutex_unlock(&chat_mutex);
-                write_ok = _ws_internal__chat_write_piece(queue);
-                pthread_mutex_lock(&chat_mutex);
-                if (!write_ok)
-                {
-                    record_close_reason(queue->client, "socket send failed");
-                    _ws_internal__chat_collect(&retired, _ws_internal__chat_abort_locked(queue));
-                }
-            }
-            queue->writer_active = false;
-            if (queue->stopped)
-            {
-                _ws_internal__chat_collect(&retired, _ws_internal__chat_abort_locked(queue));
-                continue;
-            }
-            if (job->written == job->header_size + job->size)
-            {
-                if (job->type == WS_FR_OP_CLSE)
-                {
-                    queue->close_deadline = audio_clock_ms() + TIMEOUT_MS;
-                    pthread_cond_broadcast(&chat_cleanup_changed);
-                }
-                _ws_internal__chat_collect(&retired, _ws_internal__chat_remove_first(queue));
-                if (queue->first != NULL && !queue->first->ready && !queue->first->encoding)
-                {
-                    pthread_cond_signal(&chat_encode_ready);
-                }
-            }
-        }
-        if (poll_result < 0)
-        {
-            _ws_internal__chat_wait_briefly(&chat_write_ready);
-        }
-        pthread_mutex_unlock(&chat_mutex);
-        _ws_internal__chat_release_list(retired);
-    }
+		// Each listed queue is pinned by writer_active until this poll result
+		// is consumed. Its reader cannot close or reuse its socket meanwhile.
+		poll_result = _ws_internal__chat_poll(chat_pollfds, count, 10);
+		retired = NULL;
+		pthread_mutex_lock(&chat_mutex);
+		for (i = 0; i < count; i++)
+		{
+			queue = chat_polled_queues[i];
+			job = queue->first;
+			if (!queue->stopped && poll_result > 0 && (chat_pollfds[i].revents & (POLLERR | POLLHUP | POLLNVAL)) != 0)
+			{
+				record_close_reason(queue->client, "outgoing socket poll reported error or hangup");
+				_ws_internal__chat_collect(&retired, _ws_internal__chat_abort_locked(queue));
+			}
+			else if (!queue->stopped && poll_result > 0 && (chat_pollfds[i].revents & POLLOUT) != 0)
+			{
+				// The pin keeps this first job and its socket alive while the
+				// mutex is released. Even a batch of hundreds of ready sockets
+				// must not make application threads wait behind their sends.
+				pthread_mutex_unlock(&chat_mutex);
+				write_ok = _ws_internal__chat_write_piece(queue);
+				pthread_mutex_lock(&chat_mutex);
+				if (!write_ok)
+				{
+					record_close_reason(queue->client, "socket send failed");
+					_ws_internal__chat_collect(&retired, _ws_internal__chat_abort_locked(queue));
+				}
+			}
+			queue->writer_active = false;
+			if (queue->stopped)
+			{
+				_ws_internal__chat_collect(&retired, _ws_internal__chat_abort_locked(queue));
+				continue;
+			}
+			if (job->written == job->header_size + job->size)
+			{
+				if (job->type == WS_FR_OP_CLSE)
+				{
+					queue->close_deadline = audio_clock_ms() + TIMEOUT_MS;
+					pthread_cond_broadcast(&chat_cleanup_changed);
+				}
+				_ws_internal__chat_collect(&retired, _ws_internal__chat_remove_first(queue));
+				if (queue->first != NULL && !queue->first->ready && !queue->first->encoding)
+				{
+					pthread_cond_signal(&chat_encode_ready);
+				}
+			}
+		}
+		if (poll_result < 0)
+		{
+			_ws_internal__chat_wait_briefly(&chat_write_ready);
+		}
+		pthread_mutex_unlock(&chat_mutex);
+		_ws_internal__chat_release_list(retired);
+	}
 }
 
 /**
@@ -1731,215 +1784,209 @@ static void* _ws_internal__chat_socket_writer(void* unused)
 static size_t _ws_internal__chat_cpu_count(void)
 {
 #ifdef _WIN32
-    SYSTEM_INFO info;
+	SYSTEM_INFO info;
 #if _WIN32_WINNT >= 0x0601
-    DWORD count = GetActiveProcessorCount(ALL_PROCESSOR_GROUPS);
+	DWORD count = GetActiveProcessorCount(ALL_PROCESSOR_GROUPS);
 
-    if (count != 0)
-    {
-        return (size_t)count;
-    }
+	if (count != 0)
+	{
+		return (size_t)count;
+	}
 #endif
-    GetSystemInfo(&info);
-    return info.dwNumberOfProcessors > 0 ? (size_t)info.dwNumberOfProcessors : 1;
+	GetSystemInfo(&info);
+	return info.dwNumberOfProcessors > 0 ? (size_t)info.dwNumberOfProcessors : 1;
 #else
-    long count = sysconf(_SC_NPROCESSORS_ONLN);
+	long count = sysconf(_SC_NPROCESSORS_ONLN);
 
-    return count > 0 ? (size_t)count : 1;
+	return count > 0 ? (size_t)count : 1;
 #endif
 }
 
 /**
- * @brief Starts one encryption thread per logical CPU and one socket-writing
- * thread. Frees their resources if startup fails.
+ * @brief Starts one encryption thread per logical CPU and one socket-writing thread. Frees their
+ *        resources if startup fails.
  *
  * @return void
  *
- * @attention Call only through chat_once so concurrent connections cannot start
- * duplicate workers or observe partially initialized shared resources.
+ * @attention Call only through chat_once so concurrent connections cannot start duplicate workers or observe partially initialized shared resources.
  */
 static void _ws_internal__chat_initialize_workers(void)
 {
-    size_t created = 0;
+	size_t created = 0;
 
-    chat_worker_count = _ws_internal__chat_cpu_count();
-    chat_workers = calloc(chat_worker_count, sizeof(*chat_workers));
-    chat_pollfds = calloc(client_capacity, sizeof(*chat_pollfds));
-    chat_polled_queues = calloc(client_capacity, sizeof(*chat_polled_queues));
-    if (chat_workers == NULL || chat_pollfds == NULL || chat_polled_queues == NULL)
-    {
-        goto failed;
-    }
-    for (created = 0; created < chat_worker_count; created++)
-    {
-        if (pthread_create(&chat_workers[created], NULL, _ws_internal__chat_encode_worker, NULL) != 0)
-        {
-            goto failed;
-        }
-    }
-    if (pthread_create(&chat_writer, NULL, _ws_internal__chat_socket_writer, NULL) != 0)
-    {
-        goto failed;
-    }
-    chat_workers_running = true;
-    return;
+	chat_worker_count = _ws_internal__chat_cpu_count();
+	chat_workers = calloc(chat_worker_count, sizeof(*chat_workers));
+	chat_pollfds = calloc(client_capacity, sizeof(*chat_pollfds));
+	chat_polled_queues = calloc(client_capacity, sizeof(*chat_polled_queues));
+	if (chat_workers == NULL || chat_pollfds == NULL || chat_polled_queues == NULL)
+	{
+		goto failed;
+	}
+	for (created = 0; created < chat_worker_count; created++)
+	{
+		if (pthread_create(&chat_workers[created], NULL, _ws_internal__chat_encode_worker, NULL) != 0)
+		{
+			goto failed;
+		}
+	}
+	if (pthread_create(&chat_writer, NULL, _ws_internal__chat_socket_writer, NULL) != 0)
+	{
+		goto failed;
+	}
+	chat_workers_running = true;
+	return;
 
 failed:
-    pthread_mutex_lock(&chat_mutex);
-    chat_workers_stopping = true;
-    pthread_cond_broadcast(&chat_encode_ready);
-    pthread_cond_broadcast(&chat_write_ready);
-    pthread_cond_broadcast(&chat_cleanup_changed);
-    pthread_mutex_unlock(&chat_mutex);
-    while (created > 0)
-    {
-        created--;
-        pthread_join(chat_workers[created], NULL);
-    }
-    free(chat_pollfds);
-    free(chat_polled_queues);
-    free(chat_workers);
-    chat_pollfds = NULL;
-    chat_polled_queues = NULL;
-    chat_workers = NULL;
-    chat_worker_count = 0;
+	pthread_mutex_lock(&chat_mutex);
+	chat_workers_stopping = true;
+	pthread_cond_broadcast(&chat_encode_ready);
+	pthread_cond_broadcast(&chat_write_ready);
+	pthread_cond_broadcast(&chat_cleanup_changed);
+	pthread_mutex_unlock(&chat_mutex);
+	while (created > 0)
+	{
+		created--;
+		pthread_join(chat_workers[created], NULL);
+	}
+	free(chat_pollfds);
+	free(chat_polled_queues);
+	free(chat_workers);
+	chat_pollfds = NULL;
+	chat_polled_queues = NULL;
+	chat_workers = NULL;
+	chat_worker_count = 0;
 }
 
 /**
- * @brief Creates an outgoing queue for a chat connection and configures its
- * socket so writes never wait for the receiver.
+ * @brief Creates an outgoing queue for a chat connection and configures its socket so writes never
+ *        wait for the receiver.
  *
  * @param ws_cli_conn_t* client -> Connection whose WebSocket handshake has completed.
  *
  * @return int -> 0 when the queue and socket are ready, or -1 on startup failure.
  *
- * @attention The connection's reader calls this before publishing the open
- * connection to the application. Audio and video connections use their own path.
+ * @attention The connection's reader calls this before publishing the open connection to the application. Audio and video connections use their own path.
  */
-static int _ws_internal__chat_start(ws_cli_conn_t* client)
+static int _ws_internal__chat_start(ws_cli_conn_t *client)
 {
-    struct ws_chat_queue* queue;
-    int enabled = 1;
+	struct ws_chat_queue *queue;
+	int enabled = 1;
 #ifdef _WIN32
-    u_long nonblocking = 1;
+	u_long nonblocking = 1;
 #else
-    int flags;
+	int flags;
 #endif
 
-    pthread_once(&chat_once, _ws_internal__chat_initialize_workers);
-    if (!chat_workers_running)
-    {
-        return -1;
-    }
-    queue = calloc(1, sizeof(*queue));
-    if (queue == NULL)
-    {
-        return -1;
-    }
+	pthread_once(&chat_once, _ws_internal__chat_initialize_workers);
+	if (!chat_workers_running)
+	{
+		return -1;
+	}
+	queue = calloc(1, sizeof(*queue));
+	if (queue == NULL)
+	{
+		return -1;
+	}
 #ifdef _WIN32
-    if (ioctlsocket(client->client_sock, FIONBIO, &nonblocking) != 0)
+	if (ioctlsocket(client->client_sock, FIONBIO, &nonblocking) != 0)
 #else
-    flags = fcntl(client->client_sock, F_GETFL, 0);
-    if (flags < 0 || fcntl(client->client_sock, F_SETFL, flags | O_NONBLOCK) != 0)
+	flags = fcntl(client->client_sock, F_GETFL, 0);
+	if (flags < 0 || fcntl(client->client_sock, F_SETFL, flags | O_NONBLOCK) != 0)
 #endif
-    {
-        free(queue);
-        return -1;
-    }
-    setsockopt(client->client_sock, IPPROTO_TCP, TCP_NODELAY, (const char*)&enabled, sizeof(enabled));
-    queue->client = client;
-    pthread_mutex_lock(&chat_mutex);
-    client->chat_mode = true;
-    client->chat = queue;
-    if (chat_last != NULL)
-    {
-        chat_last->next = queue;
-    }
-    else
-    {
-        chat_first = queue;
-    }
-    chat_last = queue;
-    pthread_mutex_unlock(&chat_mutex);
-    return 0;
+	{
+		free(queue);
+		return -1;
+	}
+	setsockopt(client->client_sock, IPPROTO_TCP, TCP_NODELAY, (const char *)&enabled, sizeof(enabled));
+	queue->client = client;
+	pthread_mutex_lock(&chat_mutex);
+	client->chat_mode = true;
+	client->chat = queue;
+	if (chat_last != NULL)
+	{
+		chat_last->next = queue;
+	}
+	else
+	{
+		chat_first = queue;
+	}
+	chat_last = queue;
+	pthread_mutex_unlock(&chat_mutex);
+	return 0;
 }
 
 /**
- * @brief Stops a connection's outgoing queue and waits until no worker can still
- * use its messages or socket before freeing the queue.
+ * @brief Stops a connection's outgoing queue and waits until no worker can still use its messages
+ *        or socket before freeing the queue.
  *
  * @param ws_cli_conn_t* client -> Connection whose reader has finished processing incoming data.
  *
  * @return void
  *
- * @attention Only the connection's reader performs this cleanup, outside all
- * application locks. A queued close is allowed a bounded time to be sent before
- * the remaining work is cancelled and the socket slot can be reused safely.
+ * @attention Only the connection's reader performs this cleanup, outside all application locks. A queued close is allowed a bounded time to be sent before the remaining work is cancelled and the socket slot can be reused safely.
  */
-static void _ws_internal__chat_stop(ws_cli_conn_t* client)
+static void _ws_internal__chat_stop(ws_cli_conn_t *client)
 {
-    struct ws_chat_queue* queue;
-    struct ws_chat_queue* previous;
-    struct ws_chat_queue* current;
-    struct ws_chat_job* cancelled;
+	struct ws_chat_queue *queue;
+	struct ws_chat_queue *previous;
+	struct ws_chat_queue *current;
+	struct ws_chat_job *cancelled;
 
-    pthread_mutex_lock(&chat_mutex);
-    queue = client->chat;
-    if (queue == NULL)
-    {
-        pthread_mutex_unlock(&chat_mutex);
-        return;
-    }
-    // A received close gets its reply, and a queued rejection gets its close,
-    // before teardown. This wait is outside the application's onclose callback.
-    while (!queue->stopped && queue->close_requested && queue->first != NULL
-        && audio_clock_ms() < queue->close_deadline)
-    {
-        _ws_internal__chat_wait_briefly(&chat_cleanup_changed);
-    }
-    cancelled = _ws_internal__chat_abort_locked(queue);
-    pthread_mutex_unlock(&chat_mutex);
-    _ws_internal__chat_release_list(cancelled);
+	pthread_mutex_lock(&chat_mutex);
+	queue = client->chat;
+	if (queue == NULL)
+	{
+		pthread_mutex_unlock(&chat_mutex);
+		return;
+	}
 
-    pthread_mutex_lock(&chat_mutex);
-    while (queue->messages != 0 || queue->writer_active)
-    {
-        pthread_cond_wait(&chat_cleanup_changed, &chat_mutex);
-    }
-    previous = NULL;
-    current = chat_first;
-    while (current != queue)
-    {
-        previous = current;
-        current = current->next;
-    }
-    if (previous != NULL)
-    {
-        previous->next = queue->next;
-    }
-    else
-    {
-        chat_first = queue->next;
-    }
-    if (chat_last == queue)
-    {
-        chat_last = previous;
-    }
-    client->chat = NULL;
-    pthread_mutex_unlock(&chat_mutex);
-    free(queue);
+	// A received close gets its reply, and a queued rejection gets its close,
+	// before teardown. This wait is outside the application's onclose callback.
+	while (!queue->stopped && queue->close_requested && queue->first != NULL && audio_clock_ms() < queue->close_deadline)
+	{
+		_ws_internal__chat_wait_briefly(&chat_cleanup_changed);
+	}
+	cancelled = _ws_internal__chat_abort_locked(queue);
+	pthread_mutex_unlock(&chat_mutex);
+	_ws_internal__chat_release_list(cancelled);
+
+	pthread_mutex_lock(&chat_mutex);
+	while (queue->messages != 0 || queue->writer_active)
+	{
+		pthread_cond_wait(&chat_cleanup_changed, &chat_mutex);
+	}
+	previous = NULL;
+	current = chat_first;
+	while (current != queue)
+	{
+		previous = current;
+		current = current->next;
+	}
+	if (previous != NULL)
+	{
+		previous->next = queue->next;
+	}
+	else
+	{
+		chat_first = queue->next;
+	}
+	if (chat_last == queue)
+	{
+		chat_last = previous;
+	}
+	client->chat = NULL;
+	pthread_mutex_unlock(&chat_mutex);
+	free(queue);
 }
 
 /**
- * @brief Returns the current client state for a given
- * client @p client.
+ * @brief Returns the current client state for a given client @p client.
  *
  * @param client Client structure.
  *
  * @return Returns the client state, -1 otherwise.
  *
- * @attention This is part of the internal API and is documented just
- * for completeness.
+ * @attention This is part of the internal API and is documented just for completeness.
  */
 static int get_client_state(ws_cli_conn_t *client)
 {
@@ -1953,17 +2000,17 @@ static int get_client_state(ws_cli_conn_t *client)
 	pthread_mutex_lock(&client->mtx_state);
 	state = client->state;
 	pthread_mutex_unlock(&client->mtx_state);
-    if (state == WS_STATE_OPEN && client->chat_mode)
-    {
-        // A reader can be waiting for a login turn when another thread aborts
-        // its socket. Report that abort immediately, before recv() runs again.
-        pthread_mutex_lock(&chat_mutex);
-        if (client->chat == NULL || client->chat->stopped)
-        {
-            state = WS_STATE_CLOSING;
-        }
-        pthread_mutex_unlock(&chat_mutex);
-    }
+	if (state == WS_STATE_OPEN && client->chat_mode)
+	{
+		// A reader can be waiting for a login turn when another thread aborts
+		// its socket. Report that abort immediately, before recv() runs again.
+		pthread_mutex_lock(&chat_mutex);
+		if (client->chat == NULL || client->chat->stopped)
+		{
+			state = WS_STATE_CLOSING;
+		}
+		pthread_mutex_unlock(&chat_mutex);
+	}
 	return (state);
 }
 
@@ -1976,8 +2023,7 @@ static int get_client_state(ws_cli_conn_t *client)
  *
  * @return Returns 0 if success, -1 otherwise.
  *
- * @attention This is part of the internal API and is documented just
- * for completeness.
+ * @attention This is part of the internal API and is documented just for completeness.
  */
 static int set_client_state(ws_cli_conn_t *client, int state)
 {
@@ -2005,13 +2051,9 @@ static int set_client_state(ws_cli_conn_t *client, int state)
  * @param len Message length.
  * @param flags Send flags.
  *
- * @return If success (i.e: all message was sent), returns
- * the amount of bytes sent. Otherwise, -1.
+ * @return If success (i.e: all message was sent), returns the amount of bytes sent. Otherwise, -1.
  *
- * @note Technically this shouldn't be necessary, since send() should
- * block until all content is sent, since _we_ don't use 'O_NONBLOCK'.
- * However, it was reported (issue #22 on GitHub) that this was
- * happening, so just to be cautious, I will keep using this routine.
+ * @note Technically this shouldn't be necessary, since send() should block until all content is sent, since _we_ don't use 'O_NONBLOCK'. However, it was reported (issue #22 on GitHub) that this was happening, so just to be cautious, I will keep using this routine.
  */
 static ssize_t send_all(ws_cli_conn_t *client, const void *buf, size_t len, int flags)
 {
@@ -2028,6 +2070,7 @@ static ssize_t send_all(ws_cli_conn_t *client, const void *buf, size_t len, int 
 	}
 
 	p = buf;
+
 	/* clang-format off */
 	pthread_mutex_lock(&client->mtx_snd);
 		while (len)
@@ -2047,205 +2090,206 @@ static ssize_t send_all(ws_cli_conn_t *client, const void *buf, size_t len, int 
 			ret += r;
 		}
 	pthread_mutex_unlock(&client->mtx_snd);
+
 	/* clang-format on */
 	return (ret);
 }
 
 /**
- * @brief Close client connection (no close handshake, this should
- * be done earlier), set appropriate state and destroy mutexes.
+ * @brief Close client connection (no close handshake, this should be done earlier), set appropriate
+ *        state and destroy mutexes.
  *
  * @param client Client connection.
  * @param lock Should lock the global mutex?.
  *
- * @attention This is part of the internal API and is documented just
- * for completeness.
+ * @attention This is part of the internal API and is documented just for completeness.
  */
-static void* media_writer(void* argument)
+static void *media_writer(void *argument)
 {
-    ws_cli_conn_t* client = argument;
-    struct ws_media_buffer* media = client->media;
-    unsigned char frame[WS_VIDEO_FRAME_MAX + 4];
-    unsigned char keepalive[2];
-    struct timespec deadline;
-    size_t header_size = 0;
-    uint64_t queued_at = 0;
-    size_t size = 0;
-    int kind = 0;
-    uint64_t stale_after_ms = 0;
-    uint64_t now = 0;
-    uint64_t wait_ms = 0;
+	ws_cli_conn_t *client = argument;
+	struct ws_media_buffer *media = client->media;
+	unsigned char frame[WS_VIDEO_FRAME_MAX + 4];
+	unsigned char keepalive[2];
+	struct timespec deadline;
+	size_t header_size = 0;
+	uint64_t queued_at = 0;
+	size_t size = 0;
+	int kind = 0;
+	uint64_t stale_after_ms = 0;
+	uint64_t now = 0;
+	uint64_t wait_ms = 0;
 
-    for (;;)
-    {
-        pthread_mutex_lock(&media->mutex);
-        while (media->used == 0 && !media->stopping)
-        {
-            wait_ms = WS_AUDIO_KEEPALIVE_INTERVAL_MS;
-            if (media->is_bound)
-            {
-                now = audio_clock_ms();
-                if (now >= media->next_keepalive_at)
-                {
-                    break;
-                }
-                wait_ms = media->next_keepalive_at - now;
-            }
-            clock_gettime(CLOCK_REALTIME, &deadline);
-            deadline.tv_sec += wait_ms / 1000;
-            deadline.tv_nsec += (wait_ms % 1000) * 1000000;
-            if (deadline.tv_nsec >= 1000000000)
-            {
-                deadline.tv_sec++;
-                deadline.tv_nsec -= 1000000000;
-            }
-            pthread_cond_timedwait(&media->ready, &media->mutex, &deadline);
-        }
-        if (media->stopping)
-        {
-            pthread_mutex_unlock(&media->mutex);
-            break;
-        }
-        now = audio_clock_ms();
-        if (media->is_bound && now >= media->next_keepalive_at)
-        {
-            // Check the deadline even when media is queued: a listener otherwise sends no reply.
-            media->next_keepalive_at = now + WS_AUDIO_KEEPALIVE_INTERVAL_MS;
-            pthread_mutex_unlock(&media->mutex);
-            keepalive[0] = WS_FIN | WS_FR_OP_BIN;
-            keepalive[1] = 0;
-            if (SEND(client, keepalive, 2) < 0)
-            {
-                ws_abort_client(client);
-                return NULL;
-            }
-            continue;
-        }
-        // the oldest record leaves the ring; the websocket frame is built around its payload
-        media_ring_header(media, media->head, &queued_at, &size, &kind);
-        header_size = size < 126 ? 2 : 4;
-        media_ring_read(media, media->head + WS_MEDIA_RECORD_HEADER, frame + header_size, size);
-        media->head = (media->head + WS_MEDIA_RECORD_HEADER + size) % media->ring_bytes;
-        media->used -= WS_MEDIA_RECORD_HEADER + size;
-        pthread_mutex_unlock(&media->mutex);
-        stale_after_ms = kind == WS_MEDIA_KIND_VOICE ? WS_MEDIA_STALE_VOICE_MS
-            : kind == WS_MEDIA_KIND_MUSIC ? WS_MEDIA_STALE_MUSIC_MS
-            : kind == WS_MEDIA_KIND_VIDEO ? WS_MEDIA_STALE_VIDEO_MS : 0;
-        if (stale_after_ms > 0 && audio_clock_ms() - queued_at > stale_after_ms)
-        {
-            continue;
-        }
-        frame[0] = WS_FIN | WS_FR_OP_BIN;
-        frame[1] = size < 126 ? (unsigned char)size : 126;
-        if (header_size == 4)
-        {
-            frame[2] = (unsigned char)(size >> 8);
-            frame[3] = (unsigned char)size;
-        }
-        if (SEND(client, frame, header_size + size) < 0)
-        {
-            // A partially sent frame cannot be skipped; terminate that connection.
-            ws_abort_client(client);
-            break;
-        }
-    }
-    return NULL;
+	for (;;)
+	{
+		pthread_mutex_lock(&media->mutex);
+		while (media->used == 0 && !media->stopping)
+		{
+			wait_ms = WS_AUDIO_KEEPALIVE_INTERVAL_MS;
+			if (media->is_bound)
+			{
+				now = audio_clock_ms();
+				if (now >= media->next_keepalive_at)
+				{
+					break;
+				}
+				wait_ms = media->next_keepalive_at - now;
+			}
+			clock_gettime(CLOCK_REALTIME, &deadline);
+			deadline.tv_sec += wait_ms / 1000;
+			deadline.tv_nsec += (wait_ms % 1000) * 1000000;
+			if (deadline.tv_nsec >= 1000000000)
+			{
+				deadline.tv_sec++;
+				deadline.tv_nsec -= 1000000000;
+			}
+			pthread_cond_timedwait(&media->ready, &media->mutex, &deadline);
+		}
+		if (media->stopping)
+		{
+			pthread_mutex_unlock(&media->mutex);
+			break;
+		}
+		now = audio_clock_ms();
+		if (media->is_bound && now >= media->next_keepalive_at)
+		{
+			// Check the deadline even when media is queued: a listener otherwise sends no reply.
+			media->next_keepalive_at = now + WS_AUDIO_KEEPALIVE_INTERVAL_MS;
+			pthread_mutex_unlock(&media->mutex);
+			keepalive[0] = WS_FIN | WS_FR_OP_BIN;
+			keepalive[1] = 0;
+			if (SEND(client, keepalive, 2) < 0)
+			{
+				ws_abort_client(client);
+				return NULL;
+			}
+			continue;
+		}
+
+		// the oldest record leaves the ring; the websocket frame is built around its payload
+		media_ring_header(media, media->head, &queued_at, &size, &kind);
+		header_size = size < 126 ? 2 : 4;
+		media_ring_read(media, media->head + WS_MEDIA_RECORD_HEADER, frame + header_size, size);
+		media->head = (media->head + WS_MEDIA_RECORD_HEADER + size) % media->ring_bytes;
+		media->used -= WS_MEDIA_RECORD_HEADER + size;
+		pthread_mutex_unlock(&media->mutex);
+		stale_after_ms = kind == WS_MEDIA_KIND_VOICE ? WS_MEDIA_STALE_VOICE_MS : kind == WS_MEDIA_KIND_MUSIC ? WS_MEDIA_STALE_MUSIC_MS : kind == WS_MEDIA_KIND_VIDEO ? WS_MEDIA_STALE_VIDEO_MS : 0;
+		if (stale_after_ms > 0 && audio_clock_ms() - queued_at > stale_after_ms)
+		{
+			continue;
+		}
+		frame[0] = WS_FIN | WS_FR_OP_BIN;
+		frame[1] = size < 126 ? (unsigned char)size : 126;
+		if (header_size == 4)
+		{
+			frame[2] = (unsigned char)(size >> 8);
+			frame[3] = (unsigned char)size;
+		}
+		if (SEND(client, frame, header_size + size) < 0)
+		{
+			// A partially sent frame cannot be skipped; terminate that connection.
+			ws_abort_client(client);
+			break;
+		}
+	}
+	return NULL;
 }
 
 /** @brief gives a media socket its ring, receive buffer and writer thread, sized by its purpose */
-static int media_start(ws_cli_conn_t* client)
+static int media_start(ws_cli_conn_t *client)
 {
-    struct ws_media_buffer* media = calloc(1, sizeof(*media));
+	struct ws_media_buffer *media = calloc(1, sizeof(*media));
 
-    if (media == NULL)
-    {
-        return -1;
-    }
-    media->ring_bytes = client->media_purpose == WS_MEDIA_PURPOSE_VIDEO ? WS_VIDEO_QUEUE_BYTES : WS_AUDIO_QUEUE_BYTES;
-    media->frame_max = client->media_purpose == WS_MEDIA_PURPOSE_VIDEO ? WS_VIDEO_FRAME_MAX : WS_AUDIO_FRAME_MAX;
-    media->ring = malloc(media->ring_bytes);
-    media->received = malloc(media->frame_max + 1);
-    if (media->ring == NULL || media->received == NULL)
-    {
-        free(media->ring);
-        free(media->received);
-        free(media);
-        return -1;
-    }
-    if (pthread_mutex_init(&media->mutex, NULL) != 0)
-    {
-        free(media->ring);
-        free(media->received);
-        free(media);
-        return -1;
-    }
-    if (pthread_cond_init(&media->ready, NULL) != 0)
-    {
-        pthread_mutex_destroy(&media->mutex);
-        free(media->ring);
-        free(media->received);
-        free(media);
-        return -1;
-    }
-    client->media = media;
-    if (pthread_create(&media->writer, NULL, media_writer, client) != 0)
-    {
-        client->media = NULL;
-        pthread_cond_destroy(&media->ready);
-        pthread_mutex_destroy(&media->mutex);
-        free(media->ring);
-        free(media->received);
-        free(media);
-        return -1;
-    }
-    return 0;
+	if (media == NULL)
+	{
+		return -1;
+	}
+	media->ring_bytes = client->media_purpose == WS_MEDIA_PURPOSE_VIDEO ? WS_VIDEO_QUEUE_BYTES : WS_AUDIO_QUEUE_BYTES;
+	media->frame_max = client->media_purpose == WS_MEDIA_PURPOSE_VIDEO ? WS_VIDEO_FRAME_MAX : WS_AUDIO_FRAME_MAX;
+	media->ring = malloc(media->ring_bytes);
+	media->received = malloc(media->frame_max + 1);
+	if (media->ring == NULL || media->received == NULL)
+	{
+		free(media->ring);
+		free(media->received);
+		free(media);
+		return -1;
+	}
+	if (pthread_mutex_init(&media->mutex, NULL) != 0)
+	{
+		free(media->ring);
+		free(media->received);
+		free(media);
+		return -1;
+	}
+	if (pthread_cond_init(&media->ready, NULL) != 0)
+	{
+		pthread_mutex_destroy(&media->mutex);
+		free(media->ring);
+		free(media->received);
+		free(media);
+		return -1;
+	}
+	client->media = media;
+	if (pthread_create(&media->writer, NULL, media_writer, client) != 0)
+	{
+		client->media = NULL;
+		pthread_cond_destroy(&media->ready);
+		pthread_mutex_destroy(&media->mutex);
+		free(media->ring);
+		free(media->received);
+		free(media);
+		return -1;
+	}
+	return 0;
 }
 
-static void media_stop(ws_cli_conn_t* client)
+static void media_stop(ws_cli_conn_t *client)
 {
-    struct ws_media_buffer* media = client->media;
+	struct ws_media_buffer *media = client->media;
 
-    if (media == NULL)
-    {
-        return;
-    }
-    ws_abort_client(client);
-    pthread_mutex_lock(&media->mutex);
-    media->stopping = true;
-    pthread_cond_signal(&media->ready);
-    pthread_mutex_unlock(&media->mutex);
-    pthread_join(media->writer, NULL);
-    pthread_cond_destroy(&media->ready);
-    pthread_mutex_destroy(&media->mutex);
-    free(media->ring);
-    free(media->received);
-    free(media);
-    client->media = NULL;
+	if (media == NULL)
+	{
+		return;
+	}
+	ws_abort_client(client);
+	pthread_mutex_lock(&media->mutex);
+	media->stopping = true;
+	pthread_cond_signal(&media->ready);
+	pthread_mutex_unlock(&media->mutex);
+	pthread_join(media->writer, NULL);
+	pthread_cond_destroy(&media->ready);
+	pthread_mutex_destroy(&media->mutex);
+	free(media->ring);
+	free(media->received);
+	free(media);
+	client->media = NULL;
 }
 
 static void close_client(ws_cli_conn_t *client, int lock)
 {
-	if (!CLIENT_VALID(client))
+	int descriptor = 0;
+
+	if (lock)
 	{
-		return;
-	}
-
-	set_client_state(client, WS_STATE_CLOSED);
-
-	close_socket(client->client_sock);
-
-	/* Destroy client mutexes and clear fd 'slot'. */
-	/* clang-format off */
-	if (lock)
 		pthread_mutex_lock(&mutex);
-			client->client_sock = -1;
-			pthread_cond_destroy(&client->cnd_state_close);
-			pthread_mutex_destroy(&client->mtx_state);
-			pthread_mutex_destroy(&client->mtx_snd);
-			pthread_mutex_destroy(&client->mtx_ping);
+	}
+	if (CLIENT_VALID(client))
+	{
+		set_client_state(client, WS_STATE_CLOSED);
+		pthread_mutex_lock(&client->mtx_snd);
+		descriptor = client->client_sock;
+		client->client_sock = -1;
+		close_socket(descriptor);
+		pthread_mutex_unlock(&client->mtx_snd);
+		pthread_cond_destroy(&client->cnd_state_close);
+		pthread_mutex_destroy(&client->mtx_state);
+		pthread_mutex_destroy(&client->mtx_snd);
+		pthread_mutex_destroy(&client->mtx_ping);
+	}
 	if (lock)
+	{
 		pthread_mutex_unlock(&mutex);
-	/* clang-format on */
+	}
 }
 
 /**
@@ -2259,8 +2303,7 @@ static void close_client(ws_cli_conn_t *client, int lock)
  *
  * @return Always NULL.
  *
- * @attention This is part of the internal API and is documented just
- * for completeness.
+ * @attention This is part of the internal API and is documented just for completeness.
  */
 static void *close_timeout(void *p)
 {
@@ -2294,22 +2337,20 @@ static void *close_timeout(void *p)
 
 	DEBUG_THELDUS_WEBSOCKET printf("%s", "[theldus-websocket] Timer expired, closing client \n");
 
-    ws_abort_client(conn);
+	ws_abort_client(conn);
 quit:
 	return (NULL);
 }
 
 /**
- * @brief For a valid client index @p client, starts
- * the timeout thread and set the current state
- * to 'CLOSING'.
+ * @brief For a valid client index @p client, starts the timeout thread and set the current state to
+ *        'CLOSING'.
  *
  * @param client Client connection.
  *
  * @return Returns 0 if success, -1 otherwise.
  *
- * @attention This is part of the internal API and is documented just
- * for completeness.
+ * @attention This is part of the internal API and is documented just for completeness.
  */
 static int start_close_timeout(ws_cli_conn_t *client)
 {
@@ -2330,7 +2371,8 @@ static int start_close_timeout(ws_cli_conn_t *client)
 	if (pthread_create(&client->thrd_tout, NULL, close_timeout, client))
 	{
 		pthread_mutex_unlock(&client->mtx_state);
-		panic("Unable to create timeout thread\n");
+		ws_abort_client(client);
+		return -1;
 	}
 	client->close_thrd = true;
 out:
@@ -2339,8 +2381,8 @@ out:
 }
 
 /**
- * @brief Sets the IP address relative to a client connection opened
- * by the server and save inside the client structure.
+ * @brief Sets the IP address relative to a client connection opened by the server and save inside
+ *        the client structure.
  *
  * @param client Client connection.
  */
@@ -2361,18 +2403,14 @@ static void set_client_address(ws_cli_conn_t *client)
 		return;
 	}
 
-
-
 	memset(client->ip, 0, sizeof(client->ip));
 	inet_ntop(AF_INET, &addr.sin_addr, client->ip, INET_ADDRSTRLEN);
 
 	DEBUG_THELDUS_WEBSOCKET printf("%s %s %s", "[theldus-websocket] set_client_address (not forwarded)", client->ip, "\n");
-
 }
 
 /**
- * @brief Gets the IP address relative to a client connection opened
- * by the server.
+ * @brief Gets the IP address relative to a client connection opened by the server.
  *
  * @param client Client connection.
  *
@@ -2415,8 +2453,7 @@ char *ws_getaddress(ws_cli_conn_t *client)
  *
  * @return Returns the number of bytes written, -1 if error.
  *
- * @note If @p size is -1, it is assumed that a text frame is being sent,
- * otherwise, a binary frame. In the later case, the @p size is used.
+ * @note If @p size is -1, it is assumed that a text frame is being sent, otherwise, a binary frame. In the later case, the @p size is used.
  */
 int ws_sendframe(ws_cli_conn_t *client, const char *msg, uint64_t size, int type)
 {
@@ -2430,15 +2467,15 @@ int ws_sendframe(ws_cli_conn_t *client, const char *msg, uint64_t size, int type
 	uint64_t i; /* Loop index.        */
 	ws_cli_conn_t *cli; /* Client.            */
 
-    if (client != NULL && client->chat_mode)
-    {
-        if (size > SIZE_MAX)
-        {
-            ws_abort_client(client);
-            return -1;
-        }
-        return _ws_internal__chat_queue_frame(client, msg, (size_t)size, type);
-    }
+	if (client != NULL && client->chat_mode)
+	{
+		if (size > SIZE_MAX)
+		{
+			ws_abort_client(client);
+			return -1;
+		}
+		return _ws_internal__chat_queue_frame(client, msg, (size_t)size, type);
+	}
 
 	frame[0] = (WS_FIN | type);
 	length = (uint64_t)size;
@@ -2514,9 +2551,7 @@ int ws_sendframe(ws_cli_conn_t *client, const char *msg, uint64_t size, int type
 			cli = &client_socks[i];
 			if ((cli->client_sock > -1) && get_client_state(cli) == WS_STATE_OPEN)
 			{
-				if ((send_ret = cli->chat_mode
-                    ? _ws_internal__chat_queue_frame(cli, msg, (size_t)size, type)
-                    : SEND(cli, response, idx_response)) != -1)
+				if ((send_ret = cli->chat_mode ? _ws_internal__chat_queue_frame(cli, msg, (size_t)size, type) : SEND(cli, response, idx_response)) != -1)
 				{
 					output += send_ret;
 				}
@@ -2535,9 +2570,8 @@ int ws_sendframe(ws_cli_conn_t *client, const char *msg, uint64_t size, int type
 }
 
 /**
- * @brief Given a PONG message, decodes the content
- * as a int32_t number that corresponds to our
- * PONG id.
+ * @brief Given a PONG message, decodes the content as a int32_t number that corresponds to our PONG
+ *        id.
  *
  * @param msg Content to be decoded.
  *
@@ -2546,14 +2580,16 @@ int ws_sendframe(ws_cli_conn_t *client, const char *msg, uint64_t size, int type
 static inline int32_t pong_msg_to_int32(uint8_t *msg)
 {
 	int32_t pong_id;
+
 	/* Decodes as big-endian. */
-	pong_id = (msg[3] << 0) | (msg[2] << 8) | (msg[1] << 16) | (msg[0] << 24);
+	uint32_t value = (uint32_t)msg[3] | ((uint32_t)msg[2] << 8) | ((uint32_t)msg[1] << 16) | ((uint32_t)msg[0] << 24);
+
+	pong_id = value <= INT32_MAX ? (int32_t)value : -1;
 	return (pong_id);
 }
 
 /**
- * @brief Given a PING id, encodes the content to be sent
- * as payload of a PING frame.
+ * @brief Given a PING id, encodes the content to be sent as payload of a PING frame.
  *
  * @param ping_id PING id to be encoded.
  * @param msg Target buffer.
@@ -2568,15 +2604,13 @@ static inline void int32_to_ping_msg(int32_t ping_id, uint8_t *msg)
 }
 
 /**
- * @brief Send a ping message and close if the client surpasses
- * the threshold imposed.
+ * @brief Send a ping message and close if the client surpasses the threshold imposed.
  *
  * @param cli Client to be sent.
  * @param threshold How many pings can miss?.
  * @param lock Should lock global mutex or not?.
  *
- * @attention This is part of the internal API and is documented just
- * for completeness.
+ * @attention This is part of the internal API and is documented just for completeness.
  */
 static void send_ping_close(ws_cli_conn_t *cli, int threshold, int lock)
 {
@@ -2620,6 +2654,7 @@ static void send_ping_close(ws_cli_conn_t *cli, int threshold, int lock)
         }
 
 	pthread_mutex_unlock(&cli->mtx_ping);
+
 	/* clang-format on */
 }
 
@@ -2628,9 +2663,7 @@ static void send_ping_close(ws_cli_conn_t *cli, int threshold, int lock)
  * @p threshold.
  *
  * This routine sends a PING to a single client pointed to by
- * @p cli or a broadcast PING if @p cli is NULL. If the specified
- * client does not respond up to @p threshold PINGs, the connection
- * is aborted.
+ * @p cli or a broadcast PING if @p cli is NULL. If the specified client does not respond up to @p threshold PINGs, the connection is aborted.
  *
  * ws_ping() is not automatic: the user who wants to send keep-alive
  * PINGs *must* call this routine in a timely manner, whether on
@@ -2639,11 +2672,9 @@ static void send_ping_close(ws_cli_conn_t *cli, int threshold, int lock)
  * See examples/ping/ping.c for a minimal example usage.
  *
  * @param cli       Client to be sent, if NULL, broadcast.
- * @param threshold How many ignored PINGs should tolerate? (should be
- *                  positive and greater than 0).
+ * @param threshold How many ignored PINGs should tolerate? (should be positive and greater than 0).
  *
- * @note It should be noted that the time between each call to
- * ws_ping() is the timeout itself for receiving the PONG.
+ * @note It should be noted that the time between each call to ws_ping() is the timeout itself for receiving the PONG.
  *
  * It is also important to note that for devices with unstable
  * connections (such as a weak WiFi signal or 3/4/5G from a cell phone),
@@ -2662,7 +2693,9 @@ void ws_ping(ws_cli_conn_t *cli, int threshold)
 	/* PING a single client. */
 	if (cli)
 	{
-		send_ping_close(cli, threshold, 1);
+		pthread_mutex_lock(&mutex);
+		send_ping_close(cli, threshold, 0);
+		pthread_mutex_unlock(&mutex);
 	}
 
 	/* PING broadcast. */
@@ -2674,6 +2707,7 @@ void ws_ping(ws_cli_conn_t *cli, int threshold)
 				send_ping_close(&client_socks[i], threshold, 0
 );
 		pthread_mutex_unlock(&mutex);
+
 		/* clang-format on */
 	}
 }
@@ -2708,13 +2742,11 @@ int ws_sendframe_bin(ws_cli_conn_t *client, const char *msg, uint64_t size)
 }
 
 /**
- * @brief For a given @p client, gets the current state for
- * the connection, or -1 if invalid.
+ * @brief For a given @p client, gets the current state for the connection, or -1 if invalid.
  *
  * @param client Client connection.
  *
- * @return Returns the connection state or -1 if
- * invalid @p client.
+ * @return Returns the connection state or -1 if invalid @p client.
  *
  * @see WS_STATE_CONNECTING
  * @see WS_STATE_OPEN
@@ -2727,23 +2759,30 @@ int ws_get_state(ws_cli_conn_t *client)
 }
 
 /**
- * @brief Close the client connection for the given @p
- * client with normal close code (1000) and no reason
- * string.
+ * @brief Close the client connection for the given @p client with normal close code (1000) and no
+ *        reason string.
  *
  * @param client Client connection.
  *
  * @return Returns 0 on success, -1 otherwise.
  *
- * @note If the client did not send a close frame in
- * TIMEOUT_MS milliseconds, the server will close the
- * connection with error code (1002).
+ * @note If the client did not send a close frame in TIMEOUT_MS milliseconds, the server will close the connection with error code (1002).
  */
 int ws_close_client(ws_cli_conn_t *client)
 {
-    record_close_reason(client, "application requested websocket close");
+	return ws_close_client_with_code(client, WS_CLSE_NORMAL);
+}
+
+/* Normal closure (1000) or an application close code (3000-4999). */
+int ws_close_client_with_code(ws_cli_conn_t *client, uint16_t code)
+{
 	unsigned char clse_code[2];
-	int cc;
+
+	if (code != WS_CLSE_NORMAL && (code < 3000 || code > 4999))
+	{
+		return -1;
+	}
+	record_close_reason(client, "application requested websocket close");
 
 	/* Check if client is a valid and connected client. */
 	if (!CLIENT_VALID(client) || client->client_sock == -1)
@@ -2756,22 +2795,21 @@ int ws_close_client(ws_cli_conn_t *client)
 	 * msg_ctrl buffer from wfd and avoid a race condition
 	 * if this is invoked asynchronously.
 	 */
-	cc = WS_CLSE_NORMAL;
-	clse_code[0] = (cc >> 8);
-	clse_code[1] = (cc & 0xFF);
+	clse_code[0] = (code >> 8);
+	clse_code[1] = (code & 0xFF);
 	if (ws_sendframe(client, (const char *)clse_code, sizeof(char) * 2, WS_FR_OP_CLSE) < 0)
 	{
 		DEBUG_THELDUS_WEBSOCKET printf("[theldus-websocket] An error has occurred while sending closing frame!\n");
 		return (-1);
 	}
 
-    if (client->chat_mode)
-    {
-        // The writer starts the peer's close-reply timeout after the preceding
-        // messages and the close frame have actually left this queue.
-        set_client_state(client, WS_STATE_CLOSING);
-        return 0;
-    }
+	if (client->chat_mode)
+	{
+		// The writer starts the peer's close-reply timeout after the preceding
+		// messages and the close frame have actually left this queue.
+		set_client_state(client, WS_STATE_CLOSING);
+		return 0;
+	}
 
 	/*
 	 * Starts the timeout thread: if the client did not send
@@ -2783,96 +2821,132 @@ int ws_close_client(ws_cli_conn_t *client)
 }
 
 /**
- * @brief Checks is a given opcode @p frame
- * belongs to a control frame or not.
+ * @brief Checks is a given opcode @p frame belongs to a control frame or not.
  *
  * @param frame Frame opcode to be checked.
  *
  * @return Returns 1 if is a control frame, 0 otherwise.
  *
- * @attention This is part of the internal API and is documented just
- * for completeness.
+ * @attention This is part of the internal API and is documented just for completeness.
  */
 static inline int is_control_frame(int frame)
 {
 	return (frame == WS_FR_OP_CLSE || frame == WS_FR_OP_PING || frame == WS_FR_OP_PONG);
 }
 
+/* TCP can split an upgrade request anywhere. Keep one deadline and preserve
+ * bytes belonging to a WebSocket frame received after the HTTP headers. */
+static int read_handshake(struct ws_frame_data *wfd)
+{
+	uint64_t now = 0;
+	ssize_t count = 0;
+	size_t search_from = 0;
+	size_t index = 0;
+	size_t header_size = 0;
+	size_t received = 0;
+	uint64_t deadline = audio_clock_ms() + WS_HANDSHAKE_TIMEOUT_MS;
+
+	while (received < sizeof(wfd->frm) - 1)
+	{
+		now = audio_clock_ms();
+		if (now >= deadline)
+		{
+			return -1;
+		}
+#ifndef AFL_FUZZ
+		if (set_socket_timeout(wfd->client->client_sock, SO_RCVTIMEO, (uint32_t)(deadline - now)) != 0)
+		{
+			return -1;
+		}
+#endif
+		count = RECV(wfd->client, wfd->frm + received, sizeof(wfd->frm) - 1 - received);
+		if (count <= 0)
+		{
+			return -1;
+		}
+		search_from = received > 3 ? received - 3 : 0;
+		received += (size_t)count;
+		wfd->frm[received] = '\0';
+		for (index = search_from; index + 4 <= received; index++)
+		{
+			if (memcmp(wfd->frm + index, "\r\n\r\n", 4) == 0)
+			{
+				header_size = index + 4;
+				if (memchr(wfd->frm, '\0', header_size) != NULL || audio_clock_ms() >= deadline)
+				{
+					return -1;
+				}
+#ifndef AFL_FUZZ
+				if (set_socket_timeout(wfd->client->client_sock, SO_RCVTIMEO, 0) != 0)
+				{
+					return -1;
+				}
+#endif
+				wfd->amt_read = received;
+				wfd->cur_pos = header_size;
+				return 0;
+			}
+		}
+	}
+	return -1;
+}
+
 static int do_handshake(struct ws_frame_data *wfd)
 {
+	unsigned char first_frame_byte = 0;
+	int response_status = 0;
+	int enabled = 0;
 	char *response; /* Handshake response message. */
-	char *p; /* Last request line pointer.  */
-	ssize_t n; /* Read/Write bytes.           */
-    const char* forwarded_header = NULL;
-    int forwarded_status = 0;
+	const char *forwarded_header = NULL;
+	int forwarded_status = 0;
 
 	/* A socket is not visible to the application's auth timeout until onopen.
-	 * Bound this initial read, then remove the timeout for established clients. */
-	#ifndef AFL_FUZZ
-	if (set_socket_timeout(wfd->client->client_sock, SO_RCVTIMEO, 10000) != 0)
-	{
-		return (-1);
-	}
-	#endif
-	n = RECV(wfd->client, wfd->frm, sizeof(wfd->frm) - 1);
-	if (n <= 0
-#ifndef AFL_FUZZ
-        || set_socket_timeout(wfd->client->client_sock, SO_RCVTIMEO, 0) != 0
-#endif
-       )
+	 * Bound the complete header, then remove the timeout for established clients. */
+	if (read_handshake(wfd) < 0)
 	{
 		return (-1);
 	}
 
-    wfd->frm[n] = '\0';
-	/* Advance our pointers before the first next_byte(). */
-	p = strstr((const char *)wfd->frm, "\r\n\r\n");
-	if (p == NULL)
+	wfd->client->is_using_forwarded_ip_address = false;
+	wfd->client->forwarded_ip_address[0] = '\0';
+	if (strcmp(wfd->client->ip, "127.0.0.1") == 0)
 	{
-		DEBUG_THELDUS_WEBSOCKET printf("[theldus-websocket] An empty line with \\r\\n was expected!\n");
-		return (-1);
+		if (forwarded_ip_mode == WS_FORWARDED_IP_FUNNEL)
+		{
+			forwarded_header = "X-Forwarded-For";
+		}
+		else if (forwarded_ip_mode == WS_FORWARDED_IP_STUNNEL)
+		{
+			forwarded_header = "X-Stunnel-Client-IP";
+		}
 	}
-	wfd->amt_read = n;
-	wfd->cur_pos = (size_t)((ptrdiff_t)(p - (char *)wfd->frm)) + 4;
-
-    wfd->client->is_using_forwarded_ip_address = false;
-    wfd->client->forwarded_ip_address[0] = '\0';
-    if (strcmp(wfd->client->ip, "127.0.0.1") == 0)
-    {
-        if (forwarded_ip_mode == WS_FORWARDED_IP_FUNNEL)
-        {
-            forwarded_header = "X-Forwarded-For";
-        }
-        else if (forwarded_ip_mode == WS_FORWARDED_IP_STUNNEL)
-        {
-            forwarded_header = "X-Stunnel-Client-IP";
-        }
-    }
-    if (forwarded_header != NULL)
-    {
-        forwarded_status = get_forwarded_ip_address((const char*)wfd->frm, wfd->cur_pos,
-            forwarded_header, wfd->client->forwarded_ip_address,
-            sizeof(wfd->client->forwarded_ip_address));
-        if (forwarded_status < 0)
-        {
-            fprintf(stderr, "[websocket] Rejected local connection with an invalid or duplicate %s header.\n", forwarded_header);
-            return -1;
-        }
-        wfd->client->is_using_forwarded_ip_address = (forwarded_status == 1);
-    }
+	if (forwarded_header != NULL)
+	{
+		forwarded_status = get_forwarded_ip_address((const char *)wfd->frm, wfd->cur_pos, forwarded_header, wfd->client->forwarded_ip_address, sizeof(wfd->client->forwarded_ip_address));
+		if (forwarded_status < 0)
+		{
+			fprintf(stderr, "[websocket] Rejected local connection with an invalid or duplicate %s header.\n", forwarded_header);
+			return -1;
+		}
+		wfd->client->is_using_forwarded_ip_address = (forwarded_status == 1);
+	}
 
 	/* Get response. */
-    wfd->client->media_purpose = WS_MEDIA_PURPOSE_NONE;
-    if (strncmp((char*)wfd->frm, "GET /audio HTTP/1.1\r\n", 21) == 0)
-    {
-        wfd->client->media_purpose = WS_MEDIA_PURPOSE_AUDIO;
-    }
-    else if (strncmp((char*)wfd->frm, "GET /video HTTP/1.1\r\n", 21) == 0)
-    {
-        wfd->client->media_purpose = WS_MEDIA_PURPOSE_VIDEO;
-    }
+	wfd->client->media_purpose = WS_MEDIA_PURPOSE_NONE;
+	if (strncmp((char *)wfd->frm, "GET /audio HTTP/1.1\r\n", 21) == 0)
+	{
+		wfd->client->media_purpose = WS_MEDIA_PURPOSE_AUDIO;
+	}
+	else if (strncmp((char *)wfd->frm, "GET /video HTTP/1.1\r\n", 21) == 0)
+	{
+		wfd->client->media_purpose = WS_MEDIA_PURPOSE_VIDEO;
+	}
 
-	if (get_handshake_response((char *)wfd->frm, &response) < 0)
+	first_frame_byte = wfd->frm[wfd->cur_pos];
+	wfd->frm[wfd->cur_pos] = '\0';
+	response_status = get_handshake_response((char *)wfd->frm, &response);
+	wfd->frm[wfd->cur_pos] = first_frame_byte;
+	if (response_status < 0)
 	{
 		DEBUG_THELDUS_WEBSOCKET printf("[theldus-websocket] Cannot get handshake response, request was: %s\n", wfd->frm);
 		return (-1);
@@ -2880,10 +2954,10 @@ static int do_handshake(struct ws_frame_data *wfd)
 
 	/* Valid request. */
 	DEBUG_THELDUS_WEBSOCKET printf("[theldus-websocket] Handshaked, response: \n"
-				       "------------------------------------\n"
-				       "%s"
-				       "------------------------------------\n",
-				       response);
+								   "------------------------------------\n"
+								   "%s"
+								   "------------------------------------\n",
+								   response);
 
 	/* Send handshake. */
 	if (SEND(wfd->client, response, strlen(response)) < 0)
@@ -2894,46 +2968,48 @@ static int do_handshake(struct ws_frame_data *wfd)
 	}
 
 	/* Trigger events and clean up buffers. */
-    if ((wfd->client->media_purpose != WS_MEDIA_PURPOSE_NONE))
-    {
-        int enabled = 1;
-        setsockopt(wfd->client->client_sock, IPPROTO_TCP, TCP_NODELAY, (const char*)&enabled, sizeof(enabled));
-        if (set_socket_timeout(wfd->client->client_sock, SO_RCVTIMEO, WS_AUDIO_HELLO_TIMEOUT_MS) != 0
-            || set_socket_timeout(wfd->client->client_sock, SO_SNDTIMEO, 100) != 0
-            || media_start(wfd->client) != 0)
-        {
-            free(response);
-            return -1;
-        }
-    }
-    else
-    {
+	if ((wfd->client->media_purpose != WS_MEDIA_PURPOSE_NONE))
+	{
+		wfd->client->media_hello_deadline = audio_clock_ms() + WS_AUDIO_HELLO_TIMEOUT_MS;
+		enabled = 1;
+		setsockopt(wfd->client->client_sock, IPPROTO_TCP, TCP_NODELAY, (const char *)&enabled, sizeof(enabled));
+		if (set_socket_timeout(wfd->client->client_sock, SO_RCVTIMEO, WS_AUDIO_HELLO_TIMEOUT_MS) != 0 || set_socket_timeout(wfd->client->client_sock, SO_SNDTIMEO, 100) != 0 || media_start(wfd->client) != 0)
+		{
+			free(response);
+			return -1;
+		}
+	}
+	else
+	{
 #ifndef AFL_FUZZ
-        if (_ws_internal__chat_start(wfd->client) != 0)
-        {
-            free(response);
-            return -1;
-        }
+		if (_ws_internal__chat_start(wfd->client) != 0)
+		{
+			free(response);
+			return -1;
+		}
 #endif
-    }
-    set_client_state(wfd->client, WS_STATE_OPEN);
+	}
+	set_client_state(wfd->client, WS_STATE_OPEN);
 	cli_events.onopen(wfd->client);
 	free(response);
 	return (0);
 }
 
 /**
- * @brief Sends a close frame, accordingly with the @p close_code
- * or the message inside @p wfd.
+ * @brief Sends a close frame, accordingly with the @p close_code or the message inside @p wfd.
  *
  * @param wfd Websocket Frame Data.
  * @param close_code Websocket close code.
  *
  * @return Returns 0 if success, a negative number otherwise.
  *
- * @attention This is part of the internal API and is documented just
- * for completeness.
+ * @attention This is part of the internal API and is documented just for completeness.
  */
+static bool valid_close_code(unsigned int code)
+{
+	return (code >= 1000 && code <= 1014 && code != 1004 && code != 1005 && code != 1006) || (code >= 3000 && code <= 4999);
+}
+
 static int do_close(struct ws_frame_data *wfd, int close_code)
 {
 	int cc; /* Close code.           */
@@ -2945,8 +3021,8 @@ static int do_close(struct ws_frame_data *wfd, int close_code)
 		goto custom_close;
 	}
 
-	/* If empty or have a close reason, just re-send. */
-	if (wfd->frame_size == 0 || wfd->frame_size > 2)
+	/* Empty closes have no status code. */
+	if (wfd->frame_size == 0)
 	{
 		goto send;
 	}
@@ -2963,7 +3039,7 @@ static int do_close(struct ws_frame_data *wfd, int close_code)
 	}
 
 	/* Check if it's not valid, if so, we send a protocol error (1002). */
-	if ((cc < 1000 || cc > 1003) && (cc < 1007 || cc > 1011) && (cc < 3000 || cc > 4999))
+	if (!valid_close_code((unsigned int)cc))
 	{
 		cc = WS_CLSE_PROTERR;
 
@@ -3000,11 +3076,9 @@ send:
  *
  * @param frame_size Pong frame size.
  *
- * @return Returns 0 if success and a negative number
- * otherwise.
+ * @return Returns 0 if success and a negative number otherwise.
  *
- * @attention This is part of the internal API and is documented just
- * for completeness.
+ * @attention This is part of the internal API and is documented just for completeness.
  */
 static int do_pong(struct ws_frame_data *wfd, uint64_t frame_size)
 {
@@ -3018,15 +3092,13 @@ static int do_pong(struct ws_frame_data *wfd, uint64_t frame_size)
 }
 
 /**
- * @brief Read a chunk of bytes and return the next byte
- * belonging to the frame.
+ * @brief Read a chunk of bytes and return the next byte belonging to the frame.
  *
  * @param wfd Websocket Frame Data.
  *
  * @return Returns the byte read, or -1 if error.
  *
- * @attention This is part of the internal API and is documented just
- * for completeness.
+ * @attention This is part of the internal API and is documented just for completeness.
  */
 static inline int next_byte(struct ws_frame_data *wfd)
 {
@@ -3053,15 +3125,14 @@ static inline int next_byte(struct ws_frame_data *wfd)
  * @param wfd Websocket Frame Data.
  * @param frame_size Amount of bytes to be skipped.
  *
- * @return Returns 0 if success, a negative number
- * otherwise.
+ * @return Returns 0 if success, a negative number otherwise.
  *
- * @attention This is part of the internal API and is documented just
- * for completeness.
+ * @attention This is part of the internal API and is documented just for completeness.
  */
 static int skip_frame(struct ws_frame_data *wfd, uint64_t frame_size)
 {
 	uint64_t i;
+
 	for (i = 0; i < frame_size; i++)
 	{
 		if (next_byte(wfd) == -1)
@@ -3074,51 +3145,66 @@ static int skip_frame(struct ws_frame_data *wfd, uint64_t frame_size)
 }
 
 /**
- * @brief Reads the current frame isolating data from control frames.
- * The parameters are changed in order to reflect the current state.
+ * @brief Reads the current frame isolating data from control frames. The parameters are changed in
+ *        order to reflect the current state.
  *
  * @param wfd Websocket Frame Data.
  * @param opcode Frame opcode.
  * @param buf Buffer to be written.
  * @param frame_length Length of the current frame.
- * @param frame_size Total size of the frame (considering CONT frames)
- *                   read until the moment.
+ * @param frame_size Total size of the frame (considering CONT frames) read until the moment.
  * @param msg_idx Message index, reflects the current buffer pointer state.
  * @param masks Masks vector.
  * @param is_fin Is FIN frame indicator.
  *
  * @return Returns 0 if success, a negative number otherwise.
  *
- * @attention This is part of the internal API and is documented just
- * for completeness.
+ * @attention This is part of the internal API and is documented just for completeness.
  */
 static int read_frame(struct ws_frame_data *wfd, int opcode, unsigned char **buf, uint64_t *frame_length, uint64_t *frame_size, uint64_t *msg_idx, uint8_t *masks, int is_fin)
 {
+	uint64_t marker = 0;
+	unsigned int octets = 0;
+	unsigned int index = 0;
+	int octet = 0;
 	unsigned char *tmp; /* Tmp message.     */
 	unsigned char *msg; /* Current message. */
 	int cur_byte; /* Curr byte read.  */
 	uint64_t i; /* Loop index.      */
-    uint64_t limit = wfd->client->media_purpose != WS_MEDIA_PURPOSE_NONE ? wfd->client->media->frame_max : MAX_FRAME_LENGTH;
+	uint64_t limit = wfd->client->media_purpose != WS_MEDIA_PURPOSE_NONE ? wfd->client->media->frame_max : atomic_load(&wfd->client->incoming_limit);
 
-	msg = *buf;
-    if ((wfd->client->media_purpose != WS_MEDIA_PURPOSE_NONE) && !is_control_frame(opcode))
-    {
-        msg = wfd->client->media->received;
-        *buf = msg;
-    }
-
-	/* Decode masks and length for 16-bit messages. */
-	if (*frame_length == 126)
+	if (limit == 0)
 	{
-		*frame_length = (((uint64_t)next_byte(wfd)) << 8) | next_byte(wfd);
+		limit = WS_PRELOGIN_MESSAGE_BYTES;
 	}
 
-	/* 64-bit messages. */
-	else if (*frame_length == 127)
+	msg = *buf;
+	if ((wfd->client->media_purpose != WS_MEDIA_PURPOSE_NONE) && !is_control_frame(opcode))
 	{
-		*frame_length = (((uint64_t)next_byte(wfd)) << 56) | /* frame[2]. */
-				(((uint64_t)next_byte(wfd)) << 48) | /* frame[3]. */
-				(((uint64_t)next_byte(wfd)) << 40) | (((uint64_t)next_byte(wfd)) << 32) | (((uint64_t)next_byte(wfd)) << 24) | (((uint64_t)next_byte(wfd)) << 16) | (((uint64_t)next_byte(wfd)) << 8) | (((uint64_t)next_byte(wfd))); /* frame[9]. */
+		msg = wfd->client->media->received;
+		*buf = msg;
+	}
+
+	if (*frame_length >= 126)
+	{
+		marker = *frame_length;
+		octets = marker == 126 ? 2 : 8;
+		*frame_length = 0;
+		for (index = 0; index < octets; index++)
+		{
+			octet = next_byte(wfd);
+			if (octet < 0 || (octets == 8 && index == 0 && (octet & 0x80) != 0))
+			{
+				wfd->error = 1;
+				return -1;
+			}
+			*frame_length = (*frame_length << 8) | (unsigned int)octet;
+		}
+		if ((marker == 126 && *frame_length < 126) || (marker == 127 && *frame_length <= 65535))
+		{
+			wfd->error = 1;
+			return -1;
+		}
 	}
 
 	/*
@@ -3134,8 +3220,8 @@ static int read_frame(struct ws_frame_data *wfd, int opcode, unsigned char **buf
 	if (*frame_size > limit || *frame_length > limit - *frame_size)
 	{
 		DEBUG_THELDUS_WEBSOCKET printf("[theldus-websocket] Current frame from client %d, exceeds the maximum\n"
-					       "amount of bytes allowed (%" PRId64 "/%d)!",
-					       wfd->client->client_sock, *frame_size + *frame_length, MAX_FRAME_LENGTH);
+									   "amount of bytes allowed (%" PRId64 "/%d)!",
+									   wfd->client->client_sock, *frame_size + *frame_length, MAX_FRAME_LENGTH);
 
 		wfd->error = 1;
 		return (-1);
@@ -3175,7 +3261,12 @@ static int read_frame(struct ws_frame_data *wfd, int opcode, unsigned char **buf
 	{
 		if (!is_control_frame(opcode) && !(wfd->client->media_purpose != WS_MEDIA_PURPOSE_NONE))
 		{
-			tmp = realloc(msg, sizeof(unsigned char) * (*msg_idx + *frame_length + is_fin));
+			if (!reserve_incoming(wfd, *msg_idx + *frame_length + 1))
+			{
+				wfd->error = 1;
+				return -1;
+			}
+			tmp = realloc(msg, (size_t)(*msg_idx + *frame_length + 1));
 			if (!tmp)
 			{
 				DEBUG_THELDUS_WEBSOCKET printf("[theldus-websocket] Cannot allocate memory, requested: % " PRId64 "\n", (*msg_idx + *frame_length + is_fin));
@@ -3204,20 +3295,6 @@ static int read_frame(struct ws_frame_data *wfd, int opcode, unsigned char **buf
 	/* If we're inside a FIN frame, lets... */
 	if (is_fin && *frame_size > 0)
 	{
-		/* Increase memory if our FIN frame is of length 0. */
-		if (!*frame_length && !is_control_frame(opcode) && !(wfd->client->media_purpose != WS_MEDIA_PURPOSE_NONE))
-		{
-			tmp = realloc(msg, sizeof(unsigned char) * (*msg_idx + 1));
-			if (!tmp)
-			{
-				DEBUG_THELDUS_WEBSOCKET printf("[theldus-websocket] Cannot allocate memory, requested: %" PRId64 "\n", (*msg_idx + 1));
-
-				wfd->error = 1;
-				return (-1);
-			}
-			msg = tmp;
-			*buf = msg;
-		}
 		msg[*msg_idx] = '\0';
 	}
 
@@ -3225,15 +3302,13 @@ static int read_frame(struct ws_frame_data *wfd, int opcode, unsigned char **buf
 }
 
 /**
- * @brief Reads the next frame, whether if a TXT/BIN/CLOSE
- * of arbitrary size.
+ * @brief Reads the next frame, whether if a TXT/BIN/CLOSE of arbitrary size.
  *
  * @param wfd Websocket Frame Data.
  *
  * @return Returns 0 if success, a negative number otherwise.
  *
- * @attention This is part of the internal API and is documented just
- * for completeness.
+ * @attention This is part of the internal API and is documented just for completeness.
  */
 static int next_frame(struct ws_frame_data *wfd)
 {
@@ -3284,9 +3359,15 @@ static int next_frame(struct ws_frame_data *wfd)
 		cur_byte = next_byte(wfd);
 		if (cur_byte == -1)
 		{
-			return (-1);
+			wfd->error = 1;
+			break;
 		}
 
+		if (wfd->client->incoming_deadline == 0)
+		{
+			wfd->client->incoming_deadline = audio_clock_ms() + WS_MESSAGE_DEADLINE_MS;
+			wfd->client->incoming_progress_deadline = audio_clock_ms() + WS_MESSAGE_PROGRESS_MS;
+		}
 		is_fin = (cur_byte & 0xFF) >> WS_FIN_SHIFT;
 		opcode = (cur_byte & 0xF);
 
@@ -3338,8 +3419,8 @@ static int next_frame(struct ws_frame_data *wfd)
 			if (get_client_state(wfd->client) == WS_STATE_CLOSING && opcode != WS_FR_OP_CLSE)
 			{
 				DEBUG_THELDUS_WEBSOCKET printf("[theldus-websocket] Unexpected frame received, expected CLOSE (%d), "
-							       "received: (%d)",
-							       WS_FR_OP_CLSE, opcode);
+											   "received: (%d)",
+											   WS_FR_OP_CLSE, opcode);
 				wfd->error = 1;
 				break;
 			}
@@ -3350,7 +3431,13 @@ static int next_frame(struct ws_frame_data *wfd)
 				wfd->frame_type = opcode;
 			}
 
-			mask = next_byte(wfd);
+			cur_byte = next_byte(wfd);
+			if (cur_byte < 0 || (cur_byte & 0x80) == 0)
+			{
+				wfd->error = 1;
+				break;
+			}
+			mask = (uint8_t)cur_byte;
 			frame_length = mask & 0x7F;
 			frame_size = 0;
 			msg_idx_ctrl = 0;
@@ -3378,9 +3465,10 @@ static int next_frame(struct ws_frame_data *wfd)
 				/* UTF-8 Validate partial (or not) frame. */
 				if (wfd->frame_type == WS_FR_OP_TXT)
 				{
+					unsigned char *fragment = msg_data != NULL ? msg_data + (msg_idx_data - frame_length) : (unsigned char *)"";
 					if (is_fin)
 					{
-						if (is_utf8_len_state(msg_data + (msg_idx_data - frame_length), frame_length, utf8_state) != UTF8_ACCEPT)
+						if (is_utf8_len_state(fragment, frame_length, utf8_state) != UTF8_ACCEPT)
 						{
 							DEBUG_THELDUS_WEBSOCKET printf("%s", "[theldus-websocket] Dropping invalid complete message!\n");
 							wfd->error = 1;
@@ -3391,7 +3479,7 @@ static int next_frame(struct ws_frame_data *wfd)
 					/* Check current state for a CONT or initial TXT frame. */
 					else
 					{
-						utf8_state = is_utf8_len_state(msg_data + (msg_idx_data - frame_length), frame_length, utf8_state);
+						utf8_state = is_utf8_len_state(fragment, frame_length, utf8_state);
 
 						/* We can be in any state, except reject. */
 						if (utf8_state == UTF8_REJECT)
@@ -3418,6 +3506,10 @@ static int next_frame(struct ws_frame_data *wfd)
 					break;
 				}
 
+				if (wfd->frame_type == -1)
+				{
+					release_incoming(wfd);
+				}
 				is_fin = 0;
 
 				/* If there is no content and/or differs the size, ignore it. */
@@ -3442,6 +3534,7 @@ static int next_frame(struct ws_frame_data *wfd)
 					wfd->client->last_pong_id = pong_id;
 
 				pthread_mutex_unlock(&wfd->client->mtx_ping);
+
 				/* clang-format on */
 				continue;
 			}
@@ -3459,6 +3552,11 @@ static int next_frame(struct ws_frame_data *wfd)
 					break;
 				}
 
+				if (wfd->frame_type == -1)
+				{
+					release_incoming(wfd);
+				}
+
 				/* Quick hack to keep our loop. */
 				is_fin = 0;
 			}
@@ -3471,24 +3569,31 @@ static int next_frame(struct ws_frame_data *wfd)
 					break;
 				}
 
-#ifdef VALIDATE_UTF8
+				if (frame_size == 1 || (frame_size >= 2 && !valid_close_code(((unsigned int)msg_ctrl[0] << 8) | msg_ctrl[1])))
+				{
+					wfd->error = 1;
+					do_close(wfd, WS_CLSE_PROTERR);
+					break;
+				}
+
 				/* If there is a close reason, check if it is UTF-8 valid. */
 				if (frame_size > 2 && !is_utf8_len(msg_ctrl + 2, frame_size - 2))
 				{
 					DEBUG_THELDUS_WEBSOCKET printf("%s", "[theldus-websocket] Invalid close frame payload reason! (not UTF-8)\n");
 					wfd->error = 1;
+					do_close(wfd, WS_CLSE_INVUTF8);
 					break;
 				}
-#endif
 
 				/* Since we're aborting, we can scratch the 'data'-related
 				 * vars here. */
 				wfd->frame_size = frame_size;
 				wfd->frame_type = WS_FR_OP_CLSE;
 				if (!(wfd->client->media_purpose != WS_MEDIA_PURPOSE_NONE))
-                {
-                    free(msg_data);
-                }
+				{
+					free(msg_data);
+				}
+				release_incoming(wfd);
 				return (0);
 			}
 		}
@@ -3497,6 +3602,7 @@ static int next_frame(struct ws_frame_data *wfd)
 		else
 		{
 			DEBUG_THELDUS_WEBSOCKET printf("[theldus-websocket] Unsupported frame opcode: %d\n", opcode);
+
 			/* We should consider as error receive an unknown frame. */
 			wfd->frame_type = opcode;
 			wfd->error = 1;
@@ -3508,9 +3614,10 @@ static int next_frame(struct ws_frame_data *wfd)
 	if (wfd->error)
 	{
 		if (!(wfd->client->media_purpose != WS_MEDIA_PURPOSE_NONE))
-                {
-                    free(msg_data);
-                }
+		{
+			free(msg_data);
+		}
+		release_incoming(wfd);
 		wfd->msg = NULL;
 		return (-1);
 	}
@@ -3520,8 +3627,7 @@ static int next_frame(struct ws_frame_data *wfd)
 }
 
 /**
- * @brief Establishes to connection with the client and trigger
- * events when occurs one.
+ * @brief Establishes to connection with the client and trigger events when occurs one.
  *
  * @param vclient Client connection.
  *
@@ -3529,8 +3635,7 @@ static int next_frame(struct ws_frame_data *wfd)
  *
  * @note This will be run on a different thread.
  *
- * @attention This is part of the internal API and is documented just
- * for completeness.
+ * @attention This is part of the internal API and is documented just for completeness.
  */
 static void *ws_establishconnection(void *vclient)
 {
@@ -3562,7 +3667,8 @@ static void *ws_establishconnection(void *vclient)
 		/* Close event. */
 		else if (wfd.frame_type == WS_FR_OP_CLSE && !wfd.error)
 		{
-            record_close_reason(client, "peer sent websocket close");
+			record_close_reason(client, "peer sent websocket close");
+
 			/*
 			 * We only send a CLOSE frame once, if we're already
 			 * in CLOSING state, there is no need to send.
@@ -3576,16 +3682,20 @@ static void *ws_establishconnection(void *vclient)
 			}
 
 			if (client->media_purpose == WS_MEDIA_PURPOSE_NONE)
-            {
-                free(wfd.msg);
-            }
+			{
+				free(wfd.msg);
+				wfd.msg = NULL;
+			}
+			release_incoming(&wfd);
 			break;
 		}
 
 		if (client->media_purpose == WS_MEDIA_PURPOSE_NONE)
-            {
-                free(wfd.msg);
-            }
+		{
+			free(wfd.msg);
+			wfd.msg = NULL;
+		}
+		release_incoming(&wfd);
 	}
 
 	/*
@@ -3593,15 +3703,15 @@ static void *ws_establishconnection(void *vclient)
 	 * or server closure, as the server is expected to
 	 * always know when the client disconnects.
 	 */
-    if (wfd.error)
-    {
-        record_close_reason(client, "websocket frame rejected");
-    }
+	if (wfd.error)
+	{
+		record_close_reason(client, "websocket frame rejected");
+	}
 	cli_events.onclose(client);
 
 closed:
-    _ws_internal__chat_stop(client);
-    media_stop(client);
+	_ws_internal__chat_stop(client);
+	media_stop(client);
 	clse_thrd = client->close_thrd;
 
 	/* Wait for timeout thread if necessary. */
@@ -3629,19 +3739,51 @@ closed:
  *
  * @note This may be run on a different thread.
  *
- * @attention This is part of the internal API and is documented just
- * for completeness.
+ * @attention This is part of the internal API and is documented just for completeness.
  */
+/** @brief Initializes a new slot without publishing partly initialized locks. */
+static bool initialize_client_locks(ws_cli_conn_t *client)
+{
+	if (pthread_mutex_init(&client->mtx_state, NULL) != 0)
+	{
+		return false;
+	}
+	if (pthread_cond_init(&client->cnd_state_close, NULL) != 0)
+	{
+		pthread_mutex_destroy(&client->mtx_state);
+		return false;
+	}
+	if (pthread_mutex_init(&client->mtx_snd, NULL) != 0)
+	{
+		pthread_cond_destroy(&client->cnd_state_close);
+		pthread_mutex_destroy(&client->mtx_state);
+		return false;
+	}
+	if (pthread_mutex_init(&client->mtx_ping, NULL) != 0)
+	{
+		pthread_mutex_destroy(&client->mtx_snd);
+		pthread_cond_destroy(&client->cnd_state_close);
+		pthread_mutex_destroy(&client->mtx_state);
+		return false;
+	}
+	return true;
+}
+
 static void *ws_accept(void *data)
 {
+#ifndef _WIN32
+	struct timespec delay = { 0 };
+#endif
+
 	struct sockaddr_in client; /* Client.                */
 	pthread_t client_thread; /* Client thread.         */
 	int new_sock; /* New opened connection. */
 	int sock; /* Server sock.           */
 	int len; /* Length of sockaddr.    */
 	int i; /* Loop index.            */
+
 #ifdef SO_NOSIGPIPE
-    int no_sigpipe;
+	int no_sigpipe;
 #endif
 
 	sock = *(int *)data;
@@ -3650,23 +3792,32 @@ static void *ws_accept(void *data)
 	while (1)
 	{
 		DEBUG_THELDUS_WEBSOCKET printf("%s", "[theldus-websocket] ws_accept \n");
+
 		/* Accept. */
 		new_sock = accept(sock, (struct sockaddr *)&client, (socklen_t *)&len);
 		if (new_sock < 0)
 		{
-			panic("[theldus-websocket] Error on accepting connections..");
+#ifdef _WIN32
+			Sleep(100);
+#else
+			if (errno != EINTR && errno != ECONNABORTED)
+			{
+				delay = (struct timespec){ 0, 100000000 };
+				nanosleep(&delay, NULL);
+			}
+#endif
+			continue;
 		}
 
 #ifdef SO_NOSIGPIPE
-        // macOS uses this socket option instead of MSG_NOSIGNAL. A peer that
-        // disconnects while a frame is being sent must not stop the server.
-        no_sigpipe = 1;
-        if (setsockopt(new_sock, SOL_SOCKET, SO_NOSIGPIPE,
-            (const char*)&no_sigpipe, sizeof(no_sigpipe)) != 0)
-        {
-            close_socket(new_sock);
-            continue;
-        }
+		// macOS uses this socket option instead of MSG_NOSIGNAL. A peer that
+		// disconnects while a frame is being sent must not stop the server.
+		no_sigpipe = 1;
+		if (setsockopt(new_sock, SOL_SOCKET, SO_NOSIGPIPE, (const char *)&no_sigpipe, sizeof(no_sigpipe)) != 0)
+		{
+			close_socket(new_sock);
+			continue;
+		}
 #endif
 
 		if (timeout)
@@ -3684,34 +3835,27 @@ static void *ws_accept(void *data)
 		{
 			if (client_socks[i].client_sock == -1)
 			{
+				if (!initialize_client_locks(&client_socks[i]))
+				{
+					i = client_capacity;
+					break;
+				}
 				client_socks[i].client_sock = new_sock;
+				atomic_store(&client_socks[i].incoming_limit, WS_PRELOGIN_MESSAGE_BYTES);
+				client_socks[i].incoming_deadline = 0;
+				client_socks[i].incoming_progress_deadline = 0;
+				client_socks[i].media_hello_deadline = 0;
 				client_socks[i].state = WS_STATE_CONNECTING;
-                client_socks[i].chat_mode = false;
-                client_socks[i].media_purpose = WS_MEDIA_PURPOSE_NONE;
-                client_socks[i].media = NULL;
-                client_socks[i].media_client_id = UINT64_MAX;
+				client_socks[i].chat_mode = false;
+				client_socks[i].media_purpose = WS_MEDIA_PURPOSE_NONE;
+				client_socks[i].media = NULL;
+				client_socks[i].media_client_id = UINT64_MAX;
 				client_socks[i].close_thrd = false;
-                atomic_store(&client_socks[i].close_reason, NULL);
+				atomic_store(&client_socks[i].close_reason, NULL);
 				client_socks[i].last_pong_id = -1;
 				client_socks[i].current_ping_id = -1;
 				set_client_address(&client_socks[i]);
 
-				if (pthread_mutex_init(&client_socks[i].mtx_state, NULL))
-				{
-					panic("Error on allocating close mutex");
-				}
-				if (pthread_cond_init(&client_socks[i].cnd_state_close, NULL))
-				{
-					panic("Error on allocating condition var\n");
-				}
-				if (pthread_mutex_init(&client_socks[i].mtx_snd, NULL))
-				{
-					panic("Error on allocating send mutex");
-				}
-				if (pthread_mutex_init(&client_socks[i].mtx_ping, NULL))
-				{
-					panic("Error on allocating ping/pong mutex");
-				}
 				break;
 			}
 		}
@@ -3722,7 +3866,8 @@ static void *ws_accept(void *data)
 		{
 			if (pthread_create(&client_thread, NULL, ws_establishconnection, &client_socks[i]))
 			{
-				panic("Could not create the client thread!");
+				close_client(&client_socks[i], 1);
+				continue;
 			}
 
 			pthread_detach(client_thread);
@@ -3741,19 +3886,18 @@ static void *ws_accept(void *data)
  *
  * @param evs  Events structure.
  * @param port Server port.
- * @param thread_loop If any value other than zero, runs
- *                    the accept loop in another thread
- *                    and immediately returns. If 0, runs
- *                    in the same thread and blocks execution.
+ * @param thread_loop If any value other than zero, runs the accept loop in another thread and immediately returns. If 0, runs in the same thread and blocks execution.
  *
- * @param timeout_ms  Max timeout if the client is not responding
- *                    (in milliseconds).
+ * @param timeout_ms  Max timeout if the client is not responding (in milliseconds).
  *
- * @return If @p thread_loop != 0, returns 0. Otherwise, never
- * returns.
+ * @return If @p thread_loop != 0, returns 0. Otherwise, never returns.
  */
 int ws_socket(struct ws_events *evs, uint16_t port, int thread_loop, uint32_t timeout_ms)
 {
+#ifdef _WIN32
+	WSADATA wsaData = { 0 };
+#endif
+
 	struct sockaddr_in server; /* Server.                */
 	pthread_t accept_thread; /* Accept thread.         */
 	int reuse; /* Socket option.         */
@@ -3786,7 +3930,6 @@ int ws_socket(struct ws_events *evs, uint16_t port, int thread_loop, uint32_t ti
 	memcpy(&cli_events, evs, sizeof(struct ws_events));
 
 #ifdef _WIN32
-	WSADATA wsaData;
 	if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0)
 	{
 		panic("WSAStartup failed!");
@@ -3831,12 +3974,12 @@ int ws_socket(struct ws_events *evs, uint16_t port, int thread_loop, uint32_t ti
 	}
 
 	/* Listen. */
-    // Leave room for a burst of connections while the accept thread starts
-    // their readers. On Windows, SOMAXCONN can choose a smaller queue.
+	// Leave room for a burst of connections while the accept thread starts
+	// their readers. On Windows, SOMAXCONN can choose a smaller queue.
 #ifdef _WIN32
-    if (listen(*sock, SOMAXCONN_HINT(client_capacity < 65535 ? client_capacity : 65535)) < 0)
+	if (listen(*sock, SOMAXCONN_HINT(client_capacity < 65535 ? client_capacity : 65535)) < 0)
 #else
-    if (listen(*sock, client_capacity > SOMAXCONN ? client_capacity : SOMAXCONN) < 0)
+	if (listen(*sock, client_capacity > SOMAXCONN ? client_capacity : SOMAXCONN) < 0)
 #endif
 	{
 		panic("[theldus-websocket] Listen failed");
@@ -3844,7 +3987,6 @@ int ws_socket(struct ws_events *evs, uint16_t port, int thread_loop, uint32_t ti
 
 	/* Wait for incoming connections. */
 	DEBUG_THELDUS_WEBSOCKET printf("[theldus-websocket] Waiting for incoming connections..!.\n");
-
 
 	/* Accept connections. */
 	if (!thread_loop)
@@ -3875,10 +4017,7 @@ int ws_socket(struct ws_events *evs, uint16_t port, int thread_loop, uint32_t ti
  *
  * @return Returns 0, or crash.
  *
- * @note This is a 'fuzzy version' of the function @ref ws_socket.
- * This routine do not listen to any port nor accept multiples
- * connections. It is intended to read a stream of frames through a
- * file and process it as if they are coming from a socket.
+ * @note This is a 'fuzzy version' of the function @ref ws_socket. This routine do not listen to any port nor accept multiples connections. It is intended to read a stream of frames through a file and process it as if they are coming from a socket.
  *
  * This behavior enables us to test wsServer against fuzzers, like
  * AFL, and see if it crashes, hangs or behaves normally, even under
@@ -3897,13 +4036,16 @@ int ws_file(struct ws_events *evs, const char *file)
 	memcpy(&cli_events, evs, sizeof(struct ws_events));
 
 	/* Clear client socks list. */
-	if (client_socks == NULL && ws_init_client_slots(1) != 0) { return -1; }
+	if (client_socks == NULL && ws_init_client_slots(1) != 0)
+	{
+		return -1;
+	}
 
 	/* Set client settings. */
 	client_socks[0].client_sock = sock;
 	client_socks[0].state = WS_STATE_CONNECTING;
 	client_socks[0].close_thrd = false;
-    atomic_store(&client_socks[0].close_reason, NULL);
+	atomic_store(&client_socks[0].close_reason, NULL);
 
 	/* Initialize mutexes. */
 	if (pthread_mutex_init(&client_socks[0].mtx_state, NULL))

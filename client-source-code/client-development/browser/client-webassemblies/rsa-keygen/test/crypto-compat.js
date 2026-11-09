@@ -1,4 +1,4 @@
-// differential test for the vendor removal: scripts/app/rsa-crypto.js replaces
+// differential test for the vendor removal: scripts/app/crypto/rsa-crypto.js replaces
 // jsbn.js + rsa.js + rsa-sign.js + cryptico.js + biginteger.js, and must stay
 // wire-compatible with them - a client on the new build has to read what a client on
 // the old build wrote, and the other way round, or identities and messages break.
@@ -11,8 +11,8 @@ let vm = require("vm");
 let node_crypto = require("crypto");
 
 let development_path = __dirname + "/../../../";
-let vendor_path = development_path + "src/scripts/vendor/";
-let app_path = development_path + "src/scripts/app/";
+let vendor_path = development_path + "main/scripts/vendor/";
+let app_path = development_path + "main/scripts/app/";
 let legacy_path = __dirname + "/legacy-reference/";
 
 // the replaced libraries live in legacy-reference now, the ones the client still ships
@@ -23,7 +23,7 @@ function read_reference(file)
     return fs.readFileSync(fs.existsSync(legacy_file) ? legacy_file : (vendor_path + file), "utf8");
 }
 
-let wasm_base64 = fs.readFileSync(__dirname + "/../build/rsa_keygen.wasm").toString("base64");
+let wasm_base64 = fs.readFileSync(process.env.LEMON_RSA_WASM || (__dirname + "/../build/rsa_keygen.wasm")).toString("base64");
 
 // a browser-ish global: the vendor files assign onto it (aes-js does root.aesjs = ...)
 let sandbox = {
@@ -50,9 +50,9 @@ let old_source = ["biginteger.js", "jsbn.js", "sha256.js", "sha1.js", "md5.js", 
 vm.runInContext(old_source, sandbox, { filename: "vendor-stack.js" });
 
 // the new implementation, with the build's wasm token filled in the way build.py does
-let new_source = fs.readFileSync(app_path + "rsa-crypto.js", "utf8")
+let new_source = fs.readFileSync(app_path + "crypto/rsa-crypto.js", "utf8")
     .replace("'@@WASM:wasm/rsa_keygen.wasm@@'", JSON.stringify(wasm_base64));
-vm.runInContext(new_source, sandbox, { filename: "rsa-crypto.js" });
+vm.runInContext(new_source, sandbox, { filename: "crypto/rsa-crypto.js" });
 
 let old_crypto = sandbox.cryptico;
 let new_crypto = sandbox.lemon_crypto;

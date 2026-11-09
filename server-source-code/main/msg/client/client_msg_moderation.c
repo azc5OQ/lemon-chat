@@ -13,7 +13,7 @@
 #include "../../../third-party/eteran-cvector/cvector.h"
 #include <string.h>
 
-static boole _client_msg_moderation_internal__read_index(cJSON* object, cstring name, uint64 limit, uint64* result);
+static boole _client_msg_moderation_internal__read_index(cJSON *object, cstring name, uint64 limit, uint64 *result);
 static boole _client_msg_moderation_internal__save(void);
 
 /**
@@ -21,18 +21,18 @@ static boole _client_msg_moderation_internal__save(void);
  * @param json_root Complete group definition and requested action.
  * @param sender_client_id Authenticated client making the change.
  */
-void client_msg__moderation__process_channel_group(cJSON* json_root, uint64 sender_client_id)
+void client_msg__moderation__process_channel_group(cJSON *json_root, uint64 sender_client_id)
 {
     boole status = FALSE;
     boole status0 = FALSE;
-    cJSON* message = cJSON_GetObjectItemCaseSensitive(json_root, "message");
-    cJSON* action = cJSON_GetObjectItemCaseSensitive(message, "action");
-    cJSON* name = cJSON_GetObjectItemCaseSensitive(message, "name");
-    cJSON* icon = cJSON_GetObjectItemCaseSensitive(message, "icon_id");
-    channel_group_t proposed = {0};
+    cJSON *message = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    cJSON *action = cJSON_GetObjectItemCaseSensitive(message, "action");
+    cJSON *name = cJSON_GetObjectItemCaseSensitive(message, "name");
+    cJSON *icon = cJSON_GetObjectItemCaseSensitive(message, "icon_id");
+    channel_group_t proposed = { 0 };
     channel_group_t previous;
-    client_t* actor = NULL_POINTER;
-    client_t* client = NULL_POINTER;
+    client_t *actor = NULL_POINTER;
+    client_t *client = NULL_POINTER;
     uint64 id = 0;
     uint64 i = 0;
     uint64 j = 0;
@@ -45,8 +45,7 @@ void client_msg__moderation__process_channel_group(cJSON* json_root, uint64 send
         return;
     }
     deleting = !clib__strcmp(action->valuestring, "delete");
-    permission = deleting ? PERMISSION_DELETE_CHANNEL_GROUPS
-        : !clib__strcmp(action->valuestring, "create") ? PERMISSION_CREATE_CHANNEL_GROUPS : PERMISSION_EDIT_CHANNEL_GROUPS;
+    permission = deleting ? PERMISSION_DELETE_CHANNEL_GROUPS : !clib__strcmp(action->valuestring, "create") ? PERMISSION_CREATE_CHANNEL_GROUPS : PERMISSION_EDIT_CHANNEL_GROUPS;
     if (!deleting)
     {
         status0 = (!clib__strcmp(action->valuestring, "create") || !clib__strcmp(action->valuestring, "update")) == FALSE;
@@ -130,8 +129,7 @@ void client_msg__moderation__process_channel_group(cJSON* json_root, uint64 send
     }
     clib__write_lock(&g_channels_global_rwlock_guard);
     actor = &g_clients_array[sender_client_id];
-    if (!base__is_client_valid(sender_client_id) || !g_server_settings.is_permission_system_enabled
-        || !permissions__is_allowed(actor, permission))
+    if (!base__is_client_valid(sender_client_id) || !g_server_settings.is_permission_system_enabled || !permissions__is_allowed(actor, permission))
     {
         server_msg__administration__send_access_denied_to_single_client(actor, NULL_POINTER);
         goto end;
@@ -154,8 +152,7 @@ void client_msg__moderation__process_channel_group(cJSON* json_root, uint64 send
     {
         goto end;
     }
-    status = channel_groups__can_edit_definition(actor, permission, g_channel_groups[id].is_existing ? &g_channel_groups[id] : NULL_POINTER,
-        deleting ? NULL_POINTER : &proposed);
+    status = channel_groups__can_edit_definition(actor, permission, g_channel_groups[id].is_existing ? &g_channel_groups[id] : NULL_POINTER, deleting ? NULL_POINTER : &proposed);
     if (status == FALSE)
     {
         server_msg__administration__send_access_denied_to_single_client(actor, NULL_POINTER);
@@ -225,10 +222,10 @@ end:
  * @param json_root Request without settings fields.
  * @param sender_client_id Authenticated requester.
  */
-void client_msg__moderation__process_save_emojis(cJSON* json_root, uint64 sender_client_id)
+void client_msg__moderation__process_save_emojis(cJSON *json_root, uint64 sender_client_id)
 {
     boole status = FALSE;
-    client_t* actor = NULL_POINTER;
+    client_t *actor = NULL_POINTER;
     boole saved = FALSE;
 
     (void)json_root;
@@ -259,14 +256,14 @@ void client_msg__moderation__process_save_emojis(cJSON* json_root, uint64 sender
  * @param json_root Request containing bot_id and play, pause or next.
  * @param sender_client_id Authenticated requester.
  */
-void client_msg__moderation__process_music_control(cJSON* json_root, uint64 sender_client_id)
+void client_msg__moderation__process_music_control(cJSON *json_root, uint64 sender_client_id)
 {
     boole status = FALSE;
-    cJSON* message = cJSON_GetObjectItemCaseSensitive(json_root, "message");
-    cJSON* action = cJSON_GetObjectItemCaseSensitive(message, "action");
+    cJSON *message = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    cJSON *action = cJSON_GetObjectItemCaseSensitive(message, "action");
     uint64 bot_id = 0;
-    client_t* actor = NULL_POINTER;
-    client_t* bot = NULL_POINTER;
+    client_t *actor = NULL_POINTER;
+    client_t *bot = NULL_POINTER;
 
     if (!cJSON_IsString(action) || !_client_msg_moderation_internal__read_index(message, "bot_id", g_server_settings.max_client_count, &bot_id))
     {
@@ -311,10 +308,10 @@ void client_msg__moderation__process_music_control(cJSON* json_root, uint64 send
  * @param limit Exclusive upper bound.
  * @param result Validated index.
  */
-static boole _client_msg_moderation_internal__read_index(cJSON* object, cstring name, uint64 limit, uint64* result)
+static boole _client_msg_moderation_internal__read_index(cJSON *object, cstring name, uint64 limit, uint64 *result)
 {
     boole status0 = FALSE;
-    cJSON* value = cJSON_GetObjectItemCaseSensitive(object, name);
+    cJSON *value = cJSON_GetObjectItemCaseSensitive(object, name);
 
     status0 = !cJSON_IsNumber(value);
     if (status0 == FALSE)
@@ -360,11 +357,13 @@ static boole _client_msg_moderation_internal__save(void)
  * @param json_root Request containing channel_id.
  * @param sender_client_id Authenticated requester.
  */
-void client_msg__moderation__process_channel_access(cJSON* json_root, uint64 sender_client_id)
+void client_msg__moderation__process_channel_access(cJSON *json_root, uint64 sender_client_id)
 {
+    uint64 target_id = 0;
+    cJSON *identity = NULL_POINTER;
     boole status = FALSE;
     boole status0 = FALSE;
-    cJSON* message = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    cJSON *message = cJSON_GetObjectItemCaseSensitive(json_root, "message");
     uint64 channel_id = 0;
 
     status = _client_msg_moderation_internal__read_index(message, "channel_id", g_server_settings.max_channel_count, &channel_id);
@@ -380,11 +379,11 @@ void client_msg__moderation__process_channel_access(cJSON* json_root, uint64 sen
         return;
     }
     clib__read_lock(&g_channels_global_rwlock_guard);
-    if (base__is_client_valid(sender_client_id) && g_channel_array[channel_id].is_existing)
+    if (base__is_client_valid(sender_client_id) && channel_id < g_server_settings.max_channel_count && g_channel_array[channel_id].is_existing)
     {
         server_msg__moderation__send_channel_access(&g_clients_array[sender_client_id], &g_channel_array[channel_id]);
-        uint64 target_id = 0;
-        cJSON* identity = cJSON_GetObjectItemCaseSensitive(message, "identity");
+        target_id = 0;
+        identity = cJSON_GetObjectItemCaseSensitive(message, "identity");
         status0 = (_client_msg_moderation_internal__read_index(message, "client_id", g_server_settings.max_client_count, &target_id)) != FALSE;
         if (status0 == TRUE)
         {
@@ -416,7 +415,7 @@ void client_msg__moderation__process_channel_access(cJSON* json_root, uint64 sen
  * @param json_root Request containing the action and the target's current identity.
  * @param sender_client_id Authenticated requester.
  */
-void client_msg__moderation__process_client_action(cJSON* json_root, uint64 sender_client_id)
+void client_msg__moderation__process_client_action(cJSON *json_root, uint64 sender_client_id)
 {
     boole status = FALSE;
     boole status0 = FALSE;
@@ -426,23 +425,23 @@ void client_msg__moderation__process_client_action(cJSON* json_root, uint64 send
     boole status4 = FALSE;
     boole status5 = FALSE;
     boole status6 = FALSE;
-    cJSON* message = cJSON_GetObjectItemCaseSensitive(json_root, "message");
-    cJSON* action = cJSON_GetObjectItemCaseSensitive(message, "action");
-    cJSON* identity = cJSON_GetObjectItemCaseSensitive(message, "identity");
+    cJSON *message = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    cJSON *action = cJSON_GetObjectItemCaseSensitive(message, "action");
+    cJSON *identity = cJSON_GetObjectItemCaseSensitive(message, "identity");
     uint64 target_id = 0;
     uint64 channel_id = 0;
     uint64 destination_id = 0;
     uint64 duration = 0;
     uint64 role = 0;
     uint64 now = 0;
-    uint old_role = 0;
-    client_t* actor = NULL_POINTER;
-    client_t* target = NULL_POINTER;
-    channel_t* channel = NULL_POINTER;
+    uint64 old_role = 0;
+    client_t *actor = NULL_POINTER;
+    client_t *target = NULL_POINTER;
+    channel_t *channel = NULL_POINTER;
     permission_t permission = PERMISSION_COUNT;
     boole succeeded = FALSE;
     boole delete_temp = FALSE;
-    char identity_hash[IDENTITY_HASH_MAX_LENGTH] = {0};
+    char identity_hash[IDENTITY_HASH_MAX_LENGTH] = { 0 };
 
     status0 = !cJSON_IsString(action);
     if (status0 == FALSE)
@@ -511,6 +510,10 @@ void client_msg__moderation__process_client_action(cJSON* json_root, uint64 send
     clib__write_lock(&g_channels_global_rwlock_guard);
     actor = &g_clients_array[sender_client_id];
     target = &g_clients_array[target_id];
+    if (channel_id >= g_server_settings.max_channel_count || ((permission == PERMISSION_MOVE_CLIENTS || permission == PERMISSION_KICK_FROM_CHANNEL) && destination_id >= g_server_settings.max_channel_count))
+    {
+        goto end;
+    }
     channel = &g_channel_array[channel_id];
     status0 = !base__is_client_valid(sender_client_id);
     if (status0 == FALSE)
@@ -539,7 +542,7 @@ void client_msg__moderation__process_client_action(cJSON* json_root, uint64 send
         status0 = !g_server_settings.is_permission_system_enabled;
         if (status0 == FALSE)
         {
-            status0 = !channel_groups__can_assign(actor, target, channel, (uint)role);
+            status0 = !channel_groups__can_assign(actor, target, channel, (uint64)role);
         }
         if (status0 == FALSE)
         {
@@ -552,7 +555,7 @@ void client_msg__moderation__process_client_action(cJSON* json_root, uint64 send
         {
             goto denied;
         }
-        succeeded = channel_groups__set(channel, identity_hash, (uint)role);
+        succeeded = channel_groups__set(channel, identity_hash, (uint64)role);
         if (succeeded && !channel->is_temp_channel && !_client_msg_moderation_internal__save())
         {
             channel_groups__set(channel, identity_hash, old_role);
@@ -575,8 +578,7 @@ void client_msg__moderation__process_client_action(cJSON* json_root, uint64 send
             {
                 goto end;
             }
-            if (permission == PERMISSION_MOVE_CLIENTS
-                && !channel_groups__is_allowed(actor, &g_channel_array[destination_id], PERMISSION_MOVE_CLIENTS))
+            if (permission == PERMISSION_MOVE_CLIENTS && !channel_groups__is_allowed(actor, &g_channel_array[destination_id], PERMISSION_MOVE_CLIENTS))
             {
                 goto denied;
             }
@@ -591,7 +593,7 @@ void client_msg__moderation__process_client_action(cJSON* json_root, uint64 send
                 target->is_temp_admin_channel = FALSE;
                 target->temp_channel_id = 0;
             }
-            channel__move_client_into_channel(target_id, destination_id);
+            channel__move_client_into_channel(target_id, destination_id, permission == PERMISSION_KICK_FROM_CHANNEL ? "kick" : "move");
             channel__send_hidden_members(target, &g_channel_array[destination_id]);
             if (delete_temp)
             {
@@ -637,13 +639,13 @@ end:
  * @param json_root Request with an optional removal token.
  * @param sender_client_id Authenticated requester.
  */
-void client_msg__moderation__process_bans(cJSON* json_root, uint64 sender_client_id)
+void client_msg__moderation__process_bans(cJSON *json_root, uint64 sender_client_id)
 {
     boole status = FALSE;
     boole status0 = FALSE;
-    cJSON* message = cJSON_GetObjectItemCaseSensitive(json_root, "message");
-    cJSON* token = cJSON_GetObjectItemCaseSensitive(message, "remove_token");
-    client_t* actor = NULL_POINTER;
+    cJSON *message = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    cJSON *token = cJSON_GetObjectItemCaseSensitive(message, "remove_token");
+    client_t *actor = NULL_POINTER;
     ban_entry_t saved;
     uint64 i = 0;
     boole show_addresses = FALSE;

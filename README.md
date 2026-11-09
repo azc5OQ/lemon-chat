@@ -44,6 +44,24 @@
 
 See the [documentation index](docs/README.md) for all guides.
 
+## Clean build files
+
+To reclaim space after building, close the running clients, server and build tools,
+then run `clean.bat` on Windows or `sh clean.sh` on Linux/macOS from the repository
+root. Python 3 and Git must be installed. Both scripts use the same cleanup rules.
+
+Preview the files first with `clean.bat --dry-run` or `sh clean.sh --dry-run`.
+For example, a compiled WebAssembly file in a project's `build` directory is
+removed, but its source, published module and `prebuilt-backup` copy are kept.
+The next browser build can compile it again from source.
+
+The scripts also remove recognized server, desktop and Android build output,
+compiler caches and unchanged packaged assets. Tracked files, downloaded build
+tools, dependencies, settings, keys and saved music remain. Modified live themes,
+fonts and sounds are kept; unknown files in build folders are listed as `KEEP`.
+Directory links are never followed. This deliberately preserves files that cannot
+be identified safely as build output.
+
 
 <br>
 <br>
@@ -108,7 +126,7 @@ aes-js -> https://github.com/ricmoo/aes-js
 <br>
 js-sha256 -> https://github.com/emn178/js-sha256
 <br>
-SHA-256 by Angel Marin and Paul Johnston, from WebToolkit -> [source](client-source-code/client-development/browser/src/scripts/vendor/sha256.js)
+SHA-256 by Angel Marin and Paul Johnston, from WebToolkit -> [source](client-source-code/client-development/browser/main/scripts/vendor/sha256.js)
 <br>
 minimp3-wasm -> https://github.com/bashi/minimp3-wasm
 <br>

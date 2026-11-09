@@ -12,22 +12,24 @@
 #include "../third-party/rxi-log/log.h"
 #include "../third-party/eteran-cvector/cvector.h"
 #include "base.h"
+#include "msg/client/client_msg.h"
 
 #include "memory_manager.h"
 #include "clib/clib.h"
 #include "util.h"
-#include "metadata_crypto.h"
+#include "crypto/crypto_metadata.h"
 #include "audio_websocket.h"
 #include "video_websocket.h"
 #include "core/server_logs.h"
 #include "ip_tools.h"
 
 // declarations
-static int64 _chat_websocket_internal__get_client_index(ws_cli_conn_t* p_ws_connection);
-static void _chat_websocket_internal__onopen(ws_cli_conn_t* client);
-static void _chat_websocket_internal__onclose(ws_cli_conn_t* websocket);
-static void _chat_websocket_internal__onmessage(ws_cli_conn_t* websocket, unsigned char* base64_to_process_and_decrypt, uint64_t size, int type);
-static boole _chat_websocket_internal__has_connection_timed_out(client_t* client, uint64 now);
+static int64 _chat_websocket_internal__get_client_index(ws_cli_conn_t *p_ws_connection);
+static void _chat_websocket_internal__onopen(ws_cli_conn_t *client);
+static void _chat_websocket_internal__onclose(ws_cli_conn_t *websocket);
+static void _chat_websocket_internal__onmessage(ws_cli_conn_t *websocket, ubyte *base64_to_process_and_decrypt, uint64 size, int type);
+static void _chat_websocket_internal__onmessage_long(ws_cli_conn_t *websocket, ubyte *data, unsigned long size, int type);
+static boole _chat_websocket_internal__has_connection_timed_out(client_t *client, uint64 now);
 
 /**
  * @brief finds which slot of g_clients_array holds a given websocket connection.
@@ -38,7 +40,7 @@ static boole _chat_websocket_internal__has_connection_timed_out(client_t* client
  *
  * @return int64 -> the client's index, or -1 when the pointer is null or matches no connected client
  */
-static int64 _chat_websocket_internal__get_client_index(ws_cli_conn_t* p_ws_connection)
+static int64 _chat_websocket_internal__get_client_index(ws_cli_conn_t *p_ws_connection)
 {
     uint64 i = 0;
     int64 result = -1;
@@ -73,9 +75,11 @@ static int64 _chat_websocket_internal__get_client_index(ws_cli_conn_t* p_ws_conn
  *
  * @attention _chat_websocket_internal__onopen is called by different thread everytime
  */
-static void _chat_websocket_internal__onopen(ws_cli_conn_t* client)
+static void _chat_websocket_internal__onopen(ws_cli_conn_t *client)
 {
-    char* ip_address = NULL_POINTER;
+    uint64 started_ms = 0;
+    uint64 acquired_ms = 0;
+    char *ip_address = NULL_POINTER;
     int64 index = 0;
     boole status = FALSE;
 
@@ -90,10 +94,11 @@ static void _chat_websocket_internal__onopen(ws_cli_conn_t* client)
         return;
     }
 
-    uint64 started_ms = util__get_timestamp_ms();
+    started_ms = util__get_timestamp_ms();
     clib__write_lock(&g_clients_global_rwlock_guard);
-    uint64 acquired_ms = util__get_timestamp_ms();
+    acquired_ms = util__get_timestamp_ms();
     g_server_settings.client_count = g_server_settings.client_count + 1;
+
     // log_info("%s %d", "client_count , ", g_server_settings.client_count);
     DBG_AUTHENTICATION log_info("%s %p %s", "client connected , ", client, "\n");
     index = client_session__get_new_index_for_client();
@@ -142,6 +147,12 @@ static void _chat_websocket_internal__onopen(ws_cli_conn_t* client)
 
     DBG_AUTHENTICATION log_info("%s%lld", "[i] _chat_websocket_internal__onopen : new client id: ", index);
 
+    g_clients_array[index].password_keys = crypto_metadata__snapshot_passwords(g_server_settings.keys, g_server_settings.keys_count);
+    if (g_clients_array[index].password_keys == NULL_POINTER)
+    {
+        ws_abort_client(client);
+        goto label_onopen_end;
+    }
     g_clients_array[index].is_authenticated = FALSE;
     g_clients_array[index].block_direct_chat_pictures = FALSE;
     g_clients_array[index].block_direct_chat_files = FALSE;
@@ -156,7 +167,7 @@ static void _chat_websocket_internal__onopen(ws_cli_conn_t* client)
 
 label_onopen_end:
     clib__unlock(&g_clients_global_rwlock_guard);
-    DBG_CONNECTION_PROGRESS log_info("[connection] _chat_websocket_internal__onopen client=%lld wait_ms=%llu work_ms=%llu", (long long)index, (unsigned long long)(acquired_ms - started_ms), (unsigned long long)(util__get_timestamp_ms() - acquired_ms));
+    DBG_CONNECTION_PROGRESS log_info("[connection] _chat_websocket_internal__onopen client=%lld wait_ms=%llu work_ms=%llu", (int64)index, (uint64)(acquired_ms - started_ms), (uint64)(util__get_timestamp_ms() - acquired_ms));
 }
 
 /**
@@ -169,8 +180,10 @@ label_onopen_end:
  *
  * @return void
  */
-static void _chat_websocket_internal__onclose(ws_cli_conn_t* websocket)
+static void _chat_websocket_internal__onclose(ws_cli_conn_t *websocket)
 {
+    uint64 started_ms = 0;
+    uint64 acquired_ms = 0;
     uint64 i = 0;
     int64 client_index = -1;
 
@@ -185,9 +198,9 @@ static void _chat_websocket_internal__onclose(ws_cli_conn_t* websocket)
         return;
     }
 
-    uint64 started_ms = util__get_timestamp_ms();
+    started_ms = util__get_timestamp_ms();
     clib__write_lock(&g_clients_global_rwlock_guard);
-    uint64 acquired_ms = util__get_timestamp_ms();
+    acquired_ms = util__get_timestamp_ms();
     clib__write_lock(&g_channels_global_rwlock_guard);
 
     g_server_settings.client_count = g_server_settings.client_count - 1;
@@ -221,13 +234,13 @@ static void _chat_websocket_internal__onclose(ws_cli_conn_t* websocket)
         goto label_onclose_end;
     }
 
-    server_logs__client_disconnect_reason(&g_clients_array[client_index], (char*)ws_get_close_reason(websocket));
+    server_logs__client_disconnect_reason(&g_clients_array[client_index], (char *)ws_get_close_reason(websocket));
     client_session__process_client_disconnect(client_index);
 
 label_onclose_end:
     clib__unlock(&g_channels_global_rwlock_guard);
     clib__unlock(&g_clients_global_rwlock_guard);
-    DBG_CONNECTION_PROGRESS log_info("[connection] _chat_websocket_internal__onclose client=%lld wait_ms=%llu work_ms=%llu", (long long)client_index, (unsigned long long)(acquired_ms - started_ms), (unsigned long long)(util__get_timestamp_ms() - acquired_ms));
+    DBG_CONNECTION_PROGRESS log_info("[connection] _chat_websocket_internal__onclose client=%lld wait_ms=%llu work_ms=%llu", (int64)client_index, (uint64)(acquired_ms - started_ms), (uint64)(util__get_timestamp_ms() - acquired_ms));
 }
 
 /**
@@ -235,13 +248,13 @@ label_onclose_end:
  *        to the authenticated or the not-yet-authenticated message handler.
  *
  * @param ws_cli_conn_t* websocket -> websocket connection of the client that sent the message
- * @param unsigned char* base64_to_process_and_decrypt -> received base64 payload to decode and decrypt
- * @param uint64_t size -> length in bytes of the received payload
+ * @param ubyte* base64_to_process_and_decrypt -> received base64 payload to decode and decrypt
+ * @param uint64 size -> length in bytes of the received payload
  * @param int type -> websocket frame type of the received message
  *
  * @return void
  */
-static void _chat_websocket_internal__onmessage(ws_cli_conn_t* websocket, unsigned char* base64_to_process_and_decrypt, uint64_t size, int type)
+static void _chat_websocket_internal__onmessage(ws_cli_conn_t *websocket, ubyte *base64_to_process_and_decrypt, uint64 size, int type)
 {
     boole is_authenticated = FALSE;
     boole is_existing = FALSE;
@@ -253,7 +266,7 @@ static void _chat_websocket_internal__onmessage(ws_cli_conn_t* websocket, unsign
     uint64 found_ms = 0;
     uint64 decrypted_ms = 0;
     uint64 finished_ms = 0;
-    char* decrypted_metadata_cstring = 0;
+    char *decrypted_metadata_cstring = 0;
     client_request_context_t previous_request;
 
     if (ws_media_purpose(websocket) == WS_MEDIA_PURPOSE_AUDIO)
@@ -293,7 +306,7 @@ static void _chat_websocket_internal__onmessage(ws_cli_conn_t* websocket, unsign
         return;
     }
 
-    decrypted_metadata_cstring = (char*)(unsigned char*)memorymanager__allocate(size, MEMALLOC_TYPE_DECRYPT);
+    decrypted_metadata_cstring = (char *)(ubyte *)memorymanager__allocate(size, MEMALLOC_TYPE_DECRYPT);
 
     if (decrypted_metadata_cstring == NULL_POINTER)
     {
@@ -321,7 +334,7 @@ static void _chat_websocket_internal__onmessage(ws_cli_conn_t* websocket, unsign
     }
     is_authenticated = g_clients_array[client_index].is_authenticated;
     is_existing = g_clients_array[client_index].is_existing;
-    status0 = metadata_crypto__decrypt_from_client(&g_clients_array[client_index], (const char*)base64_to_process_and_decrypt, (unsigned char*)decrypted_metadata_cstring, size);
+    status0 = crypto_metadata__decrypt_from_client(&g_clients_array[client_index], (const char *)base64_to_process_and_decrypt, (ubyte *)decrypted_metadata_cstring, size);
     if (status0 == FALSE)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
@@ -352,8 +365,15 @@ static void _chat_websocket_internal__onmessage(ws_cli_conn_t* websocket, unsign
     finished_ms = util__get_timestamp_ms();
     if (finished_ms - started_ms >= 250)
     {
-        DBG_CONNECTION_PROGRESS log_info("[connection] slow request client=%lld bytes=%llu authenticated=%d lookup_ms=%llu decrypt_ms=%llu handler_ms=%llu", (long long)client_index, (unsigned long long)size, (int)is_authenticated, (unsigned long long)(found_ms - started_ms), (unsigned long long)(decrypted_ms - found_ms), (unsigned long long)(finished_ms - decrypted_ms));
+        DBG_CONNECTION_PROGRESS log_info("[connection] slow request client=%lld bytes=%llu authenticated=%d lookup_ms=%llu decrypt_ms=%llu handler_ms=%llu", (int64)client_index, (uint64)size, (int)is_authenticated, (uint64)(found_ms - started_ms), (uint64)(decrypted_ms - found_ms), (uint64)(finished_ms - decrypted_ms));
     }
+}
+
+// Some platforms declare the WebSocket library's 64-bit callback size as
+// unsigned long. Keep that boundary exact, then use uint64 inside the server.
+static void _chat_websocket_internal__onmessage_long(ws_cli_conn_t *websocket, ubyte *data, unsigned long size, int type)
+{
+    _chat_websocket_internal__onmessage(websocket, data, (uint64)size, type);
 }
 
 /**
@@ -364,7 +384,7 @@ static void _chat_websocket_internal__onmessage(ws_cli_conn_t* websocket, unsign
  * @return void* -> NULL_POINTER when the thread finishes
  *
  */
-void* chat_websocket__listen_thread(void* argument)
+void *chat_websocket__listen_thread(void *argument)
 {
     struct ws_events evs;
 
@@ -385,7 +405,7 @@ void* chat_websocket__listen_thread(void* argument)
 
     evs.onopen = &_chat_websocket_internal__onopen;
     evs.onclose = &_chat_websocket_internal__onclose;
-    evs.onmessage = &_chat_websocket_internal__onmessage;
+    evs.onmessage = _Generic(evs.onmessage, void (*)(ws_cli_conn_t *, ubyte *, unsigned long, int): &_chat_websocket_internal__onmessage_long, default: &_chat_websocket_internal__onmessage);
     if (ws_socket(&evs, g_server_settings.websocket_port, 1, 2000) != 0)
     {
         exit(EXIT_FAILURE);
@@ -399,19 +419,17 @@ void* chat_websocket__listen_thread(void* argument)
 }
 
 /**
- * @brief Checks whether a connection has taken too long to finish signing in or
- * has stopped sending valid messages while that timeout check is enabled.
+ * @brief Checks whether a connection has taken too long to finish signing in or has stopped sending
+ *        valid messages while that timeout check is enabled.
  *
  * @param client_t* client -> the client slot whose connection is being checked
  * @param uint64 now -> current time in milliseconds from util__get_timestamp_ms
  *
- * @attention The caller must hold the clients lock while reading the connection
- * and settings. Repeat the check after taking the write lock before disconnecting
- * a client, because a valid message or a settings change may have arrived.
+ * @attention The caller must hold the clients lock while reading the connection and settings. Repeat the check after taking the write lock before disconnecting a client, because a valid message or a settings change may have arrived.
  *
  * @return boole -> TRUE when the connection has passed its time limit; FALSE otherwise
  */
-static boole _chat_websocket_internal__has_connection_timed_out(client_t* client, uint64 now)
+static boole _chat_websocket_internal__has_connection_timed_out(client_t *client, uint64 now)
 {
     uint64 maintain_limit_ms = 0;
 
@@ -439,26 +457,27 @@ static boole _chat_websocket_internal__has_connection_timed_out(client_t* client
 }
 
 /**
- * @brief Runs the thread that disconnects clients whose login or keep-alive time
- * limit has expired. It reads the current settings on each pass so an administrator
- * can enable or disable keep-alive timeout checks while the server is running.
+ * @brief Runs the thread that disconnects clients whose login or keep-alive time limit has expired.
+ *        It reads the current settings on each pass so an administrator can enable or disable
+ *        keep-alive timeout checks while the server is running.
  *
  * @param void* argument -> unused thread argument
  * @return void* -> NULL_POINTER when the thread finishes
  */
-void* chat_websocket__check_connections_thread(void* argument)
+void *chat_websocket__check_connections_thread(void *argument)
 {
+    uint64 upload_now = 0;
     uint64 timestamp_now = 0;
     uint64 i = 0;
-    int64* marked_client_ids_for_disconnect = 0;
+    int64 *marked_client_ids_for_disconnect = 0;
     int64 number_of_marked_clients = 0;
     boole send_websocket_ping = FALSE;
     boole status = FALSE;
-    client_t* client = NULL_POINTER;
+    client_t *client = NULL_POINTER;
 
     (void)argument;
 
-    marked_client_ids_for_disconnect = (int64*)memorymanager__allocate(sizeof(int64) * g_server_settings.max_client_count, MEMALLOC_MARKED_CLIENT_INDICES);
+    marked_client_ids_for_disconnect = (int64 *)memorymanager__allocate(sizeof(int64) * g_server_settings.max_client_count, MEMALLOC_MARKED_CLIENT_INDICES);
     if (marked_client_ids_for_disconnect == NULL_POINTER)
     {
         fprintf(stderr, "Unable to reserve heartbeat storage; reduce server_slots.\n");
@@ -526,6 +545,15 @@ void* chat_websocket__check_connections_thread(void* argument)
             clib__unlock(&g_channels_global_rwlock_guard);
             clib__unlock(&g_clients_global_rwlock_guard);
         }
+
+        upload_now = 0;
+        util__get_monotonic_ms(&upload_now);
+        clib__write_lock(&g_clients_global_rwlock_guard);
+        for (i = 0; i < g_server_settings.max_client_count; i++)
+        {
+            client_msg__attachments__expire_upload(&g_clients_array[i], upload_now);
+        }
+        clib__unlock(&g_clients_global_rwlock_guard);
 
         // rate-limited inside to one purge per day
         server_logs__purge_tick();

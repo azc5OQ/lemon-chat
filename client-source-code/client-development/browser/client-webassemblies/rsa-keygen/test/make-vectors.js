@@ -7,7 +7,7 @@
 let fs = require("fs");
 
 // the client no longer ships these; they live here as the reference the wasm is held to
-let vendor_path = __dirname + "/../../../src/scripts/vendor/";
+let vendor_path = __dirname + "/../../../main/scripts/vendor/";
 let legacy_path = __dirname + "/legacy-reference/";
 let source = ["jsbn.js", "sha256.js", "rsa.js", "cryptico.js"]
     .map(function(f)

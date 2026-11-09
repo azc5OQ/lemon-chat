@@ -1,3 +1,4 @@
+#include "../clib/clib_vector.h"
 #include "../clib/clib.h"
 // This file checks what a client's groups let them do and reads and saves group permissions.
 #include "permissions.h"
@@ -10,47 +11,29 @@
 
 uint64 g_guest_group_id = MAX_GROUPS;
 
-static const char* g_permission_names[PERMISSION_COUNT] =
-{
-    "create_channel", "create_temp_channel", "kick", "ban", "view_stored_users",
-    "view_group_permissions", "view_group_members", "create_groups", "edit_groups", "delete_groups", "assign_groups", "remove_groups", "edit_group_permissions", "upload_icons", "view_client_details", "view_server_logs", "view_server_info",
-    "send_offline_messages", "receive_offline_messages", "message_idle_clients", "call_idle_clients",
-    "delete_icons", "upload_emojis", "delete_emojis", "view_ip_addresses", "view_bans", "remove_bans",
-    "move_clients", "kick_from_channel", "mute_clients", "stop_client_streams",
-    "edit_channel_name", "edit_channel_description", "edit_channel_password", "edit_channel_powers", "edit_channel_options",
-    "delete_channel", "assign_channel_groups", "send_direct_pictures", "send_direct_files", "send_channel_pictures", "send_channel_files",
-    "create_music_bots", "delete_music_bots", "upload_music_tracks", "delete_music_tracks", "control_music_playback", "use_reserved_slots",
-    "create_channel_groups", "edit_channel_groups", "delete_channel_groups", "view_client_connection_time", "bypass_channel_password"
-};
-static const char* g_permission_power_names[PERMISSION_POWER_COUNT] =
-{
-    "kick_power", "kick_protection", "ban_power", "ban_protection",
-    "group_management_power", "group_protection",
-    "talk_power", "channel_message_power", "channel_picture_power", "stream_power",
-    "move_power", "move_protection", "moderation_power", "moderation_protection", "permission_edit_power"
-};
+static const char *g_permission_names[PERMISSION_COUNT] = { "create_channel", "create_temp_channel", "kick", "ban", "view_stored_users", "view_group_permissions", "view_group_members", "create_groups", "edit_groups", "delete_groups", "assign_groups", "remove_groups", "edit_group_permissions", "upload_icons", "view_client_details", "view_server_logs", "view_server_info", "send_offline_messages", "receive_offline_messages", "message_idle_clients", "call_idle_clients", "delete_icons", "upload_emojis", "delete_emojis", "view_ip_addresses", "view_bans", "remove_bans", "move_clients", "kick_from_channel", "mute_clients", "stop_client_streams", "edit_channel_name", "edit_channel_description", "edit_channel_password", "edit_channel_powers", "edit_channel_options", "delete_channel", "assign_channel_groups", "send_direct_pictures", "send_direct_files", "send_channel_pictures", "send_channel_files", "create_music_bots", "delete_music_bots", "upload_music_tracks", "delete_music_tracks", "control_music_playback", "use_reserved_slots", "create_channel_groups", "edit_channel_groups", "delete_channel_groups", "view_client_connection_time", "bypass_channel_password" };
+static const char *g_permission_power_names[PERMISSION_POWER_COUNT] = { "kick_power", "kick_protection", "ban_power", "ban_protection", "group_management_power", "group_protection", "talk_power", "channel_message_power", "channel_picture_power", "stream_power", "move_power", "move_protection", "moderation_power", "moderation_protection", "permission_edit_power" };
 
-static void _permissions_internal__resolve(const client_t* client, group_permissions_t* result);
-static void _permissions_internal__resolve_change(const client_t* client, uint64 group_id, const group_permissions_t* replacement, group_permissions_t* result);
-static boole _permissions_internal__has_group(const client_t* client, uint64 group_id);
-static boole _permissions_internal__allows_group_members_change(const client_t* sender, uint64 group_id, const group_permissions_t* proposed);
-static boole _permissions_internal__allows_change(const client_t* sender, const client_t* target, uint64 group_id, const group_permissions_t* replacement);
-static boole _permissions_internal__is_allowed(const client_t* client, const group_permissions_t* result, permission_t permission);
-static void _permissions_internal__combine(group_permissions_t* result, const group_permissions_t* group);
+static void _permissions_internal__resolve(const client_t *client, group_permissions_t *result);
+static void _permissions_internal__resolve_change(const client_t *client, uint64 group_id, const group_permissions_t *replacement, group_permissions_t *result);
+static boole _permissions_internal__has_group(const client_t *client, uint64 group_id);
+static boole _permissions_internal__allows_group_members_change(const client_t *sender, uint64 group_id, const group_permissions_t *proposed);
+static boole _permissions_internal__allows_change(const client_t *sender, const client_t *target, uint64 group_id, const group_permissions_t *replacement);
+static boole _permissions_internal__is_allowed(const client_t *client, const group_permissions_t *result, permission_t permission);
+static void _permissions_internal__combine(group_permissions_t *result, const group_permissions_t *group);
 
 /**
  * @brief Fills a new group's permissions from the selected preset.
  * @param type Preset selected when creating the group.
  * @param permissions Receives the initial permissions and powers.
  */
-void permissions__set_preset(group_type_t type, group_permissions_t* permissions)
+void permissions__set_preset(group_type_t type, group_permissions_t *permissions)
 {
-    uint i = 0;
+    uint64 i = 0;
 
     clib__memset(permissions, 0, sizeof(*permissions));
     permissions__init_grants(permissions);
-    permissions->powers[PERMISSION_EDIT_POWER] = type == GROUP_TYPE_ADMIN ? 1000
-        : type == GROUP_TYPE_MODERATOR ? 50 : type == GROUP_TYPE_NORMAL ? 25 : 0;
+    permissions->powers[PERMISSION_EDIT_POWER] = type == GROUP_TYPE_ADMIN ? 1000 : type == GROUP_TYPE_MODERATOR ? 50 : type == GROUP_TYPE_NORMAL ? 25 : 0;
     for (i = 0; i < PERMISSION_COUNT; i++)
     {
         permissions->values[i] = PERMISSION_DENY;
@@ -115,9 +98,9 @@ void permissions__set_preset(group_type_t type, group_permissions_t* permissions
  * @param name Preset name to check.
  * @param type Receives the preset when the name is valid.
  */
-boole permissions__parse_group_type(cstring name, group_type_t* type)
+boole permissions__parse_group_type(cstring name, group_type_t *type)
 {
-    uint i = 0;
+    uint64 i = 0;
 
     if (name == NULL_POINTER || type == NULL_POINTER)
     {
@@ -142,14 +125,14 @@ cstring permissions__group_type_name(group_type_t type)
 {
     switch (type)
     {
-        case GROUP_TYPE_GUEST:
-            return "guest";
-        case GROUP_TYPE_MODERATOR:
-            return "moderator";
-        case GROUP_TYPE_ADMIN:
-            return "admin";
-        default:
-            return "normal";
+    case GROUP_TYPE_GUEST:
+        return "guest";
+    case GROUP_TYPE_MODERATOR:
+        return "moderator";
+    case GROUP_TYPE_ADMIN:
+        return "admin";
+    default:
+        return "normal";
     }
 }
 
@@ -158,16 +141,15 @@ cstring permissions__group_type_name(group_type_t type)
  * @param client Client to update with the clients and groups locks held.
  * @return TRUE when the membership list changed.
  */
-boole permissions__refresh_guest_membership(client_t* client)
+boole permissions__refresh_guest_membership(client_t *client)
 {
     uint64 i = 0;
-    int id = 0;
+    int64 id = 0;
     boole has_other = FALSE;
     boole has_guest = FALSE;
     boole changed = FALSE;
 
-    if (g_server_settings.is_permission_system_enabled == FALSE || g_guest_group_id >= MAX_GROUPS
-        || client == NULL_POINTER || client->is_music_bot == TRUE)
+    if (g_server_settings.is_permission_system_enabled == FALSE || g_guest_group_id >= MAX_GROUPS || client == NULL_POINTER || client->is_music_bot == TRUE)
     {
         return FALSE;
     }
@@ -183,8 +165,7 @@ boole permissions__refresh_guest_membership(client_t* client)
     while (i < cvector_size(client->group_ids))
     {
         id = client->group_ids[i];
-        if (id < 0 || id >= MAX_GROUPS || g_groups_array[id].is_existing == FALSE
-            || ((uint64)id == g_guest_group_id && (has_other == TRUE || has_guest == TRUE)))
+        if (id < 0 || id >= MAX_GROUPS || g_groups_array[id].is_existing == FALSE || ((uint64)id == g_guest_group_id && (has_other == TRUE || has_guest == TRUE)))
         {
             cvector_erase(client->group_ids, i);
             changed = TRUE;
@@ -198,8 +179,7 @@ boole permissions__refresh_guest_membership(client_t* client)
     }
     if (has_other == FALSE && has_guest == FALSE)
     {
-        cvector_push_back(client->group_ids, (int)g_guest_group_id);
-        changed = TRUE;
+        changed = clib__int_vector_push(&client->group_ids, (int)g_guest_group_id);
     }
     permissions__refresh_client_powers(client);
     return changed;
@@ -208,7 +188,7 @@ boole permissions__refresh_guest_membership(client_t* client)
 /**
  * @brief Combines ordinary values by maximum, or uses the lowest negated value.
  */
-static void _permissions_internal__combine_value(uint* result, uint* result_flags, uint value, uint flags)
+static void _permissions_internal__combine_value(uint64 *result, uint64 *result_flags, uint64 value, uint64 flags)
 {
     if (flags & PERMISSION_FLAG_NEGATE)
     {
@@ -227,17 +207,13 @@ static void _permissions_internal__combine_value(uint* result, uint* result_flag
 /**
  * @brief Returns the legacy fallback when an action has no explicit value.
  */
-static uint _permissions_internal__action_value(permission_t permission, uint value)
+static uint64 _permissions_internal__action_value(permission_t permission, uint64 value)
 {
     if (value != PERMISSION_DEFAULT)
     {
         return value;
     }
-    if (permission == PERMISSION_CREATE_TEMP_CHANNEL || permission == PERMISSION_VIEW_SERVER_INFO
-        || permission == PERMISSION_VIEW_CLIENT_CONNECTION_TIME
-        || permission == PERMISSION_MESSAGE_IDLE_CLIENTS || permission == PERMISSION_CALL_IDLE_CLIENTS
-        || permission == PERMISSION_SEND_DIRECT_PICTURES || permission == PERMISSION_SEND_DIRECT_FILES
-        || permission == PERMISSION_SEND_CHANNEL_PICTURES || permission == PERMISSION_SEND_CHANNEL_FILES)
+    if (permission == PERMISSION_CREATE_TEMP_CHANNEL || permission == PERMISSION_VIEW_SERVER_INFO || permission == PERMISSION_VIEW_CLIENT_CONNECTION_TIME || permission == PERMISSION_MESSAGE_IDLE_CLIENTS || permission == PERMISSION_CALL_IDLE_CLIENTS || permission == PERMISSION_SEND_DIRECT_PICTURES || permission == PERMISSION_SEND_DIRECT_FILES || permission == PERMISSION_SEND_CHANNEL_PICTURES || permission == PERMISSION_SEND_CHANNEL_FILES)
     {
         return PERMISSION_GRANT;
     }
@@ -249,9 +225,9 @@ static uint _permissions_internal__action_value(permission_t permission, uint va
  * @param result Permissions collected so far.
  * @param group Permissions to include.
  */
-static void _permissions_internal__combine(group_permissions_t* result, const group_permissions_t* group)
+static void _permissions_internal__combine(group_permissions_t *result, const group_permissions_t *group)
 {
-    uint p = 0;
+    uint64 p = 0;
 
     if (group == NULL_POINTER)
     {
@@ -274,12 +250,12 @@ static void _permissions_internal__combine(group_permissions_t* result, const gr
  * @param replacement -> proposed permissions, or NULL to remove the group
  * @param result -> combined permissions
  */
-static void _permissions_internal__resolve_change(const client_t* client, uint64 group_id, const group_permissions_t* replacement, group_permissions_t* result)
+static void _permissions_internal__resolve_change(const client_t *client, uint64 group_id, const group_permissions_t *replacement, group_permissions_t *result)
 {
     uint64 i = 0;
     uint64 group_count = 0;
-    int id = 0;
-    const group_permissions_t* group = NULL_POINTER;
+    int64 id = 0;
+    const group_permissions_t *group = NULL_POINTER;
 
     clib__memset(result, 0, sizeof(*result));
     if (g_server_settings.is_permission_system_enabled == FALSE)
@@ -295,8 +271,7 @@ static void _permissions_internal__resolve_change(const client_t* client, uint64
         else
         {
             id = client->group_ids[i];
-            if (id < 0 || id >= MAX_GROUPS || (uint64)id == group_id
-                || (uint64)id == g_guest_group_id || g_groups_array[id].is_existing == FALSE)
+            if (id < 0 || id >= MAX_GROUPS || (uint64)id == group_id || (uint64)id == g_guest_group_id || g_groups_array[id].is_existing == FALSE)
             {
                 continue;
             }
@@ -321,7 +296,7 @@ static void _permissions_internal__resolve_change(const client_t* client, uint64
  * @param client -> client whose permissions are read
  * @param result -> combined permissions
  */
-static void _permissions_internal__resolve(const client_t* client, group_permissions_t* result)
+static void _permissions_internal__resolve(const client_t *client, group_permissions_t *result)
 {
     _permissions_internal__resolve_change(client, MAX_GROUPS, NULL_POINTER, result);
 }
@@ -330,13 +305,12 @@ static void _permissions_internal__resolve(const client_t* client, group_permiss
  * @brief Adds the active channel group unless a server permission has Skip enabled.
  * @attention Caller holds the clients and groups locks.
  */
-static void _permissions_internal__combine_channel(group_permissions_t* result, uint role)
+static void _permissions_internal__combine_channel(group_permissions_t *result, uint64 role)
 {
-    uint i = 0;
-    const group_permissions_t* local = NULL_POINTER;
+    uint64 i = 0;
+    const group_permissions_t *local = NULL_POINTER;
 
-    if (!g_server_settings.is_permission_system_enabled || role == CHANNEL_GROUP_MEMBER
-        || role >= CHANNEL_GROUP_LIMIT || !g_channel_groups[role].is_existing)
+    if (!g_server_settings.is_permission_system_enabled || role == CHANNEL_GROUP_MEMBER || role >= CHANNEL_GROUP_LIMIT || !g_channel_groups[role].is_existing)
     {
         return;
     }
@@ -346,8 +320,7 @@ static void _permissions_internal__combine_channel(group_permissions_t* result, 
         if (channel_groups__supports((permission_t)i) && !(result->flags[i] & PERMISSION_FLAG_SKIP))
         {
             result->values[i] = _permissions_internal__action_value((permission_t)i, result->values[i]);
-            _permissions_internal__combine_value(&result->values[i], &result->flags[i],
-                _permissions_internal__action_value((permission_t)i, local->values[i]), local->flags[i]);
+            _permissions_internal__combine_value(&result->values[i], &result->flags[i], _permissions_internal__action_value((permission_t)i, local->values[i]), local->flags[i]);
         }
     }
     for (i = 0; i < PERMISSION_POWER_COUNT; i++)
@@ -359,12 +332,11 @@ static void _permissions_internal__combine_channel(group_permissions_t* result, 
     }
 }
 
-
 /**
  * @brief Saves current group powers so audio and video packets need no group lookup.
  * @param client Client to update with the clients write lock and groups lock held.
  */
-void permissions__refresh_client_powers(client_t* client)
+void permissions__refresh_client_powers(client_t *client)
 {
     group_permissions_t effective;
 
@@ -406,15 +378,15 @@ void permissions__refresh_all_client_powers(void)
  * @param channel Channel receiving the content.
  * @param power Action to check while the clients and channels locks are held.
  */
-boole permissions__can_use_channel(const client_t* client, const channel_t* channel, permission_power_t power)
+boole permissions__can_use_channel(const client_t *client, const channel_t *channel, permission_power_t power)
 {
     boole status0 = FALSE;
     boole status1 = FALSE;
     boole status2 = FALSE;
     boole status3 = FALSE;
     boole status4 = FALSE;
-    uint available = 0;
-    uint required = 0;
+    uint64 available = 0;
+    uint64 required = 0;
     uint64 now = 0;
 
     status0 = client == NULL_POINTER;
@@ -448,24 +420,24 @@ boole permissions__can_use_channel(const client_t* client, const channel_t* chan
     }
     switch (power)
     {
-        case PERMISSION_TALK_POWER:
-            available = client->talk_power;
-            required = channel->required_talk_power;
-            break;
-        case PERMISSION_CHANNEL_MESSAGE_POWER:
-            available = client->channel_message_power;
-            required = channel->required_message_power;
-            break;
-        case PERMISSION_CHANNEL_PICTURE_POWER:
-            available = client->channel_picture_power;
-            required = channel->required_picture_power;
-            break;
-        case PERMISSION_STREAM_POWER:
-            available = client->stream_power;
-            required = channel->required_stream_power;
-            break;
-        default:
-            return FALSE;
+    case PERMISSION_TALK_POWER:
+        available = client->talk_power;
+        required = channel->required_talk_power;
+        break;
+    case PERMISSION_CHANNEL_MESSAGE_POWER:
+        available = client->channel_message_power;
+        required = channel->required_message_power;
+        break;
+    case PERMISSION_CHANNEL_PICTURE_POWER:
+        available = client->channel_picture_power;
+        required = channel->required_picture_power;
+        break;
+    case PERMISSION_STREAM_POWER:
+        available = client->stream_power;
+        required = channel->required_stream_power;
+        break;
+    default:
+        return FALSE;
     }
     if (g_server_settings.is_permission_system_enabled == FALSE || client->is_admin == TRUE)
     {
@@ -480,7 +452,7 @@ boole permissions__can_use_channel(const client_t* client, const channel_t* chan
  * @param result -> combined group permissions
  * @param permission -> action to check
  */
-static boole _permissions_internal__is_allowed(const client_t* client, const group_permissions_t* result, permission_t permission)
+static boole _permissions_internal__is_allowed(const client_t *client, const group_permissions_t *result, permission_t permission)
 {
     if (client->is_existing == FALSE || client->is_authenticated == FALSE || client->is_music_bot == TRUE)
     {
@@ -498,7 +470,7 @@ static boole _permissions_internal__is_allowed(const client_t* client, const gro
  * @param client -> client making the request
  * @param permission -> action to check
  */
-boole permissions__is_allowed(const client_t* client, permission_t permission)
+boole permissions__is_allowed(const client_t *client, permission_t permission)
 {
     group_permissions_t result;
     boole allowed = FALSE;
@@ -517,13 +489,12 @@ boole permissions__is_allowed(const client_t* client, permission_t permission)
 /**
  * @brief Resolves an action for one channel without changing server-wide rights.
  */
-boole permissions__is_allowed_in_channel(const client_t* client, const channel_t* channel, permission_t permission)
+boole permissions__is_allowed_in_channel(const client_t *client, const channel_t *channel, permission_t permission)
 {
     group_permissions_t effective;
     boole allowed = FALSE;
 
-    if (client == NULL_POINTER || channel == NULL_POINTER || !channel->is_existing
-        || permission < 0 || permission >= PERMISSION_COUNT)
+    if (client == NULL_POINTER || channel == NULL_POINTER || !channel->is_existing || permission < 0 || permission >= PERMISSION_COUNT)
     {
         return FALSE;
     }
@@ -539,14 +510,12 @@ boole permissions__is_allowed_in_channel(const client_t* client, const channel_t
  * @brief Checks entry using the identity's assignment in the destination channel only.
  * @attention Caller holds the clients and channels locks. Other channel rights still require presence.
  */
-boole permissions__can_bypass_channel_password(const client_t* client, const channel_t* channel)
+boole permissions__can_bypass_channel_password(const client_t *client, const channel_t *channel)
 {
     group_permissions_t effective;
     boole allowed = FALSE;
 
-    if (client == NULL_POINTER || channel == NULL_POINTER || !channel->is_existing
-        || !client->is_existing || !client->is_authenticated || client->is_music_bot
-        || (!g_server_settings.is_permission_system_enabled && !client->is_admin))
+    if (client == NULL_POINTER || channel == NULL_POINTER || !channel->is_existing || !client->is_existing || !client->is_authenticated || client->is_music_bot || (!g_server_settings.is_permission_system_enabled && !client->is_admin))
     {
         return FALSE;
     }
@@ -561,12 +530,11 @@ boole permissions__can_bypass_channel_password(const client_t* client, const cha
 /**
  * @brief Resolves a power for one channel, including restrictions and Skip.
  */
-uint permissions__power_in_channel(const client_t* client, const channel_t* channel, permission_power_t power)
+uint64 permissions__power_in_channel(const client_t *client, const channel_t *channel, permission_power_t power)
 {
     group_permissions_t effective;
 
-    if (client == NULL_POINTER || !client->is_existing || !client->is_authenticated
-        || channel == NULL_POINTER || !channel->is_existing || power < 0 || power >= PERMISSION_POWER_COUNT)
+    if (client == NULL_POINTER || !client->is_existing || !client->is_authenticated || channel == NULL_POINTER || !channel->is_existing || power < 0 || power >= PERMISSION_POWER_COUNT)
     {
         return 0;
     }
@@ -584,15 +552,15 @@ uint permissions__power_in_channel(const client_t* client, const channel_t* chan
 /**
  * @brief Reads optional flags, rejecting unsupported scopes, names and malformed values.
  */
-boole permissions__read_flags(cJSON* object, group_permissions_t* permissions, boole channel)
+boole permissions__read_flags(cJSON *object, group_permissions_t *permissions, boole channel)
 {
-    cJSON* entry = NULL_POINTER;
-    cJSON* negate = NULL_POINTER;
-    cJSON* skip = NULL_POINTER;
-    uint* destination = NULL_POINTER;
+    cJSON *entry = NULL_POINTER;
+    cJSON *negate = NULL_POINTER;
+    cJSON *skip = NULL_POINTER;
+    uint64 *destination = NULL_POINTER;
     cstring name = NULL_POINTER;
-    uint i = 0;
-    uint known = 0;
+    uint64 i = 0;
+    uint64 known = 0;
     boole can_skip = FALSE;
 
     if (!cJSON_IsObject(object))
@@ -603,8 +571,7 @@ boole permissions__read_flags(cJSON* object, group_permissions_t* permissions, b
     {
         destination = NULL_POINTER;
         can_skip = FALSE;
-        if (!entry->string || cJSON_GetObjectItemCaseSensitive(object, entry->string) != entry
-            || !cJSON_IsObject(entry))
+        if (!entry->string || cJSON_GetObjectItemCaseSensitive(object, entry->string) != entry || !cJSON_IsObject(entry))
         {
             return FALSE;
         }
@@ -634,13 +601,11 @@ boole permissions__read_flags(cJSON* object, group_permissions_t* permissions, b
         negate = cJSON_GetObjectItemCaseSensitive(entry, "negate");
         skip = cJSON_GetObjectItemCaseSensitive(entry, "skip");
         known = (negate != NULL_POINTER) + (skip != NULL_POINTER);
-        if (destination == NULL_POINTER || known != (uint)cJSON_GetArraySize(entry)
-            || (negate && !cJSON_IsBool(negate)) || (skip && (!can_skip || !cJSON_IsBool(skip))))
+        if (destination == NULL_POINTER || known != (uint64)cJSON_GetArraySize(entry) || (negate && !cJSON_IsBool(negate)) || (skip && (!can_skip || !cJSON_IsBool(skip))))
         {
             return FALSE;
         }
-        *destination = (cJSON_IsTrue(negate) ? PERMISSION_FLAG_NEGATE : 0)
-            | (cJSON_IsTrue(skip) ? PERMISSION_FLAG_SKIP : 0);
+        *destination = (cJSON_IsTrue(negate) ? PERMISSION_FLAG_NEGATE : 0) | (cJSON_IsTrue(skip) ? PERMISSION_FLAG_SKIP : 0);
     }
     return TRUE;
 }
@@ -648,13 +613,13 @@ boole permissions__read_flags(cJSON* object, group_permissions_t* permissions, b
 /**
  * @brief Writes only active flags, keeping older unflagged settings unchanged.
  */
-boole permissions__write_flags(cJSON* object, const group_permissions_t* permissions, boole channel)
+boole permissions__write_flags(cJSON *object, const group_permissions_t *permissions, boole channel)
 {
-    cJSON* flags = cJSON_CreateObject();
-    cJSON* entry = NULL_POINTER;
+    cJSON *flags = cJSON_CreateObject();
+    cJSON *entry = NULL_POINTER;
     cstring name = NULL_POINTER;
-    uint value = 0;
-    uint i = 0;
+    uint64 value = 0;
+    uint64 i = 0;
 
     if (flags == NULL_POINTER)
     {
@@ -669,8 +634,7 @@ boole permissions__write_flags(cJSON* object, const group_permissions_t* permiss
         }
         else
         {
-            name = channel ? channel_groups__power_name((permission_power_t)(i - PERMISSION_COUNT))
-                : g_permission_power_names[i - PERMISSION_COUNT];
+            name = channel ? channel_groups__power_name((permission_power_t)(i - PERMISSION_COUNT)) : g_permission_power_names[i - PERMISSION_COUNT];
             value = permissions->power_flags[i - PERMISSION_COUNT];
         }
         if (name == NULL_POINTER || value == 0)
@@ -715,9 +679,9 @@ json_failure:
 /**
  * @brief Identifies groups whose restrictions may only be managed by a server admin.
  */
-boole permissions__has_flags(const group_permissions_t* permissions)
+boole permissions__has_flags(const group_permissions_t *permissions)
 {
-    uint i = 0;
+    uint64 i = 0;
 
     if (permissions == NULL_POINTER)
     {
@@ -746,7 +710,7 @@ boole permissions__has_flags(const group_permissions_t* permissions)
  * @param target -> client affected by the request
  * @param permission -> kick or ban permission
  */
-boole permissions__can_moderate(const client_t* sender, const client_t* target, permission_t permission)
+boole permissions__can_moderate(const client_t *sender, const client_t *target, permission_t permission)
 {
     return permissions__can_moderate_in_channel(sender, target, NULL_POINTER, permission);
 }
@@ -758,7 +722,7 @@ boole permissions__can_moderate(const client_t* sender, const client_t* target, 
  * @param permission Requested moderation action.
  * @param channel Affected channel, or null for server moderation.
  */
-boole permissions__can_moderate_in_channel(const client_t* sender, const client_t* target, const channel_t* channel, permission_t permission)
+boole permissions__can_moderate_in_channel(const client_t *sender, const client_t *target, const channel_t *channel, permission_t permission)
 {
     boole status0 = FALSE;
     boole status1 = FALSE;
@@ -768,7 +732,7 @@ boole permissions__can_moderate_in_channel(const client_t* sender, const client_
     boole status5 = FALSE;
     group_permissions_t actor;
     group_permissions_t protected_client;
-    uint power = 0;
+    uint64 power = 0;
     boole allowed = FALSE;
 
     status0 = sender == NULL_POINTER;
@@ -789,22 +753,22 @@ boole permissions__can_moderate_in_channel(const client_t* sender, const client_
     }
     switch (permission)
     {
-        case PERMISSION_KICK:
-            power = PERMISSION_KICK_POWER;
-            break;
-        case PERMISSION_BAN:
-            power = PERMISSION_BAN_POWER;
-            break;
-        case PERMISSION_MOVE_CLIENTS:
-        case PERMISSION_KICK_FROM_CHANNEL:
-            power = PERMISSION_MOVE_POWER;
-            break;
-        case PERMISSION_MUTE_CLIENTS:
-        case PERMISSION_STOP_CLIENT_STREAMS:
-            power = PERMISSION_MODERATION_POWER;
-            break;
-        default:
-            return FALSE;
+    case PERMISSION_KICK:
+        power = PERMISSION_KICK_POWER;
+        break;
+    case PERMISSION_BAN:
+        power = PERMISSION_BAN_POWER;
+        break;
+    case PERMISSION_MOVE_CLIENTS:
+    case PERMISSION_KICK_FROM_CHANNEL:
+        power = PERMISSION_MOVE_POWER;
+        break;
+    case PERMISSION_MUTE_CLIENTS:
+    case PERMISSION_STOP_CLIENT_STREAMS:
+        power = PERMISSION_MODERATION_POWER;
+        break;
+    default:
+        return FALSE;
     }
     clib__read_lock(&g_groups_global_rwlock_guard);
     _permissions_internal__resolve(sender, &actor);
@@ -832,9 +796,9 @@ boole permissions__can_moderate_in_channel(const client_t* sender, const client_
 /**
  * @brief Initializes per-setting edit thresholds for new and legacy definitions.
  */
-void permissions__init_grants(group_permissions_t* permissions)
+void permissions__init_grants(group_permissions_t *permissions)
 {
-    uint i = 0;
+    uint64 i = 0;
 
     for (i = 0; i < PERMISSION_COUNT; i++)
     {
@@ -849,11 +813,11 @@ void permissions__init_grants(group_permissions_t* permissions)
 /**
  * @brief Reads per-setting edit thresholds. Missing entries retain the safe default of 1000.
  */
-boole permissions__read_grants(cJSON* object, group_permissions_t* permissions, boole channel)
+boole permissions__read_grants(cJSON *object, group_permissions_t *permissions, boole channel)
 {
-    cJSON* entry = NULL_POINTER;
-    uint i = 0;
-    uint* destination = NULL_POINTER;
+    cJSON *entry = NULL_POINTER;
+    uint64 i = 0;
+    uint64 *destination = NULL_POINTER;
     cstring name = NULL_POINTER;
 
     if (!cJSON_IsObject(object))
@@ -863,9 +827,7 @@ boole permissions__read_grants(cJSON* object, group_permissions_t* permissions, 
     cJSON_ArrayForEach(entry, object)
     {
         destination = NULL_POINTER;
-        if (!entry->string || cJSON_GetObjectItemCaseSensitive(object, entry->string) != entry
-            || !cJSON_IsNumber(entry) || !(entry->valuedouble >= 0 && entry->valuedouble <= PERMISSION_POWER_MAX)
-            || entry->valuedouble != entry->valueint)
+        if (!entry->string || cJSON_GetObjectItemCaseSensitive(object, entry->string) != entry || !cJSON_IsNumber(entry) || !(entry->valuedouble >= 0 && entry->valuedouble <= PERMISSION_POWER_MAX) || entry->valuedouble != entry->valueint)
         {
             return FALSE;
         }
@@ -889,7 +851,7 @@ boole permissions__read_grants(cJSON* object, group_permissions_t* permissions, 
         {
             return FALSE;
         }
-        *destination = (uint)entry->valueint;
+        *destination = (uint64)entry->valueint;
     }
     return TRUE;
 }
@@ -897,10 +859,10 @@ boole permissions__read_grants(cJSON* object, group_permissions_t* permissions, 
 /**
  * @brief Saves Grant thresholds with the group definition, including channel-specific names.
  */
-boole permissions__write_grants(cJSON* object, const group_permissions_t* permissions, boole channel)
+boole permissions__write_grants(cJSON *object, const group_permissions_t *permissions, boole channel)
 {
-    cJSON* grants = cJSON_CreateObject();
-    uint i = 0;
+    cJSON *grants = cJSON_CreateObject();
+    uint64 i = 0;
     cstring name = NULL_POINTER;
 
     for (i = 0; i < PERMISSION_COUNT; i++)
@@ -936,11 +898,11 @@ json_failure:
  *        Grant changes must also stay within the editor's power. Creation keeps default locks
  *        unless the creator has power 1000. Group and privilege checks remain separate.
  */
-boole permissions__can_edit_values(uint edit_power, const group_permissions_t* previous, const group_permissions_t* proposed, boole channel)
+boole permissions__can_edit_values(uint64 edit_power, const group_permissions_t *previous, const group_permissions_t *proposed, boole channel)
 {
-    uint i = 0;
-    uint before = 0;
-    uint after = 0;
+    uint64 i = 0;
+    uint64 before = 0;
+    uint64 after = 0;
 
     if (proposed == NULL_POINTER)
     {
@@ -962,8 +924,7 @@ boole permissions__can_edit_values(uint edit_power, const group_permissions_t* p
         }
         before = channel ? previous->values[i] : _permissions_internal__action_value((permission_t)i, previous->values[i]);
         after = channel ? proposed->values[i] : _permissions_internal__action_value((permission_t)i, proposed->values[i]);
-        if ((before != after || previous->flags[i] != proposed->flags[i] || previous->grants[i] != proposed->grants[i])
-            && edit_power < previous->grants[i])
+        if ((before != after || previous->flags[i] != proposed->flags[i] || previous->grants[i] != proposed->grants[i]) && edit_power < previous->grants[i])
         {
             return FALSE;
         }
@@ -986,8 +947,7 @@ boole permissions__can_edit_values(uint edit_power, const group_permissions_t* p
             }
             continue;
         }
-        if ((previous->powers[i] != proposed->powers[i] || previous->power_flags[i] != proposed->power_flags[i]
-            || previous->power_grants[i] != proposed->power_grants[i]) && edit_power < previous->power_grants[i])
+        if ((previous->powers[i] != proposed->powers[i] || previous->power_flags[i] != proposed->power_flags[i] || previous->power_grants[i] != proposed->power_grants[i]) && edit_power < previous->power_grants[i])
         {
             return FALSE;
         }
@@ -1002,13 +962,13 @@ boole permissions__can_edit_values(uint edit_power, const group_permissions_t* p
 /**
  * @brief Reads saved or proposed permissions without changing the output on invalid input.
  */
-boole permissions__read(cJSON* object, group_permissions_t* permissions)
+boole permissions__read(cJSON *object, group_permissions_t *permissions)
 {
     group_permissions_t parsed;
-    cJSON* value = NULL_POINTER;
-    uint i = 0;
-    uint known = 0;
-    uint legacy_icons = PERMISSION_DEFAULT;
+    cJSON *value = NULL_POINTER;
+    uint64 i = 0;
+    uint64 known = 0;
+    uint64 legacy_icons = PERMISSION_DEFAULT;
 
     clib__memset(&parsed, 0, sizeof(parsed));
     permissions__init_grants(&parsed);
@@ -1053,12 +1013,11 @@ boole permissions__read(cJSON* object, group_permissions_t* permissions)
             continue;
         }
         known++;
-        if (cJSON_IsNumber(value) == FALSE || !(value->valuedouble >= 0 && value->valuedouble <= PERMISSION_POWER_MAX)
-            || value->valuedouble != (double)value->valueint)
+        if (cJSON_IsNumber(value) == FALSE || !(value->valuedouble >= 0 && value->valuedouble <= PERMISSION_POWER_MAX) || value->valuedouble != (double)value->valueint)
         {
             return FALSE;
         }
-        parsed.powers[i] = (uint)value->valueint;
+        parsed.powers[i] = (uint64)value->valueint;
     }
     value = cJSON_GetObjectItemCaseSensitive(object, "grants");
     if (value != NULL_POINTER)
@@ -1107,7 +1066,7 @@ boole permissions__read(cJSON* object, group_permissions_t* permissions)
             return FALSE;
         }
     }
-    if (known != (uint)cJSON_GetArraySize(object))
+    if (known != (uint64)cJSON_GetArraySize(object))
     {
         return FALSE;
     }
@@ -1120,7 +1079,7 @@ boole permissions__read(cJSON* object, group_permissions_t* permissions)
  * @param sender Client uploading data with the clients lock held.
  * @param intent Attachment type announced before the first upload part.
  */
-boole permissions__can_upload(const client_t* sender, cstring intent)
+boole permissions__can_upload(const client_t *sender, cstring intent)
 {
     permission_t permission = PERMISSION_COUNT;
 
@@ -1155,16 +1114,15 @@ boole permissions__can_upload(const client_t* sender, cstring intent)
  * @brief Writes the same permission fields for saved settings and client messages.
  * @param permissions -> group permissions to write
  */
-cJSON* permissions__write(const group_permissions_t* permissions)
+cJSON *permissions__write(const group_permissions_t *permissions)
 {
-    cJSON* object = cJSON_CreateObject();
-    const char* value = NULL_POINTER;
-    uint i = 0;
+    cJSON *object = cJSON_CreateObject();
+    const char *value = NULL_POINTER;
+    uint64 i = 0;
 
     for (i = 0; i < PERMISSION_COUNT; i++)
     {
-        value = permissions->values[i] == PERMISSION_DENY ? "deny"
-            : permissions->values[i] == PERMISSION_GRANT ? "grant" : "default";
+        value = permissions->values[i] == PERMISSION_DENY ? "deny" : permissions->values[i] == PERMISSION_GRANT ? "grant" : "default";
         if (!cJSON_AddStringToObject(object, g_permission_names[i], value))
         {
             goto json_failure;
@@ -1202,7 +1160,7 @@ cstring permissions__name(permission_t permission)
  * @param client Authenticated client.
  * @param power Numerical permission being checked.
  */
-uint permissions__power(const client_t* client, permission_power_t power)
+uint64 permissions__power(const client_t *client, permission_power_t power)
 {
     group_permissions_t effective;
 
@@ -1225,7 +1183,7 @@ uint permissions__power(const client_t* client, permission_power_t power)
  * @param client -> client making the request
  * @param permission -> action to check
  */
-boole permissions__is_allowed_in_groups(const client_t* client, permission_t permission)
+boole permissions__is_allowed_in_groups(const client_t *client, permission_t permission)
 {
     group_permissions_t result;
 
@@ -1242,10 +1200,10 @@ boole permissions__is_allowed_in_groups(const client_t* client, permission_t per
  * @param client -> client whose memberships are read under the clients lock
  * @param group_id -> group to find
  */
-static boole _permissions_internal__has_group(const client_t* client, uint64 group_id)
+static boole _permissions_internal__has_group(const client_t *client, uint64 group_id)
 {
     uint64 i = 0;
-    int id = 0;
+    int64 id = 0;
 
     if (group_id == g_guest_group_id && g_guest_group_id < MAX_GROUPS)
     {
@@ -1276,7 +1234,7 @@ static boole _permissions_internal__has_group(const client_t* client, uint64 gro
  * @param group_id -> existing group affected by the change
  * @param permission -> required management permission
  */
-boole permissions__can_manage_group(const client_t* sender, uint64 group_id, permission_t permission)
+boole permissions__can_manage_group(const client_t *sender, uint64 group_id, permission_t permission)
 {
     boole status0 = FALSE;
     boole status1 = FALSE;
@@ -1319,13 +1277,11 @@ boole permissions__can_manage_group(const client_t* sender, uint64 group_id, per
     {
         return FALSE;
     }
-    if (group_id == ADMIN_GROUP_ID || actor.powers[PERMISSION_GROUP_MANAGEMENT_POWER]
-        < g_groups_array[group_id].permissions.powers[PERMISSION_GROUP_PROTECTION])
+    if (group_id == ADMIN_GROUP_ID || actor.powers[PERMISSION_GROUP_MANAGEMENT_POWER] < g_groups_array[group_id].permissions.powers[PERMISSION_GROUP_PROTECTION])
     {
         return FALSE;
     }
-    if ((permission == PERMISSION_EDIT_GROUP_PERMISSIONS || permission == PERMISSION_DELETE_GROUPS)
-        && _permissions_internal__has_group(sender, group_id) == TRUE)
+    if ((permission == PERMISSION_EDIT_GROUP_PERMISSIONS || permission == PERMISSION_DELETE_GROUPS) && _permissions_internal__has_group(sender, group_id) == TRUE)
     {
         return FALSE;
     }
@@ -1339,7 +1295,7 @@ boole permissions__can_manage_group(const client_t* sender, uint64 group_id, per
  * @param group_id -> group being added, removed or edited
  * @param replacement -> new permissions, or NULL when removing the group
  */
-static boole _permissions_internal__allows_change(const client_t* sender, const client_t* target, uint64 group_id, const group_permissions_t* replacement)
+static boole _permissions_internal__allows_change(const client_t *sender, const client_t *target, uint64 group_id, const group_permissions_t *replacement)
 {
     boole status0 = FALSE;
     boole status1 = FALSE;
@@ -1347,7 +1303,7 @@ static boole _permissions_internal__allows_change(const client_t* sender, const 
     group_permissions_t actor;
     group_permissions_t before;
     group_permissions_t after;
-    uint i = 0;
+    uint64 i = 0;
 
     if (sender->is_admin == TRUE)
     {
@@ -1391,8 +1347,7 @@ static boole _permissions_internal__allows_change(const client_t* sender, const 
     }
     for (i = 0; i < PERMISSION_POWER_COUNT; i++)
     {
-        if (after.powers[i] > before.powers[i]
-            && after.powers[i] > actor.powers[i == PERMISSION_GROUP_PROTECTION ? PERMISSION_GROUP_MANAGEMENT_POWER : i])
+        if (after.powers[i] > before.powers[i] && after.powers[i] > actor.powers[i == PERMISSION_GROUP_PROTECTION ? PERMISSION_GROUP_MANAGEMENT_POWER : i])
         {
             return FALSE;
         }
@@ -1407,16 +1362,16 @@ static boole _permissions_internal__allows_change(const client_t* sender, const 
  * @param group_id -> group being assigned or removed
  * @param add -> TRUE for assignment
  */
-boole permissions__can_change_member(const client_t* sender, const client_t* target, uint64 group_id, boole add)
+boole permissions__can_change_member(const client_t *sender, const client_t *target, uint64 group_id, boole add)
 {
     boole status0 = FALSE;
     boole status1 = FALSE;
     boole status2 = FALSE;
     boole status3 = FALSE;
     group_permissions_t actor;
-    const group_permissions_t* assigned = NULL_POINTER;
-    uint i = 0;
-    uint limit = 0;
+    const group_permissions_t *assigned = NULL_POINTER;
+    uint64 i = 0;
+    uint64 limit = 0;
 
     if (target == NULL_POINTER)
     {
@@ -1429,8 +1384,7 @@ boole permissions__can_change_member(const client_t* sender, const client_t* tar
     {
         return FALSE;
     }
-    status3 = permissions__can_manage_group(sender, group_id,
-        add == TRUE ? PERMISSION_ASSIGN_GROUPS : PERMISSION_REMOVE_GROUPS);
+    status3 = permissions__can_manage_group(sender, group_id, add == TRUE ? PERMISSION_ASSIGN_GROUPS : PERMISSION_REMOVE_GROUPS);
     if (status3 == FALSE)
     {
         return FALSE;
@@ -1441,8 +1395,7 @@ boole permissions__can_change_member(const client_t* sender, const client_t* tar
         _permissions_internal__resolve(sender, &actor);
         for (i = 0; i < PERMISSION_COUNT; i++)
         {
-            if (assigned->values[i] == PERMISSION_GRANT
-                && _permissions_internal__is_allowed(sender, &actor, (permission_t)i) == FALSE)
+            if (assigned->values[i] == PERMISSION_GRANT && _permissions_internal__is_allowed(sender, &actor, (permission_t)i) == FALSE)
             {
                 return FALSE;
             }
@@ -1465,15 +1418,15 @@ boole permissions__can_change_member(const client_t* sender, const client_t* tar
  * @param group_id -> group being edited with the clients and groups locks held
  * @param proposed -> complete proposed permissions
  */
-boole permissions__can_edit_group_permissions(const client_t* sender, uint64 group_id, const group_permissions_t* proposed)
+boole permissions__can_edit_group_permissions(const client_t *sender, uint64 group_id, const group_permissions_t *proposed)
 {
     boole status0 = FALSE;
     boole status1 = FALSE;
     boole status2 = FALSE;
     boole status3 = FALSE;
     group_permissions_t actor;
-    uint i = 0;
-    uint limit = 0;
+    uint64 i = 0;
+    uint64 limit = 0;
 
     status0 = sender == NULL_POINTER;
     status1 = proposed == NULL_POINTER;
@@ -1507,8 +1460,7 @@ boole permissions__can_edit_group_permissions(const client_t* sender, uint64 gro
     }
     for (i = 0; i < PERMISSION_COUNT; i++)
     {
-        status0 = _permissions_internal__action_value((permission_t)i, proposed->values[i])
-            != _permissions_internal__action_value((permission_t)i, g_groups_array[group_id].permissions.values[i]);
+        status0 = _permissions_internal__action_value((permission_t)i, proposed->values[i]) != _permissions_internal__action_value((permission_t)i, g_groups_array[group_id].permissions.values[i]);
         if (status0 == FALSE)
         {
             continue;
@@ -1544,7 +1496,7 @@ boole permissions__can_edit_group_permissions(const client_t* sender, uint64 gro
  * @param sender -> client requesting deletion
  * @param group_id -> group to delete with the clients and groups locks held
  */
-boole permissions__can_delete_group(const client_t* sender, uint64 group_id)
+boole permissions__can_delete_group(const client_t *sender, uint64 group_id)
 {
     boole status0 = FALSE;
     boole status1 = FALSE;
@@ -1573,14 +1525,14 @@ boole permissions__can_delete_group(const client_t* sender, uint64 group_id)
  * @param sender Client creating the group with the clients and groups locks held.
  * @param proposed Initial permissions of the new group.
  */
-boole permissions__can_create_group(const client_t* sender, const group_permissions_t* proposed)
+boole permissions__can_create_group(const client_t *sender, const group_permissions_t *proposed)
 {
     boole status0 = FALSE;
     boole status1 = FALSE;
     boole status2 = FALSE;
     group_permissions_t actor;
-    uint i = 0;
-    uint limit = 0;
+    uint64 i = 0;
+    uint64 limit = 0;
 
     status0 = sender == NULL_POINTER;
     status1 = proposed == NULL_POINTER;
@@ -1606,8 +1558,7 @@ boole permissions__can_create_group(const client_t* sender, const group_permissi
     }
     for (i = 0; i < PERMISSION_COUNT; i++)
     {
-        if (_permissions_internal__is_allowed(sender, proposed, (permission_t)i) == TRUE
-            && _permissions_internal__is_allowed(sender, &actor, (permission_t)i) == FALSE)
+        if (_permissions_internal__is_allowed(sender, proposed, (permission_t)i) == TRUE && _permissions_internal__is_allowed(sender, &actor, (permission_t)i) == FALSE)
         {
             return FALSE;
         }
@@ -1629,7 +1580,7 @@ boole permissions__can_create_group(const client_t* sender, const group_permissi
  * @param group_id -> group being edited or deleted
  * @param proposed -> new permissions, or NULL for deletion
  */
-static boole _permissions_internal__allows_group_members_change(const client_t* sender, uint64 group_id, const group_permissions_t* proposed)
+static boole _permissions_internal__allows_group_members_change(const client_t *sender, uint64 group_id, const group_permissions_t *proposed)
 {
     client_t stored;
     uint64 c = 0;
@@ -1638,9 +1589,7 @@ static boole _permissions_internal__allows_group_members_change(const client_t* 
 
     for (c = 0; c < (uint64)g_server_settings.max_client_count; c++)
     {
-        if (g_clients_array[c].is_existing == TRUE && g_clients_array[c].is_authenticated == TRUE
-            && _permissions_internal__has_group(&g_clients_array[c], group_id) == TRUE
-            && _permissions_internal__allows_change(sender, &g_clients_array[c], group_id, proposed) == FALSE)
+        if (g_clients_array[c].is_existing == TRUE && g_clients_array[c].is_authenticated == TRUE && _permissions_internal__has_group(&g_clients_array[c], group_id) == TRUE && _permissions_internal__allows_change(sender, &g_clients_array[c], group_id, proposed) == FALSE)
         {
             return FALSE;
         }
@@ -1648,6 +1597,10 @@ static boole _permissions_internal__allows_group_members_change(const client_t* 
     clib__memset(&stored, 0, sizeof(stored));
     stored.is_existing = TRUE;
     stored.is_authenticated = TRUE;
+    if (!clib__int_vector_reserve(&stored.group_ids, MAX_GROUPS_FOR_SINGLE_CLIENT))
+    {
+        return FALSE;
+    }
     pthread_mutex_lock(&g_client_stored_data_mutex);
     for (c = 0; c < MAX_CLIENT_STORED_DATA; c++)
     {
@@ -1655,13 +1608,17 @@ static boole _permissions_internal__allows_group_members_change(const client_t* 
         {
             continue;
         }
+        if (g_client_stored_data[c].group_id_count > MAX_GROUPS_FOR_SINGLE_CLIENT)
+        {
+            allowed = FALSE;
+            break;
+        }
         cvector_clear(stored.group_ids);
         for (i = 0; i < g_client_stored_data[c].group_id_count; i++)
         {
             cvector_push_back(stored.group_ids, (int)g_client_stored_data[c].group_ids[i]);
         }
-        if (_permissions_internal__has_group(&stored, group_id) == TRUE
-            && _permissions_internal__allows_change(sender, &stored, group_id, proposed) == FALSE)
+        if (_permissions_internal__has_group(&stored, group_id) == TRUE && _permissions_internal__allows_change(sender, &stored, group_id, proposed) == FALSE)
         {
             allowed = FALSE;
             break;
@@ -1676,13 +1633,19 @@ static boole _permissions_internal__allows_group_members_change(const client_t* 
  * @brief Writes the current user's rights without revealing other groups' permission values.
  * @param client -> user receiving the result with the clients and groups locks held
  */
-cJSON* permissions__write_access(const client_t* client)
+cJSON *permissions__write_access(const client_t *client)
 {
-    cJSON* object = cJSON_CreateObject();
-    cJSON* powers = cJSON_CreateObject();
+    cJSON *object = cJSON_CreateObject();
+    cJSON *powers = cJSON_CreateObject();
     group_permissions_t effective;
-    uint i = 0;
+    uint64 i = 0;
 
+    if (object == NULL_POINTER || powers == NULL_POINTER || !cJSON_AddItemToObject(object, "powers", powers))
+    {
+        cJSON_Delete(powers);
+        cJSON_Delete(object);
+        return NULL_POINTER;
+    }
     _permissions_internal__resolve(client, &effective);
     for (i = 0; i < PERMISSION_COUNT; i++)
     {
@@ -1692,13 +1655,12 @@ cJSON* permissions__write_access(const client_t* client)
     {
         cJSON_AddNumberToObject(powers, g_permission_power_names[i], client->is_admin == TRUE ? PERMISSION_POWER_MAX : effective.powers[i]);
     }
-    cJSON_AddItemToObject(object, "powers", powers);
     cJSON_AddNumberToObject(object, "channel_id", (double)client->channel_id);
     cJSON_AddNumberToObject(object, "channel_group_role", client->channel_group_role);
-    cJSON_ReplaceItemInObjectCaseSensitive(powers, "talk_power", cJSON_CreateNumber(client->talk_power));
-    cJSON_ReplaceItemInObjectCaseSensitive(powers, "channel_message_power", cJSON_CreateNumber(client->channel_message_power));
-    cJSON_ReplaceItemInObjectCaseSensitive(powers, "channel_picture_power", cJSON_CreateNumber(client->channel_picture_power));
-    cJSON_ReplaceItemInObjectCaseSensitive(powers, "stream_power", cJSON_CreateNumber(client->stream_power));
+    cJSON_SetNumberValue(cJSON_GetObjectItemCaseSensitive(powers, "talk_power"), client->talk_power);
+    cJSON_SetNumberValue(cJSON_GetObjectItemCaseSensitive(powers, "channel_message_power"), client->channel_message_power);
+    cJSON_SetNumberValue(cJSON_GetObjectItemCaseSensitive(powers, "channel_picture_power"), client->channel_picture_power);
+    cJSON_SetNumberValue(cJSON_GetObjectItemCaseSensitive(powers, "stream_power"), client->stream_power);
     if (client->is_temp_admin_channel == TRUE)
     {
         cJSON_AddNumberToObject(object, "temp_channel_id", (double)client->temp_channel_id);
@@ -1715,11 +1677,11 @@ cJSON* permissions__write_access(const client_t* client)
  * @param client -> user receiving the controls with the clients and groups locks held
  * @param group_id -> group displayed in the window
  */
-cJSON* permissions__write_group_access(const client_t* client, uint64 group_id)
+cJSON *permissions__write_group_access(const client_t *client, uint64 group_id)
 {
-    cJSON* object = cJSON_CreateObject();
+    cJSON *object = cJSON_CreateObject();
     permission_t actions[] = { PERMISSION_EDIT_GROUPS, PERMISSION_DELETE_GROUPS, PERMISSION_ASSIGN_GROUPS, PERMISSION_REMOVE_GROUPS, PERMISSION_EDIT_GROUP_PERMISSIONS };
-    uint i = 0;
+    uint64 i = 0;
 
     for (i = 0; i < sizeof(actions) / sizeof(actions[0]); i++)
     {
@@ -1733,7 +1695,7 @@ cJSON* permissions__write_group_access(const client_t* client, uint64 group_id)
  * @param stored Saved identity whose permission is checked.
  * @param permission Action to check.
  */
-boole permissions__is_stored_client_allowed(const client_stored_data_t* stored, permission_t permission)
+boole permissions__is_stored_client_allowed(const client_stored_data_t *stored, permission_t permission)
 {
     client_t client;
     uint64 i = 0;
@@ -1741,6 +1703,10 @@ boole permissions__is_stored_client_allowed(const client_stored_data_t* stored, 
 
     clib__memset(&client, 0, sizeof(client));
     if (stored == NULL_POINTER || stored->public_key[0] == 0)
+    {
+        return FALSE;
+    }
+    if (stored->group_id_count > MAX_GROUPS_FOR_SINGLE_CLIENT || !clib__int_vector_reserve(&client.group_ids, MAX_GROUPS_FOR_SINGLE_CLIENT))
     {
         return FALSE;
     }
@@ -1764,7 +1730,7 @@ boole permissions__is_stored_client_allowed(const client_stored_data_t* stored, 
  * @param identity_hash Saved identity to find.
  * @param permission Action to check.
  */
-boole permissions__is_identity_allowed(const char* identity_hash, permission_t permission)
+boole permissions__is_identity_allowed(const char *identity_hash, permission_t permission)
 {
     uint64 i = 0;
     boole allowed = FALSE;

@@ -23,15 +23,15 @@
 #include "video_channel.h"
 #include "permissions.h"
 #include "../video_websocket.h"
-#include "../media_auth.h"
+#include "../crypto/crypto_media.h"
 
 // declarations
-static void _video_channel_internal__announce_viewer_state(channel_t* channel, uint64 viewer_client_id, boole is_watching);
-static void _video_channel_internal__clear_viewer(client_t* client, client_t* streamer);
+static void _video_channel_internal__announce_viewer_state(channel_t *channel, uint64 viewer_client_id, boole is_watching);
+static void _video_channel_internal__clear_viewer(client_t *client, client_t *streamer);
 
 /**
- * @brief Reports a viewer starting or stopping to the streamer and allowed members.
- *        Other members receive no viewer-state message.
+ * @brief Reports a viewer starting or stopping to the streamer and allowed members. Other members
+ *        receive no viewer-state message.
  *
  * @param channel_t* channel -> the channel of the stream
  * @param uint64 viewer_client_id -> the viewer that changed
@@ -41,12 +41,12 @@ static void _video_channel_internal__clear_viewer(client_t* client, client_t* st
  *
  * @return void
  */
-static void _video_channel_internal__announce_viewer_state(channel_t* channel, uint64 viewer_client_id, boole is_watching)
+static void _video_channel_internal__announce_viewer_state(channel_t *channel, uint64 viewer_client_id, boole is_watching)
 {
-    client_t* member = NULL_POINTER;
+    client_t *member = NULL_POINTER;
     uint64 i = 0;
 
-    if (channel == NULL_POINTER || channel->is_video_stream_active == FALSE || base__is_client_valid((int)channel->video_streamer_client_id) == FALSE)
+    if (channel == NULL_POINTER || channel->is_video_stream_active == FALSE || base__is_client_valid(channel->video_streamer_client_id) == FALSE)
     {
         return;
     }
@@ -70,14 +70,15 @@ static void _video_channel_internal__announce_viewer_state(channel_t* channel, u
 }
 
 /**
- * @brief forgets a client's viewer consent and connection; when it was watching, the streamer and the allowed members are told
+ * @brief forgets a client's viewer consent and connection; when it was watching, the streamer and
+ *        the allowed members are told
  *
  * @param client_t* client -> the viewer
  * @param client_t* streamer -> the streamer whose channel is told, or NULL when nobody must be told (it is gone or is the one stopping)
  *
  * @return void
  */
-static void _video_channel_internal__clear_viewer(client_t* client, client_t* streamer)
+static void _video_channel_internal__clear_viewer(client_t *client, client_t *streamer)
 {
     boole was_watching = client->is_video_viewer_watching;
 
@@ -91,9 +92,10 @@ static void _video_channel_internal__clear_viewer(client_t* client, client_t* st
 }
 
 /**
- * @brief starts a stream in the streamer's channel: records what it announced, lets every member present watch (they still have to accept), tells the channel and sends each member the offer
- *        the caller already checked the server-wide switch, the channel toggle and that the channel is
- *        free; this only refuses what it can see itself
+ * @brief starts a stream in the streamer's channel: records what it announced, lets every member
+ *        present watch (they still have to accept), tells the channel and sends each member the
+ *        offer the caller already checked the server-wide switch, the channel toggle and that the
+ *        channel is free; this only refuses what it can see itself
  *
  * @param client_t* streamer -> the client that wants to stream
  * @param cstring source -> "screen" or "file"
@@ -106,11 +108,11 @@ static void _video_channel_internal__clear_viewer(client_t* client, client_t* st
  *
  * @return boole TRUE when the stream started
  */
-boole video_channel__start(client_t* streamer, cstring source, cstring codec, int64 width, int64 height, int64 fps, boole is_sound_included, cstring* out_refusal_reason)
+boole video_channel__start(client_t *streamer, cstring source, cstring codec, int64 width, int64 height, int64 fps, boole is_sound_included, cstring *out_refusal_reason)
 {
     boole status = FALSE;
-    channel_t* channel = NULL_POINTER;
-    client_t* member = NULL_POINTER;
+    channel_t *channel = NULL_POINTER;
+    client_t *member = NULL_POINTER;
     uint64 i = 0;
 
     *out_refusal_reason = "";
@@ -215,8 +217,9 @@ boole video_channel__start(client_t* streamer, cstring source, cstring codec, in
 }
 
 /**
- * @brief ends the stream of a channel: every member forgets its consent, the streamer its stream, the channel its streamer, and the channel is told with the reason
- *        safe to call on a channel with no stream, it then does nothing
+ * @brief ends the stream of a channel: every member forgets its consent, the streamer its stream,
+ *        the channel its streamer, and the channel is told with the reason safe to call on a
+ *        channel with no stream, it then does nothing
  *
  * @param uint64 channel_id -> the channel
  * @param cstring reason -> a short reason code for the viewers' popups ("stopped", "streamer_left", "disabled", ...)
@@ -225,8 +228,8 @@ boole video_channel__start(client_t* streamer, cstring source, cstring codec, in
  */
 void video_channel__stop(uint64 channel_id, cstring reason)
 {
-    channel_t* channel = NULL_POINTER;
-    client_t* member = NULL_POINTER;
+    channel_t *channel = NULL_POINTER;
+    client_t *member = NULL_POINTER;
     uint64 streamer_client_id = 0;
     uint64 i = 0;
 
@@ -287,8 +290,8 @@ void video_channel__apply_permission_changes(void)
 {
     boole status = FALSE;
     uint64 i = 0;
-    channel_t* channel = NULL_POINTER;
-    client_t* streamer = NULL_POINTER;
+    channel_t *channel = NULL_POINTER;
+    client_t *streamer = NULL_POINTER;
 
     if (g_server_settings.is_permission_system_enabled == FALSE)
     {
@@ -298,14 +301,12 @@ void video_channel__apply_permission_changes(void)
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
         streamer = &g_clients_array[i];
-        if (streamer->is_existing == FALSE || streamer->is_authenticated == FALSE
-            || streamer->is_streaming_video == FALSE || streamer->channel_id >= g_server_settings.max_channel_count)
+        if (streamer->is_existing == FALSE || streamer->is_authenticated == FALSE || streamer->is_streaming_video == FALSE || streamer->channel_id >= g_server_settings.max_channel_count)
         {
             continue;
         }
         channel = &g_channel_array[streamer->channel_id];
-        if (channel->is_existing == FALSE || channel->is_video_stream_active == FALSE
-            || channel->video_streamer_client_id != streamer->client_id)
+        if (channel->is_existing == FALSE || channel->is_video_stream_active == FALSE || channel->video_streamer_client_id != streamer->client_id)
         {
             continue;
         }
@@ -341,7 +342,8 @@ void video_channel__stop_all(cstring reason)
 }
 
 /**
- * @brief a channel's toggle was edited: a stream running in a channel that just got switched off ends
+ * @brief a channel's toggle was edited: a stream running in a channel that just got switched off
+ *        ends
  *
  * @param uint64 channel_id -> the edited channel
  *
@@ -361,17 +363,18 @@ void video_channel__process_channel_toggle_changed(uint64 channel_id)
 }
 
 /**
- * @brief a client leaves a channel (switch, idle, disconnect, move to root): as the streamer it ends the stream, as a viewer it drops out and the streamer's count follows
- *        call it BEFORE the client's channel_id changes, with the channel it is leaving
+ * @brief a client leaves a channel (switch, idle, disconnect, move to root): as the streamer it
+ *        ends the stream, as a viewer it drops out and the streamer's count follows call it BEFORE
+ *        the client's channel_id changes, with the channel it is leaving
  *
  * @param client_t* client -> the leaving client
  * @param uint64 old_channel_id -> the channel it leaves; anything out of range (idle's -2) is ignored
  *
  * @return void
  */
-void video_channel__process_client_leaving_channel(client_t* client, uint64 old_channel_id)
+void video_channel__process_client_leaving_channel(client_t *client, uint64 old_channel_id)
 {
-    channel_t* channel = NULL_POINTER;
+    channel_t *channel = NULL_POINTER;
 
     if (client == NULL_POINTER || old_channel_id >= g_server_settings.max_channel_count)
     {
@@ -396,20 +399,21 @@ void video_channel__process_client_leaving_channel(client_t* client, uint64 old_
         return;
     }
 
-    _video_channel_internal__clear_viewer(client, base__is_client_valid((int)channel->video_streamer_client_id) ? &g_clients_array[channel->video_streamer_client_id] : NULL_POINTER);
+    _video_channel_internal__clear_viewer(client, base__is_client_valid(channel->video_streamer_client_id) ? &g_clients_array[channel->video_streamer_client_id] : NULL_POINTER);
 }
 
 /**
- * @brief a client arrived in a channel (switch, login, back from idle, move to root): when a stream runs there, the streamer is asked whether the newcomer may watch
- *        call it AFTER the client's channel_id changed
+ * @brief a client arrived in a channel (switch, login, back from idle, move to root): when a stream
+ *        runs there, the streamer is asked whether the newcomer may watch call it AFTER the
+ *        client's channel_id changed
  *
  * @param client_t* client -> the arriving client
  *
  * @return void
  */
-void video_channel__process_client_joined_channel(client_t* client)
+void video_channel__process_client_joined_channel(client_t *client)
 {
-    channel_t* channel = NULL_POINTER;
+    channel_t *channel = NULL_POINTER;
 
     if (client == NULL_POINTER || client->is_music_bot == TRUE || client->channel_id >= g_server_settings.max_channel_count)
     {
@@ -426,7 +430,7 @@ void video_channel__process_client_joined_channel(client_t* client)
         return;
     }
 
-    if (base__is_client_valid((int)channel->video_streamer_client_id) == FALSE)
+    if (base__is_client_valid(channel->video_streamer_client_id) == FALSE)
     {
         return;
     }
@@ -435,7 +439,9 @@ void video_channel__process_client_joined_channel(client_t* client)
 }
 
 /**
- * @brief a viewer pressed connect or disconnect: with the streamer's consent the watching bit flips, and the streamer and the allowed members hear about it (the streamer sends a keyframe for a new viewer, the members mark the row)
+ * @brief a viewer pressed connect or disconnect: with the streamer's consent the watching bit
+ *        flips, and the streamer and the allowed members hear about it (the streamer sends a
+ *        keyframe for a new viewer, the members mark the row)
  *
  * @param client_t* viewer -> the client asking
  * @param boole is_watching -> TRUE to start receiving frames, FALSE to stop
@@ -443,9 +449,9 @@ void video_channel__process_client_joined_channel(client_t* client)
  *
  * @return boole TRUE when the request was applied
  */
-boole video_channel__set_viewer_watching(client_t* viewer, boole is_watching, cstring* out_refusal_reason)
+boole video_channel__set_viewer_watching(client_t *viewer, boole is_watching, cstring *out_refusal_reason)
 {
-    channel_t* channel = NULL_POINTER;
+    channel_t *channel = NULL_POINTER;
 
     *out_refusal_reason = "";
 
@@ -463,7 +469,7 @@ boole video_channel__set_viewer_watching(client_t* viewer, boole is_watching, cs
         return FALSE;
     }
 
-    if (base__is_client_valid((int)channel->video_streamer_client_id) == FALSE)
+    if (base__is_client_valid(channel->video_streamer_client_id) == FALSE)
     {
         *out_refusal_reason = "no_stream";
         return FALSE;
@@ -488,7 +494,8 @@ boole video_channel__set_viewer_watching(client_t* viewer, boole is_watching, cs
 }
 
 /**
- * @brief the streamer answered "may this member watch?": yes hands the member the offer, no (also the later revoke) drops it
+ * @brief the streamer answered "may this member watch?": yes hands the member the offer, no (also
+ *        the later revoke) drops it
  *
  * @param client_t* streamer -> the client answering; it must be the streamer of its channel
  * @param uint64 viewer_client_id -> the member the answer is about
@@ -496,10 +503,10 @@ boole video_channel__set_viewer_watching(client_t* viewer, boole is_watching, cs
  *
  * @return boole TRUE when the answer was applied
  */
-boole video_channel__allow_viewer(client_t* streamer, uint64 viewer_client_id, boole is_allowed)
+boole video_channel__allow_viewer(client_t *streamer, uint64 viewer_client_id, boole is_allowed)
 {
-    channel_t* channel = NULL_POINTER;
-    client_t* viewer = NULL_POINTER;
+    channel_t *channel = NULL_POINTER;
+    client_t *viewer = NULL_POINTER;
 
     if (streamer == NULL_POINTER || streamer->is_streaming_video == FALSE || streamer->channel_id >= g_server_settings.max_channel_count)
     {
@@ -513,7 +520,7 @@ boole video_channel__allow_viewer(client_t* streamer, uint64 viewer_client_id, b
         return FALSE;
     }
 
-    if (viewer_client_id == streamer->client_id || base__is_client_valid_and_not_music_bot((int)viewer_client_id) == FALSE)
+    if (viewer_client_id == streamer->client_id || base__is_client_valid_and_not_music_bot(viewer_client_id) == FALSE)
     {
         return FALSE;
     }
@@ -542,16 +549,17 @@ boole video_channel__allow_viewer(client_t* streamer, uint64 viewer_client_id, b
 }
 
 /**
- * @brief a watching viewer lost frames and wants a keyframe: passed on to the streamer, at most once per VIDEO_KEYFRAME_REQUEST_MIN_INTERVAL_MS however many viewers ask
+ * @brief a watching viewer lost frames and wants a keyframe: passed on to the streamer, at most
+ *        once per VIDEO_KEYFRAME_REQUEST_MIN_INTERVAL_MS however many viewers ask
  *
  * @param client_t* viewer -> the client asking
  *
  * @return void
  */
-void video_channel__forward_keyframe_request(client_t* viewer)
+void video_channel__forward_keyframe_request(client_t *viewer)
 {
-    channel_t* channel = NULL_POINTER;
-    client_t* streamer = NULL_POINTER;
+    channel_t *channel = NULL_POINTER;
+    client_t *streamer = NULL_POINTER;
     uint64 now_ms = 0;
 
     if (viewer == NULL_POINTER || viewer->is_video_viewer_watching == FALSE || viewer->channel_id >= g_server_settings.max_channel_count)
@@ -561,7 +569,7 @@ void video_channel__forward_keyframe_request(client_t* viewer)
 
     channel = &g_channel_array[viewer->channel_id];
 
-    if (channel->is_video_stream_active == FALSE || base__is_client_valid((int)channel->video_streamer_client_id) == FALSE)
+    if (channel->is_video_stream_active == FALSE || base__is_client_valid(channel->video_streamer_client_id) == FALSE)
     {
         return;
     }
@@ -579,8 +587,10 @@ void video_channel__forward_keyframe_request(client_t* viewer)
 }
 
 /**
- * @brief a client's video connection died (its webrtc peer left connected, its video data channel closed, or its video websocket closed): when no other video connection remains, a streamer's stream ends and a viewer stops receiving until it presses connect again
- *        the consent (allowed) survives, only the connection does not
+ * @brief a client's video connection died (its webrtc peer left connected, its video data channel
+ *        closed, or its video websocket closed): when no other video connection remains, a
+ *        streamer's stream ends and a viewer stops receiving until it presses connect again the
+ *        consent (allowed) survives, only the connection does not
  *
  * @param uint64 client_id -> the client whose transport is gone
  *
@@ -588,10 +598,10 @@ void video_channel__forward_keyframe_request(client_t* viewer)
  */
 void video_channel__process_transport_lost(uint64 client_id)
 {
-    client_t* client = NULL_POINTER;
-    channel_t* channel = NULL_POINTER;
+    client_t *client = NULL_POINTER;
+    channel_t *channel = NULL_POINTER;
 
-    if (base__is_client_valid((int)client_id) == FALSE)
+    if (base__is_client_valid(client_id) == FALSE)
     {
         return;
     }
@@ -628,31 +638,28 @@ void video_channel__process_transport_lost(uint64 client_id)
 /**
  * @brief Relays a video packet to allowed, watching members with a video connection.
  *
- * @details Checks authentication and removes the streamer's encryption. The channel
- *          encryption remains; each viewer gets a copy encrypted with the viewer's keys.
- *          Uses the video websocket when attached, otherwise the data channel. Full data
- *          channel queues are skipped; full websocket queues drop their oldest packets.
+ * @details Checks authentication and removes the streamer's encryption. The channel encryption remains; each viewer gets a copy encrypted with the viewer's keys. Uses the video websocket when attached, otherwise the data channel. Full data channel queues are skipped; full websocket queues drop their oldest packets.
  *
  * @param uint64 sender_id -> slot of the sending client
  * @param ws_cli_conn_t* socket -> the video websocket the packet arrived on, or NULL_POINTER
  * @param int data_channel -> the video data channel handle the packet arrived on, 0 with a socket
- * @param const unsigned char* data -> the packet
+ * @param const ubyte* data -> the packet
  * @param uint64 size -> its length in bytes
  *
  * @attention takes the clients, peers and channels read locks for the whole relay loop, like the audio relay
  *
  * @return void
  */
-void video_channel__relay_packet(uint64 sender_id, ws_cli_conn_t* socket, int data_channel, const unsigned char* data, uint64 size)
+void video_channel__relay_packet(uint64 sender_id, ws_cli_conn_t *socket, int data_channel, const ubyte *data, uint64 size)
 {
     boole status = FALSE;
-    unsigned char body[WS_VIDEO_FRAME_MAX];
-    unsigned char frame[WS_VIDEO_FRAME_MAX];
+    ubyte body[WS_VIDEO_FRAME_MAX] = { 0 };
+    ubyte frame[WS_VIDEO_FRAME_MAX] = { 0 };
     uint64 body_size = 0;
     uint64 frame_size = 0;
-    client_t* sender = NULL_POINTER;
-    client_t* receiver = NULL_POINTER;
-    channel_t* channel = NULL_POINTER;
+    client_t *sender = NULL_POINTER;
+    client_t *receiver = NULL_POINTER;
+    channel_t *channel = NULL_POINTER;
     uint64 channel_id = 0;
     uint64 i = 0;
 
@@ -665,15 +672,14 @@ void video_channel__relay_packet(uint64 sender_id, ws_cli_conn_t* socket, int da
     clib__read_lock(&g_channels_global_rwlock_guard);
     sender = &g_clients_array[sender_id];
     channel_id = sender->channel_id;
-    if (sender->is_existing == FALSE || sender->is_authenticated == FALSE || sender->is_idle == TRUE
-        || sender->is_streaming_video == FALSE || channel_id >= g_server_settings.max_channel_count)
+    if (sender->is_existing == FALSE || sender->is_authenticated == FALSE || sender->is_idle == TRUE || sender->is_streaming_video == FALSE || channel_id >= g_server_settings.max_channel_count)
     {
         goto done;
     }
     channel = &g_channel_array[channel_id];
+
     // the server-wide switch and the channel toggle are checked live, exactly like the audio relay
-    if (g_server_settings.is_video_streaming_active == FALSE || channel->is_existing == FALSE || channel->is_video_stream_enabled == FALSE
-        || channel->is_video_stream_active == FALSE || channel->video_streamer_client_id != sender_id)
+    if (g_server_settings.is_video_streaming_active == FALSE || channel->is_existing == FALSE || channel->is_video_stream_enabled == FALSE || channel->is_video_stream_active == FALSE || channel->video_streamer_client_id != sender_id)
     {
         goto done;
     }
@@ -682,6 +688,7 @@ void video_channel__relay_packet(uint64 sender_id, ws_cli_conn_t* socket, int da
     {
         goto done;
     }
+
     // a packet from a replaced socket or data channel of a reused slot is dropped
     if (socket != NULL_POINTER)
     {
@@ -696,7 +703,7 @@ void video_channel__relay_packet(uint64 sender_id, ws_cli_conn_t* socket, int da
         DBG_VIDEO_CHANNEL log_info("%s %llu %s", "relay: data channel packet of client", sender_id, "dropped: the channel is not the client's current one");
         goto done;
     }
-    body_size = media_auth__decrypt_from_client(sender, MEDIA_STREAM_VIDEO, data, size, body, sizeof(body));
+    body_size = crypto_media__decrypt_from_client(sender, MEDIA_STREAM_VIDEO, data, size, body, sizeof(body));
     if (body_size == 0)
     {
         DBG_VIDEO_CHANNEL log_info("%s %llu %s", "relay: packet of client", sender_id, "dropped: the authentication code or the sender id inside did not match");
@@ -705,15 +712,13 @@ void video_channel__relay_packet(uint64 sender_id, ws_cli_conn_t* socket, int da
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
         receiver = &g_clients_array[i];
-        if (i == sender_id || receiver->is_existing == FALSE || receiver->is_authenticated == FALSE || receiver->is_idle == TRUE
-            || receiver->is_music_bot == TRUE || receiver->channel_id != channel_id
-            || receiver->is_video_viewer_allowed == FALSE || receiver->is_video_viewer_watching == FALSE)
+        if (i == sender_id || receiver->is_existing == FALSE || receiver->is_authenticated == FALSE || receiver->is_idle == TRUE || receiver->is_music_bot == TRUE || receiver->channel_id != channel_id || receiver->is_video_viewer_allowed == FALSE || receiver->is_video_viewer_watching == FALSE)
         {
             continue;
         }
         if (receiver->is_video_websocket_authenticated == TRUE)
         {
-            frame_size = media_auth__encrypt_for_client(receiver, MEDIA_STREAM_VIDEO, body, body_size, frame, sizeof(frame));
+            frame_size = crypto_media__encrypt_for_client(receiver, MEDIA_STREAM_VIDEO, body, body_size, frame, sizeof(frame));
             if (frame_size > 0)
             {
                 video_websocket__send(receiver, frame, frame_size);
@@ -725,7 +730,7 @@ void video_channel__relay_packet(uint64 sender_id, ws_cli_conn_t* socket, int da
         {
             continue;
         }
-        frame_size = media_auth__encrypt_for_client(receiver, MEDIA_STREAM_VIDEO, body, body_size, frame, sizeof(frame));
+        frame_size = crypto_media__encrypt_for_client(receiver, MEDIA_STREAM_VIDEO, body, body_size, frame, sizeof(frame));
         if (frame_size > 0)
         {
             video_webrtc__send(i, frame, frame_size);

@@ -116,12 +116,12 @@ reconnects to the new server - and into the page over (4), so it re-attaches.
 
 | connection | file(s) |
 |---|---|
-| (1) server connection | inside `bundle.js` (built from `client-development/browser/src/scripts`), started by `nodejs-client/android-main.js` |
+| (1) server connection | inside `bundle.js` (built from `client-development/browser/main/scripts`), started by `nodejs-client/android-main.js` |
 | (2) loopback, Node side | `nodejs-client/loopback-ui-server.js` (+ `mini-ws.js`, the websocket implementation) |
-| (2) loopback, page side | the connection driver in `client-development/browser/src/scripts/app/connection.js` |
+| (2) loopback, page side | the connection driver in `client-development/browser/main/scripts/app/connection/connection.js` |
 | (3) bridge, Java side | `android/.../NodeBridge.java` |
 | (3) bridge, Node side | `nodejs-client/android-bridge-client.js` |
-| (4) Java -> page | `evaluateJavascript` calls in `MainActivity.java` / `NodeBridge.java`; page functions in `client-development/browser/src/scripts/app/android-bridge.js` |
+| (4) Java -> page | `evaluateJavascript` calls in `MainActivity.java` / `NodeBridge.java`; page functions in `client-development/browser/main/scripts/app/mobile/android-bridge.js` |
 | (4) page -> Java | `android/.../JavascriptJavaBridge.java` (the `Android` object) |
 
 More background on WHY it is built this way: `client-source-code/client-development/mobile/nodejs-client/README.md`.

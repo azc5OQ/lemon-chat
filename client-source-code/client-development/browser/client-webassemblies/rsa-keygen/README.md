@@ -112,7 +112,7 @@ and tests:
 1. draw a random odd number of the right size from the seeded random stream
 2. test it: first divide by all 168 primes below 1000 (cheap, removes most composites), then
    run miller-rabin rounds
-3. if it fails, add 2 and test the next odd number - the "+2 walk" in `src/rsa_keygen.c`
+3. if it fails, add 2 and test the next odd number - the "+2 walk" in `main/rsa_keygen.c`
 4. repeat until a number passes
 
 about 1 in every 355 odd 1024 bit numbers is prime, so a walk typically tests a few hundred

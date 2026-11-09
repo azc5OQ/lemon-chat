@@ -40,9 +40,9 @@ add_compile_options(
     "$<$<COMPILE_LANGUAGE:C,CXX,OBJC>:${desktop_path_map_option}${CMAKE_BINARY_DIR}=./build>"
     "$<$<COMPILE_LANGUAGE:C,CXX,OBJC>:${desktop_path_map_option}${MEEK_UI_SOURCE_DIR}=./third-party/meek-ui>")
 
-add_library(lemon_desktop_clib STATIC src/clib/clib.c src/platform/memory.c)
+add_library(lemon_desktop_clib STATIC main/clib/clib.c main/platform/memory.c)
 set_target_properties(lemon_desktop_clib PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
-target_include_directories(lemon_desktop_clib PUBLIC src/clib PRIVATE src)
+target_include_directories(lemon_desktop_clib PUBLIC main/clib PRIVATE main)
 # Do not turn clib's own byte loops back into host C runtime calls.
 if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
     target_compile_options(lemon_desktop_clib PRIVATE -ffreestanding -fno-builtin -fno-tree-loop-distribute-patterns)
@@ -50,81 +50,85 @@ elseif(CMAKE_C_COMPILER_ID MATCHES "Clang")
     target_compile_options(lemon_desktop_clib PRIVATE -ffreestanding -fno-builtin)
 endif()
 
-install(FILES src/clib/clib-math.LICENSE DESTINATION licenses)
+install(FILES main/clib/clib-math.LICENSE DESTINATION licenses)
 add_subdirectory(third-party)
-add_library(lemon_desktop_core STATIC src/network/endpoint.c src/network/protocol.c src/network/message_queue.c src/overlay/overlay_data.c)
-target_include_directories(lemon_desktop_core PUBLIC src src/overlay)
+add_library(lemon_desktop_core STATIC main/network/endpoint.c main/network/protocol.c main/network/message_queue.c main/overlay/overlay_data.c main/session/chat_format.c)
+target_include_directories(lemon_desktop_core PUBLIC main main/overlay)
 if(WIN32)
     target_link_libraries(lemon_desktop_core PRIVATE ws2_32)
 endif()
 target_link_libraries(lemon_desktop_core PUBLIC lemon_desktop_clib PRIVATE lemon_desktop_json)
 
 if(WIN32)
-    add_library(lemon_desktop_system STATIC src/platform/system_win32.c src/platform/thread_win32.c src/platform/hotkey_win32.c)
+    add_library(lemon_desktop_system STATIC main/platform/system_win32.c main/platform/thread_win32.c main/platform/hotkey_win32.c)
     target_compile_definitions(lemon_desktop_system PRIVATE _WIN32_WINNT=0x0602 WIN32_LEAN_AND_MEAN NOMINMAX)
-    add_library(lemon_desktop_transport STATIC src/network/transport_winhttp.c)
+    add_library(lemon_desktop_transport STATIC main/network/transport_winhttp.c)
     target_compile_definitions(lemon_desktop_transport PRIVATE _WIN32_WINNT=0x0602 WIN32_LEAN_AND_MEAN NOMINMAX)
     target_link_libraries(lemon_desktop_transport PRIVATE winhttp)
-    set(desktop_settings_platform src/settings/settings_win32.c)
+    set(desktop_settings_platform main/settings/settings_win32.c)
 else()
     find_package(Threads REQUIRED)
     find_package(CURL 7.86 REQUIRED)
-    add_library(lemon_desktop_system STATIC src/platform/system_posix.c src/platform/thread_posix.c)
+    add_library(lemon_desktop_system STATIC main/platform/system_posix.c main/platform/thread_posix.c)
     if(APPLE)
-        target_sources(lemon_desktop_system PRIVATE src/platform/hotkey_macos.c)
+        target_sources(lemon_desktop_system PRIVATE main/platform/hotkey_macos.c)
         target_link_libraries(lemon_desktop_system PRIVATE "-framework ApplicationServices" "-framework Carbon")
     else()
         find_package(X11 REQUIRED)
-        target_sources(lemon_desktop_system PRIVATE src/platform/hotkey_x11.c)
+        target_sources(lemon_desktop_system PRIVATE main/platform/hotkey_x11.c)
         target_link_libraries(lemon_desktop_system PRIVATE X11::X11)
     endif()
     target_link_libraries(lemon_desktop_system PRIVATE Threads::Threads)
-    add_library(lemon_desktop_transport STATIC src/network/transport_curl.c)
+    add_library(lemon_desktop_transport STATIC main/network/transport_curl.c)
     target_link_libraries(lemon_desktop_transport PRIVATE CURL::libcurl Threads::Threads)
-    set(desktop_settings_platform src/settings/settings_posix.c)
+    set(desktop_settings_platform main/settings/settings_posix.c)
 endif()
-target_sources(lemon_desktop_system PRIVATE src/platform/hotkey.c)
-target_include_directories(lemon_desktop_system PUBLIC src)
+target_sources(lemon_desktop_system PRIVATE main/platform/hotkey.c)
+target_include_directories(lemon_desktop_system PUBLIC main)
 target_link_libraries(lemon_desktop_system PUBLIC lemon_desktop_clib)
-target_include_directories(lemon_desktop_transport PUBLIC src)
+target_include_directories(lemon_desktop_transport PUBLIC main)
 target_link_libraries(lemon_desktop_transport PUBLIC lemon_desktop_core lemon_desktop_system)
 
-add_library(lemon_desktop_crypto STATIC src/crypto/crypto.c src/crypto/media.c)
-target_include_directories(lemon_desktop_crypto PUBLIC src)
+add_library(lemon_desktop_crypto STATIC main/crypto/crypto_session.c main/crypto/crypto_media.c
+    main/crypto/ciphers.c main/crypto/keys_session.c
+    main/crypto/cipher_aes.c main/crypto/cipher_camellia.c main/crypto/cipher_chacha20.c
+    main/crypto/cipher_twofish.c main/crypto/cipher_serpent.c main/crypto/cipher_trivium.c)
+target_include_directories(lemon_desktop_crypto PUBLIC main/crypto PRIVATE third-party/libtomcrypt/src/headers)
+target_include_directories(lemon_desktop_crypto PUBLIC main)
 target_link_libraries(lemon_desktop_crypto PUBLIC lemon_desktop_system PRIVATE lemon_desktop_core lemon_desktop_json
     lemon_desktop_aes lemon_desktop_crypto_library lemon_desktop_identity_keygen)
-add_library(lemon_desktop_audio STATIC src/audio/audio.c src/audio/activity.c src/audio/devices.c)
-target_include_directories(lemon_desktop_audio PUBLIC src)
-target_link_libraries(lemon_desktop_audio PUBLIC lemon_desktop_system PRIVATE opus lemon_desktop_audio_devices lemon_desktop_vad)
-add_library(lemon_desktop_attachments STATIC src/attachments/attachments.c src/attachments/attachment_file.c
-    src/attachments/attachment_codec.c src/attachments/attachment_image.c src/session/tree_icons.c)
+add_library(lemon_desktop_audio STATIC main/audio/audio.c main/audio/activity.c main/audio/devices.c main/audio/sounds.c)
+target_include_directories(lemon_desktop_audio PUBLIC main)
+target_link_libraries(lemon_desktop_audio PUBLIC lemon_desktop_system PRIVATE opus lemon_desktop_audio_devices lemon_desktop_vad lemon_desktop_crypto_library lemon_desktop_json)
+add_library(lemon_desktop_attachments STATIC main/attachments/attachments.c main/attachments/attachment_file.c
+    main/attachments/attachment_codec.c main/attachments/attachment_image.c main/session/tree_icons.c)
 add_library(lemon_desktop_image_runtime STATIC "${MEEK_UI_SOURCE_DIR}/src/clib/stdlib.c" "${MEEK_UI_SOURCE_DIR}/src/clib/stdlib_double.c")
 set_target_properties(lemon_desktop_image_runtime PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
-target_include_directories(lemon_desktop_attachments PUBLIC src PRIVATE "${MEEK_UI_SOURCE_DIR}/src")
+target_include_directories(lemon_desktop_attachments PUBLIC main PRIVATE "${MEEK_UI_SOURCE_DIR}/src")
 target_link_libraries(lemon_desktop_attachments PUBLIC lemon_desktop_crypto PRIVATE lemon_desktop_json lemon_desktop_crypto_library lemon_desktop_image_runtime)
 set(desktop_message_sources
-    src/msg/client/client_msg_connection.c src/msg/client/client_msg_chat.c src/msg/client/client_msg_actions.c src/msg/client/client_msg_channel_edit.c
-    src/msg/client/client_msg_delivery.c src/msg/client/client_msg_dispatch.c src/msg/client/client_msg_channel.c
-    src/msg/server/server_msg_delivery.c src/msg/server/server_msg_dispatch.c src/msg/server/server_msg_connection.c
-    src/msg/server/server_msg_channel.c src/msg/server/server_msg_chat.c src/msg/server/server_msg_actions.c src/msg/server/server_msg_tree.c
-    src/msg/client/client_msg_attachments.c src/msg/server/server_msg_attachments.c)
-add_library(lemon_desktop_session STATIC src/session/session.c src/session/chat.c src/session/session_actions.c src/session/server_info.c src/audio/voice.c ${desktop_message_sources})
-target_include_directories(lemon_desktop_session PUBLIC src)
+    main/msg/client/client_msg_connection.c main/msg/client/client_msg_chat.c main/msg/client/client_msg_actions.c main/msg/client/client_msg_channel_edit.c
+    main/msg/client/client_msg_delivery.c main/msg/client/client_msg_dispatch.c main/msg/client/client_msg_channel.c
+    main/msg/server/server_msg_delivery.c main/msg/server/server_msg_dispatch.c main/msg/server/server_msg_sounds.c main/msg/server/server_msg_connection.c
+    main/msg/server/server_msg_channel.c main/msg/server/server_msg_chat.c main/msg/server/server_msg_actions.c main/msg/server/server_msg_tree.c
+    main/msg/client/client_msg_attachments.c main/msg/server/server_msg_attachments.c)
+add_library(lemon_desktop_session STATIC main/session/session.c main/session/channel_storage.c main/session/chat.c main/session/session_actions.c main/session/server_info.c main/audio/voice.c ${desktop_message_sources})
+target_include_directories(lemon_desktop_session PUBLIC main)
 target_link_libraries(lemon_desktop_session PUBLIC lemon_desktop_transport lemon_desktop_crypto lemon_desktop_attachments PRIVATE lemon_desktop_json lemon_desktop_crypto_library lemon_desktop_audio)
 
 if(WIN32 AND LEMON_DESKTOP_OVERLAY)
-    set(desktop_overlay_controller src/overlay/overlay_ipc_win32.c src/overlay/overlay_controller_win32.c)
+    set(desktop_overlay_controller main/overlay/overlay_ipc_win32.c main/overlay/overlay_controller_win32.c)
 else()
-    set(desktop_overlay_controller src/overlay/overlay_controller_portable.c)
+    set(desktop_overlay_controller main/overlay/overlay_controller_portable.c)
 endif()
-add_library(lemon_desktop_overlay_control STATIC src/settings/settings.c ${desktop_settings_platform} ${desktop_overlay_controller})
-target_include_directories(lemon_desktop_overlay_control PUBLIC src)
+add_library(lemon_desktop_overlay_control STATIC main/settings/settings.c ${desktop_settings_platform} ${desktop_overlay_controller})
+target_include_directories(lemon_desktop_overlay_control PUBLIC main)
 target_link_libraries(lemon_desktop_overlay_control PUBLIC lemon_desktop_core PRIVATE lemon_desktop_json lemon_desktop_crypto)
 if(WIN32)
     target_compile_definitions(lemon_desktop_overlay_control PRIVATE _WIN32_WINNT=0x0602 WIN32_LEAN_AND_MEAN NOMINMAX)
     target_link_libraries(lemon_desktop_overlay_control PRIVATE shell32)
 endif()
-add_executable(lemon-chat-probe src/network/probe.c)
+add_executable(lemon-chat-probe main/network/probe.c)
 target_link_libraries(lemon-chat-probe PRIVATE lemon_desktop_transport)
 
 if(LEMON_DESKTOP_GUI OR (WIN32 AND LEMON_DESKTOP_OVERLAY))
@@ -163,24 +167,27 @@ if(LEMON_DESKTOP_GUI OR (WIN32 AND LEMON_DESKTOP_OVERLAY))
     endif()
     add_custom_target(lemon-desktop-assets ALL
         COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/assets" "${CMAKE_BINARY_DIR}/assets"
-        COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/src/overlay/assets" "${CMAKE_BINARY_DIR}/assets"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/main/overlay/assets" "${CMAKE_BINARY_DIR}/assets"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/fonts"
+        COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/fonts" "${CMAKE_BINARY_DIR}/fonts"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different "${MEEK_UI_SOURCE_DIR}/fonts/SpaceGrotesk-Regular.ttf" "${CMAKE_BINARY_DIR}/fonts/SpaceGrotesk-Regular.ttf"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different "${MEEK_UI_SOURCE_DIR}/fonts/SpaceGrotesk-Bold.ttf" "${CMAKE_BINARY_DIR}/fonts/SpaceGrotesk-Bold.ttf"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different "${MEEK_UI_SOURCE_DIR}/fonts/spacegrotesk-OFL.txt" "${CMAKE_BINARY_DIR}/fonts/spacegrotesk-OFL.txt")
     install(DIRECTORY assets DESTINATION .)
-    install(DIRECTORY src/overlay/assets/ DESTINATION assets)
+    install(DIRECTORY fonts DESTINATION .)
+    install(DIRECTORY main/overlay/assets/ DESTINATION assets)
     install(FILES "${MEEK_UI_SOURCE_DIR}/fonts/SpaceGrotesk-Regular.ttf" "${MEEK_UI_SOURCE_DIR}/fonts/SpaceGrotesk-Bold.ttf" "${MEEK_UI_SOURCE_DIR}/fonts/spacegrotesk-OFL.txt" DESTINATION fonts)
 endif()
 
 if(LEMON_DESKTOP_GUI)
-    set(desktop_ui_sources src/ui/ui_effects.c src/ui/ui_theme.c src/ui/member_view.c src/ui/session_view.c src/ui/ui_input.c src/ui/ui_connection.c src/ui/ui_actions.c src/ui/ui_channels.c src/ui/ui_layout.c src/ui/ui_bookmarks.c src/ui/ui_server.c src/ui/ui_audio.c src/ui/ui_voice.c src/ui/ui_attachments.c src/ui/ui_images.c src/ui/ui_tree.c src/ui/ui_context.c)
-    list(APPEND desktop_ui_sources src/ui/ui_chat.c src/ui/ui_pointer.c)
+    set(desktop_ui_sources main/ui/ui_effects.c main/ui/ui_theme.c main/ui/member_view.c main/ui/session_view.c main/ui/ui_input.c main/ui/ui_connection.c main/ui/ui_actions.c main/ui/ui_channels.c main/ui/ui_layout.c main/ui/ui_bookmarks.c main/ui/ui_server.c main/ui/ui_audio.c main/ui/ui_voice.c main/ui/ui_attachments.c main/ui/ui_images.c main/ui/ui_tree.c main/ui/ui_context.c)
+    list(APPEND desktop_ui_sources main/ui/ui_chat.c main/ui/ui_pointer.c main/ui/ui_fonts.c main/ui/ui_chat_format.c)
     if(WIN32)
         set(desktop_pointer_libraries comctl32)
     endif()
     target_compile_definitions(meek_ui PRIVATE MEEK_UI_MAX_STYLES=512)
-    add_executable(lemon-chat-desktop src/main.c src/ui/ui_window.c ${desktop_ui_sources})
+    target_link_libraries(meek_ui PRIVATE freetype)
+    add_executable(lemon-chat-desktop main/main.c main/ui/ui_window.c ${desktop_ui_sources})
     if(WIN32)
         set_target_properties(lemon-chat-desktop PROPERTIES WIN32_EXECUTABLE TRUE)
         if(MSVC OR CMAKE_C_COMPILER_FRONTEND_VARIANT STREQUAL "MSVC")
@@ -188,11 +195,11 @@ if(LEMON_DESKTOP_GUI)
             target_link_options(lemon-chat-desktop PRIVATE "/ENTRY:mainCRTStartup")
         endif()
         enable_language(RC)
-        configure_file(src/platform/lemon-chat.rc.in "${CMAKE_CURRENT_BINARY_DIR}/lemon-chat.rc" @ONLY)
+        configure_file(main/platform/lemon-chat.rc.in "${CMAKE_CURRENT_BINARY_DIR}/lemon-chat.rc" @ONLY)
         target_sources(lemon-chat-desktop PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/lemon-chat.rc")
         target_sources(lemon-chat-desktop PRIVATE "${MEEK_UI_SOURCE_DIR}/backends/platform/win32/main_entry_win32.c")
     endif()
-    target_link_libraries(lemon-chat-desktop PRIVATE meek_ui lemon_desktop_session lemon_desktop_overlay_control lemon_desktop_crypto_library ${desktop_pointer_libraries})
+    target_link_libraries(lemon-chat-desktop PRIVATE meek_ui lemon_desktop_session lemon_desktop_json lemon_desktop_overlay_control lemon_desktop_crypto_library ${desktop_pointer_libraries})
     target_compile_definitions(lemon-chat-desktop PRIVATE UNICODE _UNICODE)
     if(WIN32 AND LEMON_DESKTOP_OVERLAY)
         target_compile_definitions(lemon-chat-desktop PRIVATE LEMON_GAME_OVERLAY_AVAILABLE)
@@ -211,15 +218,15 @@ if(WIN32 AND LEMON_DESKTOP_OVERLAY)
     else()
         set(minhook_decoder "${minhook}/src/hde/hde32.c")
     endif()
-    add_library(lemon-overlay-d3d11 SHARED src/overlay/overlay_d3d11.c src/overlay/overlay_ipc_win32.c src/overlay/overlay_data.c src/ui/member_view.c src/ui/ui_voice.c
+    add_library(lemon-overlay-d3d11 SHARED main/overlay/overlay_d3d11.c main/overlay/overlay_ipc_win32.c main/overlay/overlay_data.c main/ui/member_view.c main/ui/ui_voice.c
         ${overlay_core} ${overlay_backend} "${minhook}/src/buffer.c" "${minhook}/src/hook.c"
         "${minhook}/src/trampoline.c" "${minhook_decoder}")
     set_target_properties(lemon-overlay-d3d11 PROPERTIES PREFIX "")
-    target_include_directories(lemon-overlay-d3d11 PRIVATE src src/overlay ${MEEK_UI_INCLUDE_DIRS} "${minhook}/include")
+    target_include_directories(lemon-overlay-d3d11 PRIVATE main main/overlay ${MEEK_UI_INCLUDE_DIRS} "${minhook}/include")
     target_compile_definitions(lemon-overlay-d3d11 PRIVATE MEEK_UI_STATIC MEEK_UI_HOST_OWNS_MAIN UNICODE _UNICODE
         WIN32_LEAN_AND_MEAN NOMINMAX _WIN32_WINNT=0x0602 MEEK_UI_CPU_BACKGROUND_CACHE_BYTES=4194304
         MEEK_UI_CPU_DECORATION_CACHE_BYTES=4194304 MEEK_UI_LAYER_TEXTURE_CACHE_BYTES=8388608 MEEK_UI_CPU_COORDINATE_CACHE_BYTES=2097152)
-    target_link_libraries(lemon-overlay-d3d11 PRIVATE lemon_desktop_clib user32 gdi32 ${overlay_libraries})
+    target_link_libraries(lemon-overlay-d3d11 PRIVATE freetype lemon_desktop_clib user32 gdi32 ${overlay_libraries})
     if(MINGW)
         target_link_options(lemon-overlay-d3d11 PRIVATE -static-libgcc -Wl,--kill-at)
     endif()
@@ -229,6 +236,20 @@ if(WIN32 AND LEMON_DESKTOP_OVERLAY)
 endif()
 
 include(CTest)
+
+if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/checks/connection_crypto_check.c"
+    AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/checks/negotiation_check.c")
+    add_executable(lemon-connection-crypto-check checks/connection_crypto_check.c)
+    target_link_libraries(lemon-connection-crypto-check PRIVATE lemon_desktop_crypto)
+    add_executable(lemon-desktop-negotiation-check checks/negotiation_check.c)
+    target_link_libraries(lemon-desktop-negotiation-check PRIVATE lemon_desktop_session lemon_desktop_json)
+    find_program(LEMON_NODE_EXECUTABLE NAMES node nodejs)
+    if(LEMON_NODE_EXECUTABLE AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../../../tests/crypto/media.cjs")
+        add_test(NAME connection-crypto COMMAND "${LEMON_NODE_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/../../../tests/crypto/media.cjs" "$<TARGET_FILE:lemon-connection-crypto-check>")
+    endif()
+endif()
+
 
 # Scripted startup checks are local development files. A source checkout without
 # them still builds the application, and normal builds need none of their code.
@@ -241,22 +262,22 @@ endif()
 # Application declarations stay at the top of functions. Do not apply this to dependencies.
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
     set_source_files_properties(
-        src/attachments/attachments.c src/attachments/attachment_file.c src/attachments/attachment_codec.c
-        src/ui/ui_effects.c src/ui/ui_theme.c src/ui/ui_attachments.c src/ui/ui_images.c src/ui/ui_tree.c src/ui/ui_context.c checks/attachments_check.c checks/workspace_check.c
-        src/main.c src/ui/ui_window.c checks/startup_check.c src/ui/ui_input.c src/ui/ui_connection.c src/ui/ui_actions.c src/ui/ui_channels.c src/ui/ui_layout.c src/ui/ui_server.c src/ui/ui_audio.c src/ui/ui_voice.c src/session/server_info.c src/session/session_actions.c src/network/endpoint.c src/network/protocol.c src/network/probe.c src/ui/member_view.c src/network/message_queue.c
-        src/settings/settings.c src/settings/settings_win32.c src/settings/settings_posix.c src/platform/system_win32.c src/platform/system_posix.c
-        src/platform/thread_win32.c src/platform/thread_posix.c src/crypto/crypto.c src/session/session.c src/session/chat.c src/ui/session_view.c src/ui/ui_chat.c src/ui/ui_pointer.c ${desktop_message_sources}
-        src/crypto/media.c src/audio/audio.c src/audio/activity.c src/audio/devices.c src/audio/voice.c src/platform/hotkey.c src/platform/hotkey_win32.c src/platform/hotkey_x11.c src/platform/hotkey_macos.c
-        src/network/transport_winhttp.c src/network/transport_curl.c src/overlay/overlay_controller_win32.c src/overlay/overlay_controller_portable.c
-        src/overlay/overlay_d3d11.c src/overlay/overlay_data.c src/overlay/overlay_ipc_win32.c
-        checks/core_check.c checks/transport_check.c checks/session_check.c checks/media_check.c checks/audio_check.c checks/activity_check.c checks/devices_check.c checks/settings_check.c src/ui/ui_bookmarks.c src/overlay/checks/overlay_check.c
-        src/overlay/checks/overlay_data_check.c checks/shared_libraries_check.c
+        main/attachments/attachments.c main/attachments/attachment_file.c main/attachments/attachment_codec.c
+        main/ui/ui_effects.c main/ui/ui_theme.c main/ui/ui_attachments.c main/ui/ui_images.c main/ui/ui_tree.c main/ui/ui_context.c checks/attachments_check.c checks/workspace_check.c
+        main/main.c main/ui/ui_window.c checks/startup_check.c main/ui/ui_input.c main/ui/ui_connection.c main/ui/ui_actions.c main/ui/ui_channels.c main/ui/ui_layout.c main/ui/ui_server.c main/ui/ui_audio.c main/ui/ui_voice.c main/session/server_info.c main/session/session_actions.c main/network/endpoint.c main/network/protocol.c main/network/probe.c main/ui/member_view.c main/network/message_queue.c
+        main/settings/settings.c main/settings/settings_win32.c main/settings/settings_posix.c main/platform/system_win32.c main/platform/system_posix.c
+        main/platform/thread_win32.c main/platform/thread_posix.c main/crypto/crypto_session.c main/session/session.c main/session/chat.c main/ui/session_view.c main/ui/ui_chat.c main/ui/ui_pointer.c ${desktop_message_sources}
+        main/crypto/crypto_media.c main/audio/audio.c main/audio/activity.c main/audio/devices.c main/audio/sounds.c main/audio/voice.c main/platform/hotkey.c main/platform/hotkey_win32.c main/platform/hotkey_x11.c main/platform/hotkey_macos.c
+        main/network/transport_winhttp.c main/network/transport_curl.c main/overlay/overlay_controller_win32.c main/overlay/overlay_controller_portable.c
+        main/overlay/overlay_d3d11.c main/overlay/overlay_data.c main/overlay/overlay_ipc_win32.c
+        checks/core_check.c checks/transport_check.c checks/session_check.c checks/media_check.c checks/audio_check.c checks/activity_check.c checks/devices_check.c checks/settings_check.c main/ui/ui_bookmarks.c main/overlay/checks/overlay_check.c
+        main/overlay/checks/overlay_data_check.c checks/shared_libraries_check.c
         PROPERTIES COMPILE_OPTIONS "-Werror=declaration-after-statement;-Werror=incompatible-pointer-types;-Werror=implicit-function-declaration;-Werror=format")
 endif()
 
 if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/checks/core_check.c"
     AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/checks/attachments_check.c"
-    AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/overlay/checks/overlay_data_check.c")
+    AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/main/overlay/checks/overlay_data_check.c")
     add_executable(lemon-desktop-attachments-check checks/attachments_check.c)
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/checks/chat_edit_check.c")
         add_executable(lemon-desktop-chat-edit-check checks/chat_edit_check.c)
@@ -272,6 +293,10 @@ if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/checks/core_check.c"
             target_sources(lemon-desktop-workspace-check PRIVATE "${MEEK_UI_SOURCE_DIR}/backends/platform/win32/main_entry_win32.c")
             add_test(NAME desktop-workspace COMMAND lemon-desktop-workspace-check)
             set_tests_properties(desktop-workspace PROPERTIES TIMEOUT 25 WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+            add_test(NAME desktop-compact-layout COMMAND lemon-desktop-workspace-check --compact)
+            set_tests_properties(desktop-compact-layout PROPERTIES TIMEOUT 25 WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
+            add_test(NAME desktop-voice-indicators COMMAND lemon-desktop-workspace-check --voice)
+            set_tests_properties(desktop-voice-indicators PROPERTIES TIMEOUT 15 WORKING_DIRECTORY "${CMAKE_BINARY_DIR}")
         endif()
     endif()
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/checks/tree_check.c")
@@ -296,26 +321,37 @@ if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/checks/core_check.c"
     target_link_libraries(lemon-desktop-activity-check PRIVATE lemon_desktop_audio)
     add_test(NAME desktop-activity COMMAND lemon-desktop-activity-check "${CMAKE_CURRENT_SOURCE_DIR}/third-party/libfvad/tests/data/audio_tiny48.wav")
     set_tests_properties(desktop-activity PROPERTIES TIMEOUT 12)
-    add_executable(lemon-desktop-settings-check checks/settings_check.c src/settings/settings.c)
+    add_executable(lemon-desktop-settings-check checks/settings_check.c main/settings/settings.c)
     target_link_libraries(lemon-desktop-settings-check PRIVATE lemon_desktop_core lemon_desktop_json lemon_desktop_crypto)
     add_test(NAME desktop-settings COMMAND lemon-desktop-settings-check)
     add_executable(lemon-desktop-media-check checks/media_check.c)
     target_link_libraries(lemon-desktop-media-check PRIVATE lemon_desktop_crypto)
+    add_executable(lemon-desktop-sound-events-check checks/sound_events_check.c main/msg/server/server_msg_sounds.c)
+    target_link_libraries(lemon-desktop-sound-events-check PRIVATE lemon_desktop_core lemon_desktop_system lemon_desktop_json lemon_desktop_crypto_library)
+    add_test(NAME desktop-sound-events COMMAND lemon-desktop-sound-events-check)
+    add_executable(lemon-desktop-sounds-check checks/sounds_check.c)
+    target_link_libraries(lemon-desktop-sounds-check PRIVATE lemon_desktop_audio lemon_desktop_json)
+    add_test(NAME desktop-sounds COMMAND lemon-desktop-sounds-check "${CMAKE_CURRENT_SOURCE_DIR}/assets/sounds.json")
+    set_tests_properties(desktop-sounds PROPERTIES TIMEOUT 15 WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
     add_executable(lemon-desktop-audio-check checks/audio_check.c)
     target_link_libraries(lemon-desktop-audio-check PRIVATE lemon_desktop_audio)
     add_test(NAME desktop-audio COMMAND lemon-desktop-audio-check)
     set_tests_properties(desktop-audio PROPERTIES TIMEOUT 10)
+    add_executable(lemon-desktop-music-buffer-check checks/music_buffer_check.c)
+    target_link_libraries(lemon-desktop-music-buffer-check PRIVATE lemon_desktop_audio opus lemon_desktop_audio_devices)
+    add_test(NAME desktop-music-buffer COMMAND lemon-desktop-music-buffer-check)
+    set_tests_properties(desktop-music-buffer PROPERTIES TIMEOUT 10)
     add_executable(lemon-shared-libraries-check checks/shared_libraries_check.c)
     target_link_libraries(lemon-shared-libraries-check PRIVATE lemon_desktop_clib lemon_desktop_aes opus lemon_desktop_crypto_library)
     add_test(NAME desktop-shared-libraries COMMAND lemon-shared-libraries-check)
-    add_executable(lemon-overlay-data-check src/overlay/checks/overlay_data_check.c)
+    add_executable(lemon-overlay-data-check main/overlay/checks/overlay_data_check.c)
     target_link_libraries(lemon-overlay-data-check PRIVATE lemon_desktop_core)
     add_test(NAME desktop-overlay-data COMMAND lemon-overlay-data-check)
     add_executable(lemon-desktop-core-check checks/core_check.c)
     target_link_libraries(lemon-desktop-core-check PRIVATE lemon_desktop_core lemon_desktop_json)
     add_test(NAME desktop-core COMMAND lemon-desktop-core-check)
     if(WIN32 AND LEMON_DESKTOP_OVERLAY)
-        add_executable(lemon-overlay-check src/overlay/checks/overlay_check.c)
+        add_executable(lemon-overlay-check main/overlay/checks/overlay_check.c)
         target_link_libraries(lemon-overlay-check PRIVATE lemon_desktop_overlay_control d3d11 dxgi dxguid user32)
         add_dependencies(lemon-overlay-check lemon-overlay-d3d11)
         add_test(NAME desktop-overlay COMMAND lemon-overlay-check)
@@ -329,6 +365,12 @@ if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/checks/core_check.c"
     endif()
     add_executable(lemon-desktop-session-check checks/session_check.c)
     target_link_libraries(lemon-desktop-session-check PRIVATE lemon_desktop_session lemon_desktop_json)
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/checks/channel_key_reuse_check.c")
+        add_executable(lemon-desktop-channel-key-reuse-check checks/channel_key_reuse_check.c)
+        target_link_libraries(lemon-desktop-channel-key-reuse-check PRIVATE lemon_desktop_session lemon_desktop_json)
+        add_test(NAME desktop-channel-key-reuse COMMAND lemon-desktop-channel-key-reuse-check)
+        set_tests_properties(desktop-channel-key-reuse PROPERTIES TIMEOUT 60)
+    endif()
     find_program(LEMON_NODE_EXECUTABLE NAMES node nodejs)
     if(LEMON_NODE_EXECUTABLE)
         add_test(NAME desktop-attachments COMMAND "${LEMON_NODE_EXECUTABLE}"

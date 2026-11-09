@@ -21,7 +21,7 @@
 #endif
 
 // declarations
-static boole _util_internal__check_executable(cstring candidate, char* path, uint64 capacity);
+static boole _util_internal__check_executable(cstring candidate, char *path, uint64 capacity);
 
 /**
  * @brief Checks one executable file and returns its absolute path.
@@ -30,17 +30,17 @@ static boole _util_internal__check_executable(cstring candidate, char* path, uin
  * @param uint64 capacity Buffer size in bytes
  * @return boole Whether a usable executable was found
  */
-static boole _util_internal__check_executable(cstring candidate, char* path, uint64 capacity)
+static boole _util_internal__check_executable(cstring candidate, char *path, uint64 capacity)
 {
     uint64 length = 0;
 #ifdef _WIN32
-    DWORD attributes = 0;
-    DWORD binary_type = 0;
-    DWORD required = 0;
-    DWORD written = 0;
+    uint64 attributes = 0;
+    DWORD binary_type = 0; // GetBinaryTypeA writes a DWORD.
+    uint64 required = 0;
+    uint64 written = 0;
 #else
-    struct stat information;
-    char* absolute = NULL_POINTER;
+    struct stat information = { 0 };
+    char *absolute = NULL_POINTER;
 #endif
 
 #ifdef _WIN32
@@ -50,8 +50,7 @@ static boole _util_internal__check_executable(cstring candidate, char* path, uin
         return FALSE;
     }
     attributes = GetFileAttributesA(candidate);
-    if (attributes == INVALID_FILE_ATTRIBUTES || (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0 ||
-        !GetBinaryTypeA(candidate, &binary_type))
+    if (attributes == INVALID_FILE_ATTRIBUTES || (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0 || !GetBinaryTypeA(candidate, &binary_type))
     {
         return FALSE;
     }
@@ -64,7 +63,7 @@ static boole _util_internal__check_executable(cstring candidate, char* path, uin
     {
         return FALSE;
     }
-    written = GetFullPathNameA(candidate, required, path, NULL_POINTER);
+    written = GetFullPathNameA(candidate, (DWORD)required, path, NULL_POINTER);
     if (written == 0 || written >= required)
     {
         path[0] = 0;
@@ -100,15 +99,15 @@ static boole _util_internal__check_executable(cstring candidate, char* path, uin
  * @param uint64 capacity Buffer size in bytes
  * @return boole Whether an executable was found and fit in the buffer
  */
-boole util__find_executable(cstring command, char* path, uint64 capacity)
+boole util__find_executable(cstring command, char *path, uint64 capacity)
 {
-    const char* environment = NULL_POINTER;
-    const char* start = NULL_POINTER;
-    const char* cursor = NULL_POINTER;
-    const char* end = NULL_POINTER;
-    const char* basename = NULL_POINTER;
-    const char* suffix = "";
-    char* candidate = NULL_POINTER;
+    const char *environment = NULL_POINTER;
+    const char *start = NULL_POINTER;
+    const char *cursor = NULL_POINTER;
+    const char *end = NULL_POINTER;
+    const char *basename = NULL_POINTER;
+    const char *suffix = "";
+    char *candidate = NULL_POINTER;
     uint64 command_length = 0;
     uint64 directory_length = 0;
     uint64 candidate_capacity = 0;
@@ -156,7 +155,7 @@ boole util__find_executable(cstring command, char* path, uint64 capacity)
     }
     if (explicit_path == TRUE)
     {
-        candidate = malloc((size_t)(command_length + suffix_length + 1));
+        candidate = malloc((uint64)(command_length + suffix_length + 1));
         if (candidate == NULL_POINTER)
         {
             return FALSE;
@@ -203,7 +202,7 @@ boole util__find_executable(cstring command, char* path, uint64 capacity)
         if (directory_length != 0 && directory_length <= SIZE_MAX - command_length - suffix_length - 2)
         {
             candidate_capacity = directory_length + command_length + suffix_length + 2;
-            candidate = malloc((size_t)candidate_capacity);
+            candidate = malloc((uint64)candidate_capacity);
             if (candidate == NULL_POINTER)
             {
                 return FALSE;
@@ -233,19 +232,19 @@ boole util__find_executable(cstring command, char* path, uint64 capacity)
  * @param uint64* bytes -> receives the resident memory size in bytes, or zero on failure
  * @return boole -> TRUE when the operating system supplied a value
  */
-boole util__get_process_ram_usage(uint64* bytes)
+boole util__get_process_ram_usage(uint64 *bytes)
 {
 #ifdef _WIN32
     PROCESS_MEMORY_COUNTERS counters = { 0 };
 #elif defined(__APPLE__)
-    mach_task_basic_info_data_t info;
+    mach_task_basic_info_data_t info = { 0 };
     mach_msg_type_number_t count = MACH_TASK_BASIC_INFO_COUNT;
 #elif defined(__linux__)
-    FILE* file = NULL_POINTER;
+    FILE *file = NULL_POINTER;
     uint64 virtual_pages = 0;
     uint64 resident_pages = 0;
-    long page_size = 0;
-    int fields = 0;
+    int64 page_size = 0;
+    int64 fields = 0;
 #endif
 
     if (bytes == NULL_POINTER)
@@ -293,11 +292,11 @@ boole util__get_process_ram_usage(uint64* bytes)
  * @return boole -> TRUE when started; FALSE when thread setup or creation fails
  * @note No join is needed, even if the worker finishes before this function returns.
  */
-boole util__start_detached_thread(void* (*entry)(void*), void* argument)
+boole util__start_detached_thread(void *(*entry)(void *), void *argument)
 {
-    pthread_attr_t attributes;
-    pthread_t thread;
-    int result;
+    pthread_attr_t attributes = { 0 };
+    pthread_t thread = { 0 };
+    int64 result = 0;
 
     if (pthread_attr_init(&attributes) != 0)
     {
@@ -311,7 +310,7 @@ boole util__start_detached_thread(void* (*entry)(void*), void* argument)
     pthread_attr_destroy(&attributes);
     if (result != 0)
     {
-        DBG_UTIL log_info("%s %d", "detached thread could not be started, error", result);
+        DBG_UTIL log_info("%s %lld", "detached thread could not be started, error", result);
     }
     return (boole)(result == 0);
 }
@@ -324,7 +323,7 @@ boole util__start_detached_thread(void* (*entry)(void*), void* argument)
  *
  * @return boole TRUE when the entry was usable
  */
-boole util__normalize_country_code(cJSON* json_entry, char* out_code)
+boole util__normalize_country_code(cJSON *json_entry, char *out_code)
 {
     char first = 0;
     char second = 0;
@@ -379,6 +378,7 @@ uint64 util__get_timestamp_ms(void)
 {
 #ifdef WIN32
     uint64 timestamp_msec = GetTickCount64();
+
     return timestamp_msec;
 #else
     // every non-Windows platform (Linux, macOS, BSD) has POSIX gettimeofday. this MUST have an
@@ -386,8 +386,9 @@ uint64 util__get_timestamp_ms(void)
     // the function with no return - it fell off the end and returned garbage, which made every
     // spam-protected request (channel create/join/delete, chat, etc.) compare against a bogus
     // "now" and get silently rejected while auth (no spam check) still worked
-    struct timeval tv;
+    struct timeval tv = { 0 };
     uint64 timestamp_msec = 0;
+
     gettimeofday(&tv, NULL_POINTER);
     timestamp_msec = (uint64)tv.tv_sec * 1000 + (uint64)tv.tv_usec / 1000;
     return timestamp_msec;
@@ -399,12 +400,12 @@ uint64 util__get_timestamp_ms(void)
  * @param uint64* milliseconds -> receives the clock reading
  * @return boole -> TRUE when the clock was read successfully
  */
-boole util__get_monotonic_ms(uint64* milliseconds)
+boole util__get_monotonic_ms(uint64 *milliseconds)
 {
 #ifdef WIN32
     *milliseconds = GetTickCount64();
 #else
-    struct timespec now;
+    struct timespec now = { 0 };
 
     if (clock_gettime(CLOCK_MONOTONIC, &now) != 0)
     {
@@ -423,9 +424,18 @@ boole util__get_monotonic_ms(uint64* milliseconds)
 void util__sleep_for_milliseconds(uint64 milliseconds)
 { // cross-platform sleep function
 #ifdef WIN32
-    Sleep(milliseconds);
+    const uint64 maximum_delay = (uint64)INFINITE - 1;
+
+    // Keep waits finite
+    while (milliseconds > maximum_delay)
+    {
+        Sleep((DWORD)maximum_delay);
+        milliseconds -= maximum_delay;
+    }
+    Sleep((DWORD)milliseconds);
 #elif _POSIX_C_SOURCE >= 199309L
-    struct timespec ts;
+    struct timespec ts = { 0 };
+
     ts.tv_sec = milliseconds / 1000;
     ts.tv_nsec = (milliseconds % 1000) * 1000000;
     nanosleep(&ts, NULL_POINTER);
@@ -444,16 +454,26 @@ void util__sleep_for_milliseconds(uint64 milliseconds)
  * @param char* out_directory -> buffer receiving the directory, or an empty string on failure
  * @param uint64 out_directory_size -> buffer capacity in bytes
  */
-void util__get_executable_directory(char* out_directory, uint64 out_directory_size)
+void util__get_executable_directory(char *out_directory, uint64 out_directory_size)
 {
-    char* last_slash = 0;
+    const char *last_slash = 0;
 #if defined(__APPLE__)
-    uint image_path_size = 0; // _NSGetExecutablePath takes a uint32_t* == unsigned int* == uint*
-    char image_path[4096]; // raw (possibly relative/symlinked) path from the loader
-    char resolved_path[4096]; // realpath output; realpath needs a PATH_MAX-sized buffer
+    uint image_path_size = 0; // _NSGetExecutablePath takes a pointer to an unsigned 32-bit capacity.
+    char image_path[4096] = { 0 }; // raw (possibly relative/symlinked) path from the loader
+    char resolved_path[4096] = { 0 }; // realpath output; realpath needs a PATH_MAX-sized buffer
 #else
     int64 link_length = 0;
 #endif
+
+    if (out_directory == NULL_POINTER || out_directory_size == 0)
+    {
+        return;
+    }
+    if (out_directory_size > SIZE_MAX)
+    {
+        out_directory[0] = 0;
+        return;
+    }
 
 #if defined(__APPLE__)
     // macOS has no /proc; the dynamic loader hands back the executable's path, then realpath
@@ -486,7 +506,7 @@ void util__get_executable_directory(char* out_directory, uint64 out_directory_si
     last_slash = clib__strrchr(out_directory, '/');
     if (last_slash != NULL_POINTER)
     {
-        *last_slash = 0;
+        out_directory[last_slash - out_directory] = 0;
     }
     else
     {
@@ -499,19 +519,25 @@ void util__get_executable_directory(char* out_directory, uint64 out_directory_si
  * @param char* out_directory -> buffer receiving the directory, or an empty string on failure
  * @param uint64 out_directory_size -> buffer capacity in bytes
  */
-void util__get_executable_directory(char* out_directory, uint64 out_directory_size)
+void util__get_executable_directory(char *out_directory, uint64 out_directory_size)
 {
-    char* last_separator = 0;
-    DWORD length = 0;
+    char *last_separator = 0;
+    uint64 length = 0;
+    uint64 capacity = 0;
 
-    length = GetModuleFileNameA(NULL_POINTER, out_directory, (DWORD)out_directory_size);
-    if (length == 0 || length >= out_directory_size)
+    if (out_directory == NULL_POINTER || out_directory_size == 0)
+    {
+        return;
+    }
+    capacity = out_directory_size > MAXDWORD ? MAXDWORD : out_directory_size;
+    length = GetModuleFileNameA(NULL_POINTER, out_directory, (DWORD)capacity);
+    if (length == 0 || length >= capacity)
     {
         out_directory[0] = 0;
         return;
     }
 
-    last_separator = (char*)clib__strrchr(out_directory, '\\');
+    last_separator = (char *)clib__strrchr(out_directory, '\\');
     if (last_separator != NULL_POINTER)
     {
         *last_separator = 0;
@@ -524,25 +550,30 @@ void util__get_executable_directory(char* out_directory, uint64 out_directory_si
 #endif
 /**
  * @brief Fills a buffer with unpredictable random bytes for keys and login checks.
- * @param unsigned char* out_buffer -> buffer receiving the random bytes
+ * @param ubyte* out_buffer -> buffer receiving the random bytes
  * @param uint64 length -> byte count, at most MBEDTLS_CTR_DRBG_MAX_REQUEST
  * @return boole -> TRUE on success; the caller must stop the operation on failure
  */
-boole util__fill_secure_random_bytes(unsigned char* out_buffer, uint64 length)
+boole util__fill_secure_random_bytes(ubyte *out_buffer, uint64 length)
 {
     mbedtls_entropy_context entropy;
     mbedtls_ctr_drbg_context ctr_drbg;
-    const char* pers = "lemonchat_csprng";
-    int ret = 0;
+    const char *pers = "lemonchat_csprng";
+    int64 ret = 0;
     boole result = TRUE;
+
+    if (length > MBEDTLS_CTR_DRBG_MAX_REQUEST || (out_buffer == NULL_POINTER && length != 0))
+    {
+        return FALSE;
+    }
 
     mbedtls_entropy_init(&entropy);
     mbedtls_ctr_drbg_init(&ctr_drbg);
 
-    ret = mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy, (const unsigned char*)pers, clib__strlen(pers));
+    ret = mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy, (const ubyte *)pers, clib__strlen(pers));
     if (ret != 0)
     {
-        DBG_ENCRYPTION log_info("%s %d", "util__fill_secure_random_bytes: ctr_drbg_seed failed ", ret);
+        DBG_ENCRYPTION log_info("%s %lld", "util__fill_secure_random_bytes: ctr_drbg_seed failed ", ret);
         result = FALSE;
     }
 
@@ -551,7 +582,7 @@ boole util__fill_secure_random_bytes(unsigned char* out_buffer, uint64 length)
         ret = mbedtls_ctr_drbg_random(&ctr_drbg, out_buffer, length);
         if (ret != 0)
         {
-            DBG_ENCRYPTION log_info("%s %d", "util__fill_secure_random_bytes: ctr_drbg_random failed ", ret);
+            DBG_ENCRYPTION log_info("%s %lld", "util__fill_secure_random_bytes: ctr_drbg_random failed ", ret);
             result = FALSE;
         }
     }
@@ -568,14 +599,14 @@ boole util__fill_secure_random_bytes(unsigned char* out_buffer, uint64 length)
  * @param uint64 length -> number of characters to write
  * @return boole -> TRUE on success; the caller must reject the login on failure
  */
-boole util__fill_block_of_data_with_ascii_characters(char* block, uint64 length)
+boole util__fill_block_of_data_with_ascii_characters(char *block, uint64 length)
 {
     boole status = FALSE;
     uint64 lowerbound = 33;
     uint64 upperbound = 126;
     uint64 i = 0;
 
-    status = util__fill_secure_random_bytes((unsigned char*)block, length);
+    status = util__fill_secure_random_bytes((ubyte *)block, length);
     if (status == FALSE)
     {
         return FALSE;
@@ -583,7 +614,7 @@ boole util__fill_block_of_data_with_ascii_characters(char* block, uint64 length)
 
     for (i = 0; i < length; i++)
     {
-        block[i] = (char)((unsigned char)block[i] % (upperbound - lowerbound + 1)) + lowerbound;
+        block[i] = (char)((ubyte)block[i] % (upperbound - lowerbound + 1)) + lowerbound;
     }
 
     return TRUE;
@@ -594,7 +625,7 @@ boole util__fill_block_of_data_with_ascii_characters(char* block, uint64 length)
  * @param cJSON* json_root_object1 -> JSON object to delete
  * @param char* json_root_object1_string -> printed JSON string to free
  */
-void util__free_json_message(cJSON* json_root_object1, char* json_root_object1_string)
+void util__free_json_message(cJSON *json_root_object1, char *json_root_object1_string)
 {
     if (json_root_object1 != NULL_POINTER)
     {
@@ -609,7 +640,8 @@ void util__free_json_message(cJSON* json_root_object1, char* json_root_object1_s
 }
 
 /**
- * @brief SHA256-hashes a password then base64-encodes it, so auth secrets can be stored without plaintext.
+ * @brief SHA256-hashes a password then base64-encodes it, so auth secrets can be stored without
+ *        plaintext.
  *
  * @param char* plaintext -> the password to hash
  * @param char* out -> caller buffer for the base64(SHA256) text (44 chars + NUL)
@@ -617,14 +649,14 @@ void util__free_json_message(cJSON* json_root_object1, char* json_root_object1_s
  *
  * @return void
  */
-void util__hash_password_to_base64(cstring plaintext, char* out, int64 out_size)
+void util__hash_password_to_base64(cstring plaintext, char *out, int64 out_size)
 {
     ITH_SHA256_CTX ctx;
-    unsigned char digest[32];
-    char encoded[BASE64_ENCODE_OUT_SIZE(32)];
+    ubyte digest[32] = { 0 };
+    char encoded[BASE64_ENCODE_OUT_SIZE(32)] = { 0 };
 
     ith_sha256_init(&ctx);
-    ith_sha256_update(&ctx, (unsigned char*)plaintext, clib__strlen(plaintext));
+    ith_sha256_update(&ctx, (ubyte *)plaintext, clib__strlen(plaintext));
     ith_sha256_final(&ctx, digest);
 
     clib__null_memory(encoded, sizeof(encoded));
@@ -642,9 +674,9 @@ void util__hash_password_to_base64(cstring plaintext, char* out, int64 out_size)
  *
  * @return boole -> TRUE when they match
  */
-boole util__password_matches(char* plaintext, char* stored_base64_hash)
+boole util__password_matches(char *plaintext, char *stored_base64_hash)
 {
-    char computed[BASE64_ENCODE_OUT_SIZE(32)];
+    char computed[BASE64_ENCODE_OUT_SIZE(32)] = { 0 };
 
     util__hash_password_to_base64(plaintext, computed, sizeof(computed));
     return clib__is_string_equal(computed, stored_base64_hash);
@@ -654,7 +686,7 @@ boole util__password_matches(char* plaintext, char* stored_base64_hash)
  * @brief Reads a JSON integer only after validating its type and conversion range.
  * @attention A failed read leaves the destination unchanged.
  */
-boole util__json_read_int64(const cJSON* value, int64 minimum, int64 maximum, int64* result)
+boole util__json_read_int64(const cJSON *value, int64 minimum, int64 maximum, int64 *result)
 {
     double number = 0;
     int64 parsed = 0;
@@ -681,7 +713,7 @@ boole util__json_read_int64(const cJSON* value, int64 minimum, int64 maximum, in
  * @brief Reads an unsigned JSON integer without fractional or out-of-range casts.
  * @attention A failed read leaves the destination unchanged.
  */
-boole util__json_read_uint64(const cJSON* value, uint64 maximum, uint64* result)
+boole util__json_read_uint64(const cJSON *value, uint64 maximum, uint64 *result)
 {
     double number = 0;
     uint64 parsed = 0;
@@ -708,9 +740,9 @@ boole util__json_read_uint64(const cJSON* value, uint64 maximum, uint64* result)
  * @brief Clears owned JSON strings before releasing a tree.
  * @attention Borrowed strings and referenced child trees remain owned by their caller.
  */
-void util__json_delete_secure(cJSON* root)
+void util__json_delete_secure(cJSON *root)
 {
-    cJSON* child = NULL_POINTER;
+    cJSON *child = NULL_POINTER;
 
     if (root == NULL_POINTER)
     {
@@ -736,7 +768,7 @@ void util__json_delete_secure(cJSON* root)
 }
 
 /** @brief Transfers ownership to the object, or releases the child on failure. */
-boole util__json_add_owned_object(cJSON* object, const char* name, cJSON* child)
+boole util__json_add_owned_object(cJSON *object, const char *name, cJSON *child)
 {
     if (!cJSON_AddItemToObject(object, name, child))
     {
@@ -747,7 +779,7 @@ boole util__json_add_owned_object(cJSON* object, const char* name, cJSON* child)
 }
 
 /** @brief Transfers ownership to the array, or releases the child on failure. */
-boole util__json_add_owned_array(cJSON* array, cJSON* child)
+boole util__json_add_owned_array(cJSON *array, cJSON *child)
 {
     if (!cJSON_AddItemToArray(array, child))
     {
@@ -757,9 +789,8 @@ boole util__json_add_owned_array(cJSON* array, cJSON* child)
     return TRUE;
 }
 
-
 /** @brief Clears the owned contents of a removed JSON property. */
-void util__json_delete_item_secure(cJSON* object, const char* name)
+void util__json_delete_item_secure(cJSON *object, const char *name)
 {
     util__json_delete_secure(cJSON_DetachItemFromObjectCaseSensitive(object, name));
 }

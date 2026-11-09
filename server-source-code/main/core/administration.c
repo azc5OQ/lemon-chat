@@ -28,15 +28,15 @@ typedef struct admin_password_attempts_t
 {
     char ip_address[INET6_ADDRSTRLEN];
     uint64 window_started_ms;
-    uint attempts;
+    uint64 attempts;
 } admin_password_attempts_t;
 
-static admin_password_attempts_t* g_admin_password_attempts = NULL_POINTER;
+static admin_password_attempts_t *g_admin_password_attempts = NULL_POINTER;
 
 // declarations
-static boole _server_admin_internal__is_png_banner_header_valid(const ubyte* image, size_t length);
-static boole _server_admin_internal__is_jpeg_banner_header_valid(const ubyte* image, size_t length);
-static boole _server_admin_internal__is_webp_banner_header_valid(const ubyte* image, size_t length);
+static boole _server_admin_internal__is_png_banner_header_valid(const ubyte *image, uint64 length);
+static boole _server_admin_internal__is_jpeg_banner_header_valid(const ubyte *image, uint64 length);
+static boole _server_admin_internal__is_webp_banner_header_valid(const ubyte *image, uint64 length);
 
 /**
  * @brief checks whether an ip address is currently banned
@@ -45,7 +45,7 @@ static boole _server_admin_internal__is_webp_banner_header_valid(const ubyte* im
  *
  * @return boole TRUE if the ip is in the ban list
  */
-boole server_admin__is_ip_banned(char* ip_address)
+boole server_admin__is_ip_banned(char *ip_address)
 {
     boole is_banned = FALSE;
     uint64 i = 0;
@@ -74,15 +74,15 @@ boole server_admin__is_ip_banned(char* ip_address)
 }
 
 /**
- * @brief whether a public key is on the ban list. a ban records the target's identity at ban
- *        time, so the same identity is refused even when it returns from a different ip address.
- *        entries without a recorded identity never match
+ * @brief whether a public key is on the ban list. a ban records the target's identity at ban time,
+ *        so the same identity is refused even when it returns from a different ip address. entries
+ *        without a recorded identity never match
  *
  * @param char* public_key -> the connecting client's public key
  *
  * @return boole TRUE if the identity is in the ban list
  */
-boole server_admin__is_identity_banned(char* public_key)
+boole server_admin__is_identity_banned(char *public_key)
 {
     boole is_banned = FALSE;
     uint64 i = 0;
@@ -111,14 +111,14 @@ boole server_admin__is_identity_banned(char* public_key)
 }
 
 /**
- * @brief whether a resolved country code is on the join block list. an empty or unresolved
- *        country (local addresses, lookup failures) is never blocked
+ * @brief whether a resolved country code is on the join block list. an empty or unresolved country
+ *        (local addresses, lookup failures) is never blocked
  *
  * @param char* country_iso_code -> uppercase 2-letter code as the geoip db emits it
  *
  * @return boole TRUE when country blocking is on and the code is listed
  */
-boole server_admin__is_country_blocked(char* country_iso_code)
+boole server_admin__is_country_blocked(char *country_iso_code)
 {
     uint64 i = 0;
 
@@ -139,22 +139,27 @@ boole server_admin__is_country_blocked(char* country_iso_code)
 }
 
 /**
- * @brief adds a ban entry. ignored if the ip is already banned or the ban list is full
+ * @brief Records an IP/identity pair, preserving distinct identities that share an IP.
  *
  * @param char* ip_address -> the banned ip (matched at socket open)
  * @param char* country_iso_code -> the client's country at ban time (may be empty)
  * @param char* identity -> the client's identity / public key at ban time (matched at join; may be empty)
  * @param char* extra_data -> free-form extra data, e.g. a future fingerprint (may be empty)
+ * @param int64* added_index -> new slot for rollback, or -1 if this exact pair already exists; may be NULL
  *
  * @attention caller must hold the bans write lock
  *
- * @return boole TRUE if a ban was added
+ * @return boole TRUE if the pair is recorded; FALSE when no slot is available
  */
-boole server_admin__add_ban(char* ip_address, char* country_iso_code, char* identity, char* extra_data)
+boole server_admin__add_ban(char *ip_address, char *country_iso_code, char *identity, char *extra_data, int64 *added_index)
 {
     uint64 i = 0;
     int64 free_index = -1;
 
+    if (added_index != NULL_POINTER)
+    {
+        *added_index = -1;
+    }
     if (ip_address == NULL_POINTER || g_ban_array == NULL_POINTER)
     {
         return FALSE;
@@ -164,9 +169,9 @@ boole server_admin__add_ban(char* ip_address, char* country_iso_code, char* iden
     {
         if (g_ban_array[i].is_existing == TRUE)
         {
-            if (clib__is_string_equal(g_ban_array[i].ip_address, ip_address) == TRUE)
+            if (clib__is_string_equal(g_ban_array[i].ip_address, ip_address) == TRUE && clib__is_string_equal(g_ban_array[i].identity, identity != NULL_POINTER ? identity : "") == TRUE)
             {
-                return FALSE; // already banned
+                return TRUE;
             }
         }
         else if (free_index == -1)
@@ -197,12 +202,16 @@ boole server_admin__add_ban(char* ip_address, char* country_iso_code, char* iden
     {
         clib__string_copy(g_ban_array[free_index].extra_data, sizeof(g_ban_array[free_index].extra_data), extra_data);
     }
+    if (added_index != NULL_POINTER)
+    {
+        *added_index = free_index;
+    }
 
     return TRUE;
 }
 
 /**
- * @brief removes a ban entry matching an ip address
+ * @brief Removes every ban entry matching an IP address, including its associated identities.
  *
  * @param char* ip_address -> the ip to unban
  *
@@ -210,9 +219,10 @@ boole server_admin__add_ban(char* ip_address, char* country_iso_code, char* iden
  *
  * @return boole TRUE if an entry was removed
  */
-boole server_admin__remove_ban_by_ip(char* ip_address)
+boole server_admin__remove_ban_by_ip(char *ip_address)
 {
     uint64 i = 0;
+    boole removed = FALSE;
 
     if (ip_address == NULL_POINTER || g_ban_array == NULL_POINTER)
     {
@@ -224,11 +234,11 @@ boole server_admin__remove_ban_by_ip(char* ip_address)
         if (g_ban_array[i].is_existing == TRUE && clib__is_string_equal(&g_ban_array[i].ip_address[0], ip_address) == TRUE)
         {
             clib__null_memory(&g_ban_array[i], sizeof(ban_entry_t));
-            return TRUE;
+            removed = TRUE;
         }
     }
 
-    return FALSE;
+    return removed;
 }
 
 /**
@@ -275,7 +285,7 @@ boole server_admin__is_group_id_real(uint64 group_id)
 boole server_admin__is_client_already_assigned_this_group_id(uint64 client_id, uint64 this_group_id)
 {
     uint64 cvector_loop_index = 0;
-    client_t* client = NULL_POINTER;
+    client_t *client = NULL_POINTER;
     boole is_group_found = FALSE;
 
     client = &g_clients_array[client_id];
@@ -296,7 +306,8 @@ boole server_admin__is_client_already_assigned_this_group_id(uint64 client_id, u
 }
 
 /**
- * @brief returns the index of the given group id within the client's group vector, or -1 if not found
+ * @brief returns the index of the given group id within the client's group vector, or -1 if not
+ *        found
  *
  * @param uint64 client_id -> id of the client
  * @param uint64 this_group_id -> id of the group
@@ -308,7 +319,7 @@ boole server_admin__is_client_already_assigned_this_group_id(uint64 client_id, u
 int64 server_admin__get_index_of_group_id_of_client(uint64 client_id, uint64 this_group_id)
 {
     uint64 cvector_loop_index = 0;
-    client_t* client = NULL_POINTER;
+    client_t *client = NULL_POINTER;
     int64 group_index = -1;
 
     client = &g_clients_array[client_id];
@@ -331,37 +342,37 @@ int64 server_admin__get_index_of_group_id_of_client(uint64 client_id, uint64 thi
 /**
  * @brief Checks the PNG signature, first image header and banner dimensions.
  * @param const ubyte* image -> decoded image bytes
- * @param size_t length -> available image bytes
+ * @param uint64 length -> available image bytes
  * @return boole -> TRUE when the header describes an allowed banner size
  */
-static boole _server_admin_internal__is_png_banner_header_valid(const ubyte* image, size_t length)
+static boole _server_admin_internal__is_png_banner_header_valid(const ubyte *image, uint64 length)
 {
     static const ubyte signature[8] = { 137, 80, 78, 71, 13, 10, 26, 10 };
-    uint width = 0;
-    uint height = 0;
+    uint64 width = 0;
+    uint64 height = 0;
 
     if (length < 33 || clib__memcmp(image, signature, sizeof(signature)) != 0 || image[8] != 0 || image[9] != 0 || image[10] != 0 || image[11] != 13 || clib__memcmp(image + 12, "IHDR", 4) != 0)
     {
         return FALSE;
     }
-    width = ((uint)image[16] << 24) | ((uint)image[17] << 16) | ((uint)image[18] << 8) | image[19];
-    height = ((uint)image[20] << 24) | ((uint)image[21] << 16) | ((uint)image[22] << 8) | image[23];
+    width = ((uint64)image[16] << 24) | ((uint64)image[17] << 16) | ((uint64)image[18] << 8) | image[19];
+    height = ((uint64)image[20] << 24) | ((uint64)image[21] << 16) | ((uint64)image[22] << 8) | image[23];
     return width >= 1 && width <= 2048 && height >= 1 && height <= 512;
 }
 
 /**
  * @brief Finds JPEG image dimensions without reading beyond any marker segment.
  * @param const ubyte* image -> decoded image bytes
- * @param size_t length -> available image bytes
+ * @param uint64 length -> available image bytes
  * @return boole -> TRUE when a complete frame header gives an allowed banner size
  */
-static boole _server_admin_internal__is_jpeg_banner_header_valid(const ubyte* image, size_t length)
+static boole _server_admin_internal__is_jpeg_banner_header_valid(const ubyte *image, uint64 length)
 {
-    size_t offset = 2;
-    uint marker = 0;
-    uint segment_length = 0;
-    uint width = 0;
-    uint height = 0;
+    uint64 offset = 2;
+    uint64 marker = 0;
+    uint64 segment_length = 0;
+    uint64 width = 0;
+    uint64 height = 0;
 
     if (length < 4 || image[0] != 0xff || image[1] != 0xd8 || image[length - 2] != 0xff || image[length - 1] != 0xd9)
     {
@@ -390,19 +401,19 @@ static boole _server_admin_internal__is_jpeg_banner_header_valid(const ubyte* im
         {
             return FALSE;
         }
-        segment_length = ((uint)image[offset] << 8) | image[offset + 1];
+        segment_length = ((uint64)image[offset] << 8) | image[offset + 1];
         if (segment_length < 2 || segment_length > length - offset)
         {
             return FALSE;
         }
         if ((marker >= 0xc0 && marker <= 0xc3) || (marker >= 0xc5 && marker <= 0xc7) || (marker >= 0xc9 && marker <= 0xcb) || (marker >= 0xcd && marker <= 0xcf))
         {
-            if (segment_length < 8 || image[offset + 7] == 0 || segment_length != 8 + 3 * (uint)image[offset + 7])
+            if (segment_length < 8 || image[offset + 7] == 0 || segment_length != 8 + 3 * (uint64)image[offset + 7])
             {
                 return FALSE;
             }
-            height = ((uint)image[offset + 3] << 8) | image[offset + 4];
-            width = ((uint)image[offset + 5] << 8) | image[offset + 6];
+            height = ((uint64)image[offset + 3] << 8) | image[offset + 4];
+            width = ((uint64)image[offset + 5] << 8) | image[offset + 6];
             return width >= 1 && width <= 2048 && height >= 1 && height <= 512;
         }
         offset += segment_length;
@@ -413,22 +424,22 @@ static boole _server_admin_internal__is_jpeg_banner_header_valid(const ubyte* im
 /**
  * @brief Checks the WebP container and reads its image or canvas dimensions.
  * @param const ubyte* image -> decoded image bytes
- * @param size_t length -> available image bytes
+ * @param uint64 length -> available image bytes
  * @return boole -> TRUE when the header describes an allowed banner size
  */
-static boole _server_admin_internal__is_webp_banner_header_valid(const ubyte* image, size_t length)
+static boole _server_admin_internal__is_webp_banner_header_valid(const ubyte *image, uint64 length)
 {
-    uint container_length = 0;
-    uint chunk_length = 0;
-    uint width = 0;
-    uint height = 0;
+    uint64 container_length = 0;
+    uint64 chunk_length = 0;
+    uint64 width = 0;
+    uint64 height = 0;
 
     if (length < 20 || clib__memcmp(image, "RIFF", 4) != 0 || clib__memcmp(image + 8, "WEBP", 4) != 0)
     {
         return FALSE;
     }
-    container_length = (uint)image[4] | ((uint)image[5] << 8) | ((uint)image[6] << 16) | ((uint)image[7] << 24);
-    chunk_length = (uint)image[16] | ((uint)image[17] << 8) | ((uint)image[18] << 16) | ((uint)image[19] << 24);
+    container_length = (uint64)image[4] | ((uint64)image[5] << 8) | ((uint64)image[6] << 16) | ((uint64)image[7] << 24);
+    chunk_length = (uint64)image[16] | ((uint64)image[17] << 8) | ((uint64)image[18] << 16) | ((uint64)image[19] << 24);
     if (container_length != length - 8 || chunk_length > length - 20 || (chunk_length & 1) > length - 20 - chunk_length)
     {
         return FALSE;
@@ -439,8 +450,8 @@ static boole _server_admin_internal__is_webp_banner_header_valid(const ubyte* im
         {
             return FALSE;
         }
-        width = ((uint)image[26] | ((uint)image[27] << 8)) & 0x3fff;
-        height = ((uint)image[28] | ((uint)image[29] << 8)) & 0x3fff;
+        width = ((uint64)image[26] | ((uint64)image[27] << 8)) & 0x3fff;
+        height = ((uint64)image[28] | ((uint64)image[29] << 8)) & 0x3fff;
     }
     else if (clib__memcmp(image + 12, "VP8L", 4) == 0)
     {
@@ -448,8 +459,8 @@ static boole _server_admin_internal__is_webp_banner_header_valid(const ubyte* im
         {
             return FALSE;
         }
-        width = 1 + (((uint)image[21] | ((uint)image[22] << 8)) & 0x3fff);
-        height = 1 + ((uint)(image[22] >> 6) | ((uint)image[23] << 2) | ((uint)(image[24] & 0x0f) << 10));
+        width = 1 + (((uint64)image[21] | ((uint64)image[22] << 8)) & 0x3fff);
+        height = 1 + ((uint64)(image[22] >> 6) | ((uint64)image[23] << 2) | ((uint64)(image[24] & 0x0f) << 10));
     }
     else if (clib__memcmp(image + 12, "VP8X", 4) == 0)
     {
@@ -457,8 +468,8 @@ static boole _server_admin_internal__is_webp_banner_header_valid(const ubyte* im
         {
             return FALSE;
         }
-        width = 1 + ((uint)image[24] | ((uint)image[25] << 8) | ((uint)image[26] << 16));
-        height = 1 + ((uint)image[27] | ((uint)image[28] << 8) | ((uint)image[29] << 16));
+        width = 1 + ((uint64)image[24] | ((uint64)image[25] << 8) | ((uint64)image[26] << 16));
+        height = 1 + ((uint64)image[27] | ((uint64)image[28] << 8) | ((uint64)image[29] << 16));
     }
     else
     {
@@ -477,16 +488,16 @@ boole server_admin__is_server_banner_valid(cstring banner)
     cstring alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     cstring payload = NULL_POINTER;
     cstring symbol = NULL_POINTER;
-    ubyte* image = NULL_POINTER;
+    ubyte *image = NULL_POINTER;
     int64 banner_length = 0;
-    size_t prefix_length = 0;
-    size_t payload_length = 0;
-    size_t decoded_length = 0;
-    size_t bytes_written = 0;
-    size_t index = 0;
-    uint image_type = 0;
-    uint padding = 0;
-    uint last_value = 0;
+    uint64 prefix_length = 0;
+    uint64 payload_length = 0;
+    uint64 decoded_length = 0;
+    size_t bytes_written = 0; // mbedTLS writes through a size_t pointer.
+    uint64 index = 0;
+    uint64 image_type = 0;
+    uint64 padding = 0;
+    uint64 last_value = 0;
     boole valid = FALSE;
 
     if (banner == NULL_POINTER)
@@ -522,7 +533,7 @@ boole server_admin__is_server_banner_valid(cstring banner)
         return FALSE;
     }
     payload = banner + prefix_length;
-    payload_length = (size_t)banner_length - prefix_length;
+    payload_length = (uint64)banner_length - prefix_length;
     if (payload_length < 4 || payload_length % 4 != 0)
     {
         return FALSE;
@@ -542,7 +553,7 @@ boole server_admin__is_server_banner_valid(cstring banner)
         {
             return FALSE;
         }
-        last_value = (uint)(symbol - alphabet);
+        last_value = (uint64)(symbol - alphabet);
     }
     if ((padding == 1 && (last_value & 3) != 0) || (padding == 2 && (last_value & 15) != 0))
     {
@@ -553,12 +564,12 @@ boole server_admin__is_server_banner_valid(cstring banner)
     {
         return FALSE;
     }
-    image = (ubyte*)malloc(decoded_length);
+    image = (ubyte *)malloc(decoded_length);
     if (image == NULL_POINTER)
     {
         return FALSE;
     }
-    if (mbedtls_base64_decode(image, decoded_length, &bytes_written, (const ubyte*)payload, payload_length) == 0 && bytes_written == decoded_length)
+    if (mbedtls_base64_decode(image, decoded_length, &bytes_written, (const ubyte *)payload, payload_length) == 0 && bytes_written == decoded_length)
     {
         if (image_type == 1)
         {
@@ -585,7 +596,7 @@ boole server_admin__is_server_banner_valid(cstring banner)
  *
  * @return boole -> FALSE when the allocation failed (the slot is then empty)
  */
-boole server_admin__set_icon_base64(icon_t* icon, cstring base64)
+boole server_admin__set_icon_base64(icon_t *icon, cstring base64)
 {
     uint64 length = 0;
 
@@ -597,13 +608,13 @@ boole server_admin__set_icon_base64(icon_t* icon, cstring base64)
         length = ICON_MAX_LENGTH - 1;
     }
 
-    icon->base64 = (char*)memorymanager__allocate(length + 1, MEMALLOC_ICON); // zeroed, so the copy ends in a NUL
+    icon->base64 = (char *)memorymanager__allocate(length + 1, MEMALLOC_ICON); // zeroed, so the copy ends in a NUL
     if (icon->base64 == NULL_POINTER)
     {
         return FALSE;
     }
 
-    clib__copy_memory((void*)base64, (void*)icon->base64, length, length + 1);
+    clib__copy_memory((void *)base64, (void *)icon->base64, length, length + 1);
 
     return TRUE;
 }
@@ -615,7 +626,7 @@ boole server_admin__set_icon_base64(icon_t* icon, cstring base64)
  *
  * @return void
  */
-void server_admin__free_icon_base64(icon_t* icon)
+void server_admin__free_icon_base64(icon_t *icon)
 {
     if (icon->base64 != NULL_POINTER)
     {
@@ -624,7 +635,6 @@ void server_admin__free_icon_base64(icon_t* icon)
     }
 }
 
-
 /**
  * @brief Records an admin-password attempt when the address has not used its five-per-minute limit.
  * @param char* ip_address -> address making the attempt
@@ -632,9 +642,10 @@ void server_admin__free_icon_base64(icon_t* icon)
  * @return boole -> TRUE when allowed; FALSE when limited or tracking storage is unavailable
  * @attention The caller holds the clients write lock.
  */
-boole server_admin__allow_admin_password_attempt(char* ip_address, uint64 now)
+boole server_admin__allow_admin_password_attempt(char *ip_address, uint64 now)
 {
-    admin_password_attempts_t* available = NULL_POINTER;
+    admin_password_attempts_t *entry = NULL_POINTER;
+    admin_password_attempts_t *available = NULL_POINTER;
     uint64 i;
 
     if (g_admin_password_attempts == NULL_POINTER)
@@ -647,7 +658,7 @@ boole server_admin__allow_admin_password_attempt(char* ip_address, uint64 now)
     }
     for (i = 0; i < ADMIN_PASSWORD_RATE_BUCKETS; i++)
     {
-        admin_password_attempts_t* entry = &g_admin_password_attempts[i];
+        entry = &g_admin_password_attempts[i];
         if (entry->attempts == 0 || now < entry->window_started_ms || now - entry->window_started_ms >= ADMIN_PASSWORD_ATTEMPT_WINDOW_MS)
         {
             if (available == NULL_POINTER)
@@ -677,5 +688,3 @@ boole server_admin__allow_admin_password_attempt(char* ip_address, uint64 now)
     available->attempts = 1;
     return TRUE;
 }
-
-

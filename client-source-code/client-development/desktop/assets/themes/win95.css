@@ -1,0 +1,1264 @@
+/* Windows 95: square grey controls with raised borders and inset white fields. */
+/* Keep native layout and scrolling rules separate from the colors below. */
+window
+{
+    pad: 0;
+}
+.column
+{
+    display: flex;
+    flex-direction: column;
+}
+.row
+{
+    display: flex;
+    flex-direction: row;
+}
+#shell
+{
+    size: 0x0;
+}
+#toolbar
+{
+    align-items: center;
+    size: 0x34;
+    pad: 2 8;
+    gap: 4;
+}
+#workspace
+{
+    size: 0x0;
+    pad: 6;
+}
+#sidebar
+{
+    size: 220x0;
+    pad: 4;
+    gap: 4;
+}
+#conversation
+{
+    size: 0x0;
+    pad: 0 0 0 4;
+    gap: 4;
+}
+#channel-path
+{
+    size: 0x24;
+    pad: 2 6;
+}
+#member-list
+{
+    height: 100%;
+    overflow-y: auto;
+    pad: 3 2;
+}
+.member
+{
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    size: 0x22;
+    pad: 0 3;
+    gap: 3;
+}
+.voice-icon, .voice-icon-active, .voice-icon-disabled, .voice-icon-muted
+{
+    size: 16x16;
+    font-color: #5686b3;
+}
+.member-name
+{
+    size: 0x20;
+}
+.member-state
+{
+    size: 48x20;
+}
+.spacer
+{
+    size: 0x0;
+}
+#chat-tabs
+{
+    align-items: center;
+    size: 0x30;
+    pad: 0 4;
+    gap: 2;
+}
+#channel-title
+{
+    size: 144x24;
+    pad: 3 6;
+}
+#messages
+{
+    size: 0x0;
+    overflow-y: auto;
+    pad: 10 12;
+    gap: 6;
+}
+#composer
+{
+    size: 0x80;
+    pad: 4;
+    gap: 4;
+}
+#composer-actions
+{
+    width: 100%;
+    height: 24;
+    gap: 4;
+    align-items: center;
+}
+#composer-spacer
+{
+    width: 100%;
+    height: 18;
+    text-align: right;
+}
+#message-input, #message-edit-text
+{
+    size: 0x32;
+    pad: 4 6;
+}
+#send-button
+{
+    size: 64x24;
+    pad: 2 6;
+}
+#status-bar
+{
+    size: 0x22;
+    pad: 0 8;
+    gap: 6;
+}
+#connection-status
+{
+    size: 0x18;
+    pad: 0;
+}
+#received-status
+{
+    size: 180x18;
+    pad: 0;
+    text-align: right;
+}
+input
+{
+    size: 0x24;
+    pad: 2 6;
+}
+button
+{
+    size: 0x24;
+    pad: 2 6;
+}
+.menu-button
+{
+    size: 0x24;
+    pad: 2 8;
+}
+.panel
+{
+    position: absolute;
+    top: 36;
+    size: 380x460;
+    z-index: 10;
+}
+#connection-panel
+{
+    left: 12;
+    width: 420;
+    height: 260;
+}
+#connection-panel .panel-body
+{
+    pad: 8;
+    gap: 4;
+}
+#identity-panel
+{
+    right: 12;
+    width: 540;
+    height: 0;
+}
+#bookmarks-panel
+{
+    left: 120;
+    height: 500;
+}
+#server-info-panel
+{
+    right: 12;
+    width: 480;
+    height: 500;
+}
+#server-info-features
+{
+    display: block;
+    width: 100%;
+}
+.audio-device-select, .server-key-type
+{
+    width: 100%;
+    select-style: list;
+    height: 24;
+    pad: 2 6;
+    select-rows: 8;
+}
+.server-info-row
+{
+    width: 100%;
+    height: 24;
+    gap: 6;
+    align-items: center;
+}
+.server-info-label
+{
+    width: 100%;
+}
+.server-info-value
+{
+    width: 100%;
+    text-align: right;
+}
+#server-info-footer
+{
+    width: 100%;
+    height: 76;
+    pad: 6 9;
+    gap: 4;
+}
+#server-info-footer button, #server-info-result
+{
+    width: 100%;
+}
+#bookmark-list
+{
+    display: block;
+    width: 100%;
+    height: 180;
+    overflow-y: auto;
+}
+.bookmark-row, .bookmark-row:hover
+{
+    width: 100%;
+    height: 24;
+}
+.bookmark-buttons
+{
+    width: 100%;
+    height: 24;
+    gap: 4;
+}
+.bookmark-buttons button
+{
+    width: 100%;
+}
+#bookmark-name, #bookmark-address
+{
+    width: 100%;
+}
+#join-panel
+{
+    left: 228;
+    height: 180;
+}
+#settings-panel
+{
+    right: 12;
+}
+#audio-panel
+{
+    right: 12;
+    height: 560;
+}
+#audio-footer
+{
+    width: 100%;
+    height: 64;
+    pad: 6 9;
+    gap: 4;
+}
+#audio-footer button, #audio-result
+{
+    width: 100%;
+}
+#input-meter-track
+{
+    width: 100%;
+    height: 10;
+}
+#input-meter-fill
+{
+    width: 100%;
+    height: 10;
+}
+#member-panel
+{
+    left: 228;
+    height: 280;
+}
+#action-panel, #confirm-panel, #move-panel
+{
+    right: 12;
+    height: 250;
+    z-index: 12;
+}
+#move-panel
+{
+    height: 400;
+}
+#notice-panel
+{
+    right: 12;
+    top: 290;
+    height: 210;
+    z-index: 14;
+}
+#action-value
+{
+    width: 100%;
+}
+#move-destinations, .destination
+{
+    width: 100%;
+}
+#move-destinations
+{
+    gap: 3;
+}
+#channels-panel
+{
+    right: 12;
+    width: 640;
+    height: 520;
+}
+#channel-editor-layout
+{
+    width: 100%;
+    height: 100%;
+    pad: 7;
+    gap: 8;
+}
+#channel-editor-sidebar
+{
+    width: 170;
+    height: 100%;
+    gap: 4;
+}
+#channel-editor-list
+{
+    width: 100%;
+    height: 100%;
+    overflow-y: auto;
+}
+#channel-editor-main
+{
+    width: 100%;
+    height: 100%;
+    gap: 6;
+}
+#channel-editor-fields
+{
+    width: 100%;
+    height: 100%;
+    pad: 0 5 4 0;
+    gap: 5;
+    overflow-y: auto;
+}
+#channel-editor-fields input, #channel-editor-fields textarea
+{
+    width: 100%;
+}
+#channel-edit-description
+{
+    height: 48;
+    pad: 4;
+}
+.channel-editor-item, #channel-add, #channel-remove, #channel-save
+{
+    width: 100%;
+}
+.channel-editor-item
+{
+    height: 24;
+}
+.channel-number-row
+{
+    width: 100%;
+    height: 24;
+    align-items: center;
+    gap: 6;
+}
+.channel-number-row label
+{
+    width: 100%;
+}
+#channel-editor-fields .channel-number-row input
+{
+    width: 100;
+}
+#channel-form-result
+{
+    width: 100%;
+}
+#channel-delete-panel
+{
+    right: 24;
+    top: 60;
+    height: 250;
+    z-index: 15;
+}
+#member-list, #messages, .panel-body, #channel-editor-fields, #channel-editor-list
+{
+    display: block;
+    scrollbar-size: 8;
+}
+#conversation-tabs
+{
+    width: 100%;
+    height: 24;
+    gap: 2;
+    overflow-x: hidden;
+}
+.tab-close, .tab-scroll
+{
+    size: 20x24;
+    pad: 1;
+}
+.conversation-tab
+{
+    gap: 0;
+    align-items: center;
+    size: 144x24;
+    pad: 0 1;
+}
+.audio-buttons
+{
+    size: 0x24;
+    gap: 4;
+}
+.audio-buttons button
+{
+    width: 50%;
+    height: 24;
+    pad: 2 6;
+}
+slider
+{
+    size: 0x20;
+    width: 100%;
+    slider-track-height: 4;
+    slider-thumb-width: 13;
+}
+.panel-title
+{
+    gap: 4;
+    align-items: center;
+    size: 0x28;
+    pad: 2 4 2 8;
+}
+.panel-heading
+{
+    app-region: drag;
+    size: 0x20;
+}
+.close-button
+{
+    size: 22x22;
+    pad: 0;
+}
+.panel-body
+{
+    size: 0x0;
+    overflow-y: auto;
+    pad: 8;
+    gap: 4;
+}
+#connection-buttons
+{
+    size: 0x24;
+    gap: 4;
+}
+checkbox
+{
+    size: 0x22;
+    checkbox-track-width: 18;
+    checkbox-track-height: 18;
+    checkbox-track-border-width: 1;
+    checkbox-mark-width: 2;
+}
+.hidden
+{
+    display: none;
+}
+#shell, #workspace, #sidebar, #conversation, #messages, .spacer, .panel-body
+{
+    height: 100%;
+}
+#conversation, .brand, .panel-heading, #message-input, #connection-status, .member-name
+{
+    width: 100%;
+}
+#channel-path, input, .panel-body button
+{
+    width: 100%;
+}
+#server-address, #game-executable, #username, #identity-string, #identity-bits, #channel-password
+{
+    width: 100%;
+}
+#connection-buttons button
+{
+    width: 120;
+}
+.channel-row
+{
+    width: 100%;
+    size: 0x22;
+    pad: 0 3;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 3;
+}
+#chat-history
+{
+    width: 100%;
+    gap: 8;
+}
+.chat-message
+{
+    width: 100%;
+    gap: 2;
+}
+.chat-text
+{
+    width: 100%;
+}
+#server-keys
+{
+    width: 100%;
+    gap: 4;
+}
+.server-key-row
+{
+    height: 24;
+}
+#server-path
+{
+    width: 100%;
+}
+#attachment-panel
+{
+    width: 560;
+    height: 480;
+    left: 228;
+    top: 44;
+}
+#attachment-picker
+{
+    width: 100%;
+    height: 260;
+    overflow-y: auto;
+}
+#identity-file-panel
+{
+    width: 540;
+    height: 460;
+    left: 238;
+    top: 48;
+}
+#identity-file-picker
+{
+    width: 100%;
+    height: 240;
+    overflow-y: auto;
+}
+.identity-actions, #identity-file-actions
+{
+    gap: 4;
+}
+.identity-actions button, #identity-file-actions button
+{
+    width: 120;
+}
+#chat-settings-panel
+{
+    width: 480;
+    height: 440;
+    left: 228;
+    top: 36;
+}
+#chat-settings-panel .panel-body
+{
+    overflow-y: auto;
+}
+.attachment-actions
+{
+    gap: 4;
+}
+.attachment-actions button
+{
+    width: 120;
+}
+#chat-scale
+{
+    height: 22;
+    width: 100%;
+}
+#picture-button, #file-button
+{
+    width: 64;
+}
+.tree-label
+{
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    size: 0x0;
+    gap: 0;
+}
+.tree-name
+{
+    size: 0x20;
+    width: 100%;
+}
+.tree-playing
+{
+    height: 38;
+}
+.tree-song
+{
+    size: 0x16;
+}
+.tree-icon, .tree-flag, .tree-channel-symbol, .tree-icon-space
+{
+    size: 16x16;
+}
+.tree-unread, .tree-unread-space
+{
+    size: 16x16;
+}
+.tree-more
+{
+    size: 22x18;
+}
+.tab-label, .tab-label:hover
+{
+    width: 100%;
+    height: 18;
+    pad: 1 4;
+}
+#sidebar-divider
+{
+    height: 100%;
+    pad: 0;
+    width: 4;
+}
+.context-menu
+{
+    display: block;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 220;
+    height: 398;
+    overflow-y: auto;
+    z-index: 100;
+    item-height: 22;
+}
+#member-volume-panel
+{
+    left: 240;
+    height: 220;
+}
+.context-menu.hidden
+{
+    display: none;
+}
+#context-submenu
+{
+    z-index: 101;
+}
+#chat-settings-footer
+{
+    height: 72;
+    pad: 4 6;
+    gap: 4;
+}
+#chat-settings-result
+{
+    height: 28;
+    width: 100%;
+}
+#chat-settings-buttons
+{
+    height: 24;
+    gap: 4;
+}
+#chat-settings-buttons .spacer
+{
+    width: 100%;
+}
+#chat-settings-save
+{
+    width: 116;
+    height: 24;
+}
+#chat-settings-close
+{
+    width: 76;
+    height: 24;
+}
+.theme-file-fields
+{
+    display: flex;
+    height: 68;
+    gap: 4;
+}
+.theme-file-fields.hidden
+{
+    display: none;
+}
+.web-toolbar-icon
+{
+    width: 24;
+    height: 24;
+    pad: 0;
+    background-size: fill;
+}
+#local-settings-button
+{
+    width: 24;
+    height: 24;
+    background-image: url("assets/icons/settings-win95.png");
+}
+#audio-settings-button
+{
+    width: 24;
+    height: 24;
+    background-image: url("assets/icons/audio-win95.png");
+}
+#server-info-button
+{
+    width: 24;
+    height: 24;
+    background-image: url("assets/icons/server-win95.png");
+}
+#profile-button
+{
+    width: 24;
+    height: 24;
+    background-image: url("assets/icons/profile-win95.png");
+}
+#toolbar-spacer
+{
+    width: 100%;
+    height: 1;
+}
+#audio-dock
+{
+    height: 52;
+    gap: 4;
+    pad: 4 3;
+}
+#view-caption
+{
+    height: 22;
+    pad: 3 7;
+    width: 100%;
+}
+.chat-empty
+{
+    width: 100%;
+    pad: 20 10;
+    gap: 6;
+}
+.connection-address-row, .connection-key-heading, .server-key-row
+{
+    width: 100%;
+    gap: 4;
+}
+.connection-host, .server-key-value
+{
+    width: 100%;
+}
+.connection-port
+{
+    width: 90;
+}
+.connection-host input, .connection-port input
+{
+    width: 100%;
+}
+.server-key-number
+{
+    width: 18;
+    pad: 4 0;
+}
+.server-key-type
+{
+    width: 110;
+    height: 24;
+}
+.server-key-remove
+{
+    width: 64;
+    height: 24;
+}
+#server-key-add
+{
+    width: 100;
+}
+#connection-footer, #identity-footer
+{
+    width: 100%;
+    height: 64;
+    pad: 5 8;
+    gap: 4;
+}
+#channels-button
+{
+    width: 24;
+    height: 24;
+    background-image: url("assets/icons/channels-win95.png");
+}
+#idle-button
+{
+    width: 24;
+    height: 24;
+    background-image: url("assets/icons/away-win95.png");
+}
+#toolbar-hint
+{
+    width: 140;
+    height: 18;
+    text-align: right;
+}
+#message-edit-panel
+{
+    right: 12;
+    height: 290;
+}
+#message-edit-text
+{
+    width: 100%;
+    height: 140;
+}
+.chat-message-heading
+{
+    width: 100%;
+    height: 22;
+    gap: 4;
+    align-items: center;
+}
+.chat-edit-button
+{
+    width: 20;
+    height: 20;
+    pad: 0;
+    visibility: hidden;
+}
+#chat-format-controls
+{
+    width: 100%;
+    height: 24;
+    gap: 4;
+    align-items: center;
+}
+#chat-font
+{
+    width: 60%;
+    height: 24;
+    pad: 2 6;
+    select-style: list;
+    select-rows: 8;
+    popup-width: 250;
+    option-height: 22;
+}
+#chat-color-button
+{
+    width: 32;
+    height: 24;
+}
+#chat-font-size
+{
+    width: 35%;
+    height: 18;
+    slider-thumb-width: 18;
+    slider-track-height: 3;
+}
+#chat-font-size-label
+{
+    width: 44;
+    height: 20;
+    pad: 1 0;
+}
+#chat-format-reset
+{
+    width: 65;
+    height: 24;
+}
+#chat-color-panel
+{
+    width: 330;
+    height: 290;
+    right: 12;
+}
+#chat-color-picker
+{
+    width: 100%;
+    height: 190;
+}
+#chat-color-value
+{
+    width: 100%;
+    height: 24;
+    gap: 4;
+}
+#chat-color-hex-field
+{
+    width: 110;
+    height: 24;
+}
+#chat-color-hex
+{
+    width: 100%;
+    height: 24;
+}
+#chat-color-value button
+{
+    width: 70;
+    height: 24;
+}
+#tree-caption
+{
+    pad: 0 2;
+}
+#toolbar-trim
+{
+    height: 2;
+    width: 100%;
+}
+.tree-channel-symbol
+{
+    background-image: url("assets/icons/channel.png");
+    background-size: fill;
+}
+#connection-footer
+{
+    height: 64;
+    pad: 4 6;
+    gap: 4;
+}
+
+/* System font aliases use installed fonts and keep the existing platform fallback. */
+window, label, button, input, textarea, checkbox, select, filepicker
+{
+    font-family: Desktop;
+    font-size: 12;
+    font-color: #000000;
+}
+window, #workspace, #toolbar, #sidebar, #composer, #status-bar, #chat-tabs, #audio-dock
+{
+    background-color: #c0c0c0;
+    radius: 0;
+}
+#toolbar
+{
+    border: 2px outset #c0c0c0;
+}
+#toolbar-trim
+{
+    background-color: #808080;
+    height: 1;
+}
+#workspace
+{
+    pad: 6;
+}
+#sidebar
+{
+    pad: 4;
+    gap: 4;
+}
+#conversation
+{
+    pad: 0 0 0 4;
+    gap: 4;
+}
+#channel-path, .panel-title
+{
+    background-color: #555555;
+    font-color: #ffffff;
+    radius: 0;
+}
+#channel-path
+{
+    height: 24;
+    pad: 2 6;
+    font-family: Desktop-Bold;
+    font-size: 12;
+}
+.panel-title
+{
+    pad: 2 4 2 8;
+}
+.panel-heading
+{
+    font-family: Desktop-Bold;
+    font-size: 12;
+    font-color: #ffffff;
+}
+.section, .local .member-name, .local .tree-name, .notice-title
+{
+    font-family: Desktop-Bold;
+}
+.notice-title
+{
+    font-size: 16;
+}
+.muted, .tree-song, .member-state, #tree-caption, #audio-status, #connection-status, #received-status, #toolbar-hint, #composer-spacer, #chat-font-size-label
+{
+    font-color: #404040;
+    font-size: 11;
+}
+#member-list, #messages, #bookmark-list, #channel-editor-list, input, textarea, .audio-device-select, .server-key-type, #chat-font
+{
+    background-color: #ffffff;
+    border: 2px inset #c0c0c0;
+    radius: 0;
+    font-color: #000000;
+}
+#member-list, #messages, .panel-body, #channel-editor-fields, #channel-editor-list
+{
+    scrollbar-size: 14;
+    scrollbar-track: #e0e0e0;
+    scrollbar-thumb: #808080;
+}
+#chat-tabs, #composer, #status-bar, .panel, .context-menu
+{
+    border: 2px outset #c0c0c0;
+    radius: 0;
+}
+.panel, .context-menu
+{
+    background-color: #c0c0c0;
+    font-color: #000000;
+    box-shadow: 1 1 0 #000000;
+}
+.context-menu
+{
+    accent-color: #e0e0e0;
+    item-height: 22;
+}
+button, .menu-button, #send-button, #picture-button, #file-button, #chat-color-button, #chat-format-reset, .close-button, .tab-scroll, .tab-close
+{
+    background-color: #c0c0c0;
+    font-color: #000000;
+    border: 2px outset #c0c0c0;
+    radius: 0;
+    box-shadow: 1 1 0 #000000;
+}
+button:hover, .menu-button:hover, #send-button:hover, .close-button:hover
+{
+    background-color: #d0d0d0;
+}
+button:pressed, .menu-button:pressed, #send-button:pressed, .close-button:pressed
+{
+    background-color: #c0c0c0;
+    border: 2px inset #c0c0c0;
+    box-shadow: 0 0 0 #00000000;
+}
+button:disabled, #send-button:disabled, .tab-scroll:disabled, .web-toolbar-icon:disabled
+{
+    background-color: #c0c0c0;
+    font-color: #808080;
+    border: 2px outset #c0c0c0;
+    box-shadow: 0 0 0 #00000000;
+}
+.web-toolbar-icon:disabled
+{
+    opacity: 0.45;
+}
+.close-button
+{
+    width: 22;
+    height: 22;
+    pad: 0;
+    font-family: Desktop-Bold;
+    font-size: 16;
+}
+input:focus, textarea:focus
+{
+    border: 2px inset #808080;
+}
+.audio-device-select, .server-key-type, #chat-font
+{
+    popup-background: #ffffff;
+    popup-blur: 0;
+    popup-duration: 0;
+    option-color: #000000;
+    option-current-background: #d6d6d6;
+    option-current-color: #202020;
+    option-hover-background: #e5e5e5;
+    option-hover-color: #202020;
+}
+.audio-device-select:hover, .server-key-type:hover
+{
+    border: 2px inset #808080;
+}
+checkbox
+{
+    checkbox-track-width: 14;
+    checkbox-track-height: 14;
+    checkbox-track-radius: 0;
+    checkbox-track-background: #ffffff;
+    checkbox-track-border-width: 2;
+    checkbox-track-border-style: inset;
+    checkbox-track-border-color: #c0c0c0;
+    checkbox-mark-color: #000000;
+    checkbox-mark-width: 2;
+}
+slider, #chat-font-size
+{
+    background-color: #808080;
+    accent-color: #c0c0c0;
+    slider-fill: #606060;
+    radius: 0;
+}
+#input-meter-track
+{
+    background-color: #808080;
+    border: 2px inset #c0c0c0;
+    radius: 0;
+}
+#input-meter-fill
+{
+    background-color: #008000;
+    radius: 0;
+}
+.channel-row, .member, .bookmark-row, .channel-editor-item
+{
+    background-color: #ffffff;
+    font-color: #000000;
+    border-width: 0;
+    box-shadow: 0 0 0 #00000000;
+    radius: 0;
+}
+.channel-row:hover, .channel-row:pressed, .member:hover, .member:pressed, .bookmark-row:hover, .channel-editor-item:hover
+{
+    background-color: #e0e0e0;
+    font-color: #000000;
+}
+.channel-row.selected, .channel-row.selected:hover, .channel-row.selected:pressed, .channel-row.marked, .channel-row.marked:hover, .channel-row.marked:pressed, .member.marked, .member.marked:hover, .member.marked:pressed, .bookmark-row.selected, .bookmark-row.selected:hover, .channel-editor-item.selected, .channel-editor-item.selected:hover
+{
+    background-color: #d6d6d6;
+    font-color: #202020;
+}
+.channel-row.selected .tree-name, .channel-row.marked .tree-name, .member.marked .tree-name, .member.marked .member-name, .member.marked .tree-song, .member.marked .tree-playing
+{
+    font-color: #202020;
+}
+#channel-title, .conversation-tab
+{
+    background-color: #c0c0c0;
+    border: 2px outset #c0c0c0;
+    font-color: #000000;
+    radius: 0;
+}
+.conversation-tab.selected, .conversation-tab.selected:hover
+{
+    background-color: #e0e0e0;
+    border: 2px outset #c0c0c0;
+}
+.tab-label, .tab-label:hover, .conversation-tab.selected .tab-label, .conversation-tab.selected .tab-label:hover, .chat-edit-button
+{
+    background-color: transparent;
+    font-color: #000000;
+    border-width: 0;
+    box-shadow: 0 0 0 #00000000;
+}
+#sidebar-divider
+{
+    background-color: #c0c0c0;
+    border: 1px outset #c0c0c0;
+    box-shadow: 0 0 0 #00000000;
+    radius: 0;
+}
+#sidebar-divider:hover, #sidebar-divider:pressed
+{
+    background-color: #808080;
+}
+.chat-sender
+{
+    font-family: Desktop-Bold;
+    font-color: #404040;
+}
+.chat-text
+{
+    font-color: #000000;
+}
+.tree-playing
+{
+    font-color: #008000;
+}
+.voice-icon-active
+{
+    font-color: #399cfa;
+}
+.voice-icon-disabled, .voice-icon-muted
+{
+    font-color: #7795b0;
+}
+
+/* Keep the close control inside the compact tab border. */
+.tab-close
+{
+    height: 18;
+    pad: 0;
+    font-size: 10;
+    border-width: 0;
+    box-shadow: 0 0 0 #00000000;
+}
+
+/* Keep message entry and its Send button on one row. */
+#composer-input-row
+{
+    width: 100%;
+    height: 32;
+    gap: 4;
+    align-items: center;
+}
+#chat-format-toggle
+{
+    width: 64;
+    height: 24;
+    pad: 2 6;
+}
+
+#microphone-button
+{
+    width: 100%;
+}
+#audio-disabled-warning
+{
+    size: 170x20;
+    gap: 4;
+    pad: 0;
+}
+#audio-disabled-label
+{
+    size: 66x18;
+    font-size: 11;
+    pad: 0;
+}
+#enable-audio-button
+{
+    size: 100x20;
+    font-size: 11;
+    pad: 1 4;
+}

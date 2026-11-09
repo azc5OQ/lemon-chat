@@ -7,7 +7,7 @@ In: dom-shim, crypto vendors, utils, encoding, audio-opus-glue (for custom_typeo
 Out: ui.js and sounds.js (their `var UI` / `var g_sound_effects` would shadow the shim - see
 dom-shim.js), plus all webaudio/wasm/worker files - voice stays in the WebView.
 
-Paths starting with `node/` resolve next to this script, everything else under ../../browser/src.
+Paths starting with `node/` resolve next to this script, everything else under ../../browser/main.
 """
 import base64
 import os
@@ -16,7 +16,7 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DEV = os.path.normpath(os.path.join(HERE, "..", "..", "browser"))
-SRC = os.path.join(DEV, "src")
+SRC = os.path.join(DEV, "main")
 TEMPLATE = os.path.join(HERE, "node-template.js")
 OUT = os.path.join(HERE, "bundle.js")
 

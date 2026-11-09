@@ -38,7 +38,7 @@ single wrong bit anywhere in the prime walk shows up as a mismatch. this is how 
 - `rsa-ops.js` covers the runtime side: the wasm `rsa_keygen__modpow` export (and the
   crt combine the client glue builds on it) must equal jsbn's doPublic/doPrivate for
   every golden key, deterministic messages, and the edge values 0, 1, n-1, base>n
-- `crypto-compat.js` covers the vendor removal: `scripts/app/rsa-crypto.js` replaced
+- `crypto-compat.js` covers the vendor removal: `scripts/app/crypto/rsa-crypto.js` replaced
   jsbn.js, rsa.js, rsa-sign.js, cryptico.js and biginteger.js, and has to stay
   wire-compatible with them or a new client cannot read what an old one wrote. it loads
   both stacks into one vm and compares the base64/hex conversions, the public key
@@ -46,4 +46,12 @@ single wrong bit anywhere in the prime walk shows up as a mismatch. this is how 
 - `legacy-reference/` holds the replaced libraries (jsbn, rsa, rsa-sign, cryptico,
   biginteger, plus the sha1 and md5 they alone consumed). they are no longer part of
   the client, they are kept only as the oracle the tests above compare against - do not
-  wire them back into `src/`
+  wire them back into `main/`
+
+## running the checks
+
+The normal browser build runs compare-wasm for all three sizes, then rsa-ops and
+crypto-compat before publishing any module. For an isolated build, run
+`node ../build.cjs` from this test directory with Zig 0.15.2 available, then
+`node compare-wasm.js vectors-2048.json`. Set `LEMON_RSA_WASM` to test a candidate
+binary in another directory; without it, these tests read `../build/rsa_keygen.wasm`.

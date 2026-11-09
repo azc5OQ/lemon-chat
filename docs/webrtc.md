@@ -12,9 +12,9 @@ Lemon Chat always uses WebSocket for its main chat connection. Audio and video c
 
 Audio and video must also be enabled on the server and in the user's channel.
 
-![Server voice and channels settings with the audio and video connections selector set to WebSocket only.](images/server-audio-video-settings.jpg)
+![Voice and video page in Server administration with the audio and video connections selector set to WebSocket only.](images/server-audio-video-settings.jpg)
 
-*In **Server Settings → server settings**, scroll to **voice and channels** and choose **audio and video connections**. This example uses WebSocket only. Select **save server settings** at the bottom of the tab to apply the choice.*
+*In **Server administration → Voice and video**, choose **audio and video connections**. This example uses WebSocket only. Select **Save all settings** in the fixed footer to apply the choice.*
 
 When both methods are allowed, the browser tries the user's preferred method first. After about ten seconds without a connection, it also tries the other method. If the preferred connection becomes available later, the client returns to it. Video follows the current audio connection choice.
 
@@ -98,7 +98,7 @@ The [encryption guide](encryption.md#audio-and-video-connections) explains which
 - [Server video DataChannel](../server-source-code/main/video_webrtc.c)
 - [Audio delivery between clients](../server-source-code/main/core/audio_channel.c)
 - [Video delivery between clients](../server-source-code/main/core/video_channel.c)
-- [Browser audio connection choice and retries](../client-source-code/client-development/browser/src/scripts/app/audio-transport.js)
-- [Browser video connection choice](../client-source-code/client-development/browser/src/scripts/app/video-transport.js)
-- [Browser STUN configuration](../client-source-code/client-development/browser/src/scripts/app/dispatch.js)
-- [Browser WebRTC setup](../client-source-code/client-development/browser/src/scripts/app/voice.js)
+- [Browser audio connection choice and retries](../client-source-code/client-development/browser/main/scripts/app/audio/audio-transport.js)
+- [Browser video connection choice](../client-source-code/client-development/browser/main/scripts/app/video/video-transport.js)
+- [Browser STUN configuration](../client-source-code/client-development/browser/main/scripts/app/msg/dispatch.js)
+- [Browser WebRTC setup](../client-source-code/client-development/browser/main/scripts/app/audio/voice.js)

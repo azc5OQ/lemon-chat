@@ -1,6 +1,6 @@
 # Lemon Chat documentation
 
-Start with the guide for what you are trying to do. Screenshots use the browser client's Default theme on a demonstration server, so displayed names and values are examples.
+Start with the guide for what you are trying to do. Screenshots use demonstration data, so displayed names and values are examples.
 
 ## Use and administer Lemon Chat
 
@@ -8,6 +8,8 @@ Start with the guide for what you are trying to do. Screenshots use the browser 
 - [Server settings](server-settings.md): understand the options and limits that apply to everyone on a server.
 - [Permissions](permissions.md#what-negate-skip-and-grant-are-for): start with server groups and channel groups, then learn what power, protection, Negate, Skip and Grant are for.
 - [Channels](channels.md): create and join channels, use audio and video, and understand maintainers and channel keys.
+- [Themes](themes.md): see the available themes, choose one and learn how to create your own.
+- [Native desktop client](desktop-client.md): see the experimental desktop application, connect to a server and understand its current limits.
 
 ## Understand the system
 

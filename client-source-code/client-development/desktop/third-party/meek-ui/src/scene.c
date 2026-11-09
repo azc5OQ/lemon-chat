@@ -688,6 +688,8 @@ static void _scene_internal__recon_transfer(gui_node_t* old, gui_node_t* new_n)
     new_n->has_background_color_override = old->has_background_color_override;
     new_n->font_color_override           = old->font_color_override;
     new_n->has_font_color_override       = old->has_font_color_override;
+    stdlib__memcpy(new_n->font_family_override, old->font_family_override, sizeof(new_n->font_family_override));
+    new_n->font_size_override = old->font_size_override;
     stdlib__memcpy(new_n->background_image_override, old->background_image_override, sizeof(new_n->background_image_override));
     new_n->has_background_image_override = old->has_background_image_override;
 }

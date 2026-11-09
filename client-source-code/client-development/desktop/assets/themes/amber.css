@@ -1,12 +1,9 @@
-/* Amber: warm glass, gold accents and animated selects inspired by Lemon Loader. */
+/* Amber: warm dark surfaces with channels above the chat. */
 window
 {
     font-family: Desktop;
     pad: 0;
-    background: radial-gradient(circle at 15% 5%, #302719, #11120f);
-    font-size: 14;
-    background-color: #1b1915;
-    font-color: #e9e2d5;
+    font-size: 12;
 }
 .column
 {
@@ -25,12 +22,9 @@ window
 #toolbar
 {
     align-items: center;
-    background: linear-gradient(to bottom, #2d271ce8, #191710ed);
-    size: 0x44;
-    pad: 6 10;
-    gap: 3;
-    background-color: #1b1915;
-    border-width: 0;
+    size: 0x34;
+    pad: 2 8;
+    gap: 4;
 }
 #workspace
 {
@@ -38,15 +32,14 @@ window
 }
 #sidebar
 {
-    size: 286x0;
-    pad: 10 8 8 10;
-    gap: 6;
-    background-color: #1b1915;
+    size: 220x0;
+    pad: 4;
+    gap: 4;
 }
 #conversation
 {
     size: 0x0;
-    pad: 0 10 0 4;
+    pad: 0 0 0 4;
 }
 .section
 {
@@ -54,66 +47,46 @@ window
 }
 .muted
 {
-    font-color: #a69b85;
     font-size: 12;
 }
 #channel-path
 {
     font-family: Desktop-Bold;
-    radius: 6;
-    size: 0x30;
-    pad: 6 5;
-    background-color: #1b1915;
-    border-width: 0;
-    font-color: #e9e2d5;
-    font-size: 14;
+    size: 0x24;
+    pad: 2 6;
+    font-size: 12;
 }
 #member-list
 {
     height: 100%;
     overflow-y: auto;
-    pad: 5 2;
-    background-color: #181713;
-    border: 1px solid #494237;
-    radius: 3;
+    pad: 3 2;
 }
 .member
 {
     display: flex;
     flex-direction: row;
     align-items: center;
-    size: 0x30;
-    pad: 3 4;
-    gap: 5;
+    size: 0x22;
+    pad: 0 3;
+    gap: 3;
 }
 .voice-icon, .voice-icon-active, .voice-icon-disabled, .voice-icon-muted
 {
-    size: 20x20;
-    font-color: #95876b;
-}
-.voice-icon-active
-{
-    font-color: #efcf46;
-}
-.voice-icon-disabled, .voice-icon-muted
-{
-    font-color: #c97163;
+    size: 16x16;
 }
 .member-name
 {
-    size: 0x24;
-    font-color: #e9e2d5;
+    size: 0x20;
 }
 .local .member-name
 {
     font-family: Desktop-Bold;
-    font-color: #f3e5c5;
 }
 .member-state
 {
-    size: 60x24;
+    size: 48x20;
     font-size: 11;
-    font-color: #7ec890;
 }
 .spacer
 {
@@ -122,185 +95,133 @@ window
 #chat-tabs
 {
     align-items: center;
-    size: 0x42;
-    pad: 5 0;
-    gap: 3;
-    background-color: #1b1915;
+    size: 0x30;
+    pad: 0 4;
+    gap: 2;
 }
 #channel-title
 {
-    size: 190x28;
-    pad: 5 10;
-    background-color: #12110e;
-    font-color: #ede9dc;
-    border: 1px solid #76623d;
+    size: 144x24;
+    pad: 3 6;
 }
 #messages
 {
     size: 0x0;
     overflow-y: auto;
-    pad: 14 18;
-    gap: 12;
-    background-color: #181713;
-    border-width: 0;
-    radius: 0;
+    pad: 10 12;
+    gap: 6;
 }
 .notice-title
 {
-    font-color: #e9e2d5;
-    font-size: 20;
+    font-size: 16;
     font-family: Desktop;
 }
 #composer
 {
-    size: 0x96;
-    pad: 8 0;
-    gap: 8;
-    background-color: #1b1915;
+    size: 0x80;
+    pad: 4;
+    gap: 4;
 }
 #composer-actions
 {
     width: 100%;
-    height: 34;
-    gap: 8;
+    height: 24;
+    gap: 4;
     align-items: center;
 }
 #composer-spacer
 {
     width: 100%;
-    height: 20;
+    height: 18;
     font-size: 12;
-    font-color: #a69b85;
     text-align: right;
 }
 #message-input, #message-edit-text
 {
-    font-color: #ede9dc;
-    size: 0x38;
-    pad: 8 10;
-    background-color: #1c1a15;
-    border: 1px solid #494237;
-    radius: 3;
+    size: 0x32;
+    pad: 4 6;
 }
 #send-button
 {
     font-family: Desktop-Bold;
-    size: 80x30;
-    pad: 5 10;
-    background-color: #bd984d;
-    font-color: #211a0d;
-    border-width: 0;
-    radius: 3;
+    size: 64x24;
+    pad: 2 6;
 }
 #status-bar
 {
     font-size: 12;
-    size: 0x25;
-    pad: 3 10;
-    gap: 12;
-    background-color: #1b1915;
-}
-#transport-warning
-{
-    size: 0x48;
-    pad: 6 10;
-    font-size: 12;
-    font-color: #ffe3a5;
-    background-color: #4b3a19;
+    size: 0x22;
+    pad: 0 8;
+    gap: 6;
 }
 #connection-status
 {
-    size: 0x20;
-    pad: 2 0;
-    font-color: #a69b85;
+    size: 0x18;
+    pad: 0;
     font-size: 12;
-    border-width: 0;
 }
 #received-status
 {
-    size: 220x20;
-    pad: 2 0;
-    font-color: #a69b85;
+    size: 180x18;
+    pad: 0;
     font-size: 12;
     text-align: right;
-    border-width: 0;
 }
 input
 {
-    height: 32;
-    font-color: #ede9dc;
+    height: 24;
     transition: all 120 ease-out;
-    size: 0x34;
-    pad: 7 9;
-    background-color: #1c1a15;
-    border: 1px solid #494237;
-    radius: 3;
+    size: 0x24;
+    pad: 2 6;
 }
 button
 {
-    height: 30;
-    background: linear-gradient(to bottom, #393020, #272117);
+    height: 24;
     transition: all 120 ease-out;
-    size: 0x32;
-    pad: 6 10;
-    background-color: #24221c;
-    font-color: #e9e2d5;
-    border: 1px solid #494237;
-    radius: 3;
-}
-button:hover
-{
-    border: 1px solid #b69a4b;
-    background: linear-gradient(to bottom, #594428, #3c2e1b);
-    font-color: #fff0b0;
-    background-color: #302b22;
+    size: 0x24;
+    pad: 2 6;
 }
 .menu-button
 {
-    border-width: 0;
-    background: linear-gradient(to bottom, #292319, #211d16);
-    border: 1px solid #463923;
-    size: 0x30;
-    pad: 5 10;
-    radius: 3;
-    background-color: #1b1915;
-    font-color: #e9e2d5;
-}
-.menu-button:hover
-{
-    background: linear-gradient(to bottom, #514023, #332816);
-    border: 1px solid #b69a4b;
-    background-color: #302b22;
+    size: 0x24;
+    pad: 2 8;
 }
 .panel
 {
     position: absolute;
-    top: 48;
-    size: 430x580;
+    top: 36;
+    size: 380x460;
     z-index: 10;
-    box-shadow: 0 10 26 #00000088;
     blur: 6;
     appear: 160 ease-out;
-    border: 1px solid #494237;
-    radius: 8;
-    background-color: #24221c;
 }
 #connection-panel
 {
-    left: 20;
-    width: 680;
-    height: 720;
+    left: 12;
+    width: 420;
+    height: 260;
+}
+#connection-panel .panel-body
+{
+    pad: 8;
+    gap: 4;
+}
+#identity-panel
+{
+    right: 12;
+    width: 540;
+    height: 0;
 }
 #bookmarks-panel
 {
-    left: 140;
-    height: 620;
+    left: 120;
+    height: 500;
 }
 #server-info-panel
 {
-    right: 20;
-    width: 560;
-    height: 650;
+    right: 12;
+    width: 480;
+    height: 500;
 }
 #server-info-features
 {
@@ -310,44 +231,25 @@ button:hover
 .audio-device-select, .server-key-type
 {
     width: 100%;
-    font-color: #e4dac0;
-    accent-color: #d4bd76;
     transition: all 140 ease-out;
     select-style: wheel;
     select-rows: 5;
     option-height: 34;
     option-padding: 14;
-    option-color: #c2bba7;
-    option-current-color: #ffe690;
-    option-current-background: #5c431844;
-    option-hover-color: #fff0b0;
-    option-hover-background: #f1d17b20;
-    popup-background: #19150fef;
     popup-dim: #08070570;
-    popup-blur: 5;
     popup-align: center;
     popup-width: 420;
-    popup-duration: 160;
     popup-reveal: fade;
     popup-stagger: 18;
     scroll-smooth: 120;
-    height: 34;
-    pad: 7 9;
-    border: 1px solid #494237;
-    radius: 3;
-    background-color: #1c1a15;
-}
-.audio-device-select:hover, .server-key-type:hover
-{
-    background-color: #282113;
-    accent-color: #ffeaa2;
-    border: 1px solid #e1bf72;
+    height: 24;
+    pad: 2 6;
 }
 .server-info-row
 {
     width: 100%;
-    height: 32;
-    gap: 12;
+    height: 24;
+    gap: 6;
     align-items: center;
 }
 .server-info-label
@@ -362,9 +264,9 @@ button:hover
 #server-info-footer
 {
     width: 100%;
-    height: 112;
-    pad: 12 18;
-    gap: 8;
+    height: 76;
+    pad: 6 9;
+    gap: 4;
 }
 #server-info-footer button, #server-info-result
 {
@@ -374,29 +276,23 @@ button:hover
 {
     display: block;
     width: 100%;
-    height: 220;
+    height: 180;
     overflow-y: auto;
-    background-color: #12110e;
-    border: 1px solid #786445;
 }
 .bookmark-row, .bookmark-row:hover
 {
     width: 100%;
-    height: 32;
-    border-width: 0;
-    radius: 0;
-    background-color: #12110e;
+    height: 24;
 }
 .bookmark-row.selected, .bookmark-row.selected:hover
 {
-    background-color: #4c3a18;
     font-family: Desktop-Bold;
 }
 .bookmark-buttons
 {
     width: 100%;
-    height: 36;
-    gap: 8;
+    height: 24;
+    gap: 4;
 }
 .bookmark-buttons button
 {
@@ -408,24 +304,24 @@ button:hover
 }
 #join-panel
 {
-    left: 280;
-    height: 220;
+    left: 228;
+    height: 180;
 }
 #settings-panel
 {
-    right: 20;
+    right: 12;
 }
 #audio-panel
 {
-    right: 20;
-    height: 700;
+    right: 12;
+    height: 560;
 }
 #audio-footer
 {
     width: 100%;
-    height: 96;
-    pad: 12 18;
-    gap: 8;
+    height: 64;
+    pad: 6 9;
+    gap: 4;
 }
 #audio-footer button, #audio-result
 {
@@ -435,34 +331,32 @@ button:hover
 {
     width: 100%;
     height: 10;
-    background-color: #3f3524;
 }
 #input-meter-fill
 {
     width: 100%;
     height: 10;
-    background-color: #477b54;
 }
 #member-panel
 {
-    left: 280;
-    height: 460;
+    left: 228;
+    height: 280;
 }
 #action-panel, #confirm-panel, #move-panel
 {
-    right: 20;
-    height: 310;
+    right: 12;
+    height: 250;
     z-index: 12;
 }
 #move-panel
 {
-    height: 500;
+    height: 400;
 }
 #notice-panel
 {
-    right: 20;
-    top: 390;
-    height: 260;
+    right: 12;
+    top: 290;
+    height: 210;
     z-index: 14;
 }
 #action-value
@@ -475,47 +369,45 @@ button:hover
 }
 #move-destinations
 {
-    gap: 6;
+    gap: 3;
 }
 #channels-panel
 {
-    right: 20;
-    width: 760;
-    height: 650;
+    right: 12;
+    width: 640;
+    height: 520;
 }
 #channel-editor-layout
 {
     width: 100%;
     height: 100%;
-    pad: 14;
-    gap: 16;
+    pad: 7;
+    gap: 8;
 }
 #channel-editor-sidebar
 {
-    width: 200;
+    width: 170;
     height: 100%;
-    gap: 8;
+    gap: 4;
 }
 #channel-editor-list
 {
     width: 100%;
     height: 100%;
     overflow-y: auto;
-    border: 1px solid #786445;
-    background-color: #12110e;
 }
 #channel-editor-main
 {
     width: 100%;
     height: 100%;
-    gap: 12;
+    gap: 6;
 }
 #channel-editor-fields
 {
     width: 100%;
     height: 100%;
-    pad: 0 10 8 0;
-    gap: 10;
+    pad: 0 5 4 0;
+    gap: 5;
     overflow-y: auto;
 }
 #channel-editor-fields input, #channel-editor-fields textarea
@@ -524,10 +416,8 @@ button:hover
 }
 #channel-edit-description
 {
-    height: 64;
-    pad: 8;
-    background-color: #12110e;
-    border: 1px solid #786445;
+    height: 48;
+    pad: 4;
 }
 .channel-editor-item, #channel-add, #channel-remove, #channel-save
 {
@@ -535,25 +425,18 @@ button:hover
 }
 .channel-editor-item
 {
-    height: 34;
-    border-width: 0;
-    background-color: #12110e;
-}
-.channel-editor-item:hover
-{
-    background-color: #12110e;
+    height: 24;
 }
 .channel-editor-item.selected, .channel-editor-item.selected:hover
 {
-    background-color: #4c3a18;
     font-family: Desktop-Bold;
 }
 .channel-number-row
 {
     width: 100%;
-    height: 34;
+    height: 24;
     align-items: center;
-    gap: 12;
+    gap: 6;
 }
 .channel-number-row label
 {
@@ -569,9 +452,9 @@ button:hover
 }
 #channel-delete-panel
 {
-    right: 40;
-    top: 90;
-    height: 310;
+    right: 24;
+    top: 60;
+    height: 250;
     z-index: 15;
 }
 /* Meek's block div owns scrolling; its flex layout does not calculate scroll extents. */
@@ -579,123 +462,85 @@ button:hover
 {
     display: block;
     scrollbar-size: 7;
-    scrollbar-track: #1d1912;
-    scrollbar-thumb: #7a653b;
 }
 #conversation-tabs
 {
     width: 100%;
-    height: 34;
-    gap: 4;
+    height: 24;
+    gap: 2;
     overflow-x: hidden;
 }
 .tab-close, .tab-scroll
 {
-    size: 22x28;
-    pad: 3;
-    border-width: 0;
-    background-color: transparent;
+    size: 20x24;
+    pad: 1;
 }
 .conversation-tab
 {
     gap: 0;
     align-items: center;
-    size: 190x32;
-    pad: 0 2;
-    background-color: #302b22;
-    border: 1px solid #302b22;
-    radius: 3;
+    size: 144x24;
+    pad: 0 1;
 }
 .conversation-tab.selected, .conversation-tab.selected:hover
 {
     font-family: Desktop-Bold;
-    background-color: #181713;
-    border: 1px solid #494237;
-    font-color: #e1bf72;
-}
-button:disabled
-{
-    background-color: #242017;
-    border: 1px solid #433c2c;
-    background: linear-gradient(to bottom, #29261e, #26231c);
-    font-color: #847b66;
 }
 .audio-buttons
 {
-    size: 0x32;
-    gap: 6;
+    size: 0x24;
+    gap: 4;
 }
 .audio-buttons button
 {
     width: 50%;
-    height: 32;
-    pad: 5 8;
+    height: 24;
+    pad: 2 6;
 }
 slider
 {
-    size: 0x24;
+    size: 0x20;
     width: 100%;
     slider-track-height: 5;
-    background-color: #786445;
     slider-thumb-width: 16;
-    slider-fill: #d1aa3c;
-    accent-color: #efcf46;
 }
 .panel-title
 {
-    gap: 6;
+    gap: 4;
     align-items: center;
-    background: linear-gradient(to right, #5b4427, #30251a);
-    radius: 8;
-    size: 0x36;
-    pad: 4 5 4 14;
-    background-color: #30291e;
-    font-color: #f3e5c5;
+    size: 0x28;
+    pad: 2 4 2 8;
 }
 .panel-heading
 {
     font-family: Desktop-Bold;
     app-region: drag;
-    size: 0x24;
-    font-color: #f3e5c5;
-    font-size: 14;
+    size: 0x20;
+    font-size: 12;
 }
 .close-button
 {
-    size: 28x28;
-    pad: 2;
+    size: 22x22;
+    pad: 0;
     font-family: Desktop;
-    font-size: 20;
-    background-color: transparent;
-    font-color: #a69b85;
-    border-width: 0;
-    radius: 3;
-}
-.close-button:hover
-{
-    background-color: #b74c4c;
-    font-color: #ffffff;
-    border-width: 0;
+    font-size: 16;
 }
 .panel-body
 {
     size: 0x0;
     overflow-y: auto;
-    pad: 16;
-    gap: 8;
+    pad: 8;
+    gap: 4;
 }
 #connection-buttons
 {
-    size: 0x36;
-    gap: 8;
+    size: 0x24;
+    gap: 4;
 }
 checkbox
 {
-    size: 0x32;
-    checkbox-track-background: #211d13;
-    checkbox-track-border-color: #8b713d;
-    checkbox-mark-color: #efcf46;
-    font-size: 14;
+    size: 0x22;
+    font-size: 12;
 }
 .hidden
 {
@@ -727,60 +572,45 @@ checkbox
 .channel-row
 {
     width: 100%;
-    border-width: 0;
-    size: 0x30;
-    pad: 3 4;
-    background-color: #181713;
-    font-color: #e9e2d5;
-}
-.channel-row:hover, .channel-row:pressed, .member:hover, .member:pressed
-{
-    background-color: #302a20;
+    size: 0x22;
+    pad: 0 3;
 }
 .channel-row.selected
 {
     font-family: Desktop-Bold;
-    radius: 4;
-    background-color: #3d3423;
-    font-color: #e9e2d5;
 }
 .channel-row.selected:hover, .channel-row.selected:pressed
 {
     font-family: Desktop-Bold;
-    radius: 4;
-    background-color: #58462a;
-    font-color: #e9e2d5;
 }
 #chat-history
 {
     width: 100%;
-    gap: 14;
+    gap: 8;
 }
 .chat-message
 {
     width: 100%;
-    gap: 4;
+    gap: 2;
 }
 .chat-sender
 {
     font-family: Desktop-Bold;
-    font-color: #e1bf72;
-    font-size: 14;
+    font-size: 12;
 }
 .chat-text
 {
     width: 100%;
-    font-color: #e9e2d5;
-    font-size: 15;
+    font-size: 13;
 }
 #server-keys
 {
     width: 100%;
-    gap: 8;
+    gap: 4;
 }
 .server-key-row
 {
-    height: 34;
+    height: 24;
 }
 #server-path
 {
@@ -794,49 +624,38 @@ checkbox
     checkbox-track-border-width: 1;
     checkbox-track-border-style: solid;
     checkbox-mark-width: 2;
-    checkbox-track-background: #211d13;
-    checkbox-track-border-color: #8b713d;
-    checkbox-mark-color: #efcf46;
-    font-size: 14;
-}
-checkbox:hover
-{
-    checkbox-track-border-color: #d4b75a;
+    font-size: 12;
 }
 
 #attachment-panel
 {
-    width: 640;
-    height: 590;
-    left: 285;
-    top: 60;
+    width: 560;
+    height: 480;
+    left: 228;
+    top: 44;
 }
 #attachment-picker
 {
     width: 100%;
-    height: 330;
+    height: 260;
     overflow-y: auto;
-    background-color: #12110e;
-    border: 1px solid #786445;
 }
 #identity-file-panel
 {
-    width: 620;
-    height: 570;
-    left: 295;
-    top: 70;
+    width: 540;
+    height: 460;
+    left: 238;
+    top: 48;
 }
 #identity-file-picker
 {
     width: 100%;
-    height: 310;
+    height: 240;
     overflow-y: auto;
-    background-color: #12110e;
-    border: 1px solid #786445;
 }
 .identity-actions, #identity-file-actions
 {
-    gap: 8;
+    gap: 4;
 }
 .identity-actions button, #identity-file-actions button
 {
@@ -844,10 +663,10 @@ checkbox:hover
 }
 #chat-settings-panel
 {
-    width: 540;
-    height: 660;
-    left: 285;
-    top: 48;
+    width: 480;
+    height: 440;
+    left: 228;
+    top: 36;
 }
 #chat-settings-panel .panel-body
 {
@@ -855,7 +674,7 @@ checkbox:hover
 }
 .attachment-actions
 {
-    gap: 8;
+    gap: 4;
 }
 .attachment-actions button
 {
@@ -863,12 +682,12 @@ checkbox:hover
 }
 #chat-scale
 {
-    height: 30;
+    height: 22;
     width: 100%;
 }
 #picture-button, #file-button
 {
-    width: 76;
+    width: 64;
 }
 
 .tree-label
@@ -881,38 +700,34 @@ checkbox:hover
 }
 .tree-name
 {
-    size: 0x24;
+    size: 0x20;
     width: 100%;
-    font-color: #d2c8ad;
     font-size: 13;
 }
 .local .tree-name
 {
-    font-color: #fff2c7;
     font-family: Desktop-Bold;
 }
 .tree-playing
 {
-    height: 44;
+    height: 38;
 }
 .tree-song
 {
-    size: 0x18;
+    size: 0x16;
     font-size: 12;
-    font-color: #aaa18a;
 }
 .tree-icon, .tree-flag, .tree-channel-symbol, .tree-icon-space
 {
-    size: 18x18;
-    font-color: #b3a06a;
+    size: 16x16;
 }
 .tree-unread, .tree-unread-space
 {
-    size: 18x18;
+    size: 16x16;
 }
 .tree-more
 {
-    size: 24x20;
+    size: 22x18;
     font-size: 11;
 }
 .channel-row
@@ -920,43 +735,28 @@ checkbox:hover
     display: flex;
     flex-direction: row;
     align-items: center;
-    gap: 4;
-    size: 0x30;
-    pad: 3 4;
-    background-color: #181713;
-    font-color: #e9e2d5;
+    gap: 3;
+    size: 0x22;
+    pad: 0 3;
 }
 .member
 {
-    size: 0x30;
-    pad: 3 4;
-    gap: 5;
+    size: 0x22;
+    pad: 0 3;
+    gap: 3;
 }
 
 .tab-label, .tab-label:hover
 {
     width: 100%;
-    height: 32;
-    pad: 6;
-    background-color: transparent;
-    border-width: 0;
-}
-.tab-close:hover
-{
-    background-color: #623d2d;
+    height: 18;
+    pad: 1 4;
 }
 #sidebar-divider
 {
     height: 100%;
     pad: 0;
-    radius: 0;
-    border-width: 0;
     width: 4;
-    background-color: #1b1915;
-}
-#sidebar-divider:hover, #sidebar-divider:pressed
-{
-    background-color: #494237;
 }
 .context-menu
 {
@@ -964,23 +764,17 @@ checkbox:hover
     position: absolute;
     left: 0;
     top: 0;
-    width: 250;
+    width: 220;
     height: 398;
     overflow-y: auto;
     z-index: 100;
-    background-color: #211c14f2;
-    box-shadow: 0 8 20 #00000080;
     blur: 5;
-    font-color: #e5d8b8;
-    accent-color: #514022;
-    border: 1px solid #494237;
-    radius: 3;
-    item-height: 30;
+    item-height: 22;
 }
 #member-volume-panel
 {
-    left: 300;
-    height: 270;
+    left: 240;
+    height: 220;
 }
 .context-menu.hidden
 {
@@ -991,89 +785,46 @@ checkbox:hover
     z-index: 101;
 }
 
-button:pressed
-{
-    background: linear-gradient(to bottom, #302513, #4b391b);
-    border: 1px solid #e1bf72;
-    background-color: #3d3423;
-}
-input:focus
-{
-    background-color: #211d12;
-    border: 1px solid #e1bf72;
-}
-
 label, button, input, textarea, checkbox, select, filepicker
 {
     font-family: Desktop;
-    font-size: 14;
+    font-size: 12;
 }
 
 .panel-title
 {
-    background: linear-gradient(to right, #5b4427, #30251a);
-    radius: 8;
-    size: 0x36;
-    pad: 4 5 4 14;
-    background-color: #30291e;
-    font-color: #f3e5c5;
+    size: 0x28;
+    pad: 2 4 2 8;
 }
 .panel-heading
 {
-    size: 0x24;
-    font-color: #f3e5c5;
-    font-size: 14;
+    size: 0x20;
+    font-size: 12;
 }
 
 option
 {
     font-family: Desktop;
-    font-size: 14;
-    font-color: #c2bba7;
-    background-color: transparent;
-    radius: 7;
-    border: 1px solid #00000000;
+    font-size: 12;
     transition: all 120 ease-out;
-}
-option:hover
-{
-    font-color: #fff0b0;
-    background-color: #efd27d20;
-    border: 1px solid #e4bd5960;
-}
-option:checked
-{
-    font-color: #ffe690;
-}
-
-/* Radial border colours follow the pointer through the application's drawing adapter. */
-.panel, .context-menu, #member-list, #messages
-{
-    border: 1px solid #53452e;
-    border-color: radial-gradient(circle 150px at 0px 0px, #ffe9a0, #53452e);
-}
-input, .audio-device-select
-{
-    border: 1px solid #655133;
-    border-color: radial-gradient(circle 100px at 0px 0px, #f4d96b, #655133);
 }
 
 /* Keep save controls visible while the appearance form scrolls. */
 #chat-settings-footer
 {
-    height: 96;
-    pad: 8 12;
-    gap: 6;
+    height: 72;
+    pad: 4 6;
+    gap: 4;
 }
 #chat-settings-result
 {
-    height: 36;
+    height: 28;
     width: 100%;
 }
 #chat-settings-buttons
 {
-    height: 30;
-    gap: 8;
+    height: 24;
+    gap: 4;
 }
 #chat-settings-buttons .spacer
 {
@@ -1082,30 +833,29 @@ input, .audio-device-select
 #chat-settings-save
 {
     width: 116;
-    height: 30;
+    height: 24;
 }
 #chat-settings-close
 {
     width: 76;
-    height: 30;
+    height: 24;
 }
 .theme-file-fields
 {
     display: flex;
-    height: 90;
-    gap: 8;
+    height: 68;
+    gap: 4;
 }
 .theme-file-fields.hidden
 {
     display: none;
 }
 
-/* Web client toolbar artwork: browser/src/styles/theme-hybrid.style. */
-/* Browser SVGs rasterized at 2x; transparent padding centers each 18 px icon. */
+/* Rounded browser icon geometry, with desktop-owned SVG and 4x PNG assets. */
 .web-toolbar-icon
 {
-    width: 32;
-    height: 30;
+    width: 24;
+    height: 24;
     pad: 0;
     background-size: fill;
 }
@@ -1113,33 +863,37 @@ input, .audio-device-select
 /* Browser source: #local-settings-button; geometry retained. */
 #local-settings-button
 {
-    width: 32;
-    height: 30;
+    width: 24;
+    height: 24;
     background-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAAA8CAYAAADWibxkAAAACXBIWXMAAAsTAAALEwEAmpwYAAAB+0lEQVRoge3XwW7TQBAA0EGifANw5kwR3OEHoPwA/QskJCQI3Gg9E64Nd1D4CkCCA8I7m6Cee2t2l17KqZGCtGiCHZyImBwostfzpJWtta3VjO2dXQCllFJKKaWUUkopdT5OzN7VCdMdOUKXBKZtx2i9pbhojEb6IXXBvrzhGadLwf9OwjT5JDgmLgN2lk69xfe/jotE5JCKYOiaZzr649v+l43pSMaCpgmMD889+KLJWNA0oetfwN/nAPzuLX0ojkVA+AVSFpi266qAN/vXy3s99+87xlfzJDEN3Kh/DxJKgllJQF4GH/PBlmcarvnch3IdUvAt71+ZmOx2+Lx/udrvLD6v++edpWfQBjHGC97SA2fp0abteIyPvaXZIuARfnSMB87Sp0oCZnJf+YyMIWNB0wST7f63MmiyXWia0PUExOIX8IwvNm6WMsf4ozo5OoOvVybNmTNZVnmmmb/AOoeHvUsTg7ekyfnqdZnk6hc++ATaKOaDrXlw1XUA41T6qqWtrgw6S2/iu95FaCPP+LZmOTtcvV8WPlIB5jtGqQQjvAtt5Q3uLL9JHDlL46W+VFZ6pc5vhoJuh0m3w+vnABo7xq/Lc0CLJ7lNrN3hFeUNUhfn9R173tJZJfgzz/Q0mS3uJiRYWQUej/s3OxW4UkoppZRSSimlFDTUTwJOVSpg/7F8AAAAAElFTkSuQmCC");
+    background-image: url("assets/icons/settings.png");
 }
 
 /* Browser source: --menu-icon-volume; geometry retained. */
 #audio-settings-button
 {
-    width: 32;
-    height: 30;
+    width: 24;
+    height: 24;
     background-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAAA8CAYAAADWibxkAAAACXBIWXMAAAsTAAALEwEAmpwYAAACyklEQVRoge2Zz2sTQRTHnz8iVvAgehTBg54qvYkUai/Wg1eTQ0QQRNOZpAqeCrVSUbQ97FavwfYiKJJTDG1noodebES7ZpvsJioo8QcxW8V/oGJHptlNFm1qC2I3u+8Dw8K+vXy/++btm7cACIIgCIIgCIIgCIIg/wGhJUOLeaVbXiFoVLW7Byxd1SxdFZauTECQqBbGe2p5xaqLV0VNV+fWet5MRXaYnN4zOZnQMrFd0M5YuhKr6cqSI349BhicdpucCrkMTh+nUpFt0G58yqkdNV2974iuvlJE5fnYRjIg1zCBkWFoJz4XxvZbeeWFI/79s1viKu0TufTgugyQlJ8m9hqcVlZMYORHeTpxGLyG0JKhL3m118qPn2guJWrpyldH/PzUkLgYOSbCfZ0tDdC0WEimvby675cY6TEYXa5vBfIQvIalKxPuvf37ykzGRfRU14r4tQyQxc5+0xkhYIs7ZnCStg34WZhOHAEvUdPVudWEy/2evB1tCP+rAYxOOvu9yMhld0yKluLrBtE74EUDFvg1MRw/2VgXwkf/EL+WAcUpusdg9GO94NHvr9Pnd7vjJicvbYPegRcNyKUHVxW8XgMkJidnnCwwef+AO2Ywet2JeaoY1v6hAfJbbzJq2Vkw446VsvHjDXOy8TD40QCJycgju/n5Bi4WsgMHW2WHrwwwGB21M2BZNkPO/crsuZ1NA+hN8LEBY44B7p4gl7rS4WqNb0CgtwAjCfCjAbOzI9tNRhdtA6ZbFUGDk9PgRwOKM/Rsq7fs/gyWnvQfAr81Qm8ysX0GI9WWjRCj8/bbfwt+b4VNTi+5Ywbv72ociBgZh6AdhkxGMs5hqJwlnRCk43BxhvY2hyL0AbTtQGRu4wORlbrAyQf7FLjkqeK3CSOxIQjuUJSkxcjIVmhnqkEeizsE+seIQ6B/jSEIgiAIgiAIgiAIApvNL77vxM9geLQjAAAAAElFTkSuQmCC");
+    background-image: url("assets/icons/audio.png");
 }
 
 /* Browser source: --menu-icon-server-info; geometry retained. */
 #server-info-button
 {
-    width: 32;
-    height: 30;
+    width: 24;
+    height: 24;
     background-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAAA8CAYAAADWibxkAAAACXBIWXMAAAsTAAALEwEAmpwYAAACNklEQVRoge2Z30tUQRTHh/6A+kPa6K3tRfKhvVbP1x89pJukDykI7kMgrj0krrozF8QI7MWH6AdkZOBTgQvZVmw6dwv7Ayxt5kL4J3jkTNviWqYE9zrrnA98YefOwLnn7MzcM2cYIwiCIAiCIAiCIAjif4nWxBUV8gUditU4hTaiKm9jNhFVeZuSfEeHApIQ2orCwGO2oH798/CtMgWflkZiFdqoBeI5swUVijK+1PvFO+BnUrEKbZhZEIoyszkAQz0t8OFVDjYq41BezJm2MwHounoevpbysCULdWEbn2N/f8dFmC/egEdB9p/CMTi26QIw3Ntad3x9eaT+O9d7yfS/eTx05A0PxzZdAPo70rC5NtEwA7Dd1542/Q/udcIPyQ91Hsfg2KYLgJ9JwdPZbEMAnsxm3dkD/Jrygx7MTXRCfsA72V8BLUUJX+rL6zEYve3FKrRhlogUJWYLWoqppLLAPSowW/j5cea0kmIlwVT4LdpkNgFw95SqFlNaBpfjlAqDs2jruP0liH3gtNSfxbnYl0C1mLJuCWyvTp5Rkr9LbhMUK1ZtglrySac/g9r1REgdkAqPDXrwsNBlUuITnQqrvwTg2f2bDYchPBw5E4C+9nSD87+Pw7f8C24ch4cPKIjgcycKItev/VkSW18edack5mNRtLvFFENNUfRlzrSd2QP8GGVnAKR4kdTFyPfKdC0AfIG5fDWmJc8wm4jCwEvichSvxKxzniAIgiAIgiAIgiBYU7ELjJWkRd/6QagAAAAASUVORK5CYII=");
+    background-image: url("assets/icons/server.png");
 }
 
 /* Browser source: --menu-icon-username; geometry retained. */
 #profile-button
 {
-    width: 32;
-    height: 30;
+    width: 24;
+    height: 24;
     background-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAAA8CAYAAADWibxkAAAACXBIWXMAAAsTAAALEwEAmpwYAAADNElEQVRoge2YT0hUQRzHpw5qncpjeCi9Rvjnoogk5HtKVJAUJWGHEArK6tDFDkmXXN2ZNQ8dQkjXiIrQOgRthEgQGrY7v6csHRbK1GRmzX3roUtmTMzTt+7aiq4Yvn3OB4bf7mPfMN/v/GbmN4uQQqFQKBQKhUKhUCgUiq1mYqg1j1PcxCl+zikZXIq4ST5HbmdmzFfKgXzjQMQ/jeKJWQOXILcSDXYUcYpjtuCJ4Tbx6fVtK64YgeeY4T2E3AijeMAW2uNtFOfqjogz2mEr9uCLydnwArmNyfG2/QzIbynwjb/ZEr66BfquWwYwwAtx6NyH3AQPdVbYM3zv1sm0BsjniSwIknLkJvhON2AyaQkE+nbgEpAwSvrtGe7FqZug3+2boISP+wpTjsERz9IxOOJJPQah8yByK7MGLuGUfE1XCDGKv0Shsxi5nYmh1jxm4EuckmdWKQz4qfweiXTlbvfYsgbT0E+YVA/IiHYacaO23gR9IQ66sKJRW4+cTiTSlcsBX7DSHkiQUxJd3hBHGeAnnOKGjSyBZPF2c7wJ0ZC3kQGZSXsDTN0Ev3OKtY2Inwvp4p2/yoqONSES6cq1Zjflykt+ckqGGGA/p6SHA3lvPVsx4e164mNUF/6OCtFyuVT0tFckmaAtxmhNA3IKHHBv0l0/xgBfnRome1b/bib4cC8Dco1REkiXAatnXoqW4u2WaoK+MD9+rBBtNyyEm5NmFX6E2g9spp/1xDvSgKkwybfTmlHMp8c8BZvpZ620X1u8thgLaefRdsMoaUmkfgif2lHiJfK/veW6/rMQYhfKkBitOZ5p2jvmBJge8xQk7fh3NtOHSXWaleIlUfBV2gZEDW/GA5sP6/km1f5IcYOPq7JLvCQKPj1hAPh0lCFx0E7bFd4jT3l2rPmtNUC/bwmkmrh7o8wSfvtKmejzOnzmtzADDCly+kON6H9QKUZfHhXsY00W1f2weQOS13+6ZlLtl6PFSxh4qxMVIHirUQbEQKtMI9qMg/YqDvrN+WBdEXI64XBrDgPSLZv8nMm7Inw2xwS926T6gBQcB61YiNbd/2+0CoVCoVAoFAqFQqFQKNASfwFjt14hR7bL6wAAAABJRU5ErkJggg==");
+    background-image: url("assets/icons/profile.png");
 }
 
 #toolbar-spacer
@@ -1150,31 +904,29 @@ input, .audio-device-select
 
 #audio-dock
 {
-    height: 64;
-    gap: 6;
-    pad: 2 0;
+    height: 52;
+    gap: 4;
+    pad: 4 3;
 }
 
 #view-caption
 {
-    height: 34;
-    pad: 8 12;
-    font-color: #a69b85;
-    background-color: #181713;
+    height: 22;
+    pad: 3 7;
     font-size: 12;
 }
 
 .chat-empty
 {
     width: 100%;
-    pad: 42 20;
-    gap: 12;
+    pad: 20 10;
+    gap: 6;
 }
 
 .connection-address-row, .connection-key-heading, .server-key-row
 {
     width: 100%;
-    gap: 8;
+    gap: 4;
 }
 .connection-host, .server-key-value
 {
@@ -1191,82 +943,502 @@ input, .audio-device-select
 .server-key-number
 {
     width: 18;
-    pad: 8 0;
+    pad: 4 0;
 }
 .server-key-type
 {
     width: 110;
-    height: 34;
+    height: 24;
 }
 .server-key-remove
 {
-    width: 78;
-    height: 34;
+    width: 64;
+    height: 24;
 }
 #server-key-add
 {
     width: 100;
 }
 
-#connection-footer
+#connection-footer, #identity-footer
 {
     width: 100%;
-    height: 90;
-    pad: 10 16;
-    gap: 8;
+    height: 64;
+    pad: 5 8;
+    gap: 4;
 }
 
 #channels-button
 {
-    width: 32;
-    height: 30;
+    width: 24;
+    height: 24;
     background-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAAA8CAYAAADWibxkAAAACXBIWXMAAAsTAAALEwEAmpwYAAAC8ElEQVRoge2Zy2sTURSHr7iwa93pvxCtFgpu1CJaU5cafG0sbaXQipJoX5oYqXEGSaYq2oYGBR8rQw2CMa2rqK2CbedOFkUlIAWdaUZ8bHVTj5w0M0ml1ZQMdDI9Hxy43LmLOb97XpkwRhAEQRAEQRAEQRAEUSHq21ub5ri0R+cD+yqxXCbsgnh8PasWvsrXNutcSuqKBJYZl37klEgzszvZ7M0NOo/MWOp8idleBD0T8Rkvm7p3GoJn3ODvaKzIrvsPwceJq4VIiHy3dTrklMgIvuiHdD8cadwKnv0uS+xG4HAxCjJhF7MrOUV6jS/55kmPZc6jBToPmAJ8UQYamV3JkQASRYC+RApgMZtIdMNU8kJZlhhuh6Pubc5JgfQj34pbXnfbXucI4F/rEeChLuCiNuhZy3OA/x81APfxuaMFSP+nC+DzpRz3ntwF8aEWeP/yEmhcLJgwp3ExqmbEHcypEXCsqRYSsVOgykKJ44tNlYXfqizemU0Ha5iTusDxg7UwnvCajn6WBZhM+iB1vxVGH7TA5DNffs8UggvjthEhZ4EAj2NtpnN8rAvCPQ1w+exOePfiYt5wHe5tAGWsqyQaxBhzggDe5t1m2KPzgY566Guvg6ErTaazuMa9QGd9/kxBgHlVCW2v+u8B8WiLGfZ48+goWjRUFADXxn6kr6GYDrI4uNr+M10Jeyv5ImRUe8xzDPXBfnf+xkeiJ0wBcI17+AzPTKXOFQQQslX/TVArOIkFD/N9uQ5gGJ4ZfdhqCPALANattgbsmyJt0bn0tBIBsNqXK8CYIQAXf9pCAINPM9LGlf4voHFBq+oUqBRNFobMIthbXhEsDkvCbVbtaNOhOpzw0CGljDaoPLdZG7QCjQt3SwchvOW/ByHcM5xfmAbFYeYUZtPBGpWLr0pm/nyeY2FEm06dX/QbAc/aZhS2VARZjGFoL/9jSJzHm3ec86VgXucLoyxksc9jq1tYi4OOyXmCIAiCIAiCIAi2ivwBxLCmZMU6+XkAAAAASUVORK5CYII=");
+    background-image: url("assets/icons/channels.png");
 }
 
 #idle-button
 {
-    width: 32;
-    height: 30;
+    width: 24;
+    height: 24;
     background-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAAA8CAYAAADWibxkAAAACXBIWXMAAAsTAAALEwEAmpwYAAADRUlEQVRoge2YTUiUQRjH5+LViogoio4dSogOhRnZB2pIRZSWWphYmGl+lBaWmm6mWTuz62oRGyEpFtkhkkKFPo8WuzOrZRjRIVzfmTVJQujDwol53Vl3XVe8BLvvzg+e+/z/88x/nhkAFAqFQqFQKBQKhUKhUCj+E5RY1g33N64C0caow7KCYtRBMZyiBH7/MnB1CYgWNIwSGYFjjCCuF0a/o8YADZvThGCfeN0A2AmiAQ+xJDCCfgaIF+WE+4DRGSfWxZRATQjWMOSO7kpdvMgA95uWpcDoMAJvyh2/VZfBu+6c8nYAHAVGx/0OrqYE/RGC+7oqeHpyHH92r0Se/yFgdChB9XL3K/J28bSk9bz77ml5AwwDo0Mx+ijEOrurdPGiOm+c8F2B3GGPAUYeeJh399tgts+ApuqDvluAErQJGBWPC6ZIoTVFu30GFGYl+BkATcCoeDDKlkJLs7f5DBBFeqtkB4wY9hhoGBVIA/Iz4gMMaK5J93WBB8NyYEQYhplS5JmcxAADslI38A8vTXIgmnD3W9cCo0Fd5p3SgPqyPQEGiDKVpPpnwScN25YBI/HN0biIEvhXCHzQcjzIAFH3bbkBJhiuExiGTiFu6NVlfjglLsgAMRn2tBXNmIDhhMiEhQajeEqLtwYIVxiGJVLclbPBx0DUoeS4gE7wdoNGMaxjTmv8bDPEUWEE7mcEPRTDlPhUCdufpXHxEsRwQoh6/7xWD7+5TJCZIINxlhmTXkM+B3ymzHTNlPheA+EKJfC8XOwj+8mQBsjbwXYpneOe6iAjQhUlqB2EM9xhj6EEuuSCW68fndcEWQVZW7il8oAeoE9bC3lvezF/fDuf4+7pIUo+qdlA03IQ7mhO8xqKIfPvhPmOQ6issDdkipaXz+lfHhfcCiKFkX7LRkoQlSYMvjDp88Fct8PsupifxN8+ueC/8z9EEIJIQ5vuBOJ/hode1+lP5Ibyvbwsd7s+NpceS9RDscOaw129gXlAMXRTl3kziFS4ngnonLwdFh52cJIR1DzWZ4sFhpkUMSpmBDnkxBiiBilBtV+d11YCozLWZ4ulBO2gTpTBCMxjBB5hGCZFRMIrFAqFQqFQKBQKhUKhAJHOP3o0yIUqgauPAAAAAElFTkSuQmCC");
+    background-image: url("assets/icons/away.png");
 }
 
 #toolbar-hint
 {
     width: 140;
-    height: 20;
+    height: 18;
     text-align: right;
 }
 
 #message-edit-panel
 {
-    right: 20;
-    height: 390;
+    right: 12;
+    height: 290;
 }
 #message-edit-text
 {
     width: 100%;
-    height: 210;
+    height: 140;
 }
 .chat-message-heading
 {
     width: 100%;
-    height: 28;
-    gap: 8;
+    height: 22;
+    gap: 4;
     align-items: center;
 }
 .chat-edit-button
 {
-    width: 26;
-    height: 26;
+    width: 20;
+    height: 20;
     pad: 0;
-    font-color: #d9bd75;
     visibility: hidden;
 }
-.member.marked, .channel-row.marked
+
+/* Chat formatting controls; font files are discovered from the adjacent fonts directory. */
+#chat-format-controls
 {
-    background-color: #443824;
+    width: 100%;
+    height: 24;
+    gap: 4;
+    align-items: center;
 }
-.member.marked:hover, .member.marked:pressed, .channel-row.marked:hover, .channel-row.marked:pressed
+#chat-font
 {
-    background-color: #58462a;
+    width: 50%;
+    height: 24;
+    pad: 2 6;
+    select-style: list;
+    select-rows: 8;
+    popup-width: 250;
+    option-height: 22;
+    border-radius: 5;
+}
+#chat-color-button
+{
+    width: 32;
+    height: 24;
+    font-size: 14;
+}
+#chat-font-size
+{
+    width: 30%;
+    height: 18;
+}
+#chat-font-size-label
+{
+    width: 44;
+    height: 20;
+}
+#chat-format-reset
+{
+    width: 65;
+    height: 24;
+}
+#chat-color-panel
+{
+    width: 330;
+    height: 290;
+    right: 12;
+}
+#chat-color-picker
+{
+    width: 100%;
+    height: 190;
+}
+#chat-color-value
+{
+    width: 100%;
+    height: 24;
+    gap: 4;
+}
+#chat-color-hex-field
+{
+    width: 110;
+    height: 24;
+}
+#chat-color-hex
+{
+    width: 100%;
+    height: 24;
+}
+#chat-color-value button
+{
+    width: 70;
+    height: 24;
+}
+
+#toolbar-trim
+{
+    height: 1;
+    width: 100%;
+}
+
+#connection-footer
+{
+    height: 64;
+    pad: 4 6;
+    gap: 4;
+}
+
+/* Keep the close control inside the compact tab border. */
+.tab-close
+{
+    height: 18;
+    pad: 0;
+    font-size: 10;
+}
+
+/* Keep message entry and its Send button on one row. */
+#composer-input-row
+{
+    width: 100%;
+    height: 32;
+    gap: 4;
+    align-items: center;
+}
+#chat-format-toggle
+{
+    width: 64;
+    height: 24;
+    pad: 2 6;
+}
+
+/* Theme surfaces and controls. */
+window, label, button, input, textarea, checkbox, select, filepicker
+{
+    font-color: #e9e1cc;
+}
+window, #workspace, #sidebar, #conversation
+{
+    background-color: #201d16;
+}
+#toolbar
+{
+    background-color: #15140f;
+    border-width: 0;
+    radius: 0;
+}
+#toolbar-trim
+{
+    background-color: #554a33;
+}
+#sidebar, #audio-dock, #composer, #status-bar, #chat-tabs, #view-caption
+{
+    background-color: #292419;
+    border-width: 0;
+    radius: 0;
+}
+#member-list, #messages, #bookmark-list, #channel-editor-list
+{
+    background-color: #17150f;
+    border: 1px solid #554a33;
+    radius: 0;
+}
+#channel-path
+{
+    background-color: transparent;
+    font-color: #e9e1cc;
+    border-width: 0;
+    font-size: 12;
+}
+.member, .channel-row, .bookmark-row, .channel-editor-item
+{
+    background-color: transparent;
+    font-color: #e9e1cc;
+    border-width: 0;
+    radius: 0;
+}
+.member:hover, .channel-row:hover, .channel-row:pressed, .bookmark-row:hover, .channel-editor-item:hover
+{
+    background-color: #3c3322;
+}
+.channel-row.selected, .channel-row.selected:hover, .channel-row.selected:pressed, .channel-row.marked, .channel-row.marked:hover, .member.marked, .member.marked:hover, .bookmark-row.selected, .bookmark-row.selected:hover, .channel-editor-item.selected, .channel-editor-item.selected:hover
+{
+    background-color: #514126;
+    font-color: #fff0c5;
+}
+.member-name, .tree-name, .local .member-name, .local .tree-name, .chat-text, .notice-title
+{
+    font-color: #e9e1cc;
+}
+.channel-row.selected .tree-name, .channel-row.marked .tree-name, .member.marked .tree-name, .member.marked .member-name
+{
+    font-color: #fff0c5;
+}
+.muted, .tree-song, .member-state, #tree-caption, #audio-status, #connection-status, #received-status, #toolbar-hint, #composer-spacer, #chat-font-size-label
+{
+    font-color: #b0a17e;
+}
+.chat-sender
+{
+    font-color: #d6b968;
+}
+.voice-icon
+{
+    font-color: #7ca5cd;
+}
+.voice-icon-active
+{
+    font-color: #4dabff;
+}
+.voice-icon-disabled, .voice-icon-muted
+{
+    font-color: #8a9fb4;
+}
+button
+{
+    background-color: #332d1f;
+    font-color: #e9e1cc;
+    border: 1px solid #554a33;
+    radius: 0;
+}
+button:hover
+{
+    background-color: #3c3322;
+}
+button:pressed
+{
+    background-color: #514126;
+}
+button:disabled, #send-button:disabled, .tab-scroll:disabled
+{
+    background-color: #292419;
+    font-color: #b0a17e;
+    border: 1px solid #554a33;
+}
+.menu-button
+{
+    background-color: #15140f;
+    font-color: #e9e1cc;
+    border: 1px solid #554a33;
+    radius: 0;
+}
+.menu-button:hover, .menu-button:pressed
+{
+    background-color: #332d1f;
+    font-color: #e9e1cc;
+}
+.web-toolbar-icon
+{
+    background-color: transparent;
+    border-width: 0;
+    radius: 0;
+}
+input, textarea, #message-input, #message-edit-text, #channel-edit-description, .audio-device-select, .server-key-type, #chat-font
+{
+    background-color: #211d14;
+    font-color: #e9e1cc;
+    border: 1px solid #554a33;
+    radius: 0;
+}
+input:focus, textarea:focus, #message-input:focus, #message-edit-text:focus
+{
+    border: 1px solid #d6b968;
+}
+#send-button
+{
+    background-color: #776136;
+    font-color: #fff4d7;
+    border: 1px solid #776136;
+    radius: 0;
+}
+#send-button:hover
+{
+    background-color: #d6b968;
+    font-color: #201d16;
+}
+#channel-title, .conversation-tab
+{
+    background-color: #292419;
+    font-color: #e9e1cc;
+    border: 1px solid #554a33;
+    radius: 0;
+}
+.conversation-tab.selected, .conversation-tab.selected:hover
+{
+    background-color: #514126;
+    font-color: #fff0c5;
+}
+.tab-label, .tab-label:hover, .tab-close, .tab-close:hover, .tab-scroll, .chat-edit-button
+{
+    background-color: transparent;
+    font-color: #e9e1cc;
+    border-width: 0;
+    radius: 0;
+}
+.tab-close:hover, .tab-scroll:hover, .chat-edit-button:hover
+{
+    background-color: #3c3322;
+}
+.panel, .context-menu
+{
+    background-color: #292419;
+    font-color: #e9e1cc;
+    border: 1px solid #554a33;
+    radius: 0;
+    box-shadow: 0 0 0 #00000000;
+}
+.panel-title
+{
+    background-color: #15140f;
+    font-color: #e9e1cc;
+    border-width: 0;
+    radius: 0;
+}
+.panel-heading, .close-button
+{
+    font-color: #e9e1cc;
+}
+.close-button
+{
+    background-color: transparent;
+    border-width: 0;
+    radius: 0;
+}
+.close-button:hover
+{
+    background-color: #776136;
+}
+.context-menu
+{
+    accent-color: #514126;
+}
+#member-list, #messages, .panel-body, #channel-editor-fields, #channel-editor-list
+{
+    scrollbar-track: #292419;
+    scrollbar-thumb: #554a33;
+}
+.audio-device-select, .server-key-type, #chat-font
+{
+    popup-background: #292419;
+    popup-blur: 0;
+    popup-duration: 0;
+    option-color: #e9e1cc;
+    option-current-background: #514126;
+    option-current-color: #fff0c5;
+    option-hover-background: #3c3322;
+    option-hover-color: #e9e1cc;
+}
+checkbox
+{
+    checkbox-track-background: #211d14;
+    checkbox-track-border-color: #554a33;
+    checkbox-mark-color: #d6b968;
+}
+slider, #chat-font-size
+{
+    background-color: #554a33;
+    accent-color: #d6b968;
+    slider-fill: #d6b968;
+    radius: 0;
+}
+#input-meter-track
+{
+    background-color: #554a33;
+    radius: 0;
+}
+#input-meter-fill
+{
+    background-color: #d6b968;
+    radius: 0;
+}
+#sidebar-divider
+{
+    background-color: #554a33;
+    border-width: 0;
+    radius: 0;
+}
+#sidebar-divider:hover, #sidebar-divider:pressed
+{
+    background-color: #d6b968;
+}
+
+/* Workspace arrangement for this preset. */
+#workspace
+{
+    flex-direction: column;
+    pad: 6;
+    gap: 0;
+}
+#sidebar
+{
+    flex-direction: row;
+    size: 0x180;
+    width: 100%;
+    height: 180;
+    pad: 4;
+    gap: 8;
+}
+#member-list
+{
+    width: 100%;
+    height: 100%;
+    pad: 3 4;
+}
+#audio-dock
+{
+    width: 164;
+    height: 100%;
+    pad: 8;
+    gap: 6;
+    justify-content: center;
+}
+#channel-path, #tree-caption
+{
+    display: none;
+}
+#conversation
+{
+    pad: 0;
+    gap: 4;
+}
+
+.web-toolbar-icon:hover
+{
+    background-color: #776136;
+}
+
+#microphone-button
+{
+    width: 100%;
+}
+#audio-disabled-warning
+{
+    size: 170x20;
+    gap: 4;
+    pad: 0;
+}
+#audio-disabled-label
+{
+    size: 66x18;
+    font-size: 11;
+    pad: 0;
+}
+#enable-audio-button
+{
+    size: 100x20;
+    font-size: 11;
+    pad: 1 4;
 }

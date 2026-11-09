@@ -6,11 +6,12 @@
             <div id="toolbar-spacer" />
             <button id="server-info-button" class="menu-button web-toolbar-icon" on_click="on_show_server_info" />
             <button id="channels-button" class="menu-button web-toolbar-icon" on_click="on_show_channels" />
-            <button id="profile-button" class="menu-button web-toolbar-icon" on_click="on_profile" />
+            <button id="profile-button" class="menu-button web-toolbar-icon" on_click="on_identity_settings_open" />
             <button id="idle-button" class="menu-button web-toolbar-icon" on_click="on_idle" />
             <button id="audio-settings-button" class="menu-button web-toolbar-icon" on_click="on_show_audio" />
             <button id="local-settings-button" class="menu-button web-toolbar-icon" on_click="on_show_settings" />
         </div>
+        <div id="toolbar-trim" />
         <div class="row" id="workspace">
             <div class="column" id="sidebar">
                 <label id="channel-path" text="Not connected" />
@@ -19,8 +20,7 @@
                 <div class="column" id="audio-dock">
                     <label class="muted" id="audio-status" text="Not connected" />
                     <div class="row audio-buttons">
-                        <button id="microphone-button" on_click="on_microphone" text="Mic off" />
-                        <button id="listening-button" on_click="on_listening" text="Deafen" />
+                        <button id="microphone-button" on_click="on_microphone" text="Mic enabled" />
                     </div>
                 </div>
             </div>
@@ -38,21 +38,51 @@
                     <div class="column" id="chat-history" />
                 </div>
                 <div class="column" id="composer">
-                    <input id="message-input" />
+                    <div class="row" id="composer-input-row">
+                        <input id="message-input" />
+                        <button id="send-button" text="Send" on_click="on_send_chat" />
+                    </div>
                     <div class="row" id="composer-actions">
                         <button id="picture-button" text="Picture" on_click="on_attachment_open" />
                         <button id="file-button" text="File" on_click="on_attachment_open" />
+                        <button id="chat-format-toggle" text="Format" on_click="on_chat_format_toggle" />
                         <label id="composer-spacer" class="muted" text="Enter to send" />
-                        <button id="send-button" text="Send" on_click="on_send_chat" />
+                    </div>
+                    <div class="row hidden" id="chat-format-controls">
+                        <select id="chat-font" on_change="on_chat_font"><option text="Default font" /></select>
+                        <button id="chat-color-button" text="Aa" on_click="on_chat_color_open" />
+                        <slider id="chat-font-size" min="12" max="30" step="1" value="14" on_change="on_chat_font_size" />
+                        <label id="chat-font-size-label" text="14 px" />
+                        <button id="chat-format-reset" text="Reset" on_click="on_chat_format_reset" />
                     </div>
                 </div>
             </div>
         </div>
-        <label id="transport-warning" class="hidden" />
         <div class="row" id="status-bar">
             <label id="connection-status" text="Ready to connect" />
             <label id="toolbar-hint" class="muted" />
+            <div class="row hidden" id="audio-disabled-warning">
+                <label id="audio-disabled-label" text="Audio off" />
+                <button id="enable-audio-button" on_click="on_enable_audio" text="Enable audio" />
+            </div>
             <label id="received-status" class="muted" text="No messages received" />
+        </div>
+    </div>
+    <div class="column panel hidden" id="chat-color-panel">
+        <div class="row panel-title">
+            <label class="panel-heading" text="Message color" />
+            <button class="close-button" text="x" on_click="on_chat_color_close" />
+        </div>
+        <div class="column panel-body">
+            <colorpicker id="chat-color-picker" type="classic" on_change="on_chat_color_change" />
+            <div class="row" id="chat-color-value">
+                <div id="chat-color-hex-field">
+                    <input id="chat-color-hex" />
+                </div>
+                <button id="chat-color-apply" text="Apply" on_click="on_chat_color_hex" />
+                <button id="chat-color-done" text="Done" on_click="on_chat_color_close" />
+            </div>
+            <label class="muted" text="Choose a color or enter #RRGGBB. Empty uses the theme color." />
         </div>
     </div>
     <div class="column panel hidden" id="message-edit-panel">
@@ -96,6 +126,9 @@
                 <option text="Classic" />
                 <option text="Slate" />
                 <option text="Amber" />
+                <option text="Ivory" />
+                <option text="Midnight" />
+                <option text="Windows 95" />
                 <option text="Custom stylesheet" />
             </select>
             <div class="column theme-file-fields hidden" id="chat-theme-custom">
@@ -138,6 +171,80 @@
             <label class="muted" text="Domain name or IP address. Secure connection is tried first." />
             <label text="Username" />
             <input id="username" />
+            <checkbox id="connection-show-advanced" text="Show advanced" on_change="on_connection_advanced" />
+            <div class="column hidden" id="connection-advanced">
+                <div class="row connection-key-heading">
+                    <label class="spacer" text="Server encryption keys" />
+                    <button id="server-key-add" text="+ Add key" on_click="on_server_key_add" />
+                </div>
+                <div class="column" id="server-keys">
+                    <div id="server-key-row-0" class="row server-key-row hidden">
+                        <label class="server-key-number" text="1" />
+                        <select id="server-key-type-0" class="server-key-type"><option text="AES-256" /><option text="ChaCha20" /><option text="Camellia-256" /><option text="Twofish-256" /><option text="Serpent-256" /><option text="Trivium-80 (fixed IV compatibility)" /></select>
+                        <input id="server-key-value-0" class="server-key-value" />
+                        <button id="server-key-remove-0" class="server-key-remove" text="Remove" on_click="on_server_key_remove" />
+                    </div>
+                    <div id="server-key-row-1" class="row server-key-row hidden">
+                        <label class="server-key-number" text="2" />
+                        <select id="server-key-type-1" class="server-key-type"><option text="AES-256" /><option text="ChaCha20" /><option text="Camellia-256" /><option text="Twofish-256" /><option text="Serpent-256" /><option text="Trivium-80 (fixed IV compatibility)" /></select>
+                        <input id="server-key-value-1" class="server-key-value" />
+                        <button id="server-key-remove-1" class="server-key-remove" text="Remove" on_click="on_server_key_remove" />
+                    </div>
+                    <div id="server-key-row-2" class="row server-key-row hidden">
+                        <label class="server-key-number" text="3" />
+                        <select id="server-key-type-2" class="server-key-type"><option text="AES-256" /><option text="ChaCha20" /><option text="Camellia-256" /><option text="Twofish-256" /><option text="Serpent-256" /><option text="Trivium-80 (fixed IV compatibility)" /></select>
+                        <input id="server-key-value-2" class="server-key-value" />
+                        <button id="server-key-remove-2" class="server-key-remove" text="Remove" on_click="on_server_key_remove" />
+                    </div>
+                    <div id="server-key-row-3" class="row server-key-row hidden">
+                        <label class="server-key-number" text="4" />
+                        <select id="server-key-type-3" class="server-key-type"><option text="AES-256" /><option text="ChaCha20" /><option text="Camellia-256" /><option text="Twofish-256" /><option text="Serpent-256" /><option text="Trivium-80 (fixed IV compatibility)" /></select>
+                        <input id="server-key-value-3" class="server-key-value" />
+                        <button id="server-key-remove-3" class="server-key-remove" text="Remove" on_click="on_server_key_remove" />
+                    </div>
+                    <div id="server-key-row-4" class="row server-key-row hidden">
+                        <label class="server-key-number" text="5" />
+                        <select id="server-key-type-4" class="server-key-type"><option text="AES-256" /><option text="ChaCha20" /><option text="Camellia-256" /><option text="Twofish-256" /><option text="Serpent-256" /><option text="Trivium-80 (fixed IV compatibility)" /></select>
+                        <input id="server-key-value-4" class="server-key-value" />
+                        <button id="server-key-remove-4" class="server-key-remove" text="Remove" on_click="on_server_key_remove" />
+                    </div>
+                    <div id="server-key-row-5" class="row server-key-row hidden">
+                        <label class="server-key-number" text="6" />
+                        <select id="server-key-type-5" class="server-key-type"><option text="AES-256" /><option text="ChaCha20" /><option text="Camellia-256" /><option text="Twofish-256" /><option text="Serpent-256" /><option text="Trivium-80 (fixed IV compatibility)" /></select>
+                        <input id="server-key-value-5" class="server-key-value" />
+                        <button id="server-key-remove-5" class="server-key-remove" text="Remove" on_click="on_server_key_remove" />
+                    </div>
+                    <div id="server-key-row-6" class="row server-key-row hidden">
+                        <label class="server-key-number" text="7" />
+                        <select id="server-key-type-6" class="server-key-type"><option text="AES-256" /><option text="ChaCha20" /><option text="Camellia-256" /><option text="Twofish-256" /><option text="Serpent-256" /><option text="Trivium-80 (fixed IV compatibility)" /></select>
+                        <input id="server-key-value-6" class="server-key-value" />
+                        <button id="server-key-remove-6" class="server-key-remove" text="Remove" on_click="on_server_key_remove" />
+                    </div>
+                    <div id="server-key-row-7" class="row server-key-row hidden">
+                        <label class="server-key-number" text="8" />
+                        <select id="server-key-type-7" class="server-key-type"><option text="AES-256" /><option text="ChaCha20" /><option text="Camellia-256" /><option text="Twofish-256" /><option text="Serpent-256" /><option text="Trivium-80 (fixed IV compatibility)" /></select>
+                        <input id="server-key-value-7" class="server-key-value" />
+                        <button id="server-key-remove-7" class="server-key-remove" text="Remove" on_click="on_server_key_remove" />
+                    </div>
+                </div>
+                <label class="muted" text="Add keys in the server's order. Save or Connect keeps them for next time." />
+            </div>
+        </div>
+        <div class="column" id="connection-footer">
+            <div class="row" id="connection-buttons">
+                <button id="connection-connect" on_click="on_connect" text="Connect" />
+                <button id="connection-save" on_click="on_connect" text="Save" />
+                <button id="connection-disconnect" class="hidden" on_click="on_disconnect" text="Disconnect" />
+            </div>
+            <label class="muted" id="login-result" text="Ready to connect" />
+        </div>
+    </div>
+    <div class="column panel hidden" id="identity-panel">
+        <div class="row panel-title">
+            <label class="panel-heading" text="Profile and identity" />
+            <button class="close-button" on_click="on_identity_settings_close" text="×" />
+        </div>
+        <div class="column panel-body">
             <label text="Identity string" />
             <input id="identity-string" type="password" />
             <checkbox id="identity-reveal" text="Show identity (allows copying)" on_change="on_identity_reveal" />
@@ -145,72 +252,24 @@
                 <button id="identity-import" text="Import .lmn" on_click="on_identity_file_open" />
                 <button id="identity-export" text="Export .lmn" on_click="on_identity_file_open" />
             </div>
-            <label class="muted" text="Leave empty to create an identity. Browser and desktop .lmn files contain the same identity string." />
+            <label class="muted" text="Leave empty to create an identity when you connect." />
             <label text="RSA key size" />
-            <input id="identity-bits" text="2048" />
-            <div class="row connection-key-heading">
-                <label class="spacer" text="Server encryption keys" />
-                <button id="server-key-add" text="+ Add key" on_click="on_server_key_add" />
-            </div>
-            <div class="column" id="server-keys">
-                <div id="server-key-row-0" class="row server-key-row hidden">
-                    <label class="server-key-number" text="1" />
-                    <select id="server-key-type-0" class="server-key-type"><option text="AES-256" /></select>
-                    <input id="server-key-value-0" class="server-key-value" />
-                    <button id="server-key-remove-0" class="server-key-remove" text="Remove" on_click="on_server_key_remove" />
-                </div>
-                <div id="server-key-row-1" class="row server-key-row hidden">
-                    <label class="server-key-number" text="2" />
-                    <select id="server-key-type-1" class="server-key-type"><option text="AES-256" /></select>
-                    <input id="server-key-value-1" class="server-key-value" />
-                    <button id="server-key-remove-1" class="server-key-remove" text="Remove" on_click="on_server_key_remove" />
-                </div>
-                <div id="server-key-row-2" class="row server-key-row hidden">
-                    <label class="server-key-number" text="3" />
-                    <select id="server-key-type-2" class="server-key-type"><option text="AES-256" /></select>
-                    <input id="server-key-value-2" class="server-key-value" />
-                    <button id="server-key-remove-2" class="server-key-remove" text="Remove" on_click="on_server_key_remove" />
-                </div>
-                <div id="server-key-row-3" class="row server-key-row hidden">
-                    <label class="server-key-number" text="4" />
-                    <select id="server-key-type-3" class="server-key-type"><option text="AES-256" /></select>
-                    <input id="server-key-value-3" class="server-key-value" />
-                    <button id="server-key-remove-3" class="server-key-remove" text="Remove" on_click="on_server_key_remove" />
-                </div>
-                <div id="server-key-row-4" class="row server-key-row hidden">
-                    <label class="server-key-number" text="5" />
-                    <select id="server-key-type-4" class="server-key-type"><option text="AES-256" /></select>
-                    <input id="server-key-value-4" class="server-key-value" />
-                    <button id="server-key-remove-4" class="server-key-remove" text="Remove" on_click="on_server_key_remove" />
-                </div>
-                <div id="server-key-row-5" class="row server-key-row hidden">
-                    <label class="server-key-number" text="6" />
-                    <select id="server-key-type-5" class="server-key-type"><option text="AES-256" /></select>
-                    <input id="server-key-value-5" class="server-key-value" />
-                    <button id="server-key-remove-5" class="server-key-remove" text="Remove" on_click="on_server_key_remove" />
-                </div>
-                <div id="server-key-row-6" class="row server-key-row hidden">
-                    <label class="server-key-number" text="7" />
-                    <select id="server-key-type-6" class="server-key-type"><option text="AES-256" /></select>
-                    <input id="server-key-value-6" class="server-key-value" />
-                    <button id="server-key-remove-6" class="server-key-remove" text="Remove" on_click="on_server_key_remove" />
-                </div>
-                <div id="server-key-row-7" class="row server-key-row hidden">
-                    <label class="server-key-number" text="8" />
-                    <select id="server-key-type-7" class="server-key-type"><option text="AES-256" /></select>
-                    <input id="server-key-value-7" class="server-key-value" />
-                    <button id="server-key-remove-7" class="server-key-remove" text="Remove" on_click="on_server_key_remove" />
-                </div>
-            </div>
-            <label class="muted" text="Add keys in the server's order. Save or Connect keeps them for next time." />
+            <select id="identity-bits" class="audio-device-select">
+                <option text="2048" />
+                <option text="3072" />
+                <option text="4096" />
+                <option text="6144" />
+                <option text="8192" />
+            </select>
+            <label class="muted" text="Use the same identity string and RSA size in both clients to keep the same identity." />
+            <button id="profile-rename" text="Change username on this server" on_click="on_profile" />
         </div>
-        <div class="column" id="connection-footer">
-            <div class="row" id="connection-buttons">
-                <button on_click="on_connect" text="Connect" />
-                <button id="connection-save" on_click="on_connect" text="Save" />
-                <button on_click="on_disconnect" text="Disconnect" />
+        <div class="column" id="identity-footer">
+            <div class="row identity-actions">
+                <button id="identity-save" text="Save identity" on_click="on_identity_settings_save" />
+                <button text="Close" on_click="on_identity_settings_close" />
             </div>
-            <label class="muted" id="login-result" text="Use the same identity and key size as your browser to keep that identity." />
+            <label class="muted" id="identity-result" text="Identity changes apply to your next connection." />
         </div>
     </div>
     <div class="column panel hidden" id="identity-file-panel">
@@ -418,7 +477,9 @@
             </select>
             <label id="ptt-label" text="Push-to-talk key" />
             <select class="audio-device-select" id="ptt-key" on_change="on_audio_values" />
-            <label class="muted" text="Enable the microphone with the Mic button. Push to talk uses the selected key, including while your game has focus." />
+            <label class="muted" text="The microphone starts enabled. Use the Mic button to mute it. Push to talk uses the selected key, including while your game has focus." />
+            <checkbox id="sound-effects" text="Play notification sounds" />
+            <label class="muted" text="Sound clips reload automatically from assets/sounds.json." />
             <label id="volume-label" text="Listening volume: 100%" />
             <slider id="audio-volume" min="0" max="100" step="1" value="100" on_change="on_audio_values" />
             <label id="gain-label" text="Microphone gain: 100%" />
@@ -437,7 +498,9 @@
             <select class="audio-device-select" id="audio-output-device" on_change="on_audio_device"><option text="System default" /></select>
             <button id="audio-refresh-devices" on_click="on_audio_refresh_devices" text="Refresh devices" />
             <label class="muted" id="audio-devices-result" text="Device choices apply when saved." />
-            <label class="muted" text="An unavailable saved microphone stays off. Choose System default to follow the OS device. The microphone starts disabled each time the app opens." />
+            <label class="muted" text="An unavailable saved microphone stays off. Choose System default to follow the OS device." />
+            <label class="section" text="Advanced" />
+            <checkbox id="audio-deafened" text="Deafen (mute speakers and microphone)" />
         </div>
         <div class="column" id="audio-footer">
             <button on_click="on_save_audio" text="Save changes" />

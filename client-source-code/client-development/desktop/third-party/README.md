@@ -10,10 +10,13 @@ library. Keep every library's license when distributing the client.
   and their license are included with it.
 - `minhook` installs the Direct3D 11 hooks used by the optional Windows overlay.
 - `dave-g-json` provides cJSON for reading and writing protocol data.
-- `kokke-tiny-aes-c` provides the existing AES-256 CTR implementation.
 - `libopus-1.5.2` encodes and decodes voice audio.
 - `mbedtls-3.6.6` provides the cryptographic operations used by identities and
   encrypted sessions.
+- `libtomcrypt` provides the pinned Twofish and Serpent implementations. Its
+  `SOURCE.md` records the upstream revision and source archive checksum.
+- `kokke-tiny-aes-c` supplies the existing small AES implementation used by
+  the `lemon-aes` runtime library.
 - `identity-keygen` contains the same public-key identity calculation used by the
   browser client.
 - `miniaudio-0.11.26` opens microphones and speakers.
@@ -22,6 +25,11 @@ library. Keep every library's license when distributing the client.
 
 Some libraries are also used by the Lemon Chat server. Their local copies should
 be updated together when a shared implementation changes.
+
+The third-party CMake file builds `kokke-tiny-aes-c` as `lemon-aes`; its runtime
+library name and installation location are unchanged. The separate
+[`src/crypto/cipher_aes.c`](../src/crypto/cipher_aes.c) file adapts Mbed TLS for the negotiated
+connection ciphers, matching the other cipher adapters in that directory.
 
 ## Build and distribution
 

@@ -1,0 +1,3 @@
+Copyright 2011 The Londrina Outline Authors (https://github.com/marcelommp/Londrina-Typeface), with Reserved Font Name "Londrina Outline"
+
+http://scripts.sil.org/OFL

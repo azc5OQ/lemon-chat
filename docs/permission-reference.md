@@ -279,12 +279,12 @@ The complete lists above match `g_permission_names` and `g_permission_power_name
 | `server-source-code/main/core/permissions.c` | Permission names, defaults, combination rules, power checks and edit checks. |
 | `server-source-code/main/core/channel_groups.c` | Channel group definitions, identity assignments and channel permission checks. |
 | `server-source-code/main/msg/client/client_msg_moderation.c` | Requests for moves, channel group changes, bans, temporary mutes and music playback. |
-| `client-source-code/client-development/browser/src/scripts/app/channel-groups.js` | Channel group editor, icons and client detail labels. |
+| `client-source-code/client-development/browser/main/scripts/app/channel/channel-groups.js` | Channel group editor, icons and client detail labels. |
 | `server-source-code/main/core/identity_store.c` | Saved identity memberships. |
 | `server-source-code/main/core/server_settings.c` | Loading and saving groups and permissions. |
 | `server-source-code/main/msg/client/client_msg_administration.c` | Group and administration requests, permission checks, and accepted changes. |
 | `server-source-code/main/msg/server/server_msg_administration.c` | Group lists, current rights, membership updates and access denied messages. |
-| `client-source-code/client-development/browser/src/scripts/app/groups.js` | Server groups window, permission descriptions and controls. |
+| `client-source-code/client-development/browser/main/scripts/app/server/groups.js` | Server groups window, permission descriptions and controls. |
 
 The channel and server information request handlers also use the shared permission checks. `base.c` chooses which handler receives a message.
 
