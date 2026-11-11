@@ -227,6 +227,9 @@ void server_msg__chat__process_direct(desktop_session_t *session, const cJSON *m
     desktop_content_keys_t direct_keys = { 0 };
     desktop_content_keys_t channel_keys = { 0 };
     boole complete = 0;
+
+    // The purpose named by the sender decides how the content is read: channel keys or conversation.
+    const char *purpose = server_msg__read_string(message, "purpose");
     int64 sender = server_msg__read_number(message, "sender_id");
     int64 slot = desktop_session__client(session, sender);
 
@@ -240,7 +243,7 @@ void server_msg__chat__process_direct(desktop_session_t *session, const cJSON *m
     {
         plaintext = crypto_session__direct_content_decrypt(&direct_keys, encrypted_body, FALSE);
         body = plaintext ? desktop_protocol__parse_json(plaintext, clib__strlen(plaintext), DESKTOP_MESSAGE_LIMIT, CJSON_NESTING_LIMIT) : NULL;
-        complete = sender == session->maintainer && session->maintainer >= 0 && clib__strcmp(server_msg__read_string(body, "type"), "channel_keys_from_maintainer") == 0 && server_msg__read_number(body, "channel_id") == session->model.channel && server_msg__read_number(body, "maintainer_generation") == session->generation && crypto_session__read_keys(server_msg__read_string(body, "value"), &channel_keys);
+        complete = clib__strcmp(purpose, "channel_keys") == 0 && sender == session->maintainer && session->maintainer >= 0 && clib__strcmp(server_msg__read_string(body, "type"), "channel_keys_from_maintainer") == 0 && server_msg__read_number(body, "channel_id") == session->model.channel && server_msg__read_number(body, "maintainer_generation") == session->generation && crypto_session__read_keys(server_msg__read_string(body, "value"), &channel_keys);
     }
     if (complete)
     {
@@ -253,7 +256,12 @@ void server_msg__chat__process_direct(desktop_session_t *session, const cJSON *m
         session->model.keys_ready = 1;
         desktop_session__detail(session, "Connected. Channel keys are ready.", 0);
     }
-    if (clib__strcmp(server_msg__read_string(body, "type"), "direct_chat_message") == 0)
+    if (clib__strcmp(purpose, "conversation") == 0 && clib__strcmp(server_msg__read_string(body, "type"), "direct_chat_closed") == 0)
+    {
+        // the other side closed the window of the conversation with this client
+        desktop_session__detail(session, "The other user closed the private conversation.", 0);
+    }
+    if (clib__strcmp(purpose, "conversation") == 0 && clib__strcmp(server_msg__read_string(body, "type"), "direct_chat_message") == 0)
     {
         server_msg__chat__receive_text(session, -1, slot, session->model.clients[slot].name, server_msg__read_string(body, "value"), slot, server_msg__read_number(message, "server_chat_message_id"));
     }

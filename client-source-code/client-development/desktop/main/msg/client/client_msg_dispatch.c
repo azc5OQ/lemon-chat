@@ -55,6 +55,10 @@ void client_msg__dispatch_command(desktop_session_t *session)
     {
         client_msg__chat__send_direct_message(session, command.peer, command.peer_serial, command.text, &command.format);
     }
+    else if (command.is_direct_closed)
+    {
+        client_msg__chat__send_direct_closed_notice(session, command.peer, command.peer_serial);
+    }
     else if (command.mute)
     {
         slot = desktop_session__client(session, command.peer);

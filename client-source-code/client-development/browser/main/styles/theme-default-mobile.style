@@ -843,6 +843,11 @@ a-toast:hover {
     padding-right: 2px;
 }
 
+/* Space between two group icons in the rows of the channel list; layout.style reads it. */
+#channel-list-container, #idle-clients-container {
+    --tree-icon-gap: 4px;
+}
+
 .padding-div {
     display: inline-block;
     vertical-align: top;

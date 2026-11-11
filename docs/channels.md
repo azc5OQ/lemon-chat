@@ -36,6 +36,8 @@ Each user can own one temporary channel at a time and can edit or delete it. Tem
 
 When groups are enabled, group permissions control temporary channel creation. When groups are disabled, the server's temporary channel setting controls it.
 
+With groups enabled, the parent channel can also require a minimum power: a channel is created inside another channel only when the user's channel create power reaches that channel's **Create channels inside** requirement. A channel can likewise require a minimum power to see who is in it and to read its description from outside. Both requirements are in the **Permissions** tab of the channel window and are explained in [Channel requirements](permissions.md#channel-requirements).
+
 On creation, the server first checks **Create permanent channels**. If that permission is enabled, the new channel is permanent. Otherwise, it checks whether the user can create a temporary channel. Having both permissions therefore creates a permanent channel. Its type can be changed later under the rules below.
 
 ### The channel window

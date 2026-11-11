@@ -265,6 +265,12 @@ function dispatch__mainthread_onmessage(e)
         }
         g_is_identity_switch_in_progress = false;
 
+        // this key pair was made from an identity the user imported: tell the user that the import finished
+        if (g_is_identity_import_pending == true)
+        {
+            connection__identity_imported();
+        }
+
         // persist the identity (the passphrase) so the next launch reconstructs this same keypair
         // instead of a fresh random one. covers first launch (random) and identity switches alike:
         // the last identity used is the one remembered.
@@ -838,6 +844,10 @@ function dispatch__mainthread_onmessage(e)
     else if (e.data.type == "data_processing_worker__access_denied_from_server")
     {
         server_msg.process_access_denied_from_server(e.data.value);
+    }
+    else if (e.data.type == "data_processing_worker__channel_description_from_server")
+    {
+        server_msg.process_channel_description_from_server(e.data.value);
     }
     else if (e.data.type == "data_processing_worker__force_admin_password_change")
     {

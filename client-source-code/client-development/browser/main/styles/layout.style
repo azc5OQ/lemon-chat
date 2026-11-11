@@ -1285,7 +1285,7 @@ body[data-layout-edit="1"] #communication-system-container > .layout-dragging
 :root :is(#channel-list-container, #idle-clients-container, #member-list-body) .connected-client .client-mute-state
 {
     background-color: var(--set-muted, #8995a3);
-    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 4 5 7H2v6h3l4 3zM13 7l5 6m0-6-5 6'/%3E%3C/svg%3E") center / contain no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M10 3 5.5 7H2v6h3.5l4.5 4z'/%3E%3Cpath d='M13 7.5l5 5m0-5-5 5' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E") center / contain no-repeat;
 }
 
 :is(#channel-list-container, #idle-clients-container) .connected-client
@@ -1309,10 +1309,12 @@ body[data-layout-edit="1"] #communication-system-container > .layout-dragging
     flex: 0 0 auto;
 }
 
+/* The name gets its full width first; group icons are hidden before the name is shortened. */
 :is(#channel-list-container, #idle-clients-container) .connected-client .connected-client-p,
 :is(#channel-list-container, #idle-clients-container) .connected-client #connected-local-client-input
 {
-    flex: 1 1 0;
+    flex: 0 1 auto;
+    field-sizing: content;
     min-width: 0;
     max-width: 100%;
     overflow: hidden;
@@ -1328,33 +1330,30 @@ body[data-layout-edit="1"] #communication-system-container > .layout-dragging
     overflow: hidden;
 }
 
+/* Group icons of a client: the channel group icon, then the server group icons, ending at the flag; an icon that does not fit is not shown. */
 :is(#channel-list-container, #idle-clients-container) .connected-client .client-groups
 {
-    display: block;
-    flex: 0 3 auto;
+    display: flex;
+    flex: 0 1000 auto;
+    flex-flow: row wrap;
+    justify-content: flex-end;
+    align-content: flex-start;
+    align-items: center;
+    height: var(--tree-icon-size, 16px);
     width: max-content;
     min-width: 0;
-    max-width: 80px;
     overflow: hidden;
-    text-overflow: ellipsis;
-    text-align: right;
-    direction: rtl;
-    unicode-bidi: isolate;
+    direction: ltr;
     white-space: nowrap;
     float: none;
     order: 10;
     margin-left: auto;
 }
 
-:is(#channel-list-container, #idle-clients-container) .connected-client .client-groups:has(.single-group)
+/* channel-groups.js puts the channel group icon into the box at a time of its own, so its place is set here */
+:is(#channel-list-container, #idle-clients-container) .connected-client .client-groups > .channel-group-icon
 {
-    min-width: 1em;
-}
-
-/* Keep the dots visible even when no complete group icon fits. */
-:is(#channel-list-container, #idle-clients-container) .connected-client .client-groups::before
-{
-    content: "\200b";
+    order: -1;
 }
 
 :is(#channel-list-container, #idle-clients-container) .connected-client .single-group
@@ -1362,13 +1361,27 @@ body[data-layout-edit="1"] #communication-system-container > .layout-dragging
     flex-shrink: 0;
 }
 
+/* A group without an icon gets no box, so it takes no space in the row. */
+:is(#channel-list-container, #idle-clients-container) .connected-client .single-group:not([style*="url("])
+{
+    display: none;
+}
+
+/* Icon sizes of channel rows and client rows; a theme sets --tree-icon-size, --tree-icon-gap, --tree-flag-width, --tree-flag-gap and --tree-row-inset. */
 :is(#channel-list-container, #idle-clients-container) .connected-client .connected-client-country-flag
 {
     flex: 0 0 auto;
     float: none;
     order: 20;
-    margin-left: 4px;
-    margin-right: 4px;
+    width: var(--tree-flag-width, 23px);
+    margin: 0 0 0 var(--tree-flag-gap, 4px);
+}
+
+/* The icons of a channel row and of a client row end at the same distance from the right edge of the row. */
+:is(#channel-list-container, #idle-clients-container) .connected-client,
+#channel-list-container .single-channel
+{
+    padding-right: var(--tree-row-inset, 4px) !important;
 }
 
 /* tree rows must survive a long press, because the browser's own hold behaviours (text
@@ -1599,6 +1612,26 @@ p.identity-dialog-hint {
     width: 0px !important;
 }
 
+/* A client without a detected country has an empty flag box. The box takes no space ... */
+:is(#channel-list-container, #idle-clients-container) .connected-client .country-flag-
+{
+    display: none !important;
+}
+
+/* While flags are in use, a client without a flag keeps an empty box of the flag's width. */
+body:not(.hide-country-flags) :is(#channel-list-container, #idle-clients-container):has(.connected-client-country-flag:not(.country-flag-):not(.connected-client-country-flag-hide)) .connected-client .country-flag-:not(.connected-client-country-flag-hide)
+{
+    display: block !important;
+    width: var(--tree-flag-width, 23px) !important;
+}
+
+/* The local setting "show country flags" is off: no flag and no empty box. */
+body.hide-country-flags .connected-client-country-flag,
+:root .connected-client-country-flag.connected-client-country-flag-hide
+{
+    display: none !important;
+}
+
 /* right-pane member list hidden by default, because only a theme that wants the
    "channels left, members right" split (currently termix) unhides it */
 #member-list-container {
@@ -1616,7 +1649,7 @@ p.identity-dialog-hint {
 }
 
 /* member-list channel captions + current-channel circle hidden by default, because these
-   strip decorations only make sense in the strip themes (simpledark/bluebell), which unhide them */
+   strip decorations only make sense in the theme that shows the member strip (bluebell), which unhides them */
 .member-list-client-channel,
 .member-list-channel {
     display: none;
@@ -1625,7 +1658,7 @@ p.identity-dialog-hint {
     display: none;
 }
 /* js-created strip controls (orientation, neighbors, me, scale, session) hidden by default,
-   because only a theme that uses the member strip (simpledark/bluebell) unhides them */
+   because only a theme that uses the member strip (bluebell) unhides them */
 #msgr-orientation-button,
 #msgr-neighbors-button,
 #msgr-me-button,
@@ -2217,7 +2250,7 @@ div#local-settings-container.closing {
     to { opacity: 0; transform: translateY(14px); }
 }
 /* channel unread-count badge hidden by default, because only a theme that draws it
-   (simpledark/bluebell) opts back in with a higher-specificity !important rule */
+   (bluebell) opts back in with a higher-specificity !important rule */
 .single-channel-unread-number {
     display: none !important;
 }
@@ -3216,7 +3249,7 @@ div#local-settings-container.closing {
 }
 
 /* the sections of the connect window: a framed group with a caption and a one-line explanation each; two of them side by side.
-   as a page of its own (simpledark, bluebell) the sections keep a readable width in the middle of the screen */
+   as a page of its own (bluebell) the sections keep a readable width in the middle of the screen */
 .connect-section {
     box-sizing: border-box;
     min-width: 0;
@@ -3797,15 +3830,37 @@ body.server-audio-disabled .client-audio-state[data-has-avatar="1"]
     float: none;
 }
 
-body.hide-server-icons-in-channel-list #channel-list-container .client-groups,
-body.hide-server-icons-in-channel-list #channel-list-container .single-channel-icon
+/* Icons at the right end of a channel row: "audio disabled", then the lock, then the channel icon, all of one size. */
+#channel-list-container .single-channel > .single-channel-icon
 {
-    display: none !important;
+    order: 3;
+    width: var(--tree-icon-size, 16px) !important;
+    height: var(--tree-icon-size, 16px) !important;
+    margin: 0 0 0 4px !important;
 }
 
-body.hide-server-icons-in-channel-list #channel-list-container .connected-client-country-flag
+#channel-list-container .single-channel > .single-channel-is-audio-disabled
 {
-    margin-left: auto;
+    order: 1;
+    width: var(--tree-icon-size, 16px);
+    height: var(--tree-icon-size, 16px);
+    margin: 0 0 0 4px;
+    background-position: center;
+    background-size: contain;
+}
+
+/* When any channel has an icon, a row with the "audio disabled" icon keeps an empty channel icon box. */
+body:not(.hide-channel-icons-in-channel-list) #channel-list-container:has(.single-channel-icon[style*="background-image"]) .single-channel:has(> .single-channel-is-audio-disabled) > .single-channel-icon
+{
+    display: block !important;
+}
+
+/* Three local settings each hide one kind of icon in the channel list. */
+body.hide-server-group-icons-in-channel-list :is(#channel-list-container, #idle-clients-container) .client-groups > .single-group:not(.channel-group-icon),
+body.hide-channel-group-icons-in-channel-list :is(#channel-list-container, #idle-clients-container) .client-groups > .channel-group-icon,
+body.hide-channel-icons-in-channel-list #channel-list-container .single-channel-icon
+{
+    display: none !important;
 }
 
 /* The channel icon picker must stay above the channel window in every theme. */
@@ -4048,12 +4103,14 @@ body.hide-server-icons-in-channel-list #channel-list-container .connected-client
     margin-bottom: 0;
 }
 
+/* Every group icon is drawn in a box of the same size; the size of its image does not matter. */
 :root :is(#channel-list-container, #idle-clients-container) .connected-client .single-group
 {
-    width: 16px;
-    height: 16px;
-    margin-top: 0;
-    margin-bottom: 0;
+    box-sizing: border-box;
+    width: var(--tree-icon-size, 16px);
+    height: var(--tree-icon-size, 16px);
+    margin: 0 0 0 var(--tree-icon-gap, 2px);
+    padding: 0;
     vertical-align: middle;
     background-position: center;
     background-size: contain;
@@ -4067,7 +4124,7 @@ body.hide-server-icons-in-channel-list #channel-list-container .connected-client
     background-color: var(--set-hover, #80808022);
 }
 
-/* Local mute belongs to the audio indicator, not the right-side membership badges. */
+/* The "muted by you" icon is drawn to the right of the audio state icon. */
 :root :is(#channel-list-container, #idle-clients-container) .client-audio-state
 {
     position: relative;
@@ -4077,15 +4134,21 @@ body.hide-server-icons-in-channel-list #channel-list-container .connected-client
 :root :is(#channel-list-container, #idle-clients-container) .client-audio-state > .client-mute-state
 {
     position: absolute;
-    left: -5px;
-    bottom: 0;
-    top: auto;
+    left: calc(100% + 3px);
+    top: 50%;
+    bottom: auto;
     right: auto;
-    width: 12px;
-    height: 12px;
-    min-width: 12px;
-    max-width: 12px;
-    margin: 0;
+    width: 16px;
+    height: 16px;
+    min-width: 16px;
+    max-width: 16px;
+    margin: -8px 0 0 0;
     z-index: 2;
-    background-color: var(--client-mute-color, #cf6f78);
+    background-color: var(--client-mute-color, #d9434e);
+}
+
+/* The name moves to the right while the "muted by you" icon is shown. */
+:is(#channel-list-container, #idle-clients-container) .connected-client:has(.client-mute-state[style*="block"]) .client-name-text
+{
+    margin-left: 19px;
 }

@@ -803,6 +803,12 @@ static void _settings_internal__build_and_push_client_config(int64 websocket_por
     {
         goto done;
     }
+
+    // The two start page buttons; tools/configure-client.py writes the same names.
+    if (cJSON_AddBoolToObject(config_object, "is_connect_button_shown", g_server_settings.is_start_page_connect_button_enabled == TRUE) == NULL_POINTER || cJSON_AddBoolToObject(config_object, "is_import_identity_button_shown", g_server_settings.is_start_page_import_identity_button_enabled == TRUE) == NULL_POINTER)
+    {
+        goto done;
+    }
     if (g_server_settings.is_avatar_upload_allowed == TRUE)
     {
         if (cJSON_AddNumberToObject(config_object, "avatar_max_size", (double)g_server_settings.avatar_max_size_bytes) == NULL_POINTER)
@@ -1520,6 +1526,16 @@ void settings__load(void)
                 if (cJSON_IsBool(json_field))
                 {
                     g_server_settings.is_client_config_embedded = cJSON_IsTrue(json_field);
+                }
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "is_start_page_connect_button_enabled");
+                if (cJSON_IsBool(json_field))
+                {
+                    g_server_settings.is_start_page_connect_button_enabled = cJSON_IsTrue(json_field);
+                }
+                json_field = cJSON_GetObjectItemCaseSensitive(json_root, "is_start_page_import_identity_button_enabled");
+                if (cJSON_IsBool(json_field))
+                {
+                    g_server_settings.is_start_page_import_identity_button_enabled = cJSON_IsTrue(json_field);
                 }
                 json_field = cJSON_GetObjectItemCaseSensitive(json_root, "is_sending_text_to_idle_clients_allowed");
                 if (cJSON_IsBool(json_field))
@@ -2590,7 +2606,16 @@ boole settings__save_server_settings_to_file(void)
     util__json_delete_item_secure(json_root, "is_client_http_enabled");
     util__json_delete_item_secure(json_root, "is_client_http_blank_when_disabled");
     util__json_delete_item_secure(json_root, "is_client_config_embedded");
-    if (!cJSON_AddBoolToObject(json_root, "is_client_http_enabled", g_server_settings.is_client_http_enabled) || !cJSON_AddBoolToObject(json_root, "is_client_http_blank_when_disabled", g_server_settings.is_client_http_blank_when_disabled) || !cJSON_AddBoolToObject(json_root, "is_client_config_embedded", g_server_settings.is_client_config_embedded))
+    util__json_delete_item_secure(json_root, "is_start_page_connect_button_enabled");
+    util__json_delete_item_secure(json_root, "is_start_page_import_identity_button_enabled");
+    if (!cJSON_AddBoolToObject(json_root, "is_client_http_enabled", g_server_settings.is_client_http_enabled) || !cJSON_AddBoolToObject(json_root, "is_client_http_blank_when_disabled", g_server_settings.is_client_http_blank_when_disabled) || !cJSON_AddBoolToObject(json_root, "is_client_config_embedded", g_server_settings.is_client_config_embedded) || !cJSON_AddBoolToObject(json_root, "is_start_page_connect_button_enabled", g_server_settings.is_start_page_connect_button_enabled) || !cJSON_AddBoolToObject(json_root, "is_start_page_import_identity_button_enabled", g_server_settings.is_start_page_import_identity_button_enabled))
+    {
+        goto json_failure;
+    }
+    // the default themes of the served page can be changed in the server settings tab
+    util__json_delete_item_secure(json_root, "default_theme");
+    util__json_delete_item_secure(json_root, "default_mobile_theme");
+    if (!cJSON_AddStringToObject(json_root, "default_theme", &g_server_settings.default_theme[0]) || !cJSON_AddStringToObject(json_root, "default_mobile_theme", &g_server_settings.default_mobile_theme[0]))
     {
         goto json_failure;
     }
@@ -2920,6 +2945,14 @@ void settings__save_initial(char plaintext_keys[][256], uint64 keys_count)
     {
         goto json_failure;
     }
+    if (!util__json_add_owned_object(json_root, "is_start_page_connect_button_enabled", cJSON_CreateBool(g_server_settings.is_start_page_connect_button_enabled == TRUE)))
+    {
+        goto json_failure;
+    }
+    if (!util__json_add_owned_object(json_root, "is_start_page_import_identity_button_enabled", cJSON_CreateBool(g_server_settings.is_start_page_import_identity_button_enabled == TRUE)))
+    {
+        goto json_failure;
+    }
     if (!util__json_add_owned_object(json_root, "is_identity_localstorage_enabled", cJSON_CreateBool(g_server_settings.is_identity_localstorage_enabled == TRUE)))
     {
         goto json_failure;
@@ -3052,7 +3085,9 @@ void settings__save_initial(char plaintext_keys[][256], uint64 keys_count)
     util__json_delete_item_secure(json_root, "is_client_http_enabled");
     util__json_delete_item_secure(json_root, "is_client_http_blank_when_disabled");
     util__json_delete_item_secure(json_root, "is_client_config_embedded");
-    if (!cJSON_AddBoolToObject(json_root, "is_client_http_enabled", g_server_settings.is_client_http_enabled) || !cJSON_AddBoolToObject(json_root, "is_client_http_blank_when_disabled", g_server_settings.is_client_http_blank_when_disabled) || !cJSON_AddBoolToObject(json_root, "is_client_config_embedded", g_server_settings.is_client_config_embedded))
+    util__json_delete_item_secure(json_root, "is_start_page_connect_button_enabled");
+    util__json_delete_item_secure(json_root, "is_start_page_import_identity_button_enabled");
+    if (!cJSON_AddBoolToObject(json_root, "is_client_http_enabled", g_server_settings.is_client_http_enabled) || !cJSON_AddBoolToObject(json_root, "is_client_http_blank_when_disabled", g_server_settings.is_client_http_blank_when_disabled) || !cJSON_AddBoolToObject(json_root, "is_client_config_embedded", g_server_settings.is_client_config_embedded) || !cJSON_AddBoolToObject(json_root, "is_start_page_connect_button_enabled", g_server_settings.is_start_page_connect_button_enabled) || !cJSON_AddBoolToObject(json_root, "is_start_page_import_identity_button_enabled", g_server_settings.is_start_page_import_identity_button_enabled))
     {
         goto json_failure;
     }

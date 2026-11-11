@@ -219,14 +219,28 @@ static void _ui_window_internal__on_choose_conversation(gui_event_t *event)
  */
 static void _ui_window_internal__on_close_conversation(gui_event_t *event)
 {
+    int64 peer = -1;
+    uint64 serial = 0;
+    boole is_closed = FALSE;
+
+    // Close the tab.
     if (event && event->sender)
     {
-        desktop_session_view__close_tab((int64)(nuint)event->sender->user_data);
+        is_closed = desktop_session_view__close_tab((int64)(nuint)event->sender->user_data, &peer, &serial);
     }
     else
     {
-        desktop_session_view__close();
+        is_closed = desktop_session_view__close(&peer, &serial);
     }
+
+    // Send the notice.
+    if (is_closed)
+    {
+        // the other client then shows that this user closed the conversation
+        desktop_session__direct_closed(g_session, peer, serial);
+    }
+
+    // Draw again.
     g_refresh = 1;
     _ui_window_internal__request_render();
 }

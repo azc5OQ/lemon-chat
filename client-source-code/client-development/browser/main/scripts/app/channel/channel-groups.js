@@ -50,6 +50,8 @@ var channel_groups_power_fields =
     ["talk_power", "Talk power", "Compared with this channel's talk requirement for microphone and MP3 audio."],
     ["channel_message_power", "Channel message power", "Compared with this channel's requirement for sending and editing text."],
     ["channel_picture_power", "Channel picture power", "Compared with this channel's requirement for sending pictures."],
+    ["channel_file_power", "Channel file power", "Compared with this channel's requirement for sending files."],
+    ["channel_create_power", "Channel create power", "Compared with this channel's requirement for creating a channel inside it."],
     ["stream_power", "Channel streaming power", "Compared with this channel's requirement for screen and video sharing."],
     ["channel_kick_power", "Channel kick power", "Power to remove another user from this channel. It does not increase power to move users between channels."],
     ["channel_kick_protection", "Channel kick protection", "Power required to remove this user from this channel. It does not protect against server kicks or moves."],
@@ -107,10 +109,6 @@ function channel_groups__refresh_icons()
         {
             continue;
         }
-        holder.querySelectorAll(".channel-group-icon").forEach(function(icon)
-        {
-            icon.remove();
-        });
         for (let icon of holder.querySelectorAll("[group-id]"))
         {
             let group = channel_tree__get_group_by_group_id(Number(icon.getAttribute("group-id")));
@@ -119,10 +117,22 @@ function channel_groups__refresh_icons()
         }
         let group = channel_groups__active(client);
         let source = channel_groups__icon(group);
+        let current = holder.querySelector(".channel-group-icon");
+
+        // an unchanged icon stays in place: removing it and adding it again makes the browser draw it again, which is seen as a flash
+        if (current && source && current.icon_source === source && current.title === "Channel groups: " + group.name)
+        {
+            continue;
+        }
+        holder.querySelectorAll(".channel-group-icon").forEach(function(icon)
+        {
+            icon.remove();
+        });
         if (source)
         {
             let icon = document.createElement("div");
             icon.className = "single-group channel-group-icon";
+            icon.icon_source = source;
             icon.style.backgroundImage = 'url("' + source + '")';
             icon.title = "Channel groups: " + group.name;
             icon.setAttribute("aria-label", icon.title);

@@ -572,6 +572,9 @@ This body has no `is_idle`, `is_streaming_song`, `is_streaming_video` or `song_n
 | `message.required_message_power` | number | Optional; defaults to 0 | Minimum channel-text power. Whole number from `0` through `1000`. |
 | `message.required_picture_power` | number | Optional; defaults to 0 | Minimum channel-picture power. Whole number from `0` through `1000`. |
 | `message.required_stream_power` | number | Optional; defaults to 0 | Minimum video-stream power. Whole number from `0` through `1000`. |
+| `message.required_file_power` | number | Optional; defaults to 0 | Minimum channel file power, needed to send a file into the channel. Whole number from `0` through `1000`. |
+| `message.required_view_power` | number | Optional; defaults to 0 | Minimum channel view power, needed to see who is in the channel and to read its description without being in it. Whole number from `0` through `1000`. |
+| `message.required_create_power` | number | Optional; defaults to 0 | Minimum channel create power, needed to create a channel directly inside this channel. Whole number from `0` through `1000`. |
 
 ### Client request: `edit_channel_request`
 
@@ -617,6 +620,9 @@ This body has no `is_idle`, `is_streaming_song`, `is_streaming_video` or `song_n
 | `message.required_message_power` | number | Optional; absent keeps current value | Minimum channel-text power. Whole number from `0` through `1000`. |
 | `message.required_picture_power` | number | Optional; absent keeps current value | Minimum channel-picture power. Whole number from `0` through `1000`. |
 | `message.required_stream_power` | number | Optional; absent keeps current value | Minimum video-stream power. Whole number from `0` through `1000`. |
+| `message.required_file_power` | number | Optional; absent keeps current value | Minimum channel file power, needed to send a file into the channel. Whole number from `0` through `1000`. |
+| `message.required_view_power` | number | Optional; absent keeps current value | Minimum channel view power, needed to see who is in the channel and to read its description without being in it. Whole number from `0` through `1000`. |
+| `message.required_create_power` | number | Optional; absent keeps current value | Minimum channel create power, needed to create a channel directly inside this channel. Whole number from `0` through `1000`. |
 
 ### Client request: `join_channel_request`
 
@@ -832,6 +838,7 @@ Each entry omits `maintainer_id`, `channel_creator_id`, passwords and encryption
 | `message.channels[].parent_channel_id` | number | Required | Parent channel ID. |
 | `message.channels[].name` | string | Required | Channel display name. The list uses `name`, not `channel_name`. |
 | `message.channels[].description` | string | Required | Channel description. The list uses `description`, not `channel_description`. |
+| `message.channels[].is_description_hidden` | boolean | Required | `true` when the receiving client may not read this channel's description: its groups do not enable `view_channel_descriptions`, or its channel view power is below the channel's `required_view_power`, and it is not in the channel. The description field is then an empty string. |
 | `message.channels[].is_using_password` | boolean | Required | Whether a password is configured; the password itself is absent. |
 | `message.channels[].is_audio_enabled` | boolean | Required | Whether channel audio is enabled. |
 | `message.channels[].is_video_stream_enabled` | boolean | Required | Whether channel video is enabled. |
@@ -846,6 +853,9 @@ Each entry omits `maintainer_id`, `channel_creator_id`, passwords and encryption
 | `message.channels[].required_message_power` | number | Required | Minimum channel-text power. Whole number from `0` through `1000`. |
 | `message.channels[].required_picture_power` | number | Required | Minimum channel-picture power. Whole number from `0` through `1000`. |
 | `message.channels[].required_stream_power` | number | Required | Minimum video-stream power. Whole number from `0` through `1000`. |
+| `message.channels[].required_file_power` | number | Required | Minimum channel file power, needed to send a file into the channel. Whole number from `0` through `1000`. |
+| `message.channels[].required_view_power` | number | Required | Minimum channel view power, needed to see who is in the channel and to read its description without being in it. Whole number from `0` through `1000`. |
+| `message.channels[].required_create_power` | number | Required | Minimum channel create power, needed to create a channel directly inside this channel. Whole number from `0` through `1000`. |
 
 ### Server response: `channel_create`
 
@@ -889,6 +899,7 @@ Each entry omits `maintainer_id`, `channel_creator_id`, passwords and encryption
 | `message.parent_channel_id` | number | Required | Parent channel ID. |
 | `message.name` | string | Required | Channel display name. The list uses `name`, not `channel_name`. |
 | `message.description` | string | Required | Channel description. The list uses `description`, not `channel_description`. |
+| `message.is_description_hidden` | boolean | Required | `true` when the receiving client may not read this channel's description: its groups do not enable `view_channel_descriptions`, or its channel view power is below the channel's `required_view_power`, and it is not in the channel. The description field is then an empty string. |
 | `message.is_using_password` | boolean | Required | Whether a password is configured; the password itself is absent. |
 | `message.is_audio_enabled` | boolean | Required | Whether channel audio is enabled. |
 | `message.is_video_stream_enabled` | boolean | Required | Whether channel video is enabled. |
@@ -903,6 +914,9 @@ Each entry omits `maintainer_id`, `channel_creator_id`, passwords and encryption
 | `message.required_message_power` | number | Required | Minimum channel-text power. Whole number from `0` through `1000`. |
 | `message.required_picture_power` | number | Required | Minimum channel-picture power. Whole number from `0` through `1000`. |
 | `message.required_stream_power` | number | Required | Minimum video-stream power. Whole number from `0` through `1000`. |
+| `message.required_file_power` | number | Required | Minimum channel file power, needed to send a file into the channel. Whole number from `0` through `1000`. |
+| `message.required_view_power` | number | Required | Minimum channel view power, needed to see who is in the channel and to read its description without being in it. Whole number from `0` through `1000`. |
+| `message.required_create_power` | number | Required | Minimum channel create power, needed to create a channel directly inside this channel. Whole number from `0` through `1000`. |
 | `message.maintainer_id` | number | Required | Current maintainer client ID; meaningful only if `has_maintainer` is true. |
 | `message.channel_creator_id` | number | Required | Client ID of the channel creator. |
 
@@ -946,6 +960,7 @@ This body uses `channel_name` and `channel_description`. It has no parent, root,
 | `message.channel_editor_id` | number | Required | Client ID of the editor. |
 | `message.channel_name` | string | Required | Nonempty channel display name, at most 50 UTF-8 characters. |
 | `message.channel_description` | string | Required | Channel description; an empty string is allowed. Shorter than `CHANNEL_DESCRIPTION_MAX_LENGTH` (1000). |
+| `message.is_description_hidden` | boolean | Required | `true` when the receiving client may not read this channel's description: its groups do not enable `view_channel_descriptions`, or its channel view power is below the channel's `required_view_power`, and it is not in the channel. The description field is then an empty string. |
 | `message.is_using_password` | boolean | Required | Whether a password is configured; the password itself is absent. |
 | `message.is_audio_enabled` | boolean | Required | Whether channel audio is enabled. |
 | `message.is_video_stream_enabled` | boolean | Required | Whether channel video is enabled. |
@@ -958,6 +973,36 @@ This body uses `channel_name` and `channel_description`. It has no parent, root,
 | `message.required_message_power` | number | Required | Minimum channel-text power. Whole number from `0` through `1000`. |
 | `message.required_picture_power` | number | Required | Minimum channel-picture power. Whole number from `0` through `1000`. |
 | `message.required_stream_power` | number | Required | Minimum video-stream power. Whole number from `0` through `1000`. |
+| `message.required_file_power` | number | Required | Minimum channel file power, needed to send a file into the channel. Whole number from `0` through `1000`. |
+| `message.required_view_power` | number | Required | Minimum channel view power, needed to see who is in the channel and to read its description without being in it. Whole number from `0` through `1000`. |
+| `message.required_create_power` | number | Required | Minimum channel create power, needed to create a channel directly inside this channel. Whole number from `0` through `1000`. |
+
+### Server response: `channel_description`
+
+Sent to one client when what it may read of a channel changed without an edit of the description itself: its groups, its channel view power or the channel's `required_view_power` changed, or it gained or lost admin access.
+
+**Body**
+
+```json
+{
+    "message":
+    {
+        "type": "channel_description",
+        "channel_id": 3,
+        "description": "Weekly meeting notes",
+        "is_description_hidden": false
+    }
+}
+```
+
+**Fields**
+
+| Field | JSON type | Presence | Body value |
+| --- | --- | --- | --- |
+| `message.type` | string | Required | Literal `"channel_description"`. |
+| `message.channel_id` | number | Required | Numeric channel ID. |
+| `message.description` | string | Required | The channel's description, or an empty string when `is_description_hidden` is `true`. |
+| `message.is_description_hidden` | boolean | Required | `true` when the receiving client may no longer read the description. |
 
 ### Server response: `channel_join`
 
@@ -984,7 +1029,7 @@ This body uses `channel_name` and `channel_description`. It has no parent, root,
 | --- | --- | --- | --- |
 | `message.type` | string | Required | Literal `"channel_join"`. |
 | `message.channel_id` | number | Required | Visible destination channel ID; `-1` can conceal membership. |
-| `message.reason` | string | Optional | `"move"` for a forced move, including channel deletion; `"kick"` for a channel kick. Absent for a voluntary join. Also included when the destination is hidden. |
+| `message.reason` | string | Optional | `"move"` for a forced move, including channel deletion; `"kick"` for a channel kick. Absent for a voluntary join. Also included when the destination is hidden. `"visibility"` when the client did not move: the server reports where it is, or hides it with `-1`, because the receiving client's rights or the channel's `required_view_power` changed. |
 | `message.channel_group_id` | number | Required | Channel role ID: `0` ordinary member, `1` Channel Admin, `2`–`127` a custom role. |
 | `message.client_id` | number | Required | Numeric client slot ID. |
 | `message.audio_state` | number | Required | `1` transmitting; `2` push-to-talk enabled; `3` microphone disabled, reception enabled; `4` all audio disabled. |
@@ -1143,7 +1188,7 @@ This body uses `channel_name` and `channel_description`. It has no parent, root,
 | --- | --- | --- | --- |
 | `message.type` | string | Required | Literal `"client_coming_back_from_idle_mode"`. |
 | `message.client_id` | number | Required | Numeric client slot ID. |
-| `message.channel_id` | number | Required | Numeric channel ID. |
+| `message.channel_id` | number | Required | Channel the client returned to; `-1` when the receiving client may not see who is in that channel. |
 | `message.channel_group_id` | number | Required | Channel role ID: `0` ordinary member, `1` Channel Admin, `2`–`127` a custom role. |
 
 ### Server response: `call`
@@ -1191,7 +1236,7 @@ This body uses `channel_name` and `channel_description`. It has no parent, root,
 
 ### Client request: `direct_chat_message`
 
-**Server visibility:** `receiver_id`, `local_message_id` and `type` are readable metadata. `value` is encrypted content; the server cannot read the direct-message plaintext.
+**Server visibility:** `receiver_id`, `local_message_id`, `type` and `purpose` are readable metadata. `value` is encrypted content; the server cannot read the direct-message plaintext. Through `purpose` the server learns which kind of direct message it relays (conversation content, channel keys or a read receipt), not what it says.
 
 **Body**
 
@@ -1213,6 +1258,7 @@ This body uses `channel_name` and `channel_description`. It has no parent, root,
 | --- | --- | --- | --- |
 | `message.type` | string | Required | Literal `"direct_chat_message"`. |
 | `message.value` | string | Required | Serialized end-to-end encrypted direct-content object. Its plaintext is not visible to the server; see [Direct encrypted envelope](#direct-encrypted-envelope). Nonempty; maximum length is `(websocket_message_max_length * 3 / 4) - 2048`, using the server UTF-8 length check. |
+| `message.purpose` | string | Optional; absent or unknown means `"conversation"` | What the message is for. `"conversation"`: text, edits, reactions and the notice that the sender closed the conversation; needs `send_direct_messages`, and the sender's `direct_message_power` must reach the receiver's `direct_message_protection`. `"channel_keys"`: channel keys from a channel's maintainer; no permission is checked, and the message is passed on only when sender and receiver are in the same channel. `"seen_receipt"`: a read receipt; no permission is checked. |
 | `message.receiver_id` | number | Required | Recipient client ID for a direct conversation. |
 | `message.local_message_id` | number | Required | Sender-assigned local message ID. This is a JSON number, separate from the server message ID. |
 
@@ -1464,6 +1510,7 @@ For `receiver_type: "user"`, this legacy request requires private messaging to b
 | --- | --- | --- | --- |
 | `message.type` | string | Required | Literal `"direct_chat_message"`. |
 | `message.value` | string | Required | Sender's end-to-end encrypted direct-content envelope, forwarded unchanged as a string. Only the recipient client decrypts the received content; the server cannot read its plaintext. |
+| `message.purpose` | string | Required | The purpose named by the sender, see the request. The receiving client handles the decrypted content only when it matches: `"channel_keys"` allows only channel keys, `"seen_receipt"` only a read receipt, `"conversation"` everything except channel keys. Other content is dropped. |
 | `message.sender_username` | string | Required | Author's display name. |
 | `message.sender_id` | number | Required | Client ID of the author. |
 | `message.server_chat_message_id` | number | Required | Server-assigned chat message ID, serialized as a JSON number. |
@@ -3457,6 +3504,7 @@ No additional body fields.
 | --- | --- | --- | --- |
 | `message.type` | string | Required | Literal `"access_denied"`. |
 | `message.reason` | string | Required | Readable denial text. Default: `Insufficient permissions.` This is not a fixed code enum. |
+| `message.permission` | string | Optional | Wire name of the permission or power that refused the request, for example `send_direct_messages` or `poke_power`. Absent when the refusal has another cause or the handler does not name it. The browser client writes `insufficient permissions (<name>)` into its log in red. |
 
 ### Server response: `client_info`
 

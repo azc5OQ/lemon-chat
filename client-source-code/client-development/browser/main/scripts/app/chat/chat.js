@@ -1555,6 +1555,74 @@ function chat__send_seen_receipt_for_message(sender_client_id, server_chat_messa
     });
 }
 
+/**
+ * @brief tells the other side of a direct conversation that the local user closed the
+ *        conversation's window. the notice is encrypted like a text message, so the server does
+ *        not learn what it says. nothing is sent to a music bot, to a client that left, or when
+ *        the local user's groups do not allow direct messages (the server would refuse it)
+ *
+ * @param number client_id -> the client on the other side of the conversation
+ *
+ * @return void
+ */
+function chat__send_direct_chat_closed_notice(client_id)
+{
+    let client = channel_tree__get_client_by_client_id(client_id);
+
+    // no receiver available
+    if (client == null || client.is_music_bot == true || !client.public_key || g_is_authenticated != true)
+    {
+        return;
+    }
+
+    // sending not allowed
+    if (g_server_policy.is_private_messaging_allowed == false || (typeof groups__has_permission === "function" && !groups__has_permission("send_direct_messages")))
+    {
+        return;
+    }
+
+    // build and send
+    g_data_processing_worker.postMessage({
+        type: "mainthread__create_direct_chat_closed_message",
+        receiver_id: client_id,
+        public_key: client.public_key
+    });
+}
+
+/**
+ * @brief the other side closed the window of a direct conversation: a line says so in that
+ *        conversation, if it is still open here. without an open conversation there is nothing to add
+ *
+ * @param number sender_client_id -> the client that closed its window
+ * @param string sender_username -> its name as sent by the server, used when the client list has no name
+ *
+ * @return void
+ */
+function chat__show_direct_chat_closed(sender_client_id, sender_username)
+{
+    let context = document.getElementById("chat-context-pm-" + sender_client_id);
+    let client = channel_tree__get_client_by_client_id(sender_client_id);
+    let line = null;
+
+    // conversation not open
+    if (context == null || (client != null && client.is_ignored_by_local_client == true))
+    {
+        return;
+    }
+
+    // add the line
+    line = document.createElement("div");
+    line.className = "single-server-message direct-chat-closed-message";
+    line.textContent = channel_tree__get_display_name_by_client_id(sender_client_id, sender_username) + " closed the conversation. " + new Date().toLocaleTimeString();
+    context.appendChild(line);
+
+    // scroll to end
+    if (g_current_chat_context_id == context.id)
+    {
+        chat__scroll_chat_to_end(false);
+    }
+}
+
 // coming back to the app pays whatever was owed for the conversation on screen. without
 // this a message read on return only receipted if the chat was clicked a second time
 if (typeof document !== "undefined" && typeof document.addEventListener === "function")
@@ -1680,7 +1748,7 @@ function chat__render_channel_unread_badge(channel_id)
         badge.classList.add("unread-empty");
     }
 
-    // the member list themes (simpledark, bluebell) hide the channel tree and show a circle instead; the count
+    // the member list theme (bluebell) hides the channel tree and shows a circle instead; the count
     // is shown on that circle, which is rebuilt by the member list mirror
     if (typeof UI !== "undefined" && typeof UI.schedule_member_list_sync === "function")
     {

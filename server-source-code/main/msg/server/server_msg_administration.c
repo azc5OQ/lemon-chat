@@ -332,6 +332,46 @@ void server_msg__administration__send_access_denied_to_single_client(client_t *r
 }
 
 /**
+ * @brief Tells a client that a request was refused and names the permission or power that
+ *        refused it, so the client can show it in its log.
+ *
+ * @param client_t* receiver -> client whose request was refused
+ * @param cstring permission -> wire name of the permission or power, such as "send_pokes" or "poke_power"
+ *
+ * @attention the caller holds the clients lock
+ *
+ * @return void
+ */
+void server_msg__administration__send_permission_denied_to_single_client(client_t *receiver, cstring permission)
+{
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
+
+    // Check the receiver.
+    if (receiver == NULL_POINTER || receiver->is_existing == FALSE || receiver->is_authenticated == FALSE)
+    {
+        return;
+    }
+
+    // Create the message.
+    root = server_msg__delivery__new_message("access_denied", &message);
+
+    // Debug log.
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
+
+    // Add the fields.
+    cJSON_AddStringToObject(message, "reason", "Insufficient permissions.");
+    if (permission != NULL_POINTER && permission[0] != 0)
+    {
+        cJSON_AddStringToObject(message, "permission", permission);
+    }
+
+    // Send and free.
+    server_msg__delivery__send_json_to_client(receiver, root);
+    cJSON_Delete(root);
+}
+
+/**
  * @brief Sends log entries after the caller checks permission to view server logs.
  *
  * @param client_t* receiver -> the client to reply to

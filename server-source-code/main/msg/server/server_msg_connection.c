@@ -1,5 +1,6 @@
 #include "../../clib/clib.h"
 #include "../../core/channel_groups.h"
+#include "../../core/channel.h"
 // This file sends login replies, client lists, connection notices and keepalive replies.
 
 #include "server_msg.h"
@@ -384,7 +385,7 @@ void server_msg__connection__send_client_list_to_single_client(client_t *receive
         }
 
         // Decide what this receiver may see while the channel settings are locked.
-        if (g_server_settings.is_hide_clients_in_password_protected_channels_active == TRUE && receiver->channel_id != client->channel_id && client->channel_id < g_server_settings.max_channel_count && g_channel_array[client->channel_id].is_existing == TRUE && g_channel_array[client->channel_id].is_using_password == TRUE)
+        if (channel__is_client_location_visible(receiver, client) == FALSE)
         {
             listed->channel_id = -1;
             listed->channel_group_id = 0;
@@ -426,9 +427,10 @@ void server_msg__connection__send_client_connect_message_to_all_clients(client_t
     cJSON *json_group_ids_array = NULL_POINTER;
     uint64 x = 0;
     client_t *client_in_loop = NULL_POINTER;
-    char *texts[4] = { 0 };
+    char *texts[8] = { 0 };
     uint64 variant = 0;
     int64 audio_state_to_send = 0;
+    boole is_location_visible = FALSE;
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
@@ -465,6 +467,13 @@ void server_msg__connection__send_client_connect_message_to_all_clients(client_t
         {
             variant |= 2;
         }
+
+        // a receiver that may not see who is in the subject's channel learns that the subject connected, not where it is
+        is_location_visible = channel__is_client_location_visible(client_in_loop, subject);
+        if (is_location_visible == FALSE)
+        {
+            variant |= 4;
+        }
         if (texts[variant] != NULL_POINTER)
         {
             server_msg__delivery__send_text_to_client(client_in_loop, texts[variant]);
@@ -481,8 +490,8 @@ void server_msg__connection__send_client_connect_message_to_all_clients(client_t
         util__hash_password_to_base64(subject->public_key, identity_hash, sizeof(identity_hash));
         cJSON_AddStringToObject(message, "identity_hash", identity_hash);
         cJSON_AddStringToObject(message, "public_key", subject->public_key);
-        cJSON_AddNumberToObject(message, "channel_id", (double)subject->channel_id);
-        cJSON_AddNumberToObject(message, "channel_group_id", subject->is_idle ? 0 : subject->channel_group_role);
+        cJSON_AddNumberToObject(message, "channel_id", is_location_visible == TRUE ? (double)subject->channel_id : (double)-1);
+        cJSON_AddNumberToObject(message, "channel_group_id", subject->is_idle || is_location_visible == FALSE ? 0 : subject->channel_group_role);
         cJSON_AddNumberToObject(message, "client_id", (double)subject->client_id);
         cJSON_AddBoolToObject(message, "is_music_bot", subject->is_music_bot);
 
@@ -506,7 +515,7 @@ void server_msg__connection__send_client_connect_message_to_all_clients(client_t
         }
         cJSON_Delete(root);
     }
-    for (variant = 0; variant < 4; variant++)
+    for (variant = 0; variant < 8; variant++)
     {
         cJSON_free(texts[variant]);
     }

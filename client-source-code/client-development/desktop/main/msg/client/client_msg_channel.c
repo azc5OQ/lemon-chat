@@ -264,7 +264,7 @@ boole client_msg__channel__distribute_keys(desktop_session_t *session)
         envelope_json = crypto_session__direct_seal(session->crypto, session->client_keys[slot], &direct_keys, encrypted_body);
     }
     message = client_msg__delivery__new_message("direct_chat_message");
-    complete = envelope_json && message && cJSON_AddStringToObject(message, "value", envelope_json) && cJSON_AddNullToObject(message, "receiver_type") && cJSON_AddNumberToObject(message, "receiver_id", (double)client->id) && cJSON_AddNumberToObject(message, "local_message_id", (double)++session->next_local_id);
+    complete = envelope_json && message && cJSON_AddStringToObject(message, "purpose", "channel_keys") && cJSON_AddStringToObject(message, "value", envelope_json) && cJSON_AddNullToObject(message, "receiver_type") && cJSON_AddNumberToObject(message, "receiver_id", (double)client->id) && cJSON_AddNumberToObject(message, "local_message_id", (double)++session->next_local_id);
     complete = client_msg__delivery__send(session, message, complete);
     crypto_session__free_json(body);
     crypto_session__free_text(keys_json);

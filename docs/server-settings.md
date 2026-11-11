@@ -36,6 +36,29 @@ Chat uses its own WebSocket listener, so both choices leave chat connections run
 
 If Alice enables **embed connection details**, each new download includes the current connection ports and typed connection passwords. Anyone who can download that page can read those passwords. Turning embedding off removes those details from subsequent responses; public client policy and theme defaults can still be supplied. It cannot erase a page or password someone downloaded earlier.
 
+### The start page and the default themes
+
+A browser plays no sound on a page until the user has clicked or tapped on it. A page that connects by itself therefore stays silent for a user who never clicks anything. Two settings on the same page add a start page that is shown before the client connects:
+
+- **show a large connect button before the page connects** (`is_start_page_connect_button_enabled`): the page waits for a press on its Connect button. That press lets the browser play voices and sound effects afterwards.
+- **show a large import identity button under the connect button** (`is_start_page_import_identity_button_enabled`): a user can load an identity from a file or from pasted text before connecting. This button is shown only together with the connect button.
+
+Both are off by default, and first-time setup asks about them. On a desktop the buttons have the size of ordinary buttons; on a touch screen they take the width of the page.
+
+**Default theme on a desktop** and **Default theme on a phone** (`default_theme`, `default_mobile_theme`) choose the theme for users who have not chosen one. A user's own choice is kept. "The page's own default" leaves the choice to the page.
+
+All four values are written into the page when it is downloaded, so a change applies from the next load of the page.
+
+### A page for somebody else: `configure-client.py`
+
+`client-source-code/client-development/browser/tools/configure-client.py` writes the same options into a copy of a built `client.html`, without a server. The script needs Python 3 and nothing else. The copy can be given to somebody, for example as an email attachment, and connects to the chosen server when it is opened.
+
+```
+python tools/configure-client.py --host chat.example.org --port 15555 --key secret --connect-button --theme hybrid --output client-for-friends.html
+```
+
+Run without options, it asks for every value. `--list-themes` prints the themes of the page, `--secure` makes the page connect with wss although it is opened from a file, and `--help` lists all options. Connection passwords are written into the file as text; everybody who gets the file can read them. A server that later serves such a file leaves its options as they are.
+
 These changes alter responses in RAM. They do not rewrite `client.html` on disk.
 When a browser accepts gzip, the server sends a compressed response to reduce
 the download size. Other clients receive ordinary HTML. Both responses contain
@@ -149,7 +172,7 @@ Hiding the public list does not stop clients from receiving the settings they ne
 | Channels | Maximum channel count, temporary channels, hiding members of password protected channels, and channel-key reuse after members join or leave. |
 | Chat and files | Typing indicators, messages to idle users, direct messages, link previews, file and picture uploads, size limits, and whether users may block incoming attachments. |
 | Voice and video | Audio, video, music bot audio, connection methods, connection cooldown, scrolling song names, and saving or restoring music bots and playlists. |
-| Browser page | Serving the browser client, behavior when HTTP is disabled, and embedded connection details. |
+| Browser page | Serving the browser client, behavior when HTTP is disabled, embedded connection details, the start page buttons, and the default themes. |
 
 For example, if people should attach documents to a conversation, open **Chat and files**, enable **allow file uploads in chat**, and choose the maximum file size. Select **Save all settings** after reviewing the values.
 
@@ -340,7 +363,7 @@ Select **Server administration → Groups** to open the group editor. Groups use
 
 Use the [Permissions guide](permissions.md) when you want to create a group, assign members or understand Enable, Disable, power, Negate, Skip and Grant. Use the [permission reference](permission-reference.md) for every accepted field name, saved value and compatibility note.
 
-Under **Appearance** in local settings, **hide server icons in the channel list** hides server group and custom channel icons on that device. It does not change group membership or permissions.
+Under **Appearance** in local settings, three switches each hide one kind of icon in the channel list on that device: **hide server group icons in the channel list**, **hide channel group icons in the channel list** and **hide channel icons in the channel list** (the custom icons of channels). Each switch works alone and in every theme. Flags and audio or video indicators stay. The switches do not change group membership or permissions, and the **view info** window of a person still lists that person's server groups.
 
 ## Server reaction emojis
 

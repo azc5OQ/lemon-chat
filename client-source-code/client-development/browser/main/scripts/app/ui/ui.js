@@ -751,6 +751,9 @@ var UI = {
         {
             let selector_id = this.getAttribute("data-chat-context-remove-selector-id");
             let client_id = selector_id.split("user-")[1];
+
+            // the other side learns that this window was closed, like in TeamSpeak 3
+            chat__send_direct_chat_closed_notice(parseInt(client_id));
             document.querySelector('[data-chat-context-selector-id="' + selector_id + '"]').remove();
             UI.chat_context_remove(document.getElementById("chat-context-pm-" + client_id));
 
@@ -928,8 +931,8 @@ var UI = {
 
                     let html_to_append = "<div class=\"chat-context\" id=\"" + id_to_find + "\">\n\
                                                     <div class=\"single-server-message\">now talking to user: " + data_username + "</div>\n\
-                                                    <div class=\"single-server-message\">your public key: <span class=\"server-message-key\" title=\"click to expand\">" + g_rsa_public_key_string + "</span></div>\n\
-                                                    <div class=\"single-server-message\">his public key: <span class=\"server-message-key\" title=\"click to expand\">" + chat__sanitize_string(channel_tree__get_public_key_by_client_id(g_chat_message_receiver_id)) + "</span></div>\n\
+                                                    <div class=\"single-server-message server-message-public-key\">your public key: <span class=\"server-message-key\" title=\"click to expand\">" + g_rsa_public_key_string + "</span></div>\n\
+                                                    <div class=\"single-server-message server-message-public-key\">his public key: <span class=\"server-message-key\" title=\"click to expand\">" + chat__sanitize_string(channel_tree__get_public_key_by_client_id(g_chat_message_receiver_id)) + "</span></div>\n\
                                                     <div class=\"single-server-message\"> </div>\n\
                                                 </div>";
 
@@ -2681,7 +2684,7 @@ var UI = {
 
             // unread counter on the circle itself. the member list themes hide the channel
             // tree entirely, so the badge in those rows can never be seen there - this
-            // is the only channel element bluebell/simpledark actually show
+            // is the only channel element bluebell actually show
             let channel_unread = document.createElement("p");
             let channel_unread_count = chat__get_channel_unread_count(g_current_channel_id);
             channel_unread.className = "member-list-channel-unread"
@@ -3323,12 +3326,15 @@ var UI = {
     },
 
     /**
-     * @brief Shows the powers required to send audio, video, messages and pictures in a channel.
+     * @brief Shows the powers a channel requires: for sending audio, video, messages, pictures and files, for viewing its members and description, and for creating a channel inside it.
+     *
      * @param channel -> channel being edited, or null for a new channel
+     *
+     * @return void
      */
     set_channel_power_inputs: function(channel)
     {
-        for (let action of ["talk", "stream", "message", "picture"])
+        for (let action of ["talk", "stream", "message", "picture", "file", "view", "create"])
         {
             document.getElementById("channel-properties-required-" + action + "-power").value = channel
                 ? Number(channel["required_" + action + "_power"]) || 0 : 0;
@@ -3454,7 +3460,7 @@ var UI = {
         {
             return result;
         }
-        for (let action of ["talk", "stream", "message", "picture"])
+        for (let action of ["talk", "stream", "message", "picture", "file", "view", "create"])
         {
             let input = document.getElementById("channel-properties-required-" + action + "-power");
             let value = Number(input.value);
@@ -4210,6 +4216,9 @@ var UI = {
      */
     identity_apply_passphrase: function(identity_passphrase_string)
     {
+        // the result is announced when the key pair exists (connection__identity_imported)
+        g_is_identity_import_pending = true;
+
         // clears the identity slot; the connect loop connects again only once the new keypair exists
         connection__request_identity(identity_passphrase_string);
 

@@ -30,6 +30,85 @@ void server_msg__channel__send_full_to_single_client(client_t *receiver, uint64 
 }
 
 /**
+ * @brief Sends a message about one channel to every client in one of two versions: the complete
+ *        one, or one with an empty description for the clients that may not read this
+ *        channel's description.
+ *
+ * @param cJSON* root -> the complete message; this function changes it and the caller deletes it
+ * @param cJSON* message -> the "message" object inside root
+ * @param const char* description_key -> name of the field that holds the description
+ * @param channel_t* channel -> the channel the message is about
+ *
+ * @attention the caller holds the clients lock and the channels lock
+ *
+ * @return void
+ */
+static void _server_msg_channel_internal__send_to_all_clients_with_visible_description(cJSON *root, cJSON *message, const char *description_key, channel_t *channel)
+{
+    char *plaintext = NULL_POINTER;
+    char *plaintext_hidden = NULL_POINTER;
+    client_t *client_in_loop = NULL_POINTER;
+    uint64 x = 0;
+
+    // Complete version.
+    cJSON_AddBoolToObject(message, "is_description_hidden", FALSE);
+    plaintext = cJSON_PrintUnformatted(root);
+
+    // Version without description.
+    cJSON_ReplaceItemInObjectCaseSensitive(message, description_key, cJSON_CreateString(""));
+    cJSON_ReplaceItemInObjectCaseSensitive(message, "is_description_hidden", cJSON_CreateBool(TRUE));
+    plaintext_hidden = cJSON_PrintUnformatted(root);
+
+    // Send to clients.
+    for (x = 0; x < g_server_settings.max_client_count; x++)
+    {
+        client_in_loop = &g_clients_array[x];
+        if (client_in_loop->is_existing == FALSE || client_in_loop->is_authenticated == FALSE || client_in_loop->is_music_bot == TRUE)
+        {
+            continue;
+        }
+        server_msg__delivery__send_text_to_client(client_in_loop, channel__is_description_visible(client_in_loop, channel) == TRUE ? plaintext : plaintext_hidden);
+    }
+
+    // Free both texts.
+    cJSON_free(plaintext);
+    cJSON_free(plaintext_hidden);
+}
+
+/**
+ * @brief Sends one client a channel's description, or tells it that the description is hidden
+ *        from now on. Used when the client's rights or the channel's required view power changed.
+ *
+ * @param client_t* receiver -> the client that is told
+ * @param channel_t* channel -> the channel
+ * @param boole is_visible -> TRUE to send the description; FALSE to send an empty one marked as hidden
+ *
+ * @attention the caller holds the clients lock and the channels lock
+ *
+ * @return void
+ */
+void server_msg__channel__send_description_to_single_client(client_t *receiver, channel_t *channel, boole is_visible)
+{
+    cJSON *root = NULL_POINTER;
+    cJSON *message = NULL_POINTER;
+
+    // Debug log.
+    DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
+
+    // Create the message.
+    root = server_msg__delivery__new_message("channel_description", &message);
+
+    // Add the fields.
+    cJSON_AddNumberToObject(message, "channel_id", (double)channel->channel_id);
+    cJSON_AddStringToObject(message, "description", is_visible == TRUE ? channel->description : "");
+    cJSON_AddBoolToObject(message, "is_description_hidden", is_visible == FALSE);
+
+    // Send and free.
+    server_msg__delivery__send_json_to_client(receiver, root);
+    cJSON_Delete(root);
+}
+
+/**
  * @brief This function sends channel list to single client. Called when client sents
  *        challenge_response message to server during authentication process.
  *
@@ -44,6 +123,7 @@ void server_msg__channel__send_list_to_single_client(client_t *receiver)
     cJSON *json_channel_array = NULL_POINTER;
     uint64 i = 0;
     cJSON *single_channel = NULL_POINTER;
+    boole is_description_visible = FALSE;
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
@@ -61,7 +141,11 @@ void server_msg__channel__send_list_to_single_client(client_t *receiver)
         cJSON_AddNumberToObject(single_channel, "channel_id", g_channel_array[i].channel_id);
         cJSON_AddNumberToObject(single_channel, "parent_channel_id", g_channel_array[i].parent_channel_id);
         cJSON_AddStringToObject(single_channel, "name", g_channel_array[i].name);
-        cJSON_AddStringToObject(single_channel, "description", g_channel_array[i].description);
+
+        // a client that may not read this channel's description gets an empty one
+        is_description_visible = channel__is_description_visible(receiver, &g_channel_array[i]);
+        cJSON_AddStringToObject(single_channel, "description", is_description_visible == TRUE ? g_channel_array[i].description : "");
+        cJSON_AddBoolToObject(single_channel, "is_description_hidden", is_description_visible == FALSE);
         cJSON_AddBoolToObject(single_channel, "is_using_password", g_channel_array[i].is_using_password);
         cJSON_AddBoolToObject(single_channel, "is_audio_enabled", g_channel_array[i].is_audio_enabled);
         channel__write_required_powers(single_channel, &g_channel_array[i]);
@@ -149,7 +233,8 @@ void server_msg__channel__send_create_message_to_all_clients(channel_t *channel,
     cJSON_AddNumberToObject(message, "channel_icon_id", (double)channel->icon_id);
     cJSON_AddNumberToObject(message, "channel_creator_id", (double)creator->client_id);
 
-    server_msg__delivery__send_json_to_all_clients(root, NULL_POINTER);
+    // Send both versions.
+    _server_msg_channel_internal__send_to_all_clients_with_visible_description(root, message, "description", channel);
 
     cJSON_Delete(root);
 }
@@ -187,7 +272,8 @@ void server_msg__channel__send_edit_message_to_all_clients(channel_t *channel, c
     cJSON_AddNumberToObject(message, "channel_icon_id", (double)channel->icon_id);
     cJSON_AddNumberToObject(message, "channel_editor_id", (double)editor->client_id);
 
-    server_msg__delivery__send_json_to_all_clients(root, NULL_POINTER);
+    // Send both versions.
+    _server_msg_channel_internal__send_to_all_clients_with_visible_description(root, message, "channel_description", channel);
 
     cJSON_Delete(root);
 }
@@ -281,20 +367,10 @@ void server_msg__channel__send_join_message_to_all_clients(client_t *subject, ch
             continue;
         }
 
-        is_hide_client_active = FALSE;
+        // Check member visibility.
+        is_hide_client_active = (boole)(channel__are_members_visible(client_in_loop, new_channel) == FALSE);
 
-        if (g_server_settings.is_hide_clients_in_password_protected_channels_active == TRUE)
-        {
-            if (client_in_loop->channel_id != new_channel->channel_id)
-            {
-                if (new_channel->is_using_password == TRUE)
-                {
-                    is_hide_client_active = TRUE;
-                }
-            }
-        }
-
-        // a client that may not see the password protected channel gets the variant without the channel id
+        // a client that may not see who is in the new channel gets the variant without the channel id
         server_msg__delivery__send_text_to_client(client_in_loop, is_hide_client_active == TRUE ? plaintext_hidden : plaintext);
     }
 
@@ -309,13 +385,18 @@ void server_msg__channel__send_join_message_to_all_clients(client_t *subject, ch
  *        microphone information is stripped before sending, push to talk active is downgraded to push
  *        to talk enabled and the streamed song name is cleared.
  *
+ *        the message carries the reason "visibility": the subject did not move. the receiver is
+ *        told where the subject is because it may see that now, or that the subject's place is
+ *        hidden from now on.
+ *
  * @param client_t* subject -> the client whose channel change is being announced
  * @param channel_t* new_channel -> channel that the subject joined
  * @param client_t* receiver -> client that receives the channel change
+ * @param boole is_channel_visible -> FALSE sends -1 instead of the channel id: the receiver may not see where the subject is
  *
  * @return void
  */
-void server_msg__channel__send_join_message_to_single_client(client_t *receiver, client_t *subject, channel_t *new_channel)
+void server_msg__channel__send_join_message_to_single_client(client_t *receiver, client_t *subject, channel_t *new_channel, boole is_channel_visible)
 {
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
@@ -342,8 +423,10 @@ void server_msg__channel__send_join_message_to_single_client(client_t *receiver,
         song_name = "";
     }
 
-    cJSON_AddNumberToObject(message, "channel_id", new_channel->channel_id);
-    cJSON_AddNumberToObject(message, "channel_group_id", channel_groups__role(subject, new_channel));
+    // Add the fields.
+    cJSON_AddStringToObject(message, "reason", "visibility");
+    cJSON_AddNumberToObject(message, "channel_id", is_channel_visible == TRUE ? (double)new_channel->channel_id : (double)-1);
+    cJSON_AddNumberToObject(message, "channel_group_id", is_channel_visible == TRUE ? (double)channel_groups__role(subject, new_channel) : 0);
     cJSON_AddNumberToObject(message, "client_id", subject->client_id);
     cJSON_AddNumberToObject(message, "audio_state", audio_state);
     cJSON_AddBoolToObject(message, "is_streaming_song", is_streaming_song);
@@ -506,16 +589,41 @@ void server_msg__channel__send_client_coming_back_from_idle_mode_info_to_all_cli
 {
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
+    char *plaintext = NULL_POINTER;
+    char *plaintext_hidden = NULL_POINTER;
+    client_t *client_in_loop = NULL_POINTER;
+    uint64 x = 0;
 
+    // Debug log.
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // Create the message.
     root = server_msg__delivery__new_message("client_coming_back_from_idle_mode", &message);
 
+    // Add the fields.
     cJSON_AddNumberToObject(message, "client_id", (double)subject->client_id);
     cJSON_AddNumberToObject(message, "channel_id", (double)channel_the_client_joins);
     cJSON_AddNumberToObject(message, "channel_group_id", subject->channel_group_role);
+    plaintext = cJSON_PrintUnformatted(root);
 
-    server_msg__delivery__send_json_to_all_clients(root, NULL_POINTER);
+    // the version for the clients that may not see who is in that channel
+    cJSON_ReplaceItemInObjectCaseSensitive(message, "channel_id", cJSON_CreateNumber((double)-1));
+    cJSON_ReplaceItemInObjectCaseSensitive(message, "channel_group_id", cJSON_CreateNumber(0));
+    plaintext_hidden = cJSON_PrintUnformatted(root);
 
+    // Send to clients.
+    for (x = 0; x < g_server_settings.max_client_count; x++)
+    {
+        client_in_loop = &g_clients_array[x];
+        if (client_in_loop->is_existing == FALSE || client_in_loop->is_authenticated == FALSE || client_in_loop->is_music_bot == TRUE)
+        {
+            continue;
+        }
+        server_msg__delivery__send_text_to_client(client_in_loop, channel__is_client_location_visible(client_in_loop, subject) == TRUE ? plaintext : plaintext_hidden);
+    }
+
+    // Free both texts.
+    cJSON_free(plaintext);
+    cJSON_free(plaintext_hidden);
     cJSON_Delete(root);
 }

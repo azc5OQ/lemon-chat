@@ -474,7 +474,10 @@ function server_info__show_channel_description(channel)
         server_info__request(!g_server_info.banner_loaded);
     }
     description.className = "channel-description-text";
-    description.textContent = channel.description || "";
+
+    // the server sends no description to a client whose groups or channel view power do not allow reading it
+    description.textContent = channel.is_description_hidden === true ? "You do not have permission to view this channel's description." : (channel.description || "");
+    description.classList.toggle("channel-description-hidden", channel.is_description_hidden === true);
     container.appendChild(description);
 }
 

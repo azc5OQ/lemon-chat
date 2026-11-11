@@ -2494,3 +2494,8 @@ div#local-settings-container .local-settings-row-select input[type="button"]:not
 {
     font-family: var(--set-font);
 }
+
+/* The public keys at the start of a conversation with a person are not shown in this theme. */
+.server-message-public-key {
+    display: none !important;
+}

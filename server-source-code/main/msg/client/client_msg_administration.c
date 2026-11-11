@@ -4,6 +4,7 @@
 #include "../../core/permissions.h"
 #include "../../core/audio_channel.h"
 #include "../../core/video_channel.h"
+#include "../../core/channel.h"
 #include "../../core/identity_store.h"
 #include "../../core/administration.h"
 #include "../../core/server_settings.h"
@@ -205,6 +206,9 @@ void client_msg__administration__process_admin_password_message(cJSON *json_root
     // send admin status to other clients possibly, or not, do they have to know you are an admin
 label_client_msg__process_admin_password_message_end:
     server_msg__administration__send_permission_update_to_single_client(client);
+
+    // an admin sees the members and the description of every channel
+    channel__apply_permission_changes();
     clib__unlock(&g_clients_global_rwlock_guard);
 }
 
@@ -379,7 +383,7 @@ void client_msg__administration__process_add_group_to_client_message(cJSON *json
 
     if (does_sender_have_permissions_to_add_group == FALSE)
     {
-        server_msg__administration__send_access_denied_to_single_client(&g_clients_array[sender_client_id], NULL_POINTER);
+        server_msg__administration__send_permission_denied_to_single_client(&g_clients_array[sender_client_id], permissions__name(PERMISSION_ASSIGN_GROUPS));
         DBG_CLIENT_MESSAGE log_info("%s %llu %s", "sender with sender_client_id", sender_client_id, "does not have permission to add group \n");
         goto label_client_msg__process_add_group_to_client_message_end;
     }
@@ -464,6 +468,7 @@ label_client_msg__process_add_group_to_client_message_end:
         {
             audio_channel__apply_permission_changes();
             video_channel__apply_permission_changes();
+            channel__apply_permission_changes();
         }
         server_msg__administration__send_permission_update_to_single_client(client_to_add_group_to);
     }
@@ -569,7 +574,7 @@ void client_msg__administration__process_remove_group_from_client_message(cJSON 
 
     if (does_sender_have_permissions_to_remove_group == FALSE)
     {
-        server_msg__administration__send_access_denied_to_single_client(&g_clients_array[sender_client_id], NULL_POINTER);
+        server_msg__administration__send_permission_denied_to_single_client(&g_clients_array[sender_client_id], permissions__name(PERMISSION_REMOVE_GROUPS));
         DBG_CLIENT_MESSAGE log_info("%s %llu %s", "sender with sender_client_id", sender_client_id, "does not have permission to remove group \n");
         goto label_client_msg__process_remove_group_from_client_message_end;
     }
@@ -654,6 +659,7 @@ label_client_msg__process_remove_group_from_client_message_end:
         {
             audio_channel__apply_permission_changes();
             video_channel__apply_permission_changes();
+            channel__apply_permission_changes();
         }
         server_msg__administration__send_permission_update_to_single_client(client_to_remove_group_id_from);
     }
@@ -742,7 +748,7 @@ void client_msg__administration__process_icon_upload(cJSON *json_root, uint64 se
 
     if (does_sender_have_permissions_to_upload_icon == FALSE)
     {
-        server_msg__administration__send_access_denied_to_single_client(&g_clients_array[sender_client_id], NULL_POINTER);
+        server_msg__administration__send_permission_denied_to_single_client(&g_clients_array[sender_client_id], permissions__name(PERMISSION_UPLOAD_ICONS));
         DBG_CLIENT_MESSAGE log_info("%s %llu %s", "sender with sender_client_id", sender_client_id, "does not have permission to upload icon \n");
         goto label_client_msg__process_server_settings_icon_upload_end;
     }
@@ -1081,6 +1087,7 @@ label_client_msg__process_set_server_settings_delete_group_end:
     {
         audio_channel__apply_permission_changes();
         video_channel__apply_permission_changes();
+        channel__apply_permission_changes();
     }
     server_msg__administration__send_permission_updates_to_all_clients();
     clib__unlock(&g_clients_global_rwlock_guard);
@@ -1110,7 +1117,7 @@ void client_msg__administration__process_request_identity_list(cJSON *json_root,
 
     if (permissions__is_allowed(sender_client, PERMISSION_VIEW_GROUP_MEMBERS) == FALSE)
     {
-        server_msg__administration__send_access_denied_to_single_client(sender_client, NULL_POINTER);
+        server_msg__administration__send_permission_denied_to_single_client(sender_client, permissions__name(PERMISSION_VIEW_GROUP_MEMBERS));
         goto label_client_msg__process_request_identity_list_end;
     }
 
@@ -1248,6 +1255,7 @@ label_client_msg__process_delete_identity_end:
     {
         audio_channel__apply_permission_changes();
         video_channel__apply_permission_changes();
+        channel__apply_permission_changes();
     }
     server_msg__administration__send_permission_updates_to_all_clients();
     clib__unlock(&g_clients_global_rwlock_guard);
@@ -1399,6 +1407,7 @@ label_modify_identity_group_end:
         {
             audio_channel__apply_permission_changes();
             video_channel__apply_permission_changes();
+            channel__apply_permission_changes();
         }
         server_msg__administration__send_permission_update_to_single_client(target);
     }
@@ -1456,7 +1465,7 @@ void client_msg__administration__process_delete_icon(cJSON *json_root, uint64 se
 
     if (permissions__is_allowed(sender_client, PERMISSION_DELETE_ICONS) == FALSE)
     {
-        server_msg__administration__send_access_denied_to_single_client(sender_client, NULL_POINTER);
+        server_msg__administration__send_permission_denied_to_single_client(sender_client, permissions__name(PERMISSION_DELETE_ICONS));
         goto label_client_msg__process_set_server_settings_delete_icon_end;
     }
 
@@ -1539,7 +1548,7 @@ void client_msg__administration__process_set_group_icon(cJSON *json_root, uint64
 
     if (permissions__can_manage_group(sender_client, group_id, PERMISSION_EDIT_GROUPS) == FALSE)
     {
-        server_msg__administration__send_access_denied_to_single_client(sender_client, NULL_POINTER);
+        server_msg__administration__send_permission_denied_to_single_client(sender_client, permissions__name(PERMISSION_EDIT_GROUPS));
         goto label_client_msg__process_set_server_settings_set_group_icon_end;
     }
 
@@ -1603,7 +1612,7 @@ void client_msg__administration__process_admin_log_request(cJSON *json_root, uin
     }
     else
     {
-        server_msg__administration__send_access_denied_to_single_client(&g_clients_array[sender_client_id], NULL_POINTER);
+        server_msg__administration__send_permission_denied_to_single_client(&g_clients_array[sender_client_id], permissions__name(PERMISSION_VIEW_SERVER_LOGS));
         DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client_msg__administration__process_admin_log_request sender with sender_client_id", sender_client_id, "is not an admin");
     }
 
@@ -1729,7 +1738,7 @@ void client_msg__administration__process_kick_request(cJSON *json_root, uint64 s
 
     if (permissions__can_moderate(admin, receiver, PERMISSION_KICK) == FALSE)
     {
-        server_msg__administration__send_access_denied_to_single_client(admin, NULL_POINTER);
+        server_msg__administration__send_permission_denied_to_single_client(admin, permissions__name(PERMISSION_KICK));
         goto label_client_msg__process_kick_request_end;
     }
 
@@ -1792,7 +1801,7 @@ void client_msg__administration__process_ban_request(cJSON *json_root, uint64 se
 
     if (permissions__can_moderate(admin, receiver, PERMISSION_BAN) == FALSE)
     {
-        server_msg__administration__send_access_denied_to_single_client(admin, NULL_POINTER);
+        server_msg__administration__send_permission_denied_to_single_client(admin, permissions__name(PERMISSION_BAN));
         goto label_client_msg__process_ban_request_end;
     }
 
@@ -1862,7 +1871,7 @@ void client_msg__administration__process_remove_ban_request(cJSON *json_root, ui
 
     if (is_admin == FALSE)
     {
-        server_msg__administration__send_access_denied_to_single_client(&g_clients_array[sender_client_id], NULL_POINTER);
+        server_msg__administration__send_permission_denied_to_single_client(&g_clients_array[sender_client_id], permissions__name(PERMISSION_REMOVE_BANS));
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
     }
@@ -1942,7 +1951,7 @@ void client_msg__administration__process_get_client_info_request(cJSON *json_roo
 
     if (permissions__is_allowed(receiver, PERMISSION_VIEW_CLIENT_DETAILS) == FALSE && permissions__is_allowed(receiver, PERMISSION_VIEW_CLIENT_CONNECTION_TIME) == FALSE)
     {
-        server_msg__administration__send_access_denied_to_single_client(receiver, NULL_POINTER);
+        server_msg__administration__send_permission_denied_to_single_client(receiver, permissions__name(PERMISSION_VIEW_CLIENT_DETAILS));
         goto label_client_msg__process_get_client_info_request_end;
     }
 
@@ -2023,6 +2032,7 @@ void client_msg__administration__process_set_group_permissions(cJSON *json_root,
     {
         audio_channel__apply_permission_changes();
         video_channel__apply_permission_changes();
+        channel__apply_permission_changes();
     }
     server_msg__administration__send_permission_updates_to_all_clients();
     clib__unlock(&g_clients_global_rwlock_guard);
@@ -2060,7 +2070,7 @@ void client_msg__administration__process_rename_group(cJSON *json_root, uint64 s
     clib__write_lock(&g_groups_global_rwlock_guard);
     if (permissions__can_manage_group(&g_clients_array[sender_client_id], (uint64)id->valueint, PERMISSION_EDIT_GROUPS) == FALSE)
     {
-        server_msg__administration__send_access_denied_to_single_client(&g_clients_array[sender_client_id], NULL_POINTER);
+        server_msg__administration__send_permission_denied_to_single_client(&g_clients_array[sender_client_id], permissions__name(PERMISSION_EDIT_GROUPS));
         goto label_rename_group_end;
     }
     for (i = 0; i < MAX_GROUPS; i++)

@@ -243,7 +243,7 @@ void audio_channel__apply_permission_changes(void)
             audio_webrtc__set_is_client_sending_audio(i, FALSE);
             server_msg__audio__send_state_of_client_to_all_clients(client, client->audio_state);
         }
-        server_msg__administration__send_access_denied_to_single_client(client, NULL_POINTER);
+        server_msg__administration__send_permission_denied_to_single_client(client, permissions__power_name(PERMISSION_TALK_POWER));
         if (muted_channels == NULL_POINTER)
         {
             muted_channels = calloc(g_server_settings.max_channel_count, sizeof(*muted_channels));

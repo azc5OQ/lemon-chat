@@ -50,7 +50,7 @@ Normal can be assigned, edited or deleted. Additional groups are created from a 
 
 | Preset | Starting permissions |
 | --- | --- |
-| Guest | View public server information and connection duration, create temporary channels, and send pictures and files. Cannot view saved contacts, use offline messages, or contact idle users. |
+| Guest | View public server information and connection duration, create temporary channels, send direct messages, channel messages, pokes, pictures and files, and see the members and descriptions of other channels. Cannot view saved contacts, use offline messages, or contact idle users. |
 | Normal | Guest's permissions, plus permanent channel creation, viewing group permissions and saved contacts, offline messages, and contacting idle users. |
 | Moderator | Normal's permissions, plus viewing client details, group members and bans; moving users; channel kicks; temporary mutes; stopping streams; server kicks; and bans. Powers and protection for these moderation actions start at 50. |
 | Admin | All group actions and powers of 1000. Creating a group from this preset does not give its members full server admin access. |
@@ -252,7 +252,17 @@ The [permission reference](permission-reference.md) contains every server and ch
 
 ## Channel requirements
 
-Channels can require a minimum power to speak, send text, send pictures or share video. Each requirement is checked separately. All four start at **0** and accept whole numbers from 0 to 1000.
+Channels can require a minimum power for seven things. Each requirement is checked separately. All seven start at **0** and accept whole numbers from 0 to 1000.
+
+| Requirement | The user's power that is compared | What it limits |
+| --- | --- | --- |
+| Talk | `talk_power` | Sending microphone or music audio. |
+| Video streaming | `stream_power` | Sharing a screen or a video file. |
+| Messages | `channel_message_power` | Sending and editing channel text. |
+| Pictures | `channel_picture_power` | Sending channel pictures. |
+| Files | `channel_file_power` | Sending channel files. |
+| View members and description | `channel_view_power` | Seeing who is in the channel and reading its description without being in it. |
+| Create channels inside | `channel_create_power` | Creating a channel directly inside this channel. |
 
 These values are in the **Permissions** tab of the channel properties. The name, password and description remain above the **Channel**, **Audio & video** and **Permissions** tabs. Switching tabs keeps entered values, and **Create** or **Save** applies them together. Editing a channel keeps its existing requirements unless they are changed.
 
@@ -282,13 +292,60 @@ Streaming power is checked when a screen share or video starts and while its pac
 
 Text messages and edits are checked when received. Pictures are checked after upload, before being sent to other members. A permission change during a picture upload therefore affects whether it is sent.
 
-These four requirements do not control private messages, private pictures or ordinary file attachments. Those have their own settings and permissions. Server music bots use their audio controls.
+These requirements do not control direct messages, direct pictures or direct files. Those have their own permissions, powers and protections, described in [Direct messages, pokes and protection](#direct-messages-pokes-and-protection). Server music bots use their audio controls.
+
+### Who sees a channel's members and description
+
+The channel list always shows every channel by name. Who is inside a channel, and its description, are sent only to a user who may see them:
+
+- A user in the channel always sees its members and its description.
+- A full server admin sees every channel.
+- Any other user needs **View channel members** (or **View channel descriptions**) enabled in a group, and a channel view power that reaches the channel's **View members and description** requirement.
+
+For example, the channel "staff" requires view power 50. A guest with view power 25 sees "staff" in the list with nobody in it and without its description. A moderator with view power 50 sees both. The members of a channel are shown or hidden together; single members are never hidden.
+
+A user who may not see a channel's members still receives the names of the people on the server and can write to them. Only the channel they are in is withheld. The server applies a change at once: when a group, a membership or the channel's requirement changes, connected users receive the members and the description they may now see, or lose the ones they may no longer see.
+
+To give guests no view at all, set **View channel members** and **View channel descriptions** to Disable in the Guest group. The older server setting that hides the members of password protected channels still applies in addition.
+
+### Creating a channel inside another channel
+
+**Create channels inside** is the requirement of the parent. A user who may create channels can create one inside a channel only when their channel create power reaches that channel's requirement. A channel group can raise this power for its assigned channel. Different parts of the channel tree can therefore require different power.
 
 ### Saved channel requirements
 
-Channels save these fields: `required_talk_power`, `required_message_power`, `required_picture_power` and `required_stream_power`. Missing values mean 0.
+Channels save these fields: `required_talk_power`, `required_message_power`, `required_picture_power`, `required_stream_power`, `required_file_power`, `required_view_power` and `required_create_power`. Missing values mean 0.
 
 When groups are disabled, the server ignores these requirements and the client hides the Permissions tab. Audio, video and upload settings still apply.
+
+## Direct messages, pokes and protection
+
+Sending something to one user needs two things: the action enabled in a group, and enough power against the receiver's protection.
+
+| Content | Action | Sender's power | Receiver's protection |
+| --- | --- | --- | --- |
+| Direct text | `send_direct_messages` | `direct_message_power` | `direct_message_protection` |
+| Direct picture | `send_direct_pictures` | `direct_picture_power` | `direct_picture_protection` |
+| Direct file | `send_direct_files` | `direct_file_power` | `direct_file_protection` |
+| Poke | `send_pokes` | `poke_power` | `poke_protection` |
+
+The power must be equal to or greater than the protection. Protection 0, the starting value, lets everybody reach the user whose action is enabled.
+
+For example, ordinary users have direct message power 25 and protection 0, so they can write to each other. The server's owner adds a group "Staff" with direct message protection 50 to the admins. A user with power 25 can no longer write to an admin; a moderator with power 50 can. The same four pairs exist separately, so pokes can be limited without limiting text.
+
+A full server admin has no built-in protection here. Give an admin a group with protection to limit who can write to them.
+
+### What the server learns about a direct message
+
+The content of a direct message is encrypted for the receiver and the server cannot read it. Channel keys from a channel's maintainer and read receipts travel as direct messages too. To apply the rule above to text without stopping the keys, the sender names the purpose of each direct message: conversation, channel keys or read receipt. The server reads this purpose:
+
+- Conversation content needs the action and the power described above.
+- Channel keys need no permission. The server passes them on only between two users in the same channel.
+- Read receipts need no permission.
+
+The receiving client handles the content only as what the purpose says. A text sent with the purpose "channel keys" is dropped by the receiver and never shown.
+
+The server therefore knows which kind of direct message it relays. It does not learn what a message says.
 
 ## Channel groups
 
@@ -422,4 +479,4 @@ Accepted membership and permission changes update the affected users' rights and
 
 If a user loses admin access, the client stops using its old admin rights immediately while waiting for updated values. When other viewing permissions are removed, the client clears the restricted information it has stored. Information already seen or messages already sent cannot be taken back.
 
-When a permission check fails, the server sends `access_denied` with the message **Insufficient permissions.** The client shows the message. It also plays the corresponding sound if local sound effects are enabled. Invalid request fields can be rejected separately without this message.
+When a permission check fails, the server sends `access_denied` with the message **Insufficient permissions.** Where one permission or power decides the refusal, the message also names it, for example `send_direct_messages` or `direct_message_power`. The client shows the message and writes `insufficient permissions (<name>)` into its log in red. It also plays the corresponding sound if local sound effects are enabled. Invalid request fields can be rejected separately without this message.

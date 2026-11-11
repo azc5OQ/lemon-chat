@@ -148,11 +148,11 @@ modules. Algorithm implementations stay inside their own projects.
 Compilation checks whether the code builds. The module tests check its results
 and compatibility with existing clients. Every normal build runs:
 
-- **Opus:** new encoder with old decoder and old encoder with new decoder;
-  mono/stereo audio; all six supported packet durations; bitrate changes;
-  reset; two missing packets; resampling; and memory growth.
-- **MP3:** sample rate, channel count, sample count and PCM values compared with
-  the previous decoder; repeated files; empty and invalid input.
+- **Opus:** encoding a tone and decoding the module's own packets; mono/stereo
+  audio; all six supported packet durations; bitrate changes; reset; two
+  missing packets; resampling; and memory growth.
+- **MP3:** sample rate, channel count and sample count; audible output; equal
+  samples when the same file is decoded again; empty and invalid input.
 - **Ciphers:** known expected outputs, encryption/decryption round trips, and
   comparison with Node's OpenSSL implementation for AES, Camellia and ChaCha20.
 - **RSA:** recorded 512-, 1024- and 2048-bit keypairs, large-number operations,
@@ -162,30 +162,10 @@ and compatibility with existing clients. Every normal build runs:
 Full-page browser tests run separately. The normal build's tests do not use a
 physical microphone or speakers.
 
-## Using the backup modules
+## When a build fails
 
-`prebuilt-backup` holds four checked wasm files and the matching loader for its
-older Opus binary. RSA and MP3 were refreshed to include the current
-secret-clearing and input-bounds fixes. The Opus loader also handles failed
-allocations safely. Normal builds never overwrite this set. Its
-[provenance guide](prebuilt-backup/README.md) records the changes.
-
-If you cannot compile the modules, run from this directory:
-
-```sh
-node ../build.cjs --unminified --prebuilt-wasm --output prebuilt-modules.html
-```
-
-This writes `prebuilt-modules.html` in the current directory. It verifies the
-hashes and runs `prebuilt-backup/check.cjs` against the actual browser JavaScript
-and saved modules before assembling the page. The checks cover RSA operations
-and cleanup, MP3 input bounds, connection ciphers, and Opus audio and allocation
-cleanup. It skips C compilation and leaves `../main/wasm` unchanged. It includes
-the older Opus loader because that binary requires its matching runtime functions.
-
-A normal build does not fall back automatically. On failure it reports the
-error and keeps the existing HTML. Use `--prebuilt-wasm` when you want the backup
-set; omit it to compile the current sources.
+A build does not fall back to older modules. On failure it reports the error,
+leaves `../main/wasm` as it was and keeps the existing HTML.
 
 A failed client build does not stop a server build. The server scripts warn and
 continue, packaging an existing `client.html` when available. Node and Zig are

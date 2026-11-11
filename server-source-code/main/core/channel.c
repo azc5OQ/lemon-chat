@@ -190,6 +190,41 @@ void channel__set_temporary(client_t *actor, channel_t *channel, boole temporary
     }
 }
 
+// Names of the channel requirements in settings and messages, in the order of _channel_internal__required_power.
+static const char *g_channel_required_power_names[] = { "required_talk_power", "required_message_power", "required_picture_power", "required_stream_power", "required_file_power", "required_view_power", "required_create_power" };
+
+#define CHANNEL_REQUIRED_POWER_COUNT (sizeof(g_channel_required_power_names) / sizeof(g_channel_required_power_names[0]))
+
+/**
+ * @brief Returns the field of a channel that holds one of its requirements.
+ *
+ * @param channel Channel whose field is needed.
+ * @param index Position of the requirement in g_channel_required_power_names.
+ *
+ * @return uint64* -> the requirement with that index
+ */
+static uint64 *_channel_internal__required_power(channel_t *channel, uint64 index)
+{
+    // Field by index.
+    switch (index)
+    {
+    case 0:
+        return &channel->required_talk_power;
+    case 1:
+        return &channel->required_message_power;
+    case 2:
+        return &channel->required_picture_power;
+    case 3:
+        return &channel->required_stream_power;
+    case 4:
+        return &channel->required_file_power;
+    case 5:
+        return &channel->required_view_power;
+    default:
+        return &channel->required_create_power;
+    }
+}
+
 /**
  * @brief Checks channel power requirements and applies them only when all are valid.
  * @param object Request or saved channel containing optional requirements.
@@ -197,67 +232,95 @@ void channel__set_temporary(client_t *actor, channel_t *channel, boole temporary
  */
 boole channel__read_required_powers(cJSON *object, channel_t *channel)
 {
-    const char *names[] = { "required_talk_power", "required_message_power", "required_picture_power", "required_stream_power" };
-    cJSON *values[4];
+    cJSON *values[CHANNEL_REQUIRED_POWER_COUNT];
     uint64 i = 0;
 
-    for (i = 0; i < 4; i++)
+    // Read each power.
+    for (i = 0; i < CHANNEL_REQUIRED_POWER_COUNT; i++)
     {
-        values[i] = cJSON_GetObjectItemCaseSensitive(object, names[i]);
+        values[i] = cJSON_GetObjectItemCaseSensitive(object, g_channel_required_power_names[i]);
         if (values[i] != NULL_POINTER && (cJSON_IsNumber(values[i]) == FALSE || !(values[i]->valuedouble >= 0 && values[i]->valuedouble <= PERMISSION_POWER_MAX) || values[i]->valuedouble != (double)values[i]->valueint))
         {
             return FALSE;
         }
     }
+
+    // Store the values.
     if (channel != NULL_POINTER)
     {
-        if (values[0] != NULL_POINTER)
+        for (i = 0; i < CHANNEL_REQUIRED_POWER_COUNT; i++)
         {
-            channel->required_talk_power = (uint64)values[0]->valueint;
-        }
-        if (values[1] != NULL_POINTER)
-        {
-            channel->required_message_power = (uint64)values[1]->valueint;
-        }
-        if (values[2] != NULL_POINTER)
-        {
-            channel->required_picture_power = (uint64)values[2]->valueint;
-        }
-        if (values[3] != NULL_POINTER)
-        {
-            channel->required_stream_power = (uint64)values[3]->valueint;
+            if (values[i] != NULL_POINTER)
+            {
+                *_channel_internal__required_power(channel, i) = (uint64)values[i]->valueint;
+            }
         }
     }
     return TRUE;
 }
 
 /**
+ * @brief Tells whether two channels have the same power requirements.
+ *
+ * @param first Channel to compare.
+ * @param second Channel to compare with.
+ *
+ * @return boole -> TRUE when all requirements are equal
+ */
+boole channel__has_same_required_powers(const channel_t *first, const channel_t *second)
+{
+    uint64 i = 0;
+
+    // Compare each power.
+    for (i = 0; i < CHANNEL_REQUIRED_POWER_COUNT; i++)
+    {
+        if (*_channel_internal__required_power((channel_t *)first, i) != *_channel_internal__required_power((channel_t *)second, i))
+        {
+            return FALSE;
+        }
+    }
+    return TRUE;
+}
+
+/**
+ * @brief Sets every power requirement of a channel to 0, the value of a new channel.
+ *
+ * @param channel Channel to change.
+ *
+ * @return void
+ */
+void channel__clear_required_powers(channel_t *channel)
+{
+    uint64 i = 0;
+
+    // Clear each power.
+    for (i = 0; i < CHANNEL_REQUIRED_POWER_COUNT; i++)
+    {
+        *_channel_internal__required_power(channel, i) = 0;
+    }
+}
+
+/**
  * @brief Adds channel power requirements to saved settings or a client message.
+ *
  * @param object JSON object receiving the channel requirements.
  * @param channel Channel whose requirements are copied.
+ *
+ * @return boole -> TRUE when every requirement was added
  */
 boole channel__write_required_powers(cJSON *object, const channel_t *channel)
 {
-    if (!cJSON_AddNumberToObject(object, "required_talk_power", channel->required_talk_power))
+    uint64 i = 0;
+
+    // Write each power.
+    for (i = 0; i < CHANNEL_REQUIRED_POWER_COUNT; i++)
     {
-        goto json_failure;
-    }
-    if (!cJSON_AddNumberToObject(object, "required_message_power", channel->required_message_power))
-    {
-        goto json_failure;
-    }
-    if (!cJSON_AddNumberToObject(object, "required_picture_power", channel->required_picture_power))
-    {
-        goto json_failure;
-    }
-    if (!cJSON_AddNumberToObject(object, "required_stream_power", channel->required_stream_power))
-    {
-        goto json_failure;
+        if (!cJSON_AddNumberToObject(object, g_channel_required_power_names[i], (double)*_channel_internal__required_power((channel_t *)channel, i)))
+        {
+            return FALSE;
+        }
     }
     return TRUE;
-
-json_failure:
-    return FALSE;
 }
 
 /**
@@ -658,6 +721,9 @@ void channel__move_client_into_channel(uint64 client_id, uint64 destination_chan
     client->has_pending_maintainer_reset_vote = FALSE; // channel changed - a pending reset vote belongs to the old channel
     server_msg__channel__send_join_message_to_all_clients(client, new_channel, reason);
 
+    // The moved client now sees the members of its new channel and may no longer see those of the old one.
+    channel__send_view_changes_to_client(client);
+
     // The new maintainer must see who left before it prepares the channel keys.
     if (status == TRUE)
     {
@@ -762,26 +828,314 @@ boole channel__check_channel_access(client_t *client, channel_t *channel, char *
 }
 
 /**
- * @brief Shows the members who were hidden while this client was outside the channel.
- * @param client_t* client -> client that has just joined or returned from idle
- * @param channel_t* channel -> channel the client entered
- * @attention The caller holds the clients and channels locks.
+ * @brief Collects the values that decide what a client may see of channels it is not in.
+ *
+ * @param client_t* client -> client whose values are read, with the clients lock held
+ * @param channel_view_rights_t* rights -> receives the values as they are now
+ *
+ * @note The values taken from the client's groups are calculated by permissions__refresh_client_powers.
+ *
+ * @return void
  */
-void channel__send_hidden_members(client_t *client, channel_t *channel)
+static void _channel_internal__read_view_rights(const client_t *client, channel_view_rights_t *rights)
+{
+    *rights = client->channel_view_rights;
+    rights->is_admin = client->is_admin;
+    rights->channel_id = client->channel_id;
+}
+
+/**
+ * @brief Decides whether a client with the given rights is told who is inside a channel.
+ *
+ *        A client always sees the members of the channel it is in. From outside, two rules
+ *        apply. The older server setting hides the members of every channel that has a
+ *        password. With groups enabled, the client's groups must allow viewing channel members
+ *        and its channel view power must reach the channel's required view power.
+ *
+ * @param const channel_view_rights_t* rights -> the viewing client's rights
+ * @param const channel_t* channel -> channel whose members are asked for
+ *
+ * @return boole -> TRUE when the members are shown
+ */
+static boole _channel_internal__are_members_visible(const channel_view_rights_t *rights, const channel_t *channel)
+{
+    // Own channel.
+    if (rights->channel_id == channel->channel_id)
+    {
+        return TRUE;
+    }
+
+    // Password channel hidden.
+    if (g_server_settings.is_hide_clients_in_password_protected_channels_active == TRUE && channel->is_using_password == TRUE)
+    {
+        return FALSE;
+    }
+
+    // Admin sees all.
+    if (g_server_settings.is_permission_system_enabled == FALSE || rights->is_admin == TRUE)
+    {
+        return TRUE;
+    }
+
+    // Action and power.
+    return (boole)(rights->is_viewing_members_allowed == TRUE && rights->view_power >= channel->required_view_power);
+}
+
+/**
+ * @brief Decides whether a client with the given rights is told a channel's description.
+ *
+ * @param const channel_view_rights_t* rights -> the viewing client's rights
+ * @param const channel_t* channel -> channel whose description is asked for
+ *
+ * @return boole -> TRUE when the description is shown
+ */
+static boole _channel_internal__is_description_visible(const channel_view_rights_t *rights, const channel_t *channel)
+{
+    if (rights->channel_id == channel->channel_id || g_server_settings.is_permission_system_enabled == FALSE || rights->is_admin == TRUE)
+    {
+        return TRUE;
+    }
+    return (boole)(rights->is_viewing_descriptions_allowed == TRUE && rights->view_power >= channel->required_view_power);
+}
+
+/**
+ * @brief Tells whether a client may currently see who is inside a channel.
+ *
+ * @param const client_t* viewer -> client that would receive the information, with the clients lock held
+ * @param const channel_t* channel -> channel asked about, with the channels lock held
+ *
+ * @return boole -> TRUE when the viewer may see who is in the channel
+ */
+boole channel__are_members_visible(const client_t *viewer, const channel_t *channel)
+{
+    channel_view_rights_t rights;
+
+    // Check arguments.
+    if (viewer == NULL_POINTER || channel == NULL_POINTER)
+    {
+        return FALSE;
+    }
+    _channel_internal__read_view_rights(viewer, &rights);
+    return _channel_internal__are_members_visible(&rights, channel);
+}
+
+/**
+ * @brief Tells whether a client may currently read a channel's description.
+ *
+ * @param const client_t* viewer -> client that would receive the description, with the clients lock held
+ * @param const channel_t* channel -> channel asked about, with the channels lock held
+ *
+ * @return boole -> TRUE when the viewer may read the description
+ */
+boole channel__is_description_visible(const client_t *viewer, const channel_t *channel)
+{
+    channel_view_rights_t rights;
+
+    // Check arguments.
+    if (viewer == NULL_POINTER || channel == NULL_POINTER)
+    {
+        return FALSE;
+    }
+    _channel_internal__read_view_rights(viewer, &rights);
+    return _channel_internal__is_description_visible(&rights, channel);
+}
+
+/**
+ * @brief Tells whether a client may see which channel another client is in.
+ *
+ * @param const client_t* viewer -> client that would receive the information, with the clients lock held
+ * @param const client_t* subject -> client whose channel is asked about
+ *
+ * @attention The caller holds the channels lock. A subject in idle mode is in no channel, so nothing is hidden.
+ *
+ * @return boole -> TRUE when the viewer may see which channel the subject is in
+ */
+boole channel__is_client_location_visible(const client_t *viewer, const client_t *subject)
+{
+    if (viewer == NULL_POINTER || subject == NULL_POINTER)
+    {
+        return FALSE;
+    }
+    if (subject->channel_id >= g_server_settings.max_channel_count || g_channel_array[subject->channel_id].is_existing == FALSE)
+    {
+        return TRUE;
+    }
+    return channel__are_members_visible(viewer, &g_channel_array[subject->channel_id]);
+}
+
+/**
+ * @brief Records that a client has just received the channel list and the client list, so later
+ *        changes are compared with the rights used for those lists.
+ *
+ * @param client_t* client -> client that received the lists, with the clients write lock held
+ *
+ * @return void
+ */
+void channel__remember_sent_view(client_t *client)
+{
+    _channel_internal__read_view_rights(client, &client->sent_channel_view_rights);
+}
+
+/**
+ * @brief Sends one client the current place of every member of a channel, or tells it that
+ *        their place is hidden from now on.
+ *
+ * @param client_t* receiver -> client that is told
+ * @param channel_t* channel -> channel whose members are sent
+ * @param boole is_visible -> TRUE to show the members in the channel; FALSE to hide where they are
+ *
+ * @return void
+ */
+static void _channel_internal__send_members(client_t *receiver, channel_t *channel, boole is_visible)
 {
     uint64 i = 0;
     client_t *member = NULL_POINTER;
 
-    if (g_server_settings.is_hide_clients_in_password_protected_channels_active == FALSE || channel->is_using_password == FALSE)
-    {
-        return;
-    }
+    // Send each member.
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
         member = &g_clients_array[i];
-        if (member->is_existing == TRUE && member->is_authenticated == TRUE && member->is_music_bot == FALSE && member->channel_id == channel->channel_id)
+        if (member != receiver && member->is_existing == TRUE && member->is_authenticated == TRUE && member->channel_id == channel->channel_id)
         {
-            server_msg__channel__send_join_message_to_single_client(client, member, channel);
+            server_msg__channel__send_join_message_to_single_client(receiver, member, channel, is_visible);
+        }
+    }
+}
+
+/**
+ * @brief Tells a client about every channel whose members or description it may see now but
+ *        could not see before, and the other way round.
+ *
+ *        The server remembers the rights it last used when it told the client about the
+ *        channels (sent_channel_view_rights). This function compares them with the rights the
+ *        client has now. They differ after the client changed channel, after its groups or
+ *        their permissions changed, and after it gained or lost admin access. For every channel
+ *        where the answer changed, the members and the description are sent again.
+ *
+ * @param client_t* client -> client to update
+ *
+ * @attention The caller holds the clients write lock and the channels lock.
+ *
+ * @return void
+ */
+void channel__send_view_changes_to_client(client_t *client)
+{
+    channel_view_rights_t current;
+    channel_view_rights_t previous;
+    channel_t *channel = NULL_POINTER;
+    uint64 i = 0;
+    boole is_visible = FALSE;
+
+    // Skip invalid client.
+    if (client == NULL_POINTER || client->is_existing == FALSE || client->is_authenticated == FALSE || client->is_music_bot == TRUE)
+    {
+        return;
+    }
+
+    // Compare the rights.
+    previous = client->sent_channel_view_rights;
+    _channel_internal__read_view_rights(client, &current);
+    if (previous.is_admin == current.is_admin &&
+        previous.is_viewing_members_allowed == current.is_viewing_members_allowed &&
+        previous.is_viewing_descriptions_allowed == current.is_viewing_descriptions_allowed &&
+        previous.view_power == current.view_power &&
+        previous.channel_id == current.channel_id)
+    {
+        return;
+    }
+
+    // Store new rights.
+    client->sent_channel_view_rights = current;
+
+    // Check every channel.
+    for (i = 0; i < g_server_settings.max_channel_count; i++)
+    {
+        channel = &g_channel_array[i];
+        if (channel->is_existing == FALSE)
+        {
+            continue;
+        }
+
+        // Members.
+        is_visible = _channel_internal__are_members_visible(&current, channel);
+        if (is_visible != _channel_internal__are_members_visible(&previous, channel))
+        {
+            _channel_internal__send_members(client, channel, is_visible);
+        }
+
+        // Description.
+        is_visible = _channel_internal__is_description_visible(&current, channel);
+        if (is_visible != _channel_internal__is_description_visible(&previous, channel))
+        {
+            server_msg__channel__send_description_to_single_client(client, channel, is_visible);
+        }
+    }
+}
+
+/**
+ * @brief Updates every connected client whose view of the channels changed.
+ *
+ * @attention The caller holds only the clients write lock.
+ *
+ * @return void
+ */
+void channel__apply_permission_changes(void)
+{
+    uint64 i = 0;
+
+    // Update every client.
+    clib__read_lock(&g_channels_global_rwlock_guard);
+    for (i = 0; i < g_server_settings.max_client_count; i++)
+    {
+        channel__send_view_changes_to_client(&g_clients_array[i]);
+    }
+    clib__unlock(&g_channels_global_rwlock_guard);
+}
+
+/**
+ * @brief Updates the clients after a channel edit changed who may see its members or its
+ *        description: the required view power or the password changed.
+ *
+ * @param const channel_t* previous -> copy of the channel as it was before the edit
+ * @param channel_t* channel -> the channel after the edit
+ *
+ * @attention The caller holds the clients lock and the channels lock. A changed description is
+ *            sent by the edit announcement itself; this function covers the clients for which
+ *            the description became visible or hidden.
+ *
+ * @return void
+ */
+void channel__send_view_changes_for_channel(const channel_t *previous, channel_t *channel)
+{
+    channel_view_rights_t rights;
+    client_t *client = NULL_POINTER;
+    uint64 i = 0;
+    boole is_visible = FALSE;
+
+    // Update every client.
+    for (i = 0; i < g_server_settings.max_client_count; i++)
+    {
+        client = &g_clients_array[i];
+        if (client->is_existing == FALSE || client->is_authenticated == FALSE || client->is_music_bot == TRUE)
+        {
+            continue;
+        }
+
+        // Read the rights.
+        _channel_internal__read_view_rights(client, &rights);
+
+        // Members.
+        is_visible = _channel_internal__are_members_visible(&rights, channel);
+        if (is_visible != _channel_internal__are_members_visible(&rights, previous))
+        {
+            _channel_internal__send_members(client, channel, is_visible);
+        }
+
+        // Description.
+        is_visible = _channel_internal__is_description_visible(&rights, channel);
+        if (is_visible != _channel_internal__is_description_visible(&rights, previous))
+        {
+            server_msg__channel__send_description_to_single_client(client, channel, is_visible);
         }
     }
 }

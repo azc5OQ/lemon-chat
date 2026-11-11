@@ -1,0 +1,80 @@
+/* The start page (#start-page): the connect button and the import identity button, shown before the client connects. */
+#start-page
+{
+    position: fixed;
+    inset: 0;
+    z-index: 9000;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    padding: 24px 16px;
+    overflow: auto;
+    background: var(--set-panel, #17191d);
+    color: var(--set-text, #f2f3f5);
+}
+
+#start-page-content
+{
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    width: 100%;
+    max-width: 420px;
+    text-align: center;
+}
+
+#start-page-hint
+{
+    margin: 0;
+    font-size: 14px;
+    line-height: 20px;
+    color: var(--set-muted, #a7abb3);
+}
+
+/* On a desktop the two buttons are a little larger than the theme's ordinary buttons. */
+#start-page-connect-button,
+#start-page-import-identity-button
+{
+    box-sizing: border-box;
+    width: auto;
+    min-width: 220px;
+    height: auto;
+    margin: 0;
+    cursor: pointer;
+}
+
+#start-page-connect-button
+{
+    min-height: 44px;
+    font-size: 18px;
+}
+
+#start-page-import-identity-button
+{
+    min-height: 34px;
+    font-size: 14px;
+}
+
+/* On a phone or another touch screen the buttons take the width of the page and a height a thumb reaches. */
+@media (pointer: coarse), (max-width: 600px)
+{
+    #start-page-connect-button,
+    #start-page-import-identity-button
+    {
+        width: 100%;
+    }
+
+    #start-page-connect-button
+    {
+        min-height: 84px;
+        font-size: 30px;
+    }
+
+    #start-page-import-identity-button
+    {
+        min-height: 56px;
+        font-size: 18px;
+    }
+}

@@ -4,6 +4,7 @@ var member_conversations =
 {
     active: false,
     auto_open: false,
+    is_room_list_shown: false,
     observer: null,
     pending: false
 };
@@ -14,6 +15,7 @@ function member_conversations__apply_theme()
     let style = getComputedStyle(document.documentElement);
     member_conversations.active = style.getPropertyValue("--member-conversations").trim() === "1";
     member_conversations.auto_open = style.getPropertyValue("--member-conversations-auto-open").trim() === "1";
+    member_conversations.is_room_list_shown = style.getPropertyValue("--member-conversations-rooms").trim() === "1";
     document.body.classList.toggle("member-conversations-active", member_conversations.active);
     if (member_conversations.observer != null)
     {
@@ -38,6 +40,12 @@ function member_conversations__apply_theme()
         input.addEventListener("input", member_conversations__filter_people);
         search.appendChild(input);
         list.prepend(search);
+
+        // the list of all channels; member_conversations__refresh_rooms fills it when the theme sets --member-conversations-rooms
+        let rooms = document.createElement("div");
+        rooms.id = "member-conversations-rooms";
+        rooms.addEventListener("click", member_conversations__room_onclick);
+        search.after(rooms);
 
         let empty = document.createElement("p");
         empty.id = "member-conversations-search-empty";
@@ -107,7 +115,11 @@ function member_conversations__refresh_people()
         profile.appendChild(caption);
     }
 
-    document.getElementById("member-list-header").textContent = "People & chats";
+    // update channel list
+    member_conversations__refresh_rooms();
+
+    // the button opens the channel list; it has the id of Pocket's button because one click handler in main.js serves both
+    document.getElementById("member-list-header").innerHTML = "People &amp; chats<button type='button' id='pocket-channel-switch' aria-haspopup='menu'>Switch channel</button>";
     for (let row of body.querySelectorAll(".member-list-client, .member-list-channel"))
     {
         let context_id = "";
@@ -163,13 +175,156 @@ function member_conversations__refresh_people()
         {
             let channel = row.querySelector(".member-list-client-channel");
             let presence = row.querySelector(".member-list-presence");
-            text = channel != null ? channel.textContent : presence != null ? presence.textContent : "Hold to choose a channel";
+            text = channel != null ? channel.textContent : presence != null ? presence.textContent : "Channel chat";
         }
         // Keep user text as text, including when it resembles markup.
         preview.textContent = text.slice(0, 200);
         timestamp.textContent = time;
     }
     member_conversations__filter_people();
+}
+
+/**
+ * @brief Lists every channel with the names of the people in it, for a theme that sets
+ *        --member-conversations-rooms to 1. The list is built again only when its content changed.
+ *        A person whose channel this client may not see has channel_id -1 and is in no row.
+ *
+ * @return void
+ */
+function member_conversations__refresh_rooms()
+{
+    let holder = document.getElementById("member-conversations-rooms");
+    let rows = [];
+    let content = "";
+
+    // list not created
+    if (holder == null)
+    {
+        return;
+    }
+
+    // only when wanted
+    holder.hidden = !member_conversations.is_room_list_shown;
+    if (!member_conversations.is_room_list_shown)
+    {
+        return;
+    }
+
+    // collect the rows
+    for (let channel of g_channel_list)
+    {
+        let names = [];
+        for (let client of g_client_list)
+        {
+            if (Number(client.channel_id) === Number(channel.channel_id) && client.is_idle != true)
+            {
+                names.push(Number(client.client_id) === Number(g_local_client_id) ? "You" : client.username);
+            }
+        }
+        rows.push([channel.channel_id, channel.name, names.join(", "),
+            Number(channel.channel_id) === Number(g_current_channel_id), channel.is_using_password == true]);
+    }
+
+    // skip when unchanged
+    content = JSON.stringify(rows);
+    if (holder.dataset.content === content)
+    {
+        return;
+    }
+
+    // build the rows
+    holder.dataset.content = content;
+    holder.replaceChildren();
+    for (let [channel_id, channel_name, people, is_current, is_locked] of rows)
+    {
+        let row = document.createElement("button");
+        let name = document.createElement("strong");
+        let inside = document.createElement("span");
+        row.type = "button";
+        row.className = "member-conversation-room" + (is_current ? " member-conversation-room-current" : "")
+            + (is_locked ? " member-conversation-room-locked" : "");
+        row.dataset.channelId = channel_id;
+        // user text stays text, also when it looks like markup
+        name.textContent = channel_name;
+        inside.textContent = people;
+        row.append(name, inside);
+        holder.appendChild(row);
+    }
+}
+
+/**
+ * @brief A press on a row of the channel list: the row of the channel the user is in opens the chat of
+ *        that channel, every other row joins its channel.
+ *
+ * @param object event -> the click event
+ *
+ * @return void
+ */
+function member_conversations__room_onclick(event)
+{
+    let row = event.target.closest(".member-conversation-room");
+
+    // not a row
+    if (row == null)
+    {
+        return;
+    }
+
+    // open or join
+    if (row.classList.contains("member-conversation-room-current"))
+    {
+        member_conversations__open_channel_chat(row.dataset.channelId);
+    }
+    else
+    {
+        member_conversations__join_channel(row.dataset.channelId);
+    }
+}
+
+/**
+ * @brief Shows the chat of a channel, the same way as a press on its conversation tab.
+ *        A tab that was just written into the page has no handler yet and gets the standard one.
+ *
+ * @param number channel_id -> id of the channel whose chat is shown
+ *
+ * @return void
+ */
+function member_conversations__open_channel_chat(channel_id)
+{
+    let channel_tab = document.querySelector('.chat-context-selector[data-chat-context-selector-id="channel-' + channel_id + '"]');
+
+    // no such tab
+    if (channel_tab == null)
+    {
+        return;
+    }
+
+    // add missing handler
+    if (channel_tab.onclick == null)
+    {
+        channel_tab.onclick = UI.chat_context_selector_onclick;
+    }
+
+    // show the chat
+    channel_tab.click();
+    member_conversations__show_selected_chat();
+}
+
+/**
+ * @brief Joins a channel the same way as a double click on it in the channel tree: that code skips the
+ *        channel the user is already in and asks for the password of a locked channel.
+ *
+ * @param number channel_id -> id of the channel to join
+ *
+ * @return void
+ */
+function member_conversations__join_channel(channel_id)
+{
+    let name_element = document.querySelector('#channel-list-container .single-channel[data-channel-id="' + channel_id + '"] [data-channel-name-id]');
+    if (name_element != null)
+    {
+        UI.single_channel_doubleclick_join({ stopPropagation: function() {}, target: name_element });
+    }
 }
 
 function member_conversations__filter_people()
@@ -198,6 +353,14 @@ function member_conversations__filter_people()
 
 function member_conversations__show_selected_chat()
 {
+    // pocket: the people panel lies over the chat, so it closes when a conversation was chosen
+    if (document.body.classList.contains("pocket-people-open"))
+    {
+        document.body.classList.remove("pocket-people-open");
+        UI.refresh_member_list_controls();
+    }
+
+    // only a theme with the conversation list switches from the list to the chat
     if (!member_conversations.active || !member_conversations.auto_open)
     {
         return;

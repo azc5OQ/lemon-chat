@@ -497,7 +497,9 @@ var server_msg = {
         single_client.channel_group_id = Number(msg.message.channel_group_id) || 0;
         single_client.group_ids = (msg.message.group_ids != null) ? msg.message.group_ids : [];
         single_client.audio_state = msg.message.audio_state;
-        single_client.is_clients_channel_hidden = false;
+
+        // -1: the server does not say which channel the client is in, because this client may not see who is in it
+        single_client.is_clients_channel_hidden = (msg.message.channel_id == -1);
         single_client.country_iso_code = msg.message.country_iso_code;
         single_client.is_idle = false;
         single_client.is_ignored_by_local_client = false;
@@ -516,6 +518,12 @@ var server_msg = {
         // the merge is state and happens here, only the markup move is left to the ui
         let promotion = chat__promote_offline_chat_context_state(single_client);
         UI.promote_offline_chat_context_render(promotion, single_client);
+
+        // a client in a channel this client may not look into is known but has no row in the channel list
+        if (single_client.is_clients_channel_hidden == true)
+        {
+            return;
+        }
 
         html_to_append = channel_tree__generate_html_for_single_client(single_client, false);
 
@@ -758,6 +766,13 @@ var server_msg = {
         }
 
         let single_client = g_client_list[channel_tree__get_client_index_in_array_by_client_id(msg.message.client_id)];
+
+        // -1: this client may not see the channel the other client returned to, so no row is added
+        single_client.is_clients_channel_hidden = (msg.message.channel_id == -1);
+        if (single_client.is_clients_channel_hidden == true)
+        {
+            return;
+        }
 
         if (g_local_client_id != single_client.client_id)
         {
@@ -1013,6 +1028,7 @@ var server_msg = {
         let index = channel_tree__get_channel_index_in_array_by_channel_id(g_channel_list, msg.message.channel_id);
         document.querySelector('[data-channel-id="' + msg.message.channel_id + '"]').children[2].innerHTML = chat__sanitize_string(msg.message.channel_name);
         g_channel_list[index].description = msg.message.channel_description;
+        g_channel_list[index].is_description_hidden = (msg.message.is_description_hidden === true);
         g_channel_list[index].is_using_password = msg.message.is_using_password;
         g_channel_list[index].name = msg.message.channel_name;
         g_channel_list[index].is_audio_enabled = msg.message.is_audio_enabled;
@@ -1040,6 +1056,9 @@ var server_msg = {
         g_channel_list[index].required_message_power = Number(msg.message.required_message_power) || 0;
         g_channel_list[index].required_picture_power = Number(msg.message.required_picture_power) || 0;
         g_channel_list[index].required_stream_power = Number(msg.message.required_stream_power) || 0;
+        g_channel_list[index].required_file_power = Number(msg.message.required_file_power) || 0;
+        g_channel_list[index].required_view_power = Number(msg.message.required_view_power) || 0;
+        g_channel_list[index].required_create_power = Number(msg.message.required_create_power) || 0;
         groups__refresh_channel_controls();
         UI.refresh_all_channel_fullness();
 
@@ -1126,6 +1145,7 @@ var server_msg = {
             parent_channel_id: msg.message.parent_channel_id,
             name: msg.message.name,
             description: msg.message.description,
+            is_description_hidden: (msg.message.is_description_hidden === true),
             maintainer_id: msg.message.maintainer_id,
             is_root_channel: msg.message.is_root_channel,
             has_maintainer: msg.message.has_maintainer,
@@ -1139,6 +1159,9 @@ var server_msg = {
             required_message_power: Number(msg.message.required_message_power) || 0,
             required_picture_power: Number(msg.message.required_picture_power) || 0,
             required_stream_power: Number(msg.message.required_stream_power) || 0,
+            required_file_power: Number(msg.message.required_file_power) || 0,
+            required_view_power: Number(msg.message.required_view_power) || 0,
+            required_create_power: Number(msg.message.required_create_power) || 0,
             has_channel_icon: msg.message.has_channel_icon,
             channel_icon_id: msg.message.channel_icon_id,
             is_channel_directly_collapsed: false,
@@ -1343,8 +1366,8 @@ var server_msg = {
 
             let html_to_append = "<div class=\"chat-context\" id=\"" + received_direct_message_chat_context_id + "\">\n\
                                             <div class=\"single-server-message\">now talking to user: " + chat__sanitize_string(channel_tree__get_display_name_by_client_id(msg.message.sender_id, msg.message.sender_username)) + "</div>\n\
-                                                <div class=\"single-server-message\">your public key: " + g_rsa_public_key_string + "</div>\n\
-                                                <div class=\"single-server-message\">his public key: " + chat__sanitize_string(channel_tree__get_public_key_by_client_id(msg.message.sender_id)) + "</div>\n\
+                                                <div class=\"single-server-message server-message-public-key\">your public key: " + g_rsa_public_key_string + "</div>\n\
+                                                <div class=\"single-server-message server-message-public-key\">his public key: " + chat__sanitize_string(channel_tree__get_public_key_by_client_id(msg.message.sender_id)) + "</div>\n\
                                             <div class=\"single-server-message\"></div>\n\
                                         </div>";
 
@@ -1504,8 +1527,8 @@ var server_msg = {
         {
             let html_to_append = "<div class=\"chat-context\" id=\"" + received_direct_message_chat_context_id + "\">\n\
                                             <div class=\"single-server-message\">now talking to user: " + chat__sanitize_string(channel_tree__get_display_name_by_client_id(msg.message.sender_id, msg.message.sender_username)) + "</div>\n\
-                                                <div class=\"single-server-message\">your public key: " + g_rsa_public_key_string + "</div>\n\
-                                                <div class=\"single-server-message\">his public key: " + chat__sanitize_string(channel_tree__get_public_key_by_client_id(msg.message.sender_id)) + "</div>\n\
+                                                <div class=\"single-server-message server-message-public-key\">your public key: " + g_rsa_public_key_string + "</div>\n\
+                                                <div class=\"single-server-message server-message-public-key\">his public key: " + chat__sanitize_string(channel_tree__get_public_key_by_client_id(msg.message.sender_id)) + "</div>\n\
                                             <div class=\"single-server-message\"></div>\n\
                                         </div>";
 
@@ -1950,8 +1973,8 @@ var server_msg = {
 
                 let html_to_append = "<div class=\"chat-context\" id=\"" + received_direct_message_chat_context_id + "\">\n\
                                         <div class=\"single-server-message\">now talking to user:  " + chat__sanitize_string(channel_tree__get_display_name_by_client_id(msg.message.sender_id, msg.message.sender_username)) + "</div>\n\
-                                        <div class=\"single-server-message\">your public key: " + g_rsa_public_key_string + "</div>\n\
-                                        <div class=\"single-server-message\">his public key: " + chat__sanitize_string(channel_tree__get_public_key_by_client_id(msg.message.sender_id)) + "</div>\n\
+                                        <div class=\"single-server-message server-message-public-key\">your public key: " + g_rsa_public_key_string + "</div>\n\
+                                        <div class=\"single-server-message server-message-public-key\">his public key: " + chat__sanitize_string(channel_tree__get_public_key_by_client_id(msg.message.sender_id)) + "</div>\n\
                                         <div class=\"single-server-message\"></div>\n\
                                     </div>"
 
@@ -2022,6 +2045,11 @@ var server_msg = {
                 chat_reactions__register(context.querySelector('[data-single-chat-message-server-message-id="' + msg.message.server_chat_message_id + '"]'), received_direct_message_object.reaction_id, channel_tree__get_public_key_by_client_id(msg.message.sender_id), msg.message.sender_username, received_direct_message_object.reply_to);
             }
             g_chat_context_array[chat_context_index].last_known_message_sender_username = msg.message.sender_username;
+        }
+        // the other client closed this conversation; the server could not read this message
+        else if (msg.message.some_json.type == "direct_chat_closed")
+        {
+            chat__show_direct_chat_closed(msg.message.sender_id, msg.message.sender_username);
         }
         // the other side read a private message of ours. the server routed this like any
         // other direct message and never saw what it says
@@ -2655,16 +2683,61 @@ var server_msg = {
         UI.refresh_member_list_state();
     },
     /**
-     * @brief the server denied a request: shows its reason when it sent one, the generic line otherwise
+     * @brief a channel's description, sent when this client may now read it or may no longer read it
      *
-     * @param object msg -> the server message, msg.message.reason is the optional text
+     * @param object msg -> the server message, msg.message holds channel_id, description and is_description_hidden
+     *
+     * @return void
+     */
+    process_channel_description_from_server: function(msg)
+    {
+        let index = channel_tree__get_channel_index_in_array_by_channel_id(g_channel_list, msg.message.channel_id);
+        let container = document.getElementById("current-channel-description");
+
+        // unknown channel
+        if (index == -1)
+        {
+            return;
+        }
+
+        // store the description
+        g_channel_list[index].description = msg.message.description;
+        g_channel_list[index].is_description_hidden = (msg.message.is_description_hidden === true);
+
+        // the information panel shows this channel right now: show the new text
+        if (container != null && container.dataset.descriptionChannelId == String(msg.message.channel_id))
+        {
+            server_info__show_channel_description(g_channel_list[index]);
+        }
+    },
+    /**
+     * @brief a request was refused: shows the reason, writes it to the log in red (with the name of the permission when the server sent one) and plays the permission sound
+     *
+     * @param object msg -> the server message, msg.message.reason is the optional text, msg.message.permission the optional name of the permission or power that refused the request
      *
      * @return void
      */
     process_access_denied_from_server: function(msg)
     {
-        utils__custom_alert((typeof msg.message.reason === "string" && msg.message.reason.length > 0)
-            ? msg.message.reason : "insufficient permissions");
+        let reason = (typeof msg.message.reason === "string" && msg.message.reason.length > 0)
+            ? msg.message.reason : "insufficient permissions";
+
+        // the name of the permission or power that refused the request, when the server sent one
+        let permission = (typeof msg.message.permission === "string") ? msg.message.permission : "";
+
+        // name the permission
+        if (permission.length > 0)
+        {
+            utils__custom_alert("insufficient permissions (" + permission + ")");
+            utils__custom_log("insufficient permissions (" + permission + ")", "permission_denied");
+        }
+        else
+        {
+            utils__custom_alert(reason);
+            utils__custom_log(reason, "permission_denied");
+        }
+
+        // play the sound
         sounds__play("insufficient_permissions");
     },
     /**
@@ -2698,6 +2771,15 @@ var server_msg = {
     {
         let client_that_joined = g_client_list[channel_tree__get_client_index_in_array_by_client_id(msg.message.client_id)];
         let client_old_channel_id = client_that_joined.channel_id;
+
+        // "visibility": the client did not move; the server shows or hides (-1) its channel for this client
+        let is_visibility_update = (msg.message.reason === "visibility");
+
+        // a repeat of what is already known changes nothing
+        if (is_visibility_update == true && client_old_channel_id === msg.message.channel_id)
+        {
+            return;
+        }
         let departing_client = { ...client_that_joined };
         client_that_joined.channel_id = msg.message.channel_id;
         client_that_joined.channel_group_id = Number(msg.message.channel_group_id) || 0;
@@ -2710,7 +2792,7 @@ var server_msg = {
 
         // Hidden destinations still announce a departure, without exposing the channel.
         let local_client = channel_tree__get_client_by_client_id(g_local_client_id);
-        if (local_client != null && client_old_channel_id !== msg.message.channel_id)
+        if (local_client != null && client_old_channel_id !== msg.message.channel_id && is_visibility_update == false)
         {
             if (g_local_client_id == msg.message.client_id)
             {
@@ -2751,7 +2833,10 @@ var server_msg = {
         {
             // this is case where client left to other unknown channel
             client_that_joined.is_clients_channel_hidden = true;
-            document.querySelector('[data-connected-client-id="' + msg.message.client_id + '"]').remove();
+            if (document.querySelector('[data-connected-client-id="' + msg.message.client_id + '"]') != null)
+            {
+                document.querySelector('[data-connected-client-id="' + msg.message.client_id + '"]').remove();
+            }
         }
         else
         {
@@ -2960,6 +3045,9 @@ var server_msg = {
                 }
                 target_element.appendChild(node);
             }
+
+            // the channel group icon is added together with the row, so it does not appear later than the row
+            channel_groups__refresh_icons();
 
             let elements = document.getElementsByClassName('connected-client');
 

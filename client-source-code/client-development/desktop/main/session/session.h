@@ -252,6 +252,7 @@ boole desktop_session__join(desktop_session_t *session, int64 channel, const cha
 boole desktop_session__chat(desktop_session_t *session, const char *text);
 void desktop_session__set_chat_format(desktop_session_t *session, const desktop_chat_format_t *format);
 boole desktop_session__direct(desktop_session_t *session, int64 peer, uint64 serial, const char *text);
+boole desktop_session__direct_closed(desktop_session_t *session, int64 peer, uint64 serial);
 boole desktop_session__can_edit(const desktop_session_view_t *view, const desktop_chat_t *chat);
 boole desktop_session__edit(desktop_session_t *session, uint64 sequence, uint64 connection_serial, const char *text);
 boole desktop_session__mute(desktop_session_t *session, int64 peer, uint64 serial, boole muted);

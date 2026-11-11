@@ -695,7 +695,12 @@ var groups_permission_fields =
     ["send_direct_pictures", "Send direct pictures", "Enables picture uploads to individual users. Enabled by default."],
     ["send_direct_files", "Send direct files", "Enables file uploads to individual users. Enabled by default."],
     ["send_channel_pictures", "Send channel pictures", "Enables channel picture uploads. Channel picture power also applies. Enabled by default."],
-    ["send_channel_files", "Send channel files", "Enables channel file uploads. Enabled by default."],
+    ["send_channel_files", "Send channel files", "Enables channel file uploads. Channel file power also applies. Enabled by default."],
+    ["send_direct_messages", "Send direct messages", "Enables text messages to individual users. Direct message power must also reach the receiver's protection. Channel keys and read receipts need no permission. Enabled by default."],
+    ["send_channel_messages", "Send channel messages", "Enables text messages in the user's channel. Channel message power also applies. Enabled by default."],
+    ["send_pokes", "Send pokes", "Enables pokes. Poke power must also reach the receiver's protection. Enabled by default."],
+    ["view_channel_members", "View channel members", "Shows who is in channels the user is not in. Channel view power must also reach the channel's requirement. Users always see the members of their own channel. Enabled by default."],
+    ["view_channel_descriptions", "View channel descriptions", "Shows the description of channels the user is not in. Channel view power must also reach the channel's requirement. Enabled by default."],
     ["create_music_bots", "Create music bots", "Adds a music bot when the server enables bot audio."],
     ["delete_music_bots", "Delete music bots", "Removes bots and their uploaded songs."],
     ["upload_music_tracks", "Upload music tracks", "Adds MP3 files to a music bot."],
@@ -712,6 +717,17 @@ var groups_power_fields =
     ["stream_power", "Video streaming power"],
     ["channel_message_power", "Channel message power"],
     ["channel_picture_power", "Channel picture power"],
+    ["channel_file_power", "Channel file power"],
+    ["channel_view_power", "Channel view power"],
+    ["channel_create_power", "Channel create power"],
+    ["direct_message_power", "Direct message power"],
+    ["direct_message_protection", "Protection from direct messages"],
+    ["direct_picture_power", "Direct picture power"],
+    ["direct_picture_protection", "Protection from direct pictures"],
+    ["direct_file_power", "Direct file power"],
+    ["direct_file_protection", "Protection from direct files"],
+    ["poke_power", "Poke power"],
+    ["poke_protection", "Protection from pokes"],
     ["kick_power", "Kick power"],
     ["kick_protection", "Protection from kicks"],
     ["ban_power", "Ban power"],
@@ -738,7 +754,8 @@ function groups__action_value(permission, value)
     }
     let allowed = ["view_server_info", "view_client_connection_time", "create_temp_channel",
         "message_idle_clients", "call_idle_clients", "send_direct_pictures", "send_direct_files",
-        "send_channel_pictures", "send_channel_files"].includes(permission);
+        "send_channel_pictures", "send_channel_files", "send_direct_messages", "send_channel_messages",
+        "send_pokes", "view_channel_members", "view_channel_descriptions"].includes(permission);
     return allowed ? "grant" : "deny";
 }
 
@@ -781,7 +798,8 @@ function groups__supports_skip(name)
     return ["bypass_channel_password", "edit_channel_name", "edit_channel_description", "edit_channel_password", "edit_channel_powers",
         "edit_channel_options", "delete_channel", "assign_channel_groups", "kick_from_channel", "mute_clients",
         "stop_client_streams", "group_management_power", "group_protection", "talk_power", "channel_message_power",
-        "channel_picture_power", "stream_power", "move_power", "move_protection", "moderation_power", "moderation_protection"].includes(name);
+        "channel_picture_power", "stream_power", "move_power", "move_protection", "moderation_power", "moderation_protection",
+        "channel_file_power", "channel_create_power"].includes(name);
 }
 
 /**
@@ -1140,10 +1158,10 @@ function groups__render_permissions(group, admin, values)
     }
     let categories =
     [
-        ["Channels", ["bypass_channel_password", "create_channel", "create_temp_channel", "edit_channel_name", "edit_channel_description", "edit_channel_password", "edit_channel_powers", "edit_channel_options", "delete_channel", "assign_channel_groups", "talk_power", "stream_power", "channel_message_power", "channel_picture_power"]],
+        ["Channels", ["bypass_channel_password", "create_channel", "create_temp_channel", "edit_channel_name", "edit_channel_description", "edit_channel_password", "edit_channel_powers", "edit_channel_options", "delete_channel", "assign_channel_groups", "talk_power", "stream_power", "channel_message_power", "channel_picture_power", "channel_file_power", "view_channel_members", "view_channel_descriptions", "channel_view_power", "channel_create_power"]],
         ["Moderation", ["kick", "kick_power", "kick_protection", "ban", "ban_power", "ban_protection", "view_bans", "remove_bans", "move_clients", "kick_from_channel", "move_power", "move_protection", "mute_clients", "stop_client_streams", "moderation_power", "moderation_protection"]],
         ["Groups", ["view_group_permissions", "view_group_members", "create_groups", "edit_groups", "delete_groups", "assign_groups", "remove_groups", "edit_group_permissions", "group_management_power", "group_protection", "permission_edit_power"]],
-        ["Messaging", ["send_direct_pictures", "send_direct_files", "send_channel_pictures", "send_channel_files", "send_offline_messages", "receive_offline_messages", "message_idle_clients", "call_idle_clients"]],
+        ["Messaging", ["send_direct_messages", "direct_message_power", "direct_message_protection", "send_direct_pictures", "direct_picture_power", "direct_picture_protection", "send_direct_files", "direct_file_power", "direct_file_protection", "send_pokes", "poke_power", "poke_protection", "send_channel_messages", "send_channel_pictures", "send_channel_files", "send_offline_messages", "receive_offline_messages", "message_idle_clients", "call_idle_clients"]],
         ["Music bots", ["create_music_bots", "delete_music_bots", "upload_music_tracks", "delete_music_tracks", "control_music_playback"]],
         ["Icons and emojis", ["upload_icons", "delete_icons", "upload_emojis", "delete_emojis"]],
         ["Channel group management", ["create_channel_groups", "edit_channel_groups", "delete_channel_groups"]],
@@ -1215,7 +1233,22 @@ function groups__render_permissions(group, admin, values)
             control.dataset.savedValue = String(saved_value);
             control.disabled = !row_editable;
             control.setAttribute("aria-labelledby", label.id);
-            let channel_power = ["talk_power", "stream_power", "channel_message_power", "channel_picture_power"].includes(name);
+            // powers that are compared with a requirement saved in a channel, and what each one is needed for
+            let channel_power_uses =
+            {
+                talk_power: "send audio",
+                stream_power: "share a screen or video file",
+                channel_message_power: "send channel messages",
+                channel_picture_power: "send channel pictures",
+                channel_file_power: "send channel files",
+                channel_view_power: "see who is in the channel and read its description without being in it",
+                channel_create_power: "create a channel inside it"
+            };
+            let channel_power = Object.prototype.hasOwnProperty.call(channel_power_uses, name);
+
+            // powers and protections for content sent to one user
+            let contact_power = ["direct_message_power", "direct_message_protection", "direct_picture_power", "direct_picture_protection",
+                "direct_file_power", "direct_file_protection", "poke_power", "poke_protection"].includes(name);
             control.title = channel_power ? "Your highest group power must reach the power required by the channel."
                 : numeric ? "Power is compared with protection. Higher values give more power or protection."
                 : "Enable permits the action. Disable + Negate overrides ordinary Enable values. See Permission help for examples.";
@@ -1260,9 +1293,13 @@ function groups__render_permissions(group, admin, values)
                 }
                 document.getElementById("groups-help-title").textContent = field[1];
                 document.getElementById("groups-description").textContent = channel_power
-                    ? "Your highest group power must reach the channel's requirement to "
-                        + (name === "talk_power" ? "send audio" : name === "stream_power" ? "share a screen or video file" : name === "channel_message_power" ? "send channel messages" : "send channel pictures")
-                        + ". This does not restrict receiving. Channel owners start with power 1000 from Channel Admin; Negate can restrict it. None is 0, Low 25, Normal 50, High 75, Very high 100 and Admin 1000. Advanced accepts whole numbers from 0 to 1000."
+                    ? "Your highest group power must reach the channel's requirement to " + channel_power_uses[name]
+                        + (name === "channel_view_power" ? ". Channel groups do not change this power. Users always see the members of the channel they are in."
+                            : name === "channel_create_power" ? ". The requirement is the one of the parent channel."
+                            : ". This does not restrict receiving. Channel owners start with power 1000 from Channel Admin; Negate can restrict it.")
+                        + " None is 0, Low 25, Normal 50, High 75, Very high 100 and Admin 1000. Advanced accepts whole numbers from 0 to 1000."
+                    : contact_power
+                    ? "The sender's power must be at least the receiver's protection for this kind of content. Protection 0 lets everybody reach this user whose action is enabled. Full server admins get their protection from their groups like other users, so add a group with protection to an admin who should not be messaged by everybody. None is 0, Low 25, Normal 50, High 75, Very high 100 and Admin 1000. Advanced accepts whole numbers from 0 to 1000."
                     : name === "permission_edit_power"
                     ? "Authority to edit individual permission settings. It must reach the saved Grant on each changed row, alongside group editing and management rights. New Admin: 1000, Moderator: 50, Normal: 25, Guest: 0. Any custom group can use any value from 0 to 1000. This power is server-wide and channel groups cannot supply it."
                     : name === "group_management_power" || name === "group_protection"

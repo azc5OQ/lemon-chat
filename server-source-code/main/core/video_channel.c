@@ -311,7 +311,7 @@ void video_channel__apply_permission_changes(void)
         {
             continue;
         }
-        server_msg__administration__send_access_denied_to_single_client(streamer, NULL_POINTER);
+        server_msg__administration__send_permission_denied_to_single_client(streamer, permissions__power_name(PERMISSION_STREAM_POWER));
         video_channel__stop(channel->channel_id, "insufficient_permissions");
     }
     clib__unlock(&g_channels_global_rwlock_guard);

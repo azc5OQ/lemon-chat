@@ -2992,3 +2992,9 @@ body:has(.head-menu-dropdown.is-open) :is(#microphone-push-to-talk-button-touch-
 {
     font-family: var(--set-font);
 }
+
+/* The public keys at the start of a conversation with a person are not shown in this theme. */
+.server-message-public-key
+{
+    display: none !important;
+}

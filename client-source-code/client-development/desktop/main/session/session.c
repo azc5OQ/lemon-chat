@@ -664,6 +664,36 @@ boole desktop_session__direct(desktop_session_t *session, int64 peer, uint64 ser
     return queued;
 }
 
+/**
+ * @brief queues the notice that the local user closed the private conversation with one client.
+ *
+ * @param desktop_session_t* session -> GUI-owned session handle
+ * @param int64 peer -> client ID of the other side of the conversation
+ * @param uint64 serial -> that client's connection lifetime
+ *
+ * @return boole -> 1 when queued
+ */
+boole desktop_session__direct_closed(desktop_session_t *session, int64 peer, uint64 serial)
+{
+    desktop_session_command_t command = { 0 };
+    boole queued = 0;
+
+    // Fill the command.
+    command.is_direct_closed = 1;
+    command.peer = peer;
+    command.peer_serial = serial;
+
+    // Queue the command.
+    desktop_mutex__lock(session->mutex);
+    if (session->running && !session->stop && session->published.connected && session->command_count < 8 && peer >= 0 && peer != session->published.local_id)
+    {
+        session->commands[session->command_count++] = command;
+        queued = 1;
+    }
+    desktop_mutex__unlock(session->mutex);
+    return queued;
+}
+
 /** @brief Changes outgoing formatting; already queued messages retain their captured selection. */
 void desktop_session__set_chat_format(desktop_session_t *session, const desktop_chat_format_t *format)
 {

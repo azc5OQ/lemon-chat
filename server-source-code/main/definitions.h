@@ -565,6 +565,12 @@ typedef struct server_settings
     boole is_server_features_published;
     boole is_client_config_embedded;
 
+    // The served page waits for a click on a connect button before it connects, so the browser allows sound; default off.
+    boole is_start_page_connect_button_enabled;
+
+    // the served page shows a large import identity button under the connect button; default off
+    boole is_start_page_import_identity_button_enabled;
+
     // Chat delivery and attachment limits.
     // deliver direct text chat to idle clients; their websocket stays open in idle, so delivery
     // works; default on
@@ -698,6 +704,20 @@ typedef struct client_file_upload_extension_t
     char intent[31];
 } client_file_upload_extension_t;
 
+// What a client may see of a channel it is not in: the clients inside and the description.
+typedef struct channel_view_rights_t
+{
+    boole is_admin;
+    boole is_viewing_members_allowed;
+    boole is_viewing_descriptions_allowed;
+
+    // compared with the channel's required_view_power
+    uint64 view_power;
+
+    // the channel the client is in; -2 as uint64 while the client is in idle mode
+    uint64 channel_id;
+} channel_view_rights_t;
+
 typedef struct client_t
 {
     // Per-client attachment preferences.
@@ -751,6 +771,12 @@ typedef struct client_t
     uint64 channel_group_role;
     uint64 muted_until_ms;
 
+    // What this client may see of channels it is not in, calculated from its groups.
+    channel_view_rights_t channel_view_rights;
+
+    // The rights used the last time this client was sent the channels of clients and the descriptions.
+    channel_view_rights_t sent_channel_view_rights;
+
     // Values are defined by audio_state_e.
     int64 audio_state;
 
@@ -765,6 +791,9 @@ typedef struct client_t
 
     // Identity and connection encryption.
     char username[USERNAME_MAX_LENGTH];
+
+    // The name saved with the identity, without the letter added while another client uses the name.
+    char preferred_username[USERNAME_MAX_LENGTH];
     char public_key[MAX_PUBLIC_KEY_LENGTH];
     char dh_shared_secret[SHARED_SECRET_LENGTH];
 
@@ -837,6 +866,13 @@ typedef struct channel
     uint64 required_message_power;
     uint64 required_picture_power;
     uint64 required_stream_power;
+    uint64 required_file_power;
+
+    // power needed to see who is in this channel and to read its description from outside
+    uint64 required_view_power;
+
+    // power needed to create a channel directly inside this channel
+    uint64 required_create_power;
 
     // Video, music and temporary-channel state.
     // the per-channel video streaming toggle, persisted; only meaningful while the server-wide
@@ -946,6 +982,11 @@ typedef enum permission_t
     PERMISSION_DELETE_CHANNEL_GROUPS,
     PERMISSION_VIEW_CLIENT_CONNECTION_TIME,
     PERMISSION_BYPASS_CHANNEL_PASSWORD,
+    PERMISSION_SEND_DIRECT_MESSAGES,
+    PERMISSION_SEND_CHANNEL_MESSAGES,
+    PERMISSION_SEND_POKES,
+    PERMISSION_VIEW_CHANNEL_MEMBERS,
+    PERMISSION_VIEW_CHANNEL_DESCRIPTIONS,
     PERMISSION_COUNT
 } permission_t;
 
@@ -981,6 +1022,21 @@ typedef enum permission_power_t
     PERMISSION_MODERATION_POWER,
     PERMISSION_MODERATION_PROTECTION,
     PERMISSION_EDIT_POWER,
+
+    // Each power below is followed by the protection it is compared with.
+    PERMISSION_DIRECT_MESSAGE_POWER,
+    PERMISSION_DIRECT_MESSAGE_PROTECTION,
+    PERMISSION_DIRECT_PICTURE_POWER,
+    PERMISSION_DIRECT_PICTURE_PROTECTION,
+    PERMISSION_DIRECT_FILE_POWER,
+    PERMISSION_DIRECT_FILE_PROTECTION,
+    PERMISSION_POKE_POWER,
+    PERMISSION_POKE_PROTECTION,
+
+    // These powers are compared with a requirement saved in the channel.
+    PERMISSION_CHANNEL_FILE_POWER,
+    PERMISSION_CHANNEL_VIEW_POWER,
+    PERMISSION_CHANNEL_CREATE_POWER,
     PERMISSION_POWER_COUNT
 } permission_power_t;
 

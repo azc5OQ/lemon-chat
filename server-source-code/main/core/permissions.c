@@ -11,8 +11,11 @@
 
 uint64 g_guest_group_id = MAX_GROUPS;
 
-static const char *g_permission_names[PERMISSION_COUNT] = { "create_channel", "create_temp_channel", "kick", "ban", "view_stored_users", "view_group_permissions", "view_group_members", "create_groups", "edit_groups", "delete_groups", "assign_groups", "remove_groups", "edit_group_permissions", "upload_icons", "view_client_details", "view_server_logs", "view_server_info", "send_offline_messages", "receive_offline_messages", "message_idle_clients", "call_idle_clients", "delete_icons", "upload_emojis", "delete_emojis", "view_ip_addresses", "view_bans", "remove_bans", "move_clients", "kick_from_channel", "mute_clients", "stop_client_streams", "edit_channel_name", "edit_channel_description", "edit_channel_password", "edit_channel_powers", "edit_channel_options", "delete_channel", "assign_channel_groups", "send_direct_pictures", "send_direct_files", "send_channel_pictures", "send_channel_files", "create_music_bots", "delete_music_bots", "upload_music_tracks", "delete_music_tracks", "control_music_playback", "use_reserved_slots", "create_channel_groups", "edit_channel_groups", "delete_channel_groups", "view_client_connection_time", "bypass_channel_password" };
-static const char *g_permission_power_names[PERMISSION_POWER_COUNT] = { "kick_power", "kick_protection", "ban_power", "ban_protection", "group_management_power", "group_protection", "talk_power", "channel_message_power", "channel_picture_power", "stream_power", "move_power", "move_protection", "moderation_power", "moderation_protection", "permission_edit_power" };
+static const char *g_permission_names[PERMISSION_COUNT] = { "create_channel", "create_temp_channel", "kick", "ban", "view_stored_users", "view_group_permissions", "view_group_members", "create_groups", "edit_groups", "delete_groups", "assign_groups", "remove_groups", "edit_group_permissions", "upload_icons", "view_client_details", "view_server_logs", "view_server_info", "send_offline_messages", "receive_offline_messages", "message_idle_clients", "call_idle_clients", "delete_icons", "upload_emojis", "delete_emojis", "view_ip_addresses", "view_bans", "remove_bans", "move_clients", "kick_from_channel", "mute_clients", "stop_client_streams", "edit_channel_name", "edit_channel_description", "edit_channel_password", "edit_channel_powers", "edit_channel_options", "delete_channel", "assign_channel_groups", "send_direct_pictures", "send_direct_files", "send_channel_pictures", "send_channel_files", "create_music_bots", "delete_music_bots", "upload_music_tracks", "delete_music_tracks", "control_music_playback", "use_reserved_slots", "create_channel_groups", "edit_channel_groups", "delete_channel_groups", "view_client_connection_time", "bypass_channel_password", "send_direct_messages", "send_channel_messages", "send_pokes", "view_channel_members", "view_channel_descriptions" };
+static const char *g_permission_power_names[PERMISSION_POWER_COUNT] = { "kick_power", "kick_protection", "ban_power", "ban_protection", "group_management_power", "group_protection", "talk_power", "channel_message_power", "channel_picture_power", "stream_power", "move_power", "move_protection", "moderation_power", "moderation_protection", "permission_edit_power", "direct_message_power", "direct_message_protection", "direct_picture_power", "direct_picture_protection", "direct_file_power", "direct_file_protection", "poke_power", "poke_protection", "channel_file_power", "channel_view_power", "channel_create_power" };
+
+// Powers for using a feature; a group that does not set one gets 25, like the Guest and Normal presets.
+static const permission_power_t g_permission_usage_powers[] = { PERMISSION_TALK_POWER, PERMISSION_CHANNEL_MESSAGE_POWER, PERMISSION_CHANNEL_PICTURE_POWER, PERMISSION_STREAM_POWER, PERMISSION_DIRECT_MESSAGE_POWER, PERMISSION_DIRECT_PICTURE_POWER, PERMISSION_DIRECT_FILE_POWER, PERMISSION_POKE_POWER, PERMISSION_CHANNEL_FILE_POWER, PERMISSION_CHANNEL_VIEW_POWER, PERMISSION_CHANNEL_CREATE_POWER };
 
 static void _permissions_internal__resolve(const client_t *client, group_permissions_t *result);
 static void _permissions_internal__resolve_change(const client_t *client, uint64 group_id, const group_permissions_t *replacement, group_permissions_t *result);
@@ -45,10 +48,15 @@ void permissions__set_preset(group_type_t type, group_permissions_t *permissions
     permissions->values[PERMISSION_SEND_DIRECT_FILES] = PERMISSION_GRANT;
     permissions->values[PERMISSION_SEND_CHANNEL_PICTURES] = PERMISSION_GRANT;
     permissions->values[PERMISSION_SEND_CHANNEL_FILES] = PERMISSION_GRANT;
-    permissions->powers[PERMISSION_TALK_POWER] = type == GROUP_TYPE_MODERATOR ? 50 : 25;
-    permissions->powers[PERMISSION_CHANNEL_MESSAGE_POWER] = type == GROUP_TYPE_MODERATOR ? 50 : 25;
-    permissions->powers[PERMISSION_CHANNEL_PICTURE_POWER] = type == GROUP_TYPE_MODERATOR ? 50 : 25;
-    permissions->powers[PERMISSION_STREAM_POWER] = type == GROUP_TYPE_MODERATOR ? 50 : 25;
+    permissions->values[PERMISSION_SEND_DIRECT_MESSAGES] = PERMISSION_GRANT;
+    permissions->values[PERMISSION_SEND_CHANNEL_MESSAGES] = PERMISSION_GRANT;
+    permissions->values[PERMISSION_SEND_POKES] = PERMISSION_GRANT;
+    permissions->values[PERMISSION_VIEW_CHANNEL_MEMBERS] = PERMISSION_GRANT;
+    permissions->values[PERMISSION_VIEW_CHANNEL_DESCRIPTIONS] = PERMISSION_GRANT;
+    for (i = 0; i < sizeof(g_permission_usage_powers) / sizeof(g_permission_usage_powers[0]); i++)
+    {
+        permissions->powers[g_permission_usage_powers[i]] = type == GROUP_TYPE_MODERATOR ? 50 : 25;
+    }
     if (type != GROUP_TYPE_GUEST)
     {
         permissions->values[PERMISSION_MESSAGE_IDLE_CLIENTS] = PERMISSION_GRANT;
@@ -90,6 +98,12 @@ void permissions__set_preset(group_type_t type, group_permissions_t *permissions
         {
             permissions->powers[i] = PERMISSION_POWER_MAX;
         }
+
+        // A member of this group stays reachable by messages and pokes until an admin raises these values.
+        permissions->powers[PERMISSION_DIRECT_MESSAGE_PROTECTION] = 0;
+        permissions->powers[PERMISSION_DIRECT_PICTURE_PROTECTION] = 0;
+        permissions->powers[PERMISSION_DIRECT_FILE_PROTECTION] = 0;
+        permissions->powers[PERMISSION_POKE_PROTECTION] = 0;
     }
 }
 
@@ -214,6 +228,12 @@ static uint64 _permissions_internal__action_value(permission_t permission, uint6
         return value;
     }
     if (permission == PERMISSION_CREATE_TEMP_CHANNEL || permission == PERMISSION_VIEW_SERVER_INFO || permission == PERMISSION_VIEW_CLIENT_CONNECTION_TIME || permission == PERMISSION_MESSAGE_IDLE_CLIENTS || permission == PERMISSION_CALL_IDLE_CLIENTS || permission == PERMISSION_SEND_DIRECT_PICTURES || permission == PERMISSION_SEND_DIRECT_FILES || permission == PERMISSION_SEND_CHANNEL_PICTURES || permission == PERMISSION_SEND_CHANNEL_FILES)
+    {
+        return PERMISSION_GRANT;
+    }
+
+    // These actions needed no permission before they were added, so a group saved without them allows them.
+    if (permission == PERMISSION_SEND_DIRECT_MESSAGES || permission == PERMISSION_SEND_CHANNEL_MESSAGES || permission == PERMISSION_SEND_POKES || permission == PERMISSION_VIEW_CHANNEL_MEMBERS || permission == PERMISSION_VIEW_CHANNEL_DESCRIPTIONS)
     {
         return PERMISSION_GRANT;
     }
@@ -353,6 +373,14 @@ void permissions__refresh_client_powers(client_t *client)
     client->channel_message_power = client->is_admin ? PERMISSION_POWER_MAX : effective.powers[PERMISSION_CHANNEL_MESSAGE_POWER];
     client->channel_picture_power = client->is_admin ? PERMISSION_POWER_MAX : effective.powers[PERMISSION_CHANNEL_PICTURE_POWER];
     client->stream_power = client->is_admin ? PERMISSION_POWER_MAX : effective.powers[PERMISSION_STREAM_POWER];
+
+    // Channel groups take no part in these three values: they describe channels the client is not in.
+    _permissions_internal__resolve(client, &effective);
+    client->channel_view_rights.is_admin = client->is_admin;
+    client->channel_view_rights.is_viewing_members_allowed = (boole)(_permissions_internal__action_value(PERMISSION_VIEW_CHANNEL_MEMBERS, effective.values[PERMISSION_VIEW_CHANNEL_MEMBERS]) == PERMISSION_GRANT);
+    client->channel_view_rights.is_viewing_descriptions_allowed = (boole)(_permissions_internal__action_value(PERMISSION_VIEW_CHANNEL_DESCRIPTIONS, effective.values[PERMISSION_VIEW_CHANNEL_DESCRIPTIONS]) == PERMISSION_GRANT);
+    client->channel_view_rights.view_power = effective.powers[PERMISSION_CHANNEL_VIEW_POWER];
+    client->channel_view_rights.channel_id = client->channel_id;
 }
 
 /**
@@ -424,6 +452,11 @@ boole permissions__can_use_channel(const client_t *client, const channel_t *chan
         available = client->stream_power;
         required = channel->required_stream_power;
         break;
+    case PERMISSION_CHANNEL_FILE_POWER:
+        // Files are sent rarely, so this power is calculated here instead of being saved in the client.
+        available = permissions__power_in_channel(client, channel, PERMISSION_CHANNEL_FILE_POWER);
+        required = channel->required_file_power;
+        break;
     default:
         return FALSE;
     }
@@ -432,6 +465,95 @@ boole permissions__can_use_channel(const client_t *client, const channel_t *chan
         return TRUE;
     }
     return (boole)(available >= required);
+}
+
+/**
+ * @brief Checks whether one client may send a direct message, picture, file or poke to another.
+ *
+ *        Two things are checked. The sender's groups must enable the action. The sender's power
+ *        for this kind of content must also be at least as high as the protection that the
+ *        receiver's groups give against it. A receiver with protection 0 can be reached by
+ *        everybody whose action is enabled.
+ *
+ * @param sender Client making the request, with the clients lock held.
+ * @param target Client that would receive the content.
+ * @param permission PERMISSION_SEND_DIRECT_MESSAGES, PERMISSION_SEND_DIRECT_PICTURES, PERMISSION_SEND_DIRECT_FILES or PERMISSION_SEND_POKES.
+ *
+ * @return NULL when the request is allowed; otherwise the name of the permission or power that refused it.
+ */
+cstring permissions__contact_refusal(const client_t *sender, const client_t *target, permission_t permission)
+{
+    group_permissions_t actor;
+    group_permissions_t protected_client;
+    permission_power_t power = PERMISSION_POWER_COUNT;
+    cstring refusal = NULL_POINTER;
+
+    // Choose power pair.
+    switch (permission)
+    {
+    case PERMISSION_SEND_DIRECT_MESSAGES:
+        power = PERMISSION_DIRECT_MESSAGE_POWER;
+        break;
+    case PERMISSION_SEND_DIRECT_PICTURES:
+        power = PERMISSION_DIRECT_PICTURE_POWER;
+        break;
+    case PERMISSION_SEND_DIRECT_FILES:
+        power = PERMISSION_DIRECT_FILE_POWER;
+        break;
+    case PERMISSION_SEND_POKES:
+        power = PERMISSION_POKE_POWER;
+        break;
+    default:
+        return "";
+    }
+
+    // Check both clients.
+    if (sender == NULL_POINTER || target == NULL_POINTER || sender->is_existing == FALSE || sender->is_authenticated == FALSE || sender->is_music_bot == TRUE)
+    {
+        return g_permission_names[permission];
+    }
+
+    // No limits apply.
+    if (g_server_settings.is_permission_system_enabled == FALSE || sender->is_admin == TRUE)
+    {
+        return NULL_POINTER;
+    }
+
+    // Compare with protection.
+    clib__read_lock(&g_groups_global_rwlock_guard);
+    _permissions_internal__resolve(sender, &actor);
+    _permissions_internal__resolve(target, &protected_client);
+    if (_permissions_internal__is_allowed(sender, &actor, permission) == FALSE)
+    {
+        refusal = g_permission_names[permission];
+    }
+    else if (actor.powers[power] < protected_client.powers[power + 1])
+    {
+        refusal = g_permission_power_names[power];
+    }
+    clib__unlock(&g_groups_global_rwlock_guard);
+    return refusal;
+}
+
+/**
+ * @brief Checks whether a client may create a channel directly inside another channel.
+ *
+ * @param client Client making the request, with the clients and channels locks held.
+ * @param parent Channel that would contain the new channel.
+ *
+ * @return TRUE when the client's channel create power reaches the parent's requirement.
+ */
+boole permissions__can_create_channel_in(const client_t *client, const channel_t *parent)
+{
+    if (client == NULL_POINTER || parent == NULL_POINTER || parent->is_existing == FALSE)
+    {
+        return FALSE;
+    }
+    if (g_server_settings.is_permission_system_enabled == FALSE || client->is_admin == TRUE)
+    {
+        return TRUE;
+    }
+    return (boole)(permissions__power_in_channel(client, parent, PERMISSION_CHANNEL_CREATE_POWER) >= parent->required_create_power);
 }
 
 /**
@@ -947,10 +1069,10 @@ boole permissions__read(cJSON *object, group_permissions_t *permissions)
 
     clib__memset(&parsed, 0, sizeof(parsed));
     permissions__init_grants(&parsed);
-    parsed.powers[PERMISSION_TALK_POWER] = 25;
-    parsed.powers[PERMISSION_CHANNEL_MESSAGE_POWER] = 25;
-    parsed.powers[PERMISSION_CHANNEL_PICTURE_POWER] = 25;
-    parsed.powers[PERMISSION_STREAM_POWER] = 25;
+    for (i = 0; i < sizeof(g_permission_usage_powers) / sizeof(g_permission_usage_powers[0]); i++)
+    {
+        parsed.powers[g_permission_usage_powers[i]] = 25;
+    }
     if (cJSON_IsObject(object) == FALSE)
     {
         return FALSE;
@@ -1050,39 +1172,55 @@ boole permissions__read(cJSON *object, group_permissions_t *permissions)
 }
 
 /**
+ * @brief Returns the permission that an upload of the declared attachment type needs.
+ *
+ * @param intent Attachment type announced before the first upload part.
+ *
+ * @return The permission, or PERMISSION_COUNT for an unknown type.
+ */
+permission_t permissions__upload_permission(cstring intent)
+{
+    // Check the argument.
+    if (intent == NULL_POINTER)
+    {
+        return PERMISSION_COUNT;
+    }
+
+    // Match the intent.
+    if (clib__strcmp(intent, "direct_chat_picture_file") == 0)
+    {
+        return PERMISSION_SEND_DIRECT_PICTURES;
+    }
+    if (clib__strcmp(intent, "direct_chat_file") == 0)
+    {
+        return PERMISSION_SEND_DIRECT_FILES;
+    }
+    if (clib__strcmp(intent, "channel_chat_picture_file") == 0)
+    {
+        return PERMISSION_SEND_CHANNEL_PICTURES;
+    }
+    if (clib__strcmp(intent, "channel_chat_file") == 0)
+    {
+        return PERMISSION_SEND_CHANNEL_FILES;
+    }
+    if (clib__strcmp(intent, "musicbot_file") == 0)
+    {
+        return PERMISSION_UPLOAD_MUSIC_TRACKS;
+    }
+    return PERMISSION_COUNT;
+}
+
+/**
  * @brief Checks the permission for the declared attachment type.
+ *
  * @param sender Client uploading data with the clients lock held.
  * @param intent Attachment type announced before the first upload part.
+ *
+ * @return boole -> TRUE when the client may upload this kind of content
  */
 boole permissions__can_upload(const client_t *sender, cstring intent)
 {
-    permission_t permission = PERMISSION_COUNT;
-
-    if (intent == NULL_POINTER)
-    {
-        return FALSE;
-    }
-    if (clib__strcmp(intent, "direct_chat_picture_file") == 0)
-    {
-        permission = PERMISSION_SEND_DIRECT_PICTURES;
-    }
-    else if (clib__strcmp(intent, "direct_chat_file") == 0)
-    {
-        permission = PERMISSION_SEND_DIRECT_FILES;
-    }
-    else if (clib__strcmp(intent, "channel_chat_picture_file") == 0)
-    {
-        permission = PERMISSION_SEND_CHANNEL_PICTURES;
-    }
-    else if (clib__strcmp(intent, "channel_chat_file") == 0)
-    {
-        permission = PERMISSION_SEND_CHANNEL_FILES;
-    }
-    else if (clib__strcmp(intent, "musicbot_file") == 0)
-    {
-        permission = PERMISSION_UPLOAD_MUSIC_TRACKS;
-    }
-    return permissions__is_allowed(sender, permission);
+    return permissions__is_allowed(sender, permissions__upload_permission(intent));
 }
 
 /**
@@ -1123,11 +1261,24 @@ json_failure:
 
 /**
  * @brief Returns the wire name of a known permission.
+ *
  * @param permission Action to name.
  */
 cstring permissions__name(permission_t permission)
 {
     return permission >= 0 && permission < PERMISSION_COUNT ? g_permission_names[permission] : "";
+}
+
+/**
+ * @brief Returns the wire name of a known power or protection.
+ *
+ * @param power Power to name.
+ *
+ * @return cstring -> the name, or an empty text for an unknown power
+ */
+cstring permissions__power_name(permission_power_t power)
+{
+    return power >= 0 && power < PERMISSION_POWER_COUNT ? g_permission_power_names[power] : "";
 }
 
 /**

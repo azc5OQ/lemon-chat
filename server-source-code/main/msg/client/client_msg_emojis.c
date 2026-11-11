@@ -52,7 +52,7 @@ static void _client_msg_emojis_internal__process(cJSON *json_root, uint64 client
     }
     if (editing && permissions__is_allowed(client, clib__strcmp(operation, "upload_server_emoji") == 0 ? PERMISSION_UPLOAD_EMOJIS : PERMISSION_DELETE_EMOJIS) == FALSE)
     {
-        server_msg__administration__send_access_denied_to_single_client(client, NULL_POINTER);
+        server_msg__administration__send_permission_denied_to_single_client(client, permissions__name(clib__strcmp(operation, "upload_server_emoji") == 0 ? PERMISSION_UPLOAD_EMOJIS : PERMISSION_DELETE_EMOJIS));
         server_msg__emojis__send_error(client, operation, "Insufficient permissions.", requested_id);
     }
     else if (clib__strcmp(operation, "load_server_emojis") == 0)

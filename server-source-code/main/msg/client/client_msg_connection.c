@@ -40,6 +40,8 @@ static boole _client_msg_connection_internal__is_public_key_challenge_response_v
 static char *_client_msg_connection_internal__get_challenge_string(cJSON *json_root);
 static boole _client_msg_connection_internal__is_username_free_at_login(cstring candidate_username, uint64 client_index);
 static boole _client_msg_connection_internal__try_apply_chosen_username(cJSON *json_root, uint64 client_index);
+static void _client_msg_connection_internal__write_username_letters(uint64 number, char *out_letters, uint64 out_letters_size);
+static boole _client_msg_connection_internal__try_apply_saved_username(uint64 client_index);
 
 /**
  * @brief This function processes connection check message from client
@@ -900,6 +902,98 @@ static boole _client_msg_connection_internal__try_apply_chosen_username(cJSON *j
 }
 
 /**
+ * @brief Writes the letters that are added to a saved username while another client uses it:
+ *        "a" for 0, "b" for 1, up to "z" for 25, then "aa", "ab" and so on.
+ *
+ * @param uint64 number -> which variant to write, counted from 0
+ * @param char* out_letters -> receives the letters and an ending zero byte
+ * @param uint64 out_letters_size -> size of out_letters in bytes, at least 2
+ *
+ * @return void
+ */
+static void _client_msg_connection_internal__write_username_letters(uint64 number, char *out_letters, uint64 out_letters_size)
+{
+    char reversed[16] = { 0 };
+    uint64 length = 0;
+    uint64 i = 0;
+
+    // count in base 26 without a zero digit: after "z" comes "aa", not "ba"
+    number++;
+    while (number > 0 && length < sizeof(reversed))
+    {
+        number--;
+        reversed[length] = (char)('a' + (number % 26));
+        length++;
+        number /= 26;
+    }
+
+    // Write in order.
+    for (i = 0; i < length && i + 1 < out_letters_size; i++)
+    {
+        out_letters[i] = reversed[length - 1 - i];
+    }
+    out_letters[i] = 0;
+}
+
+/**
+ * @brief Gives a known identity the username it had when it was last connected. When another
+ *        connected client uses that name, a letter is added, so an admin whose name is taken
+ *        joins as "name" + "a" and not under the server's default name.
+ *
+ * @param uint64 client_index -> client being authenticated
+ *
+ * @return boole -> TRUE when a name was applied; FALSE when the identity is not saved or has no saved name
+ *
+ * @note The saved name stays saved without the letter: it is kept in preferred_username.
+ *
+ * @attention The caller holds the clients write lock.
+ */
+static boole _client_msg_connection_internal__try_apply_saved_username(uint64 client_index)
+{
+    client_t *client = &g_clients_array[client_index];
+    char saved_username[USERNAME_MAX_LENGTH] = { 0 };
+    char candidate_username[USERNAME_MAX_LENGTH] = { 0 };
+    char letters[16] = { 0 };
+    uint64 i = 0;
+
+    // No saved username.
+    if (g_server_settings.is_identity_storage_enabled == FALSE || identity_store__read_identity_username(client->public_key, saved_username, sizeof(saved_username)) == FALSE)
+    {
+        return FALSE;
+    }
+
+    // the saved name first, then the same name with a, b, c, ... added
+    for (i = 0; i <= g_server_settings.max_client_count; i++)
+    {
+        // Build the candidate.
+        clib__null_memory(candidate_username, sizeof(candidate_username));
+        clib__string_copy(candidate_username, sizeof(candidate_username), saved_username);
+        if (i > 0)
+        {
+            _client_msg_connection_internal__write_username_letters(i - 1, letters, sizeof(letters));
+
+            // a name that long has no room left for the letters, so stop trying
+            if (!clib__string_append(candidate_username, sizeof(candidate_username), letters))
+            {
+                break;
+            }
+        }
+
+        // Use a free name.
+        if (_client_msg_connection_internal__is_username_free_at_login(candidate_username, client_index) == TRUE)
+        {
+            clib__null_memory(client->username, USERNAME_MAX_LENGTH);
+            clib__string_copy(client->username, sizeof(client->username), candidate_username);
+            clib__null_memory(client->preferred_username, USERNAME_MAX_LENGTH);
+            clib__string_copy(client->preferred_username, sizeof(client->preferred_username), saved_username);
+            DBG_AUTHENTICATION log_info("%s %llu %s %s %s", "client ", client_index, " connected with saved username ", client->username, "\n");
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
+/**
  * @brief processes public key challenge response from client
  *
  * @param cJSON* json_root -> the parsed client request
@@ -1059,8 +1153,8 @@ void client_msg__connection__process_public_key_challenge_response(cJSON *json_r
                 }
             }
 
-            // Use the requested name when it is available.
-            if (_client_msg_connection_internal__try_apply_chosen_username(json_root, sender_client_id) == FALSE)
+            // Use the requested name when it is available, then the name saved with the identity.
+            if (_client_msg_connection_internal__try_apply_chosen_username(json_root, sender_client_id) == FALSE && _client_msg_connection_internal__try_apply_saved_username(sender_client_id) == FALSE)
             {
                 if (client_session__assign_username_for_newly_joined_client(sender_client_id, g_server_settings.default_client_name) == FALSE)
                 {
@@ -1152,6 +1246,9 @@ void client_msg__connection__process_public_key_challenge_response(cJSON *json_r
             server_msg__channel__send_list_to_single_client(current_client);
             server_msg__administration__send_admin_status_to_single_client(current_client);
             server_msg__connection__send_client_list_to_single_client(current_client);
+
+            // later changes of what this client may see are compared with the rights used for these lists
+            channel__remember_sent_view(current_client);
             server_msg__administration__send_icon_list_to_single_client(current_client);
             server_msg__administration__send_group_list_to_single_client(current_client);
             server_msg__audio__send_active_microphone_usage_for_current_channel_to_single_client(current_client, current_client->channel_id);

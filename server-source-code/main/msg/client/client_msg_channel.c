@@ -108,7 +108,7 @@ static boole _client_msg_channel_internal__can_edit(client_t *sender, channel_t 
         return FALSE;
     }
     channel__read_required_powers(message, &proposed);
-    status0 = (proposed.required_talk_power != channel->required_talk_power || proposed.required_message_power != channel->required_message_power || proposed.required_picture_power != channel->required_picture_power || proposed.required_stream_power != channel->required_stream_power) && (!channel_groups__is_allowed(sender, channel, PERMISSION_EDIT_CHANNEL_POWERS));
+    status0 = (channel__has_same_required_powers(&proposed, channel) == FALSE) && (!channel_groups__is_allowed(sender, channel, PERMISSION_EDIT_CHANNEL_POWERS));
     if (status0 == TRUE)
     {
         return FALSE;
@@ -194,7 +194,7 @@ void client_msg__channel__process_set_icon(cJSON *json_root, uint64 sender_clien
     }
     if (channel_groups__is_allowed(sender_client, &g_channel_array[channel_id], PERMISSION_EDIT_CHANNEL_OPTIONS) == FALSE)
     {
-        server_msg__administration__send_access_denied_to_single_client(sender_client, NULL_POINTER);
+        server_msg__administration__send_permission_denied_to_single_client(sender_client, permissions__name(PERMISSION_EDIT_CHANNEL_OPTIONS));
         goto label_client_msg__process_set_channel_icon_end;
     }
 
@@ -359,6 +359,7 @@ void client_msg__channel__process_create_request(cJSON *json_root, uint64 sender
     boole is_parent_channel_id_existing = FALSE;
     boole creating_temp_channel = FALSE;
     boole parent_is_temp_channel = FALSE;
+    boole is_create_power_sufficient = TRUE;
     cJSON *json_parent_channel_id = NULL_POINTER;
     cJSON *json_channel_description = NULL_POINTER;
     cJSON *json_channel_password = NULL_POINTER;
@@ -455,6 +456,7 @@ void client_msg__channel__process_create_request(cJSON *json_root, uint64 sender
             {
                 is_parent_channel_id_existing = TRUE;
                 parent_is_temp_channel = g_channel_array[i].is_temp_channel;
+                is_create_power_sufficient = permissions__can_create_channel_in(&g_clients_array[sender_client_id], &g_channel_array[i]);
                 break;
             }
         }
@@ -463,6 +465,11 @@ void client_msg__channel__process_create_request(cJSON *json_root, uint64 sender
         {
             // no channel (not even an admin's) may be created under a temp channel
             DBG_CLIENT_MESSAGE log_info("%s", "client_msg__channel__process_create_request parent is a temp channel, refusing to create a child under it \n");
+        }
+        else if (is_parent_channel_id_existing == TRUE && is_create_power_sufficient == FALSE)
+        {
+            // the parent channel requires more channel create power than this client has
+            server_msg__administration__send_permission_denied_to_single_client(&g_clients_array[sender_client_id], permissions__power_name(PERMISSION_CHANNEL_CREATE_POWER));
         }
         else if (is_parent_channel_id_existing == TRUE)
         {
@@ -494,10 +501,7 @@ void client_msg__channel__process_create_request(cJSON *json_root, uint64 sender
                     is_password_used = (boole)(clib__utf8_string_length(json_channel_password->valuestring) > 0);
                     channel->is_using_password = is_password_used;
                     channel->is_audio_enabled = (boole)cJSON_IsTrue(json_is_audio_enabled);
-                    channel->required_talk_power = 0;
-                    channel->required_message_power = 0;
-                    channel->required_picture_power = 0;
-                    channel->required_stream_power = 0;
+                    channel__clear_required_powers(channel);
                     channel__read_required_powers(json_message_object, channel);
 
                     // optional in the message (older clients never send it): a new channel streams unless told otherwise
@@ -561,7 +565,7 @@ void client_msg__channel__process_create_request(cJSON *json_root, uint64 sender
     {
         if (g_clients_array[sender_client_id].is_authenticated == TRUE && g_clients_array[sender_client_id].is_existing == TRUE)
         {
-            server_msg__administration__send_access_denied_to_single_client(&g_clients_array[sender_client_id], NULL_POINTER);
+            server_msg__administration__send_permission_denied_to_single_client(&g_clients_array[sender_client_id], permissions__name(PERMISSION_CREATE_CHANNEL));
         }
     }
     clib__unlock(&g_clients_global_rwlock_guard);
@@ -726,6 +730,7 @@ void client_msg__channel__process_edit_request(cJSON *json_root, uint64 sender_c
     cstring type_error = NULL_POINTER;
     boole type_changed = FALSE;
     uint64 member_id = 0;
+    channel_t channel_before_edit;
 
     if (base__is_request_allowed_based_on_spam_protection(sender_client_id) == FALSE)
     {
@@ -781,6 +786,8 @@ void client_msg__channel__process_edit_request(cJSON *json_root, uint64 sender_c
 
         if (channel->is_existing == TRUE)
         {
+            // kept to find out, after the edit, for which clients the members or the description became visible or hidden
+            channel_before_edit = *channel;
             type_changed = json_type != NULL_POINTER && channel->is_temp_channel != (boole)cJSON_IsTrue(json_type);
             if (type_changed)
             {
@@ -830,11 +837,15 @@ void client_msg__channel__process_edit_request(cJSON *json_root, uint64 sender_c
 
             DBG_CLIENT_MESSAGE log_info("%s", "client_msg__channel__process_edit_request channel is_existing TRUE \n");
             is_channel_edited_successfully = TRUE;
+
+            // a changed required view power or password changes who may see the members and the description
+            channel__send_view_changes_for_channel(&channel_before_edit, channel);
         }
 
         clib__unlock(&g_channels_global_rwlock_guard);
         audio_channel__apply_permission_changes();
         video_channel__apply_permission_changes();
+        channel__apply_permission_changes();
 
         // the toggle went off under a running stream: end it, with the write locks in lock order
         if (should_stop_video_stream == TRUE)
@@ -1033,7 +1044,9 @@ void client_msg__channel__process_join_request(cJSON *json_root, uint64 sender_c
     {
         server_msg__channel__send_join_message_to_all_clients(client_that_is_joining_channel, new_channel, NULL_POINTER);
     }
-    channel__send_hidden_members(client_that_is_joining_channel, new_channel);
+
+    // the client now sees the members of the channel it entered and may no longer see those of the channel it left
+    channel__send_view_changes_to_client(client_that_is_joining_channel);
     if (is_maintainer_found == TRUE)
     {
         server_msg__channel__send_maintainer_id_to_clients_in_same_channel(old_channel, old_channel->maintainer_id);
@@ -1053,6 +1066,7 @@ client_msg__process_join_channel_request_end:
     clib__unlock(&g_channels_global_rwlock_guard);
     audio_channel__apply_permission_changes();
     video_channel__apply_permission_changes();
+    channel__apply_permission_changes();
     if (ownership_changed == TRUE)
     {
         server_msg__administration__send_permission_update_to_single_client(client_that_is_joining_channel);
@@ -1185,7 +1199,7 @@ void client_msg__channel__process_delete_request(cJSON *json_root, uint64 sender
         {
             if (channel_groups__is_allowed(&g_clients_array[sender_client_id], &g_channel_array[channel_ids_to_delete[marked_channel_index]], PERMISSION_DELETE_CHANNEL) == FALSE)
             {
-                server_msg__administration__send_access_denied_to_single_client(&g_clients_array[sender_client_id], NULL_POINTER);
+                server_msg__administration__send_permission_denied_to_single_client(&g_clients_array[sender_client_id], permissions__name(PERMISSION_DELETE_CHANNEL));
                 goto label_client_msg__process_delete_channel_request_end;
             }
         }
@@ -1287,6 +1301,7 @@ label_client_msg__process_delete_channel_request_end:
     clib__unlock(&g_channels_global_rwlock_guard);
     audio_channel__apply_permission_changes();
     video_channel__apply_permission_changes();
+    channel__apply_permission_changes();
     for (owner_index = 0; owner_index < cvector_size(owners_to_update); owner_index++)
     {
         server_msg__administration__send_permission_update_to_single_client(&g_clients_array[owners_to_update[owner_index]]);
@@ -1553,6 +1568,9 @@ void client_msg__channel__process_go_to_idle_mode_request(cJSON *json_root, uint
 
     is_maintainer_found = channel__replace_departed_maintainer(old_channel, sender_client_id);
     server_msg__channel__send_client_going_to_idle_mode_info_to_all_clients(client);
+
+    // an idle client is in no channel, so it may no longer see the members of the channel it left
+    channel__send_view_changes_to_client(client);
     if (is_maintainer_found == TRUE)
     {
         server_msg__channel__send_maintainer_id_to_clients_in_same_channel(old_channel, old_channel->maintainer_id);
@@ -1669,7 +1687,8 @@ void client_msg__channel__process_come_back_from_idle_mode_request(cJSON *json_r
 
     server_msg__channel__send_client_coming_back_from_idle_mode_info_to_all_clients(&g_clients_array[sender_client_id], channel_to_join->channel_id);
 
-    channel__send_hidden_members(client, channel_to_join);
+    // Send view changes.
+    channel__send_view_changes_to_client(client);
     channel__welcome_client(client);
 
     server_msg__audio__send_active_microphone_usage_for_current_channel_to_single_client(client, client->channel_id);
@@ -1678,5 +1697,6 @@ label_client_msg__process_come_back_from_idle_mode_request_end:
     clib__unlock(&g_channels_global_rwlock_guard);
     audio_channel__apply_permission_changes();
     video_channel__apply_permission_changes();
+    channel__apply_permission_changes();
     clib__unlock(&g_clients_global_rwlock_guard);
 }

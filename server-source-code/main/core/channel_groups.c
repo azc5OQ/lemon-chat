@@ -11,7 +11,7 @@ channel_group_t g_channel_groups[CHANNEL_GROUP_LIMIT];
 
 static boole _channel_groups_internal__append_member(channel_t *channel, const channel_group_member_t *member);
 
-static cstring g_channel_group_power_names[PERMISSION_POWER_COUNT] = { NULL_POINTER, NULL_POINTER, NULL_POINTER, NULL_POINTER, "channel_group_assignment_power", "channel_group_protection", "talk_power", "channel_message_power", "channel_picture_power", "stream_power", "channel_kick_power", "channel_kick_protection", "channel_moderation_power", "channel_moderation_protection", NULL_POINTER };
+static cstring g_channel_group_power_names[PERMISSION_POWER_COUNT] = { NULL_POINTER, NULL_POINTER, NULL_POINTER, NULL_POINTER, "channel_group_assignment_power", "channel_group_protection", "talk_power", "channel_message_power", "channel_picture_power", "stream_power", "channel_kick_power", "channel_kick_protection", "channel_moderation_power", "channel_moderation_protection", NULL_POINTER, NULL_POINTER, NULL_POINTER, NULL_POINTER, NULL_POINTER, NULL_POINTER, NULL_POINTER, NULL_POINTER, NULL_POINTER, "channel_file_power", NULL_POINTER, "channel_create_power" };
 
 /**
  * @brief Creates the default Channel Admin group before saved groups are loaded.

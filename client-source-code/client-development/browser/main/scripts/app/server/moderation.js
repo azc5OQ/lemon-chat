@@ -888,7 +888,7 @@ function moderation__channel_fields(channel_id)
         edit_channel_description: ["input-channel-description"],
         edit_channel_password: ["input-channel-password", "remove-password"],
         edit_channel_options: ["enable-audio-checkbox", "enable-video-checkbox", "limit-clients-checkbox", "input-max-clients"],
-        edit_channel_powers: ["required-talk-power", "required-stream-power", "required-message-power", "required-picture-power"]
+        edit_channel_powers: ["required-talk-power", "required-stream-power", "required-message-power", "required-picture-power", "required-file-power", "required-view-power", "required-create-power"]
     };
     for (let [permission, ids] of Object.entries(fields))
     {

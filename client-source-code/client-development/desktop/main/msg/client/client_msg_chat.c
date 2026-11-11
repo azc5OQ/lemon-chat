@@ -9,7 +9,7 @@
 static char *_client_chat_internal__text(desktop_session_t *session, const char *text, char *id, uint64 capacity, const desktop_chat_format_t *format);
 static void _client_chat_internal__remember(desktop_session_t *session, const char *id, const desktop_chat_format_t *format);
 static boole _client_chat_internal__channel(desktop_session_t *session, int64 channel, const char *payload, uint64 local_id);
-static boole _client_chat_internal__direct(desktop_session_t *session, int64 peer, uint64 serial, const char *payload, uint64 local_id);
+static boole _client_chat_internal__direct(desktop_session_t *session, int64 peer, uint64 serial, const char *payload, uint64 local_id, boole is_closed_notice);
 
 /**
  * @brief creates the text wrapper understood by browser clients inside channel/private encryption.
@@ -80,14 +80,17 @@ static boole _client_chat_internal__channel(desktop_session_t *session, int64 ch
 
 /**
  * @brief encrypts one private text or edit with fresh content keys protected for the exact recipient.
+ *
  * @param desktop_session_t* session -> worker-owned authenticated session
  * @param int64 peer -> recipient client ID
  * @param uint64 serial -> recipient lifetime captured by the GUI; rejects disconnect/ID reuse
  * @param const char* payload -> serialized content placed inside direct_chat_message.value
  * @param uint64 local_id -> fresh delivery identifier
+ * @param boole is_closed_notice -> TRUE sends the notice that this user closed the conversation: content without text, no status line on failure
+ *
  * @return boole -> TRUE when the complete encrypted envelope was queued
  */
-static boole _client_chat_internal__direct(desktop_session_t *session, int64 peer, uint64 serial, const char *payload, uint64 local_id)
+static boole _client_chat_internal__direct(desktop_session_t *session, int64 peer, uint64 serial, const char *payload, uint64 local_id, boole is_closed_notice)
 {
     int64 slot = desktop_session__client(session, peer);
     desktop_content_keys_t keys = { 0 };
@@ -99,14 +102,18 @@ static boole _client_chat_internal__direct(desktop_session_t *session, int64 pee
     boole complete = 0;
     boole sent = FALSE;
     boole keys_ready = FALSE;
-    if (slot < 0 || session->model.clients[slot].serial != serial || peer == session->model.local_id || session->model.clients[slot].music || !session->client_keys[slot][0] || !payload)
+    if (slot < 0 || session->model.clients[slot].serial != serial || peer == session->model.local_id || session->model.clients[slot].music || !session->client_keys[slot][0] || (!payload && !is_closed_notice))
     {
-        desktop_session__detail(session, "Private message was not sent: that client is no longer available.", 0);
+        if (!is_closed_notice)
+        {
+            desktop_session__detail(session, "Private message was not sent: that client is no longer available.", 0);
+        }
         return FALSE;
     }
     keys_ready = crypto_session__content_keys(session->crypto, &keys);
-    body = client_msg__delivery__new_message("direct_chat_message");
-    if (body && payload && cJSON_AddStringToObject(body, "value", payload))
+    // the notice has no text: its type alone tells the receiving client that the conversation was closed
+    body = client_msg__delivery__new_message(is_closed_notice ? "direct_chat_closed" : "direct_chat_message");
+    if (body && (is_closed_notice || cJSON_AddStringToObject(body, "value", payload)))
     {
         body_json = cJSON_PrintUnformatted(body);
     }
@@ -119,9 +126,9 @@ static boole _client_chat_internal__direct(desktop_session_t *session, int64 pee
         envelope_json = crypto_session__direct_seal(session->crypto, session->client_keys[slot], &keys, encrypted_body);
     }
     message = client_msg__delivery__new_message("direct_chat_message");
-    complete = message && envelope_json && cJSON_AddStringToObject(message, "value", envelope_json) && cJSON_AddNumberToObject(message, "receiver_id", (double)peer) && cJSON_AddNumberToObject(message, "local_message_id", (double)local_id);
+    complete = message && envelope_json && cJSON_AddStringToObject(message, "purpose", "conversation") && cJSON_AddStringToObject(message, "value", envelope_json) && cJSON_AddNumberToObject(message, "receiver_id", (double)peer) && cJSON_AddNumberToObject(message, "local_message_id", (double)local_id);
     sent = client_msg__delivery__send(session, message, complete);
-    if (!sent)
+    if (!sent && !is_closed_notice)
     {
         desktop_session__detail(session, "Private message could not be encrypted or queued.", 0);
     }
@@ -187,13 +194,28 @@ void client_msg__chat__send_direct_message(desktop_session_t *session, int64 pee
     char id[33] = { 0 };
     char *payload = _client_chat_internal__text(session, text, id, sizeof(id), format);
     uint64 local_id = ++session->next_local_id;
-    if (_client_chat_internal__direct(session, peer, serial, payload, local_id))
+    if (_client_chat_internal__direct(session, peer, serial, payload, local_id, FALSE))
     {
         server_msg__chat__append_direct(session, desktop_session__client(session, peer), text, local_id);
         _client_chat_internal__remember(session, id, format);
     }
     crypto_session__free_text(payload);
     mbedtls_platform_zeroize(id, sizeof(id));
+}
+
+/**
+ * @brief tells one client that the local user closed the private conversation with that client.
+ *        The notice is an encrypted direct message without text, so the server cannot read what it is.
+ *
+ * @param desktop_session_t* session -> worker-owned session
+ * @param int64 peer -> client ID of the other side of the conversation
+ * @param uint64 serial -> that client's connection lifetime captured by the GUI
+ *
+ * @return void
+ */
+void client_msg__chat__send_direct_closed_notice(desktop_session_t *session, int64 peer, uint64 serial)
+{
+    _client_chat_internal__direct(session, peer, serial, NULL_POINTER, ++session->next_local_id, TRUE);
 }
 
 /**
@@ -235,7 +257,7 @@ void client_msg__chat__send_edit(desktop_session_t *session, uint64 sequence, ui
         payload = cJSON_PrintUnformatted(edit);
     }
     local_id = ++session->next_local_id;
-    sent = chat->peer >= 0 ? _client_chat_internal__direct(session, chat->peer, chat->peer_serial, payload, local_id) : _client_chat_internal__channel(session, chat->channel, payload, local_id);
+    sent = chat->peer >= 0 ? _client_chat_internal__direct(session, chat->peer, chat->peer_serial, payload, local_id, FALSE) : _client_chat_internal__channel(session, chat->channel, payload, local_id);
     if (sent)
     {
         clib__null_memory(chat->text, sizeof(chat->text));

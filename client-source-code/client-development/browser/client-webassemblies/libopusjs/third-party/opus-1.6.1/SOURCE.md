@@ -15,4 +15,3 @@ Build flags are in `../../build.cjs`; the upstream source files are unmodified.
 
 This replaces the 1.5.2 source tar previously stored here. Its original archive
 SHA-256 was `55be60327e2a2613bc0fa605a2d62a241ac9ef694690e8f09572e550142757b6`.
-The shipped old binary and loader remain in `../../../prebuilt-backup`.

@@ -42,7 +42,7 @@ These themes are also available on a computer.
 | --- | --- |
 | **Mobile**<br>A dark theme with controls arranged for a touch screen. | ![Mobile theme](images/themes/theme-default-mobile.jpg) |
 | **Pocket**<br>Light panels with green-blue buttons and a compact layout. | ![Pocket theme](images/themes/theme-pocket.jpg) |
-| **Simpledark**<br>Dark panels with a row of people's pictures above the chat. | ![Simpledark theme](images/themes/theme-simpledark.jpg) |
+| **Simple**<br>One list of rooms and people, with a Join button on each room. Light or dark colours follow the device. | ![Simple theme](images/themes/theme-simple.png) |
 | **Bluebell**<br>A dark blue and purple background with rounded controls. | ![Bluebell theme](images/themes/theme-bluebell.jpg) |
 | **Mono Light**<br>White and light gray panels, with a switch between people and chat. | ![Mono Light theme](images/themes/theme-mono-light.jpg) |
 | **Mono Dark**<br>The same layout as Mono Light, with dark panels and light text. | ![Mono Dark theme](images/themes/theme-mono-dark.jpg) |

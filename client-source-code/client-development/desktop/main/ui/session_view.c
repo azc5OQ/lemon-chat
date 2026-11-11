@@ -182,19 +182,27 @@ void desktop_session_view__select(int64 tab)
 
 /**
  * @brief closes the current private tab, preserving bounded history until it ages out.
- * @return void
+ *
+ * @param int64* peer -> receives the client ID of the closed conversation
+ * @param uint64* serial -> receives that client's connection lifetime
+ *
+ * @return boole -> TRUE when a private tab was closed
  */
-void desktop_session_view__close(void)
+boole desktop_session_view__close(int64 *peer, uint64 *serial)
 {
-    desktop_session_view__close_tab(g_selected);
+    return desktop_session_view__close_tab(g_selected, peer, serial);
 }
 
 /**
  * @brief closes one private tab without changing the conversation being read in another tab.
+ *
  * @param int64 tab -> one-based private tab index; the channel tab cannot be closed
- * @return void
+ * @param int64* peer -> receives the client ID of the closed conversation
+ * @param uint64* serial -> receives that client's connection lifetime
+ *
+ * @return boole -> TRUE when a private tab was closed
  */
-void desktop_session_view__close_tab(int64 tab)
+boole desktop_session_view__close_tab(int64 tab, int64 *peer, uint64 *serial)
 {
     if (tab > 0 && tab <= g_conversation_count && g_conversations[tab - 1].open)
     {
@@ -203,12 +211,16 @@ void desktop_session_view__close_tab(int64 tab)
             desktop_session_view__select(0);
             if (g_selected == tab)
             {
-                return;
+                return FALSE;
             }
         }
         g_conversations[tab - 1].open = FALSE;
         g_changed = TRUE;
+        *peer = g_conversations[tab - 1].peer;
+        *serial = g_conversations[tab - 1].serial;
+        return TRUE;
     }
+    return FALSE;
 }
 
 /**

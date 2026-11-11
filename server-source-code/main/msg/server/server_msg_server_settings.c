@@ -90,6 +90,10 @@ void server_msg__server_settings__send_to_single_client(client_t *receiver, bool
     cJSON_AddBoolToObject(message, "is_client_http_enabled", g_server_settings.is_client_http_enabled);
     cJSON_AddBoolToObject(message, "is_client_http_blank_when_disabled", g_server_settings.is_client_http_blank_when_disabled);
     cJSON_AddBoolToObject(message, "is_client_config_embedded", g_server_settings.is_client_config_embedded);
+    cJSON_AddBoolToObject(message, "is_start_page_connect_button_enabled", g_server_settings.is_start_page_connect_button_enabled);
+    cJSON_AddBoolToObject(message, "is_start_page_import_identity_button_enabled", g_server_settings.is_start_page_import_identity_button_enabled);
+    cJSON_AddStringToObject(message, "default_theme", g_server_settings.default_theme);
+    cJSON_AddStringToObject(message, "default_mobile_theme", g_server_settings.default_mobile_theme);
     cJSON_AddNumberToObject(message, "http_port", (double)g_server_settings.http_port);
     server_msg__server_settings__add_attachment_receive_policy(message);
     cJSON_AddBoolToObject(message, "is_server_uptime_published", g_server_settings.is_server_uptime_published);

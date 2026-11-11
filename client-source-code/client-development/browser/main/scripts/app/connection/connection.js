@@ -153,10 +153,37 @@ function connection__request_identity(passphrase_or_null)
 }
 
 /**
+ * @brief tells whether the page options ask for a secure websocket (wss) although the page was
+ *        not loaded over https. that is a page opened from a file (sent by email, built with
+ *        tools/configure-client.py) that connects to a server behind a tls proxy
+ *
+ * @return boolean true when window.__SERVER_CONFIG__.is_secure_websocket_used is true
+ */
+function connection__is_secure_websocket_requested_by_page()
+{
+    return typeof window.__SERVER_CONFIG__ !== "undefined" && window.__SERVER_CONFIG__ != null && window.__SERVER_CONFIG__.is_secure_websocket_used === true;
+}
+
+/**
+ * @brief the key pair of an identity the user imported exists now: a notice and a log line say
+ *        so and the sound of a finished import is played
+ *
+ * @return void
+ */
+function connection__identity_imported()
+{
+    g_is_identity_import_pending = false;
+    utils__custom_alert("Identity imported. This device now connects as that identity.");
+    utils__custom_log("identity imported");
+    sounds__play("identity_imported");
+}
+
+/**
  * @brief Leaves a failed identity request retryable without publishing a keypair or leaving its controls busy.
  */
 function connection__identity_generation_failed()
 {
+    g_is_identity_import_pending = false;
     identity_requested_for = null;
     identity_requested_bits = 0;
     g_is_rsa_key_generated = false;
@@ -1412,7 +1439,8 @@ async function connection__attempt_connection(target, identity)
     let protocol_part_of_connection_string = "ws://";
     let connection_port = port;
 
-    if (document.location.protocol == "https:")
+    // use secure websocket
+    if (document.location.protocol == "https:" || connection__is_secure_websocket_requested_by_page() == true)
     {
         protocol_part_of_connection_string = "wss://";
         // an https page must use wss, on the separate stunnel wss port (not the plain ws port)
@@ -1600,11 +1628,11 @@ function connection__process_message_before_sending(message_object)
 // ---- the connect window ----
 // the connect form (#verification-system holds it, #container-2 is the box) is a window in the desktop themes and in the
 // mobile theme: a dialog with a title bar, movable by it (main.js), closeable. on android and in the two member list
-// themes (simpledark, bluebell) it stays a page of its own, the way it has always been: there the stylesheets hide the
+// themes (bluebell) it stays a page of its own, the way it has always been: there the stylesheets hide the
 // title bar and the head menu entries, and the page shows itself again after every disconnect
 
 /**
- * @brief whether the connect form is a closeable window (desktop themes, the mobile theme) rather than a page of its own (android, the member list themes simpledark and bluebell)
+ * @brief whether the connect form is a closeable window (desktop themes, the mobile theme) rather than a page of its own (android, the member list theme bluebell)
  *        false as well in the node runtime, which has no page
  *
  * @return boolean
@@ -1618,7 +1646,7 @@ function connection__is_connect_window_mode()
 
     let theme = connection__current_theme_name();
 
-    return (theme !== "simpledark" && theme !== "bluebell");
+    return (theme !== "bluebell");
 }
 
 /**

@@ -70,12 +70,7 @@
 /* @@INCLUDE: styles/theme-default.style @@ */
 /* @@INCLUDE: styles/theme-pocket.style @@ */
     </style>
-    <!-- simpledark theme style (messenger look; flat channel list, avatar strip via the member-list mirror) -->
-    <style id="style-theme-simpledark" class="style-theme-html-element" media="(max-width: 1px)">
-/* @@INCLUDE: styles/theme-simpledark.style @@ */
-    </style>
-
-    <!-- bluebell theme style (simpledark's polished sibling: gradients, glows, softer edges) -->
+    <!-- bluebell theme style (messenger look; flat channel list, a row of people's pictures from the member list) -->
     <style id="style-theme-bluebell" class="style-theme-html-element" media="(max-width: 1px)">
 /* @@INCLUDE: styles/theme-bluebell.style @@ */
     </style>
@@ -93,11 +88,20 @@
 /* @@INCLUDE: styles/theme-mono-dark.style @@ */
     </style>
 
+    <!-- Simple theme: Mono's phone layout with a list of all channels, button states in words and message bubbles. -->
+    <style id="style-theme-simple" class="style-theme-html-element" media="(max-width: 1px)">
+/* @@INCLUDE: styles/theme-default.style @@ */
+/* @@INCLUDE: styles/theme-mono.style @@ */
+/* @@INCLUDE: styles/theme-simple.style @@ */
+    </style>
+
     <!-- layout engine bits: always active, NOT a theme sheet. the style-theme-html-element
          class must stay off this element - apply_theme() disables every sheet carrying it -->
     <style id="style-layout">
 /* @@INCLUDE: styles/layout.style @@ */
 /* @@INCLUDE: styles/member-conversations.style @@ */
+/* @@INCLUDE: styles/client-log.style @@ */
+/* @@INCLUDE: styles/start-page.style @@ */
 /* @@INCLUDE: styles/link-previews.style @@ */
 /* @@INCLUDE: styles/server-info.style @@ */
 /* @@INCLUDE: styles/chat-reactions.style @@ */
@@ -129,6 +133,7 @@
 /* @@INCLUDE: scripts/app/mobile/android-host.js @@ */
 /* @@INCLUDE: scripts/app/connection/connection.js @@ */
 /* @@INCLUDE: scripts/app/ui/head-menu.js @@ */
+/* @@INCLUDE: scripts/app/ui/start-page.js @@ */
 /* @@INCLUDE: scripts/app/workers/workers.js @@ */
 /* @@INCLUDE: scripts/app/console-log.js @@ */
 /* @@INCLUDE: scripts/app/crypto/connection-crypto.js @@ */
@@ -166,8 +171,19 @@
      disconnect; a theme sheet uses it for the page behind the connect window (hybrid) -->
 <body class="is-connected-ui-hidden server-groups-disabled server-groups-admin-only">
 
-    <textarea id="textarea-log" style="display: none;">
-     </textarea>
+    <!-- the client log, opened with the log button: utils__custom_log adds one line element per entry.
+         the id says textarea because the element was one; the theme sheets place the box by this id -->
+    <div id="textarea-log" role="log" aria-label="Client log" style="display: none;"></div>
+
+    <!-- the start page (start-page.js): one large connect button, shown before anything connects when the page options
+         ask for it. the press on the button is the user action a browser requires before a page may play sound -->
+    <div id="start-page" style="display: none;">
+        <div id="start-page-content">
+            <input type="button" class="button-1" id="start-page-connect-button" value="Connect">
+            <input type="button" class="button-1" id="start-page-import-identity-button" value="Import identity" style="display: none;">
+            <p id="start-page-hint">Press Connect to join. Your browser plays voices and sounds only after you have pressed a button on this page.</p>
+        </div>
+    </div>
 
 
     <div id="server-settings-tab" class="server-administration">
@@ -630,6 +646,30 @@
 
                             <p class="server-settings-general-help">Embedding includes connection passwords. Everyone who downloads the page receives them. Turning it off removes them from future responses.</p>
 
+                            <label class="server-settings-general-row">
+                                <input type="checkbox" id="server-start-page-connect-button">
+                                <span>show a large connect button before the page connects</span>
+                            </label>
+
+                            <label class="server-settings-general-row">
+                                <input type="checkbox" id="server-start-page-import-identity-button">
+                                <span>show a large import identity button under the connect button</span>
+                            </label>
+
+                            <p class="server-settings-general-help">A browser plays no sound on a page until the user has clicked on it. With the connect button every user clicks once before connecting, so voices and sound effects are heard. The import identity button is shown only together with the connect button.</p>
+
+                            <label class="server-settings-general-row">
+                                <span>Default theme on a desktop</span>
+                                <select id="server-default-theme"></select>
+                            </label>
+
+                            <label class="server-settings-general-row">
+                                <span>Default theme on a phone</span>
+                                <select id="server-default-mobile-theme"></select>
+                            </label>
+
+                            <p class="server-settings-general-help">The default themes apply to users who have not chosen a theme. A user's own choice is kept. Changes apply to the page from its next load.</p>
+
                             <p class="server-settings-general-help" id="server-http-port"></p>
 
                             <p class="server-settings-general-help">HTTP controls the browser page. Connected chat users keep their WebSocket connections.</p>
@@ -964,10 +1004,24 @@
                             </label>
                             <label class="local-settings-row">
                                 <span class="local-settings-text">
-                                    <span class="local-settings-label">hide server icons in the channel list</span>
-                                    <span class="local-settings-hint">hides server group and custom channel icons, keeping flags and audio/video indicators</span>
+                                    <span class="local-settings-label">hide server group icons in the channel list</span>
+                                    <span class="local-settings-hint">the server groups of a person stay listed in the "view info" window</span>
                                 </span>
-                                <input type="checkbox" id="local-settings-hide-server-icons">
+                                <input type="checkbox" id="local-settings-hide-server-group-icons">
+                            </label>
+                            <label class="local-settings-row">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">hide channel group icons in the channel list</span>
+                                    <span class="local-settings-hint">hides the icon of the group a person has in their channel</span>
+                                </span>
+                                <input type="checkbox" id="local-settings-hide-channel-group-icons">
+                            </label>
+                            <label class="local-settings-row">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">hide channel icons in the channel list</span>
+                                    <span class="local-settings-hint">hides the custom icons of channels, keeping flags and audio/video indicators</span>
+                                </span>
+                                <input type="checkbox" id="local-settings-hide-channel-icons">
                             </label>
                             <label class="local-settings-row">
                                 <span class="local-settings-text">
@@ -1229,7 +1283,7 @@
                 <button type="button" class="choose-theme-item" data-name="termix" data-mobile="false">Termix</button>
                 <button type="button" class="choose-theme-item" data-name="default-mobile" data-mobile="true" title="Designed for mobile">Mobile</button>
                 <button type="button" class="choose-theme-item" data-name="pocket" data-mobile="true" title="Designed for mobile">Pocket</button>
-                <button type="button" class="choose-theme-item" data-name="simpledark" data-mobile="true" title="Designed for mobile">Simpledark</button>
+                <button type="button" class="choose-theme-item" data-name="simple" data-mobile="true" title="Designed for mobile">Simple</button>
                 <button type="button" class="choose-theme-item" data-name="bluebell" data-mobile="true" title="Designed for mobile">Bluebell</button>
                 <button type="button" class="choose-theme-item" data-name="mono-light" data-mobile="true" title="Designed for mobile">Mono Light</button>
                 <button type="button" class="choose-theme-item" data-name="mono-dark" data-mobile="true" title="Designed for mobile">Mono Dark</button>
@@ -1598,7 +1652,7 @@
                         <div id="channel-properties-panel-permissions" role="tabpanel" aria-labelledby="channel-properties-tab-permissions" aria-hidden="true" data-server-groups inert>
                             <fieldset class="channel-properties-section">
                                 <legend>Required power</legend>
-                                <p class="channel-properties-help">0 allows everyone. These values only limit sending.</p>
+                                <p class="channel-properties-help">0 allows everyone. The first five values only limit sending.</p>
                                 <div class="dialog-form-grid">
                                     <label class="dialog-form-label" for="channel-properties-required-talk-power">Talk</label>
                                     <div class="dialog-form-field">
@@ -1614,7 +1668,19 @@
                                     </div>
                                     <label class="dialog-form-label" for="channel-properties-required-picture-power">Pictures</label>
                                     <div class="dialog-form-field">
-                                        <input class="text-input-not-pretty-2" id="channel-properties-required-picture-power" type="number" min="0" max="1000" step="1" value="0" required title="The user's highest channel picture power must reach this value to upload pictures here. Receiving pictures and sending files are not restricted. Zero allows everyone.">
+                                        <input class="text-input-not-pretty-2" id="channel-properties-required-picture-power" type="number" min="0" max="1000" step="1" value="0" required title="The user's highest channel picture power must reach this value to upload pictures here. Receiving pictures is not restricted. Zero allows everyone.">
+                                    </div>
+                                    <label class="dialog-form-label" for="channel-properties-required-file-power">Files</label>
+                                    <div class="dialog-form-field">
+                                        <input class="text-input-not-pretty-2" id="channel-properties-required-file-power" type="number" min="0" max="1000" step="1" value="0" required title="The user's highest channel file power must reach this value to upload files here. Receiving files is not restricted. Zero allows everyone.">
+                                    </div>
+                                    <label class="dialog-form-label" for="channel-properties-required-view-power">View members and description</label>
+                                    <div class="dialog-form-field">
+                                        <input class="text-input-not-pretty-2" id="channel-properties-required-view-power" type="number" min="0" max="1000" step="1" value="0" required title="The user's channel view power must reach this value to see who is in this channel and to read its description without being in it. Users inside the channel always see both. Zero allows everyone whose groups allow viewing.">
+                                    </div>
+                                    <label class="dialog-form-label" for="channel-properties-required-create-power">Create channels inside</label>
+                                    <div class="dialog-form-field">
+                                        <input class="text-input-not-pretty-2" id="channel-properties-required-create-power" type="number" min="0" max="1000" step="1" value="0" required title="The user's channel create power must reach this value to create a channel directly inside this channel. Zero allows everyone who may create channels.">
                                     </div>
                                 </div>
                             </fieldset>

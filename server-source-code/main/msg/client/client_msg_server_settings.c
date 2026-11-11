@@ -22,8 +22,44 @@
 #include "../../../third-party/rxi-log/log.h"
 
 // declarations
+static boole _client_msg_server_settings_internal__is_theme_name_valid(cJSON *value);
 static boole _client_msg_server_settings_internal__is_save_server_settings_request_valid(cJSON *json_root);
 static boole _client_msg_server_settings_internal__is_server_info_requester(uint64 sender_client_id, ws_cli_conn_t *socket);
+
+/**
+ * @brief Checks a default theme name sent with the settings. The name is written into the
+ *        served page, so only the characters of the page's own theme names are accepted.
+ *
+ * @param cJSON* value -> the field of the request, or NULL_POINTER when the request does not contain it
+ *
+ * @return boole -> TRUE for a missing field, an empty name (the page keeps its own default) and a name of up to 31 lowercase letters, digits and hyphens
+ */
+static boole _client_msg_server_settings_internal__is_theme_name_valid(cJSON *value)
+{
+    uint64 i = 0;
+
+    // Check the value.
+    if (value == NULL_POINTER)
+    {
+        return TRUE;
+    }
+
+    // Must be text.
+    if (cJSON_IsString(value) == FALSE || value->valuestring == NULL_POINTER)
+    {
+        return FALSE;
+    }
+
+    // Check each character.
+    for (i = 0; value->valuestring[i] != 0; i++)
+    {
+        if (i >= 31 || !((value->valuestring[i] >= 'a' && value->valuestring[i] <= 'z') || (value->valuestring[i] >= '0' && value->valuestring[i] <= '9') || value->valuestring[i] == '-'))
+        {
+            return FALSE;
+        }
+    }
+    return TRUE;
+}
 
 /**
  * @brief Validates every supplied setting before any live policy is changed. Omitted optional
@@ -36,7 +72,7 @@ static boole _client_msg_server_settings_internal__is_server_info_requester(uint
 static boole _client_msg_server_settings_internal__is_save_server_settings_request_valid(cJSON *json_root)
 {
     static const char *boolean_fields[] = {
-        "is_client_http_enabled", "is_client_http_blank_when_disabled", "is_client_config_embedded", "include_music_bots", "is_server_uptime_published", "is_server_slots_published", "is_server_banner_published", "is_server_features_published", "is_display_country_flags_active", "is_voice_chat_active", "is_music_bot_audio_active", "is_video_streaming_active", "is_hide_clients_in_password_protected_channels_active", "is_typing_indicator_allowed", "is_client_rename_allowed", "is_link_preview_allowed", "is_sending_text_to_idle_clients_allowed", "is_private_messaging_allowed", "is_temp_channel_creation_allowed", "is_file_upload_allowed", "is_chat_picture_allowed", "is_same_ip_address_allowed", "is_admin_country_flag_hidden", "is_fast_reconnect_allowed", "is_identity_takeover_allowed", "is_websocket_ping_active", "is_channel_key_reuse_enabled", "is_channel_key_reuse_on_join_allowed", "is_channel_key_reuse_on_leave_allowed", "is_connection_check_enforced", "is_music_bot_marquee_visible_to_everyone", "is_minimum_rsa_key_bits_announced", "is_country_blocking_active", "is_logging_client_joins_enabled", "is_logging_username_changes_enabled", "is_logging_group_changes_enabled", "is_logging_server_settings_updates_enabled", "is_logging_kicks_and_bans_enabled", "is_logging_client_disconnects_enabled", "is_logging_socket_opens_and_closes_enabled", "is_logging_failed_attempts_enabled", "is_blocking_direct_chat_pictures_active", "is_blocking_direct_chat_files_active", "is_blocking_channel_chat_pictures_active", "is_blocking_channel_chat_files_active",
+        "is_client_http_enabled", "is_client_http_blank_when_disabled", "is_client_config_embedded", "is_start_page_connect_button_enabled", "is_start_page_import_identity_button_enabled", "include_music_bots", "is_server_uptime_published", "is_server_slots_published", "is_server_banner_published", "is_server_features_published", "is_display_country_flags_active", "is_voice_chat_active", "is_music_bot_audio_active", "is_video_streaming_active", "is_hide_clients_in_password_protected_channels_active", "is_typing_indicator_allowed", "is_client_rename_allowed", "is_link_preview_allowed", "is_sending_text_to_idle_clients_allowed", "is_private_messaging_allowed", "is_temp_channel_creation_allowed", "is_file_upload_allowed", "is_chat_picture_allowed", "is_same_ip_address_allowed", "is_admin_country_flag_hidden", "is_fast_reconnect_allowed", "is_identity_takeover_allowed", "is_websocket_ping_active", "is_channel_key_reuse_enabled", "is_channel_key_reuse_on_join_allowed", "is_channel_key_reuse_on_leave_allowed", "is_connection_check_enforced", "is_music_bot_marquee_visible_to_everyone", "is_minimum_rsa_key_bits_announced", "is_country_blocking_active", "is_logging_client_joins_enabled", "is_logging_username_changes_enabled", "is_logging_group_changes_enabled", "is_logging_server_settings_updates_enabled", "is_logging_kicks_and_bans_enabled", "is_logging_client_disconnects_enabled", "is_logging_socket_opens_and_closes_enabled", "is_logging_failed_attempts_enabled", "is_blocking_direct_chat_pictures_active", "is_blocking_direct_chat_files_active", "is_blocking_channel_chat_pictures_active", "is_blocking_channel_chat_files_active",
     };
     cJSON *message = cJSON_GetObjectItemCaseSensitive(json_root, "message");
     cJSON *value = NULL_POINTER;
@@ -57,6 +93,11 @@ static boole _client_msg_server_settings_internal__is_save_server_settings_reque
         {
             return FALSE;
         }
+    }
+    if (_client_msg_server_settings_internal__is_theme_name_valid(cJSON_GetObjectItemCaseSensitive(message, "default_theme")) == FALSE ||
+        _client_msg_server_settings_internal__is_theme_name_valid(cJSON_GetObjectItemCaseSensitive(message, "default_mobile_theme")) == FALSE)
+    {
+        return FALSE;
     }
     value = cJSON_GetObjectItemCaseSensitive(message, "avatar_max_size_kb");
     if (value != NULL_POINTER && util__json_read_int64(value, 1, 90, &number) == FALSE)
@@ -302,6 +343,30 @@ void client_msg__server_settings__process_save_request(cJSON *json_root, uint64 
     if (http_value != NULL_POINTER)
     {
         g_server_settings.is_client_config_embedded = cJSON_IsTrue(http_value);
+    }
+    http_value = cJSON_GetObjectItemCaseSensitive(json_message_object, "is_start_page_connect_button_enabled");
+    if (http_value != NULL_POINTER)
+    {
+        g_server_settings.is_start_page_connect_button_enabled = cJSON_IsTrue(http_value);
+    }
+    http_value = cJSON_GetObjectItemCaseSensitive(json_message_object, "is_start_page_import_identity_button_enabled");
+    if (http_value != NULL_POINTER)
+    {
+        g_server_settings.is_start_page_import_identity_button_enabled = cJSON_IsTrue(http_value);
+    }
+
+    // the themes the served page starts with on a desktop and on a phone; an empty name leaves the choice to the page
+    http_value = cJSON_GetObjectItemCaseSensitive(json_message_object, "default_theme");
+    if (http_value != NULL_POINTER)
+    {
+        clib__null_memory(g_server_settings.default_theme, sizeof(g_server_settings.default_theme));
+        clib__string_copy(g_server_settings.default_theme, sizeof(g_server_settings.default_theme), http_value->valuestring);
+    }
+    http_value = cJSON_GetObjectItemCaseSensitive(json_message_object, "default_mobile_theme");
+    if (http_value != NULL_POINTER)
+    {
+        clib__null_memory(g_server_settings.default_mobile_theme, sizeof(g_server_settings.default_mobile_theme));
+        clib__string_copy(g_server_settings.default_mobile_theme, sizeof(g_server_settings.default_mobile_theme), http_value->valuestring);
     }
 
     // snapshot the current toggles so they can be rolled back if the persist fails
@@ -793,6 +858,10 @@ void client_msg__server_settings__process_save_request(cJSON *json_root, uint64 
         g_server_settings.is_client_http_enabled = previous_general_settings.is_client_http_enabled;
         g_server_settings.is_client_http_blank_when_disabled = previous_general_settings.is_client_http_blank_when_disabled;
         g_server_settings.is_client_config_embedded = previous_general_settings.is_client_config_embedded;
+        g_server_settings.is_start_page_connect_button_enabled = previous_general_settings.is_start_page_connect_button_enabled;
+        g_server_settings.is_start_page_import_identity_button_enabled = previous_general_settings.is_start_page_import_identity_button_enabled;
+        clib__memcpy(g_server_settings.default_theme, previous_general_settings.default_theme, sizeof(g_server_settings.default_theme));
+        clib__memcpy(g_server_settings.default_mobile_theme, previous_general_settings.default_mobile_theme, sizeof(g_server_settings.default_mobile_theme));
         http_server__set_mode(g_server_settings.is_client_http_enabled, g_server_settings.is_client_http_blank_when_disabled);
         g_server_settings.dh_exchange_count = previous_general_settings.dh_exchange_count;
         g_server_settings.session_encryption_layer_count = previous_general_settings.session_encryption_layer_count;
@@ -973,7 +1042,7 @@ void client_msg__server_settings__process_info_request(cJSON *json_root, uint64 
         }
         else
         {
-            server_msg__administration__send_access_denied_to_single_client(&g_clients_array[sender_client_id], NULL_POINTER);
+            server_msg__administration__send_permission_denied_to_single_client(&g_clients_array[sender_client_id], permissions__name(PERMISSION_VIEW_SERVER_INFO));
         }
     }
     clib__unlock(&g_clients_global_rwlock_guard);

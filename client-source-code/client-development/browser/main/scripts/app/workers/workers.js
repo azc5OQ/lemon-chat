@@ -226,6 +226,32 @@ function workers__is_channel_key_request_current(request)
 }
 
 /**
+ * @brief Checks that the decrypted content of a direct message is what its purpose says.
+ *
+ *        The server cannot read the content. It checks the rules of the purpose the sender
+ *        named: "channel_keys" needs no permission and is passed on only inside one channel,
+ *        "seen_receipt" needs no permission, "conversation" needs the permission to send direct
+ *        messages. This function is the second half of that check, on the receiving side.
+ *
+ * @param string purpose -> the purpose passed on by the server
+ * @param string content_type -> the type field of the decrypted content
+ *
+ * @return boolean true when the content may be handled
+ */
+function workers__is_direct_content_allowed_for_purpose(purpose, content_type)
+{
+    if (purpose === "channel_keys")
+    {
+        return content_type === "channel_keys_from_maintainer";
+    }
+    if (purpose === "seen_receipt")
+    {
+        return content_type === "message_seen";
+    }
+    return content_type !== "channel_keys_from_maintainer";
+}
+
+/**
  * @brief Installs received keys before the next encrypted chat message is processed.
  * @param object msg -> a decrypted private message containing channel keys
  * @return boolean true when the keys belong to this channel and its current maintainer
@@ -442,6 +468,7 @@ async function workers__create_channel_keys(request)
             message:
             {
                 type: "direct_chat_message",
+                purpose: "channel_keys",
                 value: JSON.stringify(message_data),
                 receiver_type: null,
                 receiver_id: recipient.client_id,
@@ -662,6 +689,35 @@ function workers__data_processing_worker_onmessage(e)
         dpw_channel_maintainer_id = -1;
         dpw_maintainer_generation = -1;
     }
+    // the notice that the local user closed a direct conversation, encrypted like a text message
+    else if (e.data.type == "mainthread__create_direct_chat_closed_message")
+    {
+        let notice_keys = keys__create_random_message_keys();
+        let notice_data = keys__seal_direct_content(e.data.public_key, notice_keys,
+            keys__encrypt_direct_content(notice_keys, JSON.stringify({ type: "direct_chat_closed" })));
+        if (notice_data == null)
+        {
+            return;
+        }
+
+        // build the message
+        let notice_message_object = {
+            message: {
+                type: "direct_chat_message",
+                purpose: "conversation",
+                value: JSON.stringify(notice_data),
+                receiver_type: null,
+                receiver_id: parseInt(e.data.receiver_id),
+                local_message_id: 1
+            }
+        };
+
+        // send the message
+        workers__post_to_main({
+            type: "data_processing_worker__tell_websocket_worker_to_send_data",
+            data_to_be_sent_over_websocket: keys__encrypt_all_message_data_and_convert_to_base64(JSON.stringify(notice_message_object))
+        });
+    }
     // a read receipt, encrypted for the original sender the same way channel keys are.
     // the server never learns what it says: to it this is an ordinary direct message
     else if (e.data.type == "mainthread__create_seen_receipt_message")
@@ -700,6 +756,7 @@ function workers__data_processing_worker_onmessage(e)
         let receipt_message_object = {
             message: {
                 type: "direct_chat_message",
+                purpose: "seen_receipt",
                 value: JSON.stringify(receipt_data),
                 receiver_type: null,
                 receiver_id: parseInt(e.data.receiver_id),
@@ -777,6 +834,7 @@ function workers__data_processing_worker_onmessage(e)
         };
 
         message_object.message.type = "direct_chat_message";
+        message_object.message.purpose = "conversation";
         message_object.message.value = JSON.stringify(message_data);
         message_object.message.receiver_id = parseInt(e.data.chat_message_receiver_id);
 
@@ -1378,6 +1436,13 @@ function workers__mainthread__process_received_websocket_message_continue(e)
                 value: msg
             });
         }
+        else if (msg.message.type == "channel_description")
+        {
+            workers__post_to_main({
+                type: "data_processing_worker__channel_description_from_server",
+                value: msg
+            });
+        }
         else if (msg.message.type == "force_admin_password_change")
         {
             workers__post_to_main({
@@ -1886,6 +1951,13 @@ function workers__mainthread__process_received_websocket_message_continue(e)
             if (some_json.type == "direct_chat_message")
             {
                 some_json.value = some_json.value; // sanitize here ?
+            }
+
+            // content that does not match the purpose named by the sender is dropped
+            if (workers__is_direct_content_allowed_for_purpose(msg.message.purpose, some_json.type) == false)
+            {
+                utils__custom_log("! dropped a direct message whose content does not match its purpose !");
+                return;
             }
 
             msg.message.some_json = some_json;

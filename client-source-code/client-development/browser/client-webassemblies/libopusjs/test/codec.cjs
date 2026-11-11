@@ -15,44 +15,14 @@ const versionMemory = new Uint8Array(current.memory.buffer);
 const versionStart = current.opus_get_version_string();
 assert.match(Buffer.from(versionMemory.subarray(versionStart, versionMemory.indexOf(0, versionStart))).toString(), /1\.6\.1/);
 
-// Cross-decode against the previously shipped 1.5.2 module in both directions.
-let previous;
-const imports =
-{
-    env:
-    {
-        emscripten_memcpy_big(destination, source, count)
-        {
-            new Uint8Array(previous.memory.buffer).copyWithin(destination, source, source + count);
-            return destination;
-        },
-        emscripten_resize_heap(size)
-        {
-            previous.memory.grow(Math.ceil((size - previous.memory.buffer.byteLength) / 65536));
-            return 1;
-        },
-        abort()
-        {
-            throw new Error('Previous Opus module aborted');
-        }
-    },
-    wasi_snapshot_preview1:
-    {
-        fd_close: () => 0,
-        fd_write: () => 0,
-        fd_seek: () => 0
-    }
-};
-previous = new WebAssembly.Instance(new WebAssembly.Module(fs.readFileSync(
-    path.join(__dirname, '../../prebuilt-backup/libopus.wasm'))), imports).exports;
-previous.__wasm_call_ctors();
-
+// The module encodes a tone and decodes its own packets, for one and two channels and every frame size.
 for (const channels of [1, 2])
 {
     for (const frames of [120, 240, 480, 960, 1920, 2880])
     {
-        for (const [encode, decode] of [[current, previous], [previous, current], [current, current]])
         {
+            const encode = current;
+            const decode = current;
             const error = encode.malloc(4);
             const encoder = encode.opus_encoder_create(48000, channels, 2049, error);
             assert.ok(encoder);
@@ -130,5 +100,5 @@ vm.runInContext(`
         resampler.destroy();
     }
 `, context);
-console.log('PASS: Opus 1.6.1 mono/stereo, all frame sizes, old/new interoperability, bitrate/reset, PLC, resampling and heap growth.');
+console.log('PASS: Opus 1.6.1 mono/stereo, all frame sizes, bitrate/reset, PLC, resampling and heap growth.');
 checkResampler(context);

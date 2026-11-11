@@ -4,6 +4,7 @@
 #include "../definitions.h"
 
 boole identity_store__is_public_key_present_in_client_stored_data(char *public_key);
+boole identity_store__read_identity_username(const char *public_key, char *out_username, uint64 out_username_size);
 void identity_store__remove_group_from_all_identities(uint64 group_id);
 void identity_store__restore_identity_groups(client_t *client);
 void identity_store__restore_identity_avatar(client_t *client);

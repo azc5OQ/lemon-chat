@@ -76,6 +76,7 @@ void server_msg__channel__read_key_policy(desktop_session_t *session, const cJSO
 void server_msg__dispatch(desktop_session_t *session, const cJSON *message)
 {
     const char *type = server_msg__read_string(message, "type");
+    char refusal[160] = { 0 };
     const cJSON *items = NULL_POINTER;
     const cJSON *item = NULL_POINTER;
     int64 id = server_msg__read_number(message, "client_id");
@@ -199,7 +200,7 @@ void server_msg__dispatch(desktop_session_t *session, const cJSON *message)
         session->model.clients[slot].idle = clib__strcmp(type, "client_going_to_idle_mode") == 0;
         session->model.clients[slot].access_known = 0;
         session->model.clients[slot].access = 0;
-        if (!session->model.clients[slot].idle && channel >= 0)
+        if (!session->model.clients[slot].idle && channel >= -1)
         {
             session->model.clients[slot].channel = channel;
         }
@@ -311,7 +312,16 @@ void server_msg__dispatch(desktop_session_t *session, const cJSON *message)
     else if (clib__strcmp(type, "access_denied") == 0)
     {
         session->model.action_error_sequence++;
-        desktop_session__detail(session, server_msg__read_string(message, "reason")[0] ? server_msg__read_string(message, "reason") : "Insufficient permissions.", 0);
+        if (server_msg__read_string(message, "permission")[0])
+        {
+            // the server names the permission or power that refused the request
+            clib__string_format(refusal, sizeof(refusal), "Insufficient permissions (%s).", server_msg__read_string(message, "permission"));
+            desktop_session__detail(session, refusal, 0);
+        }
+        else
+        {
+            desktop_session__detail(session, server_msg__read_string(message, "reason")[0] ? server_msg__read_string(message, "reason") : "Insufficient permissions.", 0);
+        }
     }
     else if (clib__strcmp(type, "channel_full") == 0)
     {

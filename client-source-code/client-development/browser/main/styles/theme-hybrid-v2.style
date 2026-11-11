@@ -1752,17 +1752,52 @@ body
     position: relative;
 }
 
+/* Icon sizes at the right end of channel list rows; layout.style reads them. */
+#channel-list-container,
+#idle-clients-container
+{
+    --tree-flag-width: 20px;
+
+    /* as in TeamSpeak 3: 2px between the last group icon and the flag (the group icons are 2px apart by default) */
+    --tree-flag-gap: 2px;
+}
+
+/* A channel row and a client row have the same height. */
+:is(#channel-list-container, #idle-clients-container) :is(.single-channel, .connected-client)
+{
+    box-sizing: border-box;
+    height: 20px;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+}
+
+/* The lock is an item of the row, in the column to the left of the channel icon, so it does not cover that icon. */
 .single-channel:has(.single-channel-is-using-password)::after
 {
     content: "";
-    position: absolute;
-    right: 8px;
-    top: 2px;
-    width: 13px;
-    height: 13px;
-    background-image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjggMTI4Ij48cGF0aCBmaWxsPSIjODc4YjhjIiBmaWxsLXJ1bGU9Im5vbnplcm8iIGQ9Ik00My42NDYsNDMuMzc2YzAsLTUuNzI5IDEuOTk3LC0xMC42IDUuOTkyLC0xNC42MDljMy45OTMsLTQuMDEgOC43OTgsLTYuMDE2IDE0LjQxOSwtNi4wMTZjNS42MiwwIDEwLjQwMSwyLjAwNiAxNC4zNyw2LjAxNmMzLjk1NCw0LjAwOSA1LjkzOCw4Ljg4IDUuOTM4LDE0LjYwOWwwLDUuMzIybDEzLjU2MywwbDAsLTUuMzIyYzAsLTYuMjM0IC0xLjUxNCwtMTEuOTc5IC00LjU2MiwtMTcuMjQyYy0zLjAzNiwtNS4yNjQgLTcuMTQ2LC05LjQzNiAtMTIuMzQxLC0xMi41MTRjLTUuMTk1LC0zLjA3NiAtMTAuODcsLTQuNjIgLTE3LjAyMiwtNC42MmMtNi4xNDYsMCAtMTEuODIsMS41NDQgLTE3LjAxNyw0LjYyMWMtNS4xOTUsMy4wNzggLTkuMzEzLDcuMjUgLTEyLjM1NCwxMi41MTRjLTMuMDM2LDUuMjYzIC00LjU2MSwxMS4wMDggLTQuNTYxLDE3LjI0MmwwLDUuMzIybDEzLjU3NCwwbDAsLTUuMzIzbDAuMDAxLDBaIi8+PHBhdGggZmlsbD0iIzQwNDU0NyIgZmlsbC1ydWxlPSJub256ZXJvIiBkPSJNMjEuNzcyLDU3LjI5Mmw4NC41MDMsMGMxLjI0LDAuMjcxIDIuMzI1LDAuODc0IDMuMjYyLDEuODJjMS4zMDksMS4zMjYgMS45NjMsMi45NTMgMS45NjMsNC44ODhsMCw0OC4xMjNjMCwxLjkyOCAtMC42NTQsMy41NjIgLTEuOTYzLDQuODg3Yy0xLjMxMSwxLjMyOSAtMi45MDksMS45OSAtNC44MjQsMS45OWwtODEuNDI1LDBjLTEuODQzLDAgLTMuNDI5LC0wLjY2MSAtNC43NzEsLTEuOTljLTEuMzQ0LC0xLjMyNSAtMi4wMTcsLTIuOTU5IC0yLjAxNywtNC44ODdsMCwtNDguMTIzYzAsLTEuOTM1IDAuNjczLC0zLjU2MiAyLjAxNywtNC44ODhjMC45NTgsLTAuOTQ2IDIuMDQzLC0xLjU0OSAzLjI1NSwtMS44MloiLz48cGF0aCBmaWxsPSIjZmZmZmZmIiBmaWxsLXJ1bGU9Im5vbnplcm8iIGQ9Ik03MS40MjgsNzMuOTU1YzAsLTIuNzYyIC0yLjIzOCwtNSAtNSwtNWwtNC44NTUsMGMtMi43NjEsMCAtNSwyLjIzOCAtNSw1bDAsMjcuOTIyYzAsMi43NjIgMi4yMzksNSA1LDVsNC44NTUsMGMyLjc2MiwwIDUsLTIuMjM4IDUsLTVsMCwtMjcuOTIyWiIvPjwvc3ZnPg==");
-    background-size: contain;
+    order: 2;
+    flex: 0 0 var(--tree-icon-size, 16px);
+    height: var(--tree-icon-size, 16px);
+    margin-left: 4px;
+    background-position: center;
+    background-image:url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjggMTI4Ij48cGF0aCBmaWxsPSIjODc4YjhjIiBmaWxsLXJ1bGU9Im5vbnplcm8iIGQ9Ik00My42NDYsNDMuMzc2YzAsLTUuNzI5IDEuOTk3LC0xMC42IDUuOTkyLC0xNC42MDljMy45OTMsLTQuMDEgOC43OTgsLTYuMDE2IDE0LjQxOSwtNi4wMTZjNS42MiwwIDEwLjQwMSwyLjAwNiAxNC4zNyw2LjAxNmMzLjk1NCw0LjAwOSA1LjkzOCw4Ljg4IDUuOTM4LDE0LjYwOWwwLDUuMzIybDEzLjU2MywwbDAsLTUuMzIyYzAsLTYuMjM0IC0xLjUxNCwtMTEuOTc5IC00LjU2MiwtMTcuMjQyYy0zLjAzNiwtNS4yNjQgLTcuMTQ2LC05LjQzNiAtMTIuMzQxLC0xMi41MTRjLTUuMTk1LC0zLjA3NiAtMTAuODcsLTQuNjIgLTE3LjAyMiwtNC42MmMtNi4xNDYsMCAtMTEuODIsMS41NDQgLTE3LjAxNyw0LjYyMWMtNS4xOTUsMy4wNzggLTkuMzEzLDcuMjUgLTEyLjM1NCwxMi41MTRjLTMuMDM2LDUuMjYzIC00LjU2MSwxMS4wMDggLTQuNTYxLDE3LjI0MmwwLDUuMzIybDEzLjU3NCwwbDAsLTUuMzIzbDAuMDAxLDBaIi8+PHBhdGggZmlsbD0iIzQwNDU0NyIgZmlsbC1ydWxlPSJub256ZXJvIiBkPSJNMjEuNzcyLDU3LjI5Mmw4NC41MDMsMGMxLjI0LDAuMjcxIDIuMzI1LDAuODc0IDMuMjYyLDEuODJjMS4zMDksMS4zMjYgMS45NjMsMi45NTMgMS45NjMsNC44ODhsMCw0OC4xMjNjMCwxLjkyOCAtMC42NTQsMy41NjIgLTEuOTYzLDQuODg3Yy0xLjMxMSwxLjMyOSAtMi45MDksMS45OSAtNC44MjQsMS45OWwtODEuNDI1LDBjLTEuODQzLDAgLTMuNDI5LC0wLjY2MSAtNC43NzEsLTEuOTljLTEuMzQ0LC0xLjMyNSAtMi4wMTcsLTIuOTU5IC0yLjAxNywtNC44ODdsMCwtNDguMTIzYzAsLTEuOTM1IDAuNjczLC0zLjU2MiAyLjAxNywtNC44ODhjMC45NTgsLTAuOTQ2IDIuMDQzLC0xLjU0OSAzLjI1NSwtMS44MloiLz48cGF0aCBmaWxsPSIjZmZmZmZmIiBmaWxsLXJ1bGU9Im5vbnplcm8iIGQ9Ik03MS40MjgsNzMuOTU1YzAsLTIuNzYyIC0yLjIzOCwtNSAtNSwtNWwtNC44NTUsMGMtMi43NjEsMCAtNSwyLjIzOCAtNSw1bDAsMjcuOTIyYzAsMi43NjIgMi4yMzksNSA1LDVsNC44NTUsMGMyLjc2MiwwIDUsLTIuMjM4IDUsLTVsMCwtMjcuOTIyWiIvPjwvc3ZnPg==");
+    background-size: 13px 13px;
     background-repeat: no-repeat;
+}
+
+/* When any channel has an icon, a row with the lock keeps an empty channel icon box. */
+body:not(.hide-channel-icons-in-channel-list) #channel-list-container:has(.single-channel-icon[style*="background-image"]) .single-channel:has(.single-channel-is-using-password) > .single-channel-icon
+{
+    display: block !important;
+}
+
+/* When any channel has a lock, a row with the "audio disabled" icon keeps an empty box of the lock's width. */
+#channel-list-container:has(.single-channel-is-using-password) .single-channel:has(> .single-channel-is-audio-disabled):not(:has(.single-channel-is-using-password))::after
+{
+    content: "";
+    order: 2;
+    flex: 0 0 var(--tree-icon-size, 16px);
+    margin-left: 4px;
 }
 
 #channel-properties-input-container .text-input-container-2

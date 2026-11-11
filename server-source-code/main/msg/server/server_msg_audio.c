@@ -3,6 +3,7 @@
 
 #include "server_msg.h"
 #include "../../base.h"
+#include "../../core/channel.h"
 #include "../../../third-party/rxi-log/log.h"
 
 /**
@@ -160,7 +161,6 @@ void server_msg__audio__send_state_of_client_to_all_clients(client_t *subject, u
     char *plaintext_other_channel = NULL_POINTER;
     uint64 i = 0;
     client_t *client = NULL_POINTER;
-    boole is_subject_hidden = FALSE;
 
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
@@ -176,9 +176,6 @@ void server_msg__audio__send_state_of_client_to_all_clients(client_t *subject, u
     cJSON_AddNumberToObject(message_other_channel, "value", (double)(state == AUDIO_STATE__PUSH_TO_TALK_ACTIVE ? AUDIO_STATE__PUSH_TO_TALK_ENABLED : state));
     plaintext_other_channel = cJSON_PrintUnformatted(root_other_channel);
 
-    // while clients in password protected channels are hidden, a subject standing in one is not reported outside it
-    is_subject_hidden = g_server_settings.is_hide_clients_in_password_protected_channels_active == TRUE && subject->channel_id < g_server_settings.max_channel_count && g_channel_array[subject->channel_id].is_existing == TRUE && g_channel_array[subject->channel_id].is_using_password == TRUE;
-
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
         client = &g_clients_array[i];
@@ -191,8 +188,9 @@ void server_msg__audio__send_state_of_client_to_all_clients(client_t *subject, u
         {
             server_msg__delivery__send_text_to_client(client, plaintext);
         }
-        else if (is_subject_hidden == FALSE)
+        else if (channel__is_client_location_visible(client, subject) == TRUE)
         {
+            // a client that may not see who is in the subject's channel is not told about the subject's microphone
             server_msg__delivery__send_text_to_client(client, plaintext_other_channel);
         }
     }

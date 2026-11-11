@@ -55,12 +55,12 @@ The complete permission catalog has the following scopes. These are the exact fi
 
 | Permission scope | Complete count | Values |
 | --- | --- | --- |
-| Server action permissions | 53 | `grant`, `deny` or the legacy/default value `default`. The editor writes explicit Enable/Disable choices. |
-| Server powers and protection values | 15 | Whole numbers from 0 through 1000. |
+| Server action permissions | 58 | `grant`, `deny` or the legacy/default value `default`. The editor writes explicit Enable/Disable choices. |
+| Server powers and protection values | 26 | Whole numbers from 0 through 1000. |
 | Channel action permissions | 11 | A supported subset of the server action names. Stored output uses `grant` or `deny`; omitted or `default` input becomes `deny`. |
-| Channel powers and protection values | 10 | Whole numbers from 0 through 1000, using the channel-specific names listed below. Omitted input becomes 0. |
+| Channel powers and protection values | 12 | Whole numbers from 0 through 1000, using the channel-specific names listed below. Omitted input becomes 0. |
 
-`grants` and `flags` are additional objects that refer to these names. They are not additional action permissions. The four `required_*_power` fields belong to a channel's requirements, not to a group's permission catalog.
+`grants` and `flags` are additional objects that refer to these names. They are not additional action permissions. The seven `required_*_power` fields belong to a channel's requirements, not to a group's permission catalog.
 
 For the complete JSON bodies containing these fields, see [`set_group_permissions`](messages.md#client-request-set_group_permissions), [`group_list`](messages.md#server-response-group_list), [`group_permissions_changed`](messages.md#server-response-group_permissions_changed) and [`edit_channel_group`](messages.md#client-request-edit_channel_group).
 
@@ -125,6 +125,11 @@ Every action supported by a server-group permission object is listed here. Chann
 | `edit_channel_groups` | Change channel group names, icons and permissions within your management power. | No |
 | `delete_channel_groups` | Delete custom channel groups and their assignments within your management power. | No |
 | `bypass_channel_password` | Join a channel without its password. The user limit still applies. | No |
+| `send_direct_messages` | Send direct text to another user, including edits, reactions and the notice that a conversation was closed. Direct message power must also reach the receiver's protection. Channel keys and read receipts do not need it. | Yes |
+| `send_channel_messages` | Send text into the user's channel. The channel's message power requirement also applies. | Yes |
+| `send_pokes` | Poke another user. Poke power must also reach the receiver's protection. | Yes |
+| `view_channel_members` | See who is in channels the user is not in. Channel view power must also reach the channel's requirement. Users always see the members of their own channel. | Yes |
+| `view_channel_descriptions` | Read the description of channels the user is not in. Channel view power must also reach the channel's requirement. | Yes |
 
 Group names and icons remain visible beside users. Connected users' group IDs are also included in client updates. `view_group_members` controls access to the management list, including saved users; it does not hide the groups of online users.
 
@@ -134,7 +139,7 @@ Viewing permissions does not allow editing them. The editor needs both viewing a
 
 ### Legacy permission name
 
-`manage_icons` is an accepted legacy input alias, not a 54th current action. Its value can be `grant`, `deny` or `default`. It supplies `upload_icons` and `delete_icons` only when the respective explicit field is absent. Current output contains the two separate names. Channel groups do not accept `manage_icons`, and it is not a supported key in `grants` or `flags`.
+`manage_icons` is an accepted legacy input alias, not a 59th current action. Its value can be `grant`, `deny` or `default`. It supplies `upload_icons` and `delete_icons` only when the respective explicit field is absent. Current output contains the two separate names. Channel groups do not accept `manage_icons`, and it is not a supported key in `grants` or `flags`.
 
 ### Complete Grant and flag scope
 
@@ -142,9 +147,9 @@ For example, `permissions.grants.kick` is the editing threshold for the `kick` a
 
 | Member | Server-group scope | Channel-group scope |
 | --- | --- | --- |
-| `permissions.grants.<name>` | Every one of the 53 server action names and 15 server power names. | Every one of the 11 channel action names and 10 channel power names. |
+| `permissions.grants.<name>` | Every one of the 58 server action names and 26 server power names. | Every one of the 11 channel action names and 12 channel power names. |
 | `permissions.flags.<name>.negate` | Every server action or power. An action must have an explicit `grant` or `deny` value; `default` cannot carry flags. | Every supported channel action or power. |
-| `permissions.flags.<name>.skip` | Only the 21 server fields in the table below. | No channel field supports Skip. |
+| `permissions.flags.<name>.skip` | Only the 23 server fields in the table below. | No channel field supports Skip. |
 
 Grant values are whole numbers from 0 through 1000 and default to 1000 when absent. Negate and Skip are booleans and default to false when absent. Only active flags are emitted in output. Unsupported names are rejected, including an unsupported `skip` member set to false.
 
@@ -173,8 +178,10 @@ This is the complete list of server fields that support Skip and the channel fie
 | `move_protection` | `channel_kick_protection` |
 | `moderation_power` | `channel_moderation_power` |
 | `moderation_protection` | `channel_moderation_protection` |
+| `channel_file_power` | `channel_file_power` |
+| `channel_create_power` | `channel_create_power` |
 
-Server `kick_power`, `kick_protection`, `ban_power`, `ban_protection` and `permission_edit_power` have no channel counterpart and do not support Skip. `move_clients` is also a server-only action; the channel kick fields do not grant arbitrary moves between channels.
+Server `kick_power`, `kick_protection`, `ban_power`, `ban_protection`, `permission_edit_power`, `channel_view_power` and the eight powers and protections for direct messages, direct pictures, direct files and pokes have no channel counterpart and do not support Skip. `move_clients` is also a server-only action; the channel kick fields do not grant arbitrary moves between channels.
 
 ## Saved users and messages
 
@@ -190,9 +197,9 @@ When groups are disabled, ordinary users cannot view saved users or send and rec
 
 ## Powers and protection
 
-The following table is the complete list of **15 server-group power and protection fields**. All values are whole numbers from **0 to 1000**. Simple view offers named numbers; Advanced view lets you enter a number directly.
+The following table is the complete list of **26 server-group power and protection fields**. All values are whole numbers from **0 to 1000**. Simple view offers named numbers; Advanced view lets you enter a number directly.
 
-Talk, channel message, channel picture and streaming power start at 25 for Guest and Normal, 50 for Moderator, and 1000 for Admin. Channel requirements start at 0. Other powers start at 0 unless the selected preset gives a higher value.
+Talk, channel message, channel picture, channel file, channel view, channel create, streaming, direct message, direct picture, direct file and poke power start at 25 for Guest and Normal, 50 for Moderator, and 1000 for Admin. Channel requirements start at 0. Other powers start at 0 unless the selected preset gives a higher value. The four protections for direct messages, direct pictures, direct files and pokes start at 0 in every preset, including Admin, so a new group does not make its members unreachable.
 
 | Value | Meaning | Value when omitted from a parsed permission object |
 | --- | --- | --- |
@@ -211,12 +218,25 @@ Talk, channel message, channel picture and streaming power start at 25 for Guest
 | `channel_picture_power` | Must meet the channel requirement to send channel pictures. | 25 |
 | `stream_power` | Must meet the channel requirement to share a screen or video file, including its sound. Watching does not need this power. | 25 |
 | `permission_edit_power` | Must meet the Grant value of each permission row being changed. The other editing checks also apply. | 0 |
+| `direct_message_power` | Power to send direct text to another user. Must meet their direct message protection. Also requires `send_direct_messages`. | 25 |
+| `direct_message_protection` | Minimum direct message power another user needs to send direct text to this user. | 0 |
+| `direct_picture_power` | Power to send a picture to another user. Must meet their direct picture protection. Also requires `send_direct_pictures`. | 25 |
+| `direct_picture_protection` | Minimum direct picture power another user needs to send this user a picture. | 0 |
+| `direct_file_power` | Power to send a file to another user. Must meet their direct file protection. Also requires `send_direct_files`. | 25 |
+| `direct_file_protection` | Minimum direct file power another user needs to send this user a file. | 0 |
+| `poke_power` | Power to poke another user. Must meet their poke protection. Also requires `send_pokes`. | 25 |
+| `poke_protection` | Minimum poke power another user needs to poke this user. | 0 |
+| `channel_file_power` | Must meet the channel requirement to send a file into the channel. | 25 |
+| `channel_view_power` | Must meet the channel requirement to see a channel's members and description from outside. Channel groups do not change it. | 25 |
+| `channel_create_power` | Must meet the requirement of the parent channel to create a channel directly inside it. | 25 |
 
 The omitted-field values describe parsing a permission object. They are separate from the explicit values supplied by a new group's preset and from the Grant threshold attached to each row.
 
 Equal values are enough. An action such as kick, ban or group editing also requires its own permission. A user who is not a full server admin cannot kick or ban a full server admin.
 
 The same admin protection applies to moving a user, kicking them from a channel, muting them and stopping their stream. Power 1000 in a custom group does not allow these actions against a full server admin.
+
+Direct messages, direct pictures, direct files and pokes work differently: a full server admin has no built-in protection against them. The protection of an admin is the highest value from the admin's groups, as for every other user. To keep users with low power from writing to an admin, give the admin a group that has the wanted protection. A full server admin can always send.
 
 ## Complete channel action list
 
@@ -240,7 +260,7 @@ There are no channel action fields named `create_channel`, `create_temp_channel`
 
 ## Channel power fields
 
-These are all **10 power and protection names** accepted in a channel group's `permissions` object. Each is a whole number from 0 through 1000; omitted fields become 0. The server counterpart identifies the value combined for channel checks, not an additional server-wide right supplied by the channel group.
+These are all **12 power and protection names** accepted in a channel group's `permissions` object. Each is a whole number from 0 through 1000; omitted fields become 0. The server counterpart identifies the value combined for channel checks, not an additional server-wide right supplied by the channel group.
 
 | Saved field | Meaning in the assigned channel | Server counterpart |
 | --- | --- | --- |
@@ -250,6 +270,8 @@ These are all **10 power and protection names** accepted in a channel group's `p
 | `channel_message_power` | Power for channel text and edits. | `channel_message_power` |
 | `channel_picture_power` | Power for channel pictures. | `channel_picture_power` |
 | `stream_power` | Power for screen and video sharing. | `stream_power` |
+| `channel_file_power` | Power for channel files. | `channel_file_power` |
+| `channel_create_power` | Power to create a channel directly inside this channel. | `channel_create_power` |
 | `channel_kick_power` | Power to return a user to root. Does not allow moving them to another chosen channel. | `move_power` |
 | `channel_kick_protection` | Protection from channel kicks. Does not prevent server kicks or moves. | `move_protection` |
 | `channel_moderation_power` | Power to mute audio or stop a stream in the channel. | `moderation_power` |

@@ -223,7 +223,7 @@ void client_msg__attachments__process_file_send_request(cJSON *json_root, uint64
     // Check the sender has permission for this kind of upload.
     if (permissions__can_upload(sender, intent_name) == FALSE)
     {
-        server_msg__administration__send_access_denied_to_single_client(sender, NULL_POINTER);
+        server_msg__administration__send_permission_denied_to_single_client(sender, permissions__name(permissions__upload_permission(intent_name)));
         server_msg__attachments__send_file_send_error_to_single_client(sender, "insufficient_permissions", 0);
         _client_msg_attachments_internal__discard_upload(sender);
         goto end;
@@ -359,6 +359,8 @@ void client_msg__attachments__process_file_send_completed_request(cJSON *json_ro
     client_t *music_bot = NULL_POINTER;
     musicbot_add_song_arg_struct_t *arguments = NULL_POINTER;
     char *policy_error = NULL_POINTER;
+    cstring refusal = NULL_POINTER;
+    permission_power_t channel_power = PERMISSION_CHANNEL_PICTURE_POWER;
 
     clib__write_lock(&g_clients_global_rwlock_guard);
     if (sender_client_id >= g_server_settings.max_client_count || base__is_current_client_request(sender_client_id) == FALSE)
@@ -389,9 +391,21 @@ void client_msg__attachments__process_file_send_completed_request(cJSON *json_ro
     }
     if (clib__strcmp(sender->file_upload_extension.intent, completion.intent_name) != 0 || permissions__can_upload(sender, completion.intent_name) == FALSE)
     {
-        server_msg__administration__send_access_denied_to_single_client(sender, NULL_POINTER);
+        server_msg__administration__send_permission_denied_to_single_client(sender, permissions__name(permissions__upload_permission(completion.intent_name)));
         server_msg__attachments__send_file_send_error_to_single_client(sender, "insufficient_permissions", completion.local_message_id);
         goto discard;
+    }
+
+    // The receiver is named only in this last request, so the receiver's protection is checked here.
+    if ((completion.intent == ATTACHMENT_INTENT_DIRECT_PICTURE || completion.intent == ATTACHMENT_INTENT_DIRECT_FILE) && completion.receiver_id < g_server_settings.max_client_count)
+    {
+        refusal = permissions__contact_refusal(sender, &g_clients_array[completion.receiver_id], completion.intent == ATTACHMENT_INTENT_DIRECT_PICTURE ? PERMISSION_SEND_DIRECT_PICTURES : PERMISSION_SEND_DIRECT_FILES);
+        if (refusal != NULL_POINTER)
+        {
+            server_msg__administration__send_permission_denied_to_single_client(sender, refusal);
+            server_msg__attachments__send_file_send_error_to_single_client(sender, "insufficient_permissions", completion.local_message_id);
+            goto discard;
+        }
     }
 
     if (completion.intent == ATTACHMENT_INTENT_MUSIC)
@@ -425,10 +439,12 @@ void client_msg__attachments__process_file_send_completed_request(cJSON *json_ro
     }
     else
     {
+        // A channel picture needs the channel's picture power and a channel file its file power.
+        channel_power = completion.intent == ATTACHMENT_INTENT_CHANNEL_PICTURE ? PERMISSION_CHANNEL_PICTURE_POWER : PERMISSION_CHANNEL_FILE_POWER;
         clib__read_lock(&g_channels_global_rwlock_guard);
         if (sender->channel_id < g_server_settings.max_channel_count &&
             g_channel_array[sender->channel_id].is_existing == TRUE &&
-            (completion.intent != ATTACHMENT_INTENT_CHANNEL_PICTURE || permissions__can_use_channel(sender, &g_channel_array[sender->channel_id], PERMISSION_CHANNEL_PICTURE_POWER) == TRUE))
+            permissions__can_use_channel(sender, &g_channel_array[sender->channel_id], channel_power) == TRUE)
         {
             if (completion.intent == ATTACHMENT_INTENT_CHANNEL_PICTURE)
             {
@@ -441,7 +457,7 @@ void client_msg__attachments__process_file_send_completed_request(cJSON *json_ro
         }
         else
         {
-            server_msg__administration__send_access_denied_to_single_client(sender, NULL_POINTER);
+            server_msg__administration__send_permission_denied_to_single_client(sender, permissions__power_name(channel_power));
             server_msg__attachments__send_file_send_error_to_single_client(sender, "insufficient_permissions", completion.local_message_id);
         }
         clib__unlock(&g_channels_global_rwlock_guard);

@@ -43,12 +43,13 @@ void server_msg__chat__send_server_chat_message_id_for_local_chat_message_id_to_
  * @param client_t* sender -> the client that sent it
  * @param uint64 server_chat_message_id -> server assigned id of the chat message
  * @param char* chat_message_value -> text content of the chat message
+ * @param cstring purpose -> what the sender said the message is for ("conversation", "channel_keys" or "seen_receipt"); the receiving client reads the content only as what the purpose says
  *
  * @attention this function is used within read lock on clinets array
  *
  * @return void
  */
-void server_msg__chat__send_message_to_single_client(client_t *receiver, client_t *sender, uint64 server_chat_message_id, char *chat_message_value)
+void server_msg__chat__send_message_to_single_client(client_t *receiver, client_t *sender, uint64 server_chat_message_id, char *chat_message_value, cstring purpose)
 {
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
@@ -58,6 +59,7 @@ void server_msg__chat__send_message_to_single_client(client_t *receiver, client_
     root = server_msg__delivery__new_message("direct_chat_message", &message);
 
     cJSON_AddStringToObject(message, "value", chat_message_value);
+    cJSON_AddStringToObject(message, "purpose", purpose);
     cJSON_AddStringToObject(message, "sender_username", sender->username);
     cJSON_AddNumberToObject(message, "sender_id", sender->client_id);
     cJSON_AddNumberToObject(message, "server_chat_message_id", server_chat_message_id);

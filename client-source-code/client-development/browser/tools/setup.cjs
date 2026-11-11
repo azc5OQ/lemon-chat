@@ -61,7 +61,7 @@ async function ensureZig(policy)
     if (!package_ || !await allowDownload('Zig ' + versions.zig.version + ' is needed to compile the four WebAssembly modules.', policy))
     {
         throw new Error('Install Zig ' + versions.zig.version + ' from https://ziglang.org/download/ and set ZIG to its executable, '
-            + 'or use --download-tools. The existing client.html was kept. --prebuilt-wasm explicitly uses the preserved binaries.');
+            + 'or use --download-tools. The existing client.html was kept.');
     }
     fs.mkdirSync(directory, {recursive: true});
     const archive = path.join(directory, path.basename(package_.url));

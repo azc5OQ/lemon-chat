@@ -14,6 +14,9 @@ var g_are_server_details_predefined = false;
 
 var g_is_autoconnect_without_user_action_active = false;
 
+// the user imported an identity and its key pair is still being created; the result is announced when it exists
+var g_is_identity_import_pending = false;
+
 // whether the last connect attempt actually failed (so the login shows
 // "connection failed, retrying in Xs" - not before)
 var g_last_connect_attempt_failed = false;

@@ -2,6 +2,7 @@
 #include "client_msg.h"
 #include "../server/server_msg.h"
 #include "../../core/video_channel.h"
+#include "../../core/permissions.h"
 #include "../../base.h"
 #include "../../util.h"
 #include "../../clib/clib.h"
@@ -140,7 +141,7 @@ void client_msg__video__process_start(cJSON *json_root, uint64 sender_client_id)
         {
             if (clib__is_string_equal(refusal_reason, "insufficient_permissions") == TRUE)
             {
-                server_msg__administration__send_access_denied_to_single_client(client, NULL_POINTER);
+                server_msg__administration__send_permission_denied_to_single_client(client, permissions__power_name(PERMISSION_STREAM_POWER));
             }
             server_msg__video__send_refused_to_single_client(client, refusal_reason);
         }

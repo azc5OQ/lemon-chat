@@ -1076,6 +1076,26 @@ static void _first_time_setup_internal__prompt_network_settings(first_time_setup
         _first_time_setup_internal__ask_theme(theme_scan_path, FALSE, g_server_settings.default_theme);
         _first_time_setup_internal__ask_theme(theme_scan_path, TRUE, g_server_settings.default_mobile_theme);
 
+        // Ask about buttons.
+        status0 = _first_time_setup_internal__ask_yes_no_with_note("Show a large connect button before the page connects?",
+                                                                   "    A browser plays no sound on a page until the user has clicked on it.\n"
+                                                                   "    With the button, every user clicks once, so voices and sound effects can be heard.\n",
+                                                                   FALSE);
+        if (status0 == TRUE)
+        {
+            g_server_settings.is_start_page_connect_button_enabled = TRUE;
+            printf("%s %s\n", g_mark_ok, "Connect button on the start page: enabled.");
+        }
+        status0 = _first_time_setup_internal__ask_yes_no_with_note("Show a large import identity button on the start page?",
+                                                                   "    A user who has an identity from another browser or device can load it before connecting,\n"
+                                                                   "    from pasted text or from an identity file.\n",
+                                                                   FALSE);
+        if (status0 == TRUE)
+        {
+            g_server_settings.is_start_page_import_identity_button_enabled = TRUE;
+            printf("%s %s\n", g_mark_ok, "Import identity button on the start page: enabled.");
+        }
+
         status0 = _first_time_setup_internal__ask_yes_no_with_note("Save each user's identity in their browser?",
                                                                    "    The browser reuses the same identity after the page is reloaded or reopened.\n"
                                                                    "    This is separate from saving identities on the server, asked later.\n",

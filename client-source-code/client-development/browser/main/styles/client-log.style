@@ -1,0 +1,30 @@
+/* The client log (#textarea-log): a scrolling list of lines; a refused request is red and names the permission. */
+#textarea-log
+{
+    box-sizing: border-box;
+    padding: 6px 8px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    opacity: 0.94;
+    border: 1px solid var(--set-line, #3a3d44);
+    background: var(--set-panel, #1e1f22);
+    color: var(--set-text, #dcddde);
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 12px;
+    line-height: 16px;
+    text-align: left;
+}
+
+#textarea-log .log-line
+{
+    margin: 0;
+    padding: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+#textarea-log .log-line-permission-denied
+{
+    color: #e5484d;
+    font-weight: bold;
+}

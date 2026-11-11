@@ -123,22 +123,4 @@ function build(compiler)
     }
 }
 
-function backup()
-{
-    const directory = path.join(__dirname, 'prebuilt-backup');
-    const manifest = require(path.join(directory, 'sha256.json'));
-    const crypto = require('node:crypto');
-    for (const [file, expected] of Object.entries(manifest))
-    {
-        const actual = crypto.createHash('sha256').update(fs.readFileSync(path.join(directory, file))).digest('hex');
-        if (actual !== expected)
-        {
-            throw new Error('Prebuilt backup checksum mismatch: ' + file);
-        }
-    }
-    run(path.join(directory, 'check.cjs'));
-    console.log('Using the checked prebuilt modules and their matching Opus loader. C sources are NOT rebuilt.');
-    return directory;
-}
-
-module.exports = {build, backup};
+module.exports = {build};

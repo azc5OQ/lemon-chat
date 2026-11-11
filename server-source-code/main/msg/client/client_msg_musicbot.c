@@ -102,7 +102,7 @@ void client_msg__musicbot__process_start_song_stream_message(cJSON *json_root, u
     clib__unlock(&g_channels_global_rwlock_guard);
     if (status == FALSE)
     {
-        server_msg__administration__send_access_denied_to_single_client(client, NULL_POINTER);
+        server_msg__administration__send_permission_denied_to_single_client(client, permissions__power_name(PERMISSION_TALK_POWER));
         goto label_client_msg__process_start_song_stream_end;
     }
 
@@ -258,7 +258,7 @@ void client_msg__musicbot__process_create_request(cJSON *json_root, uint64 sende
 
     if (permissions__is_allowed(admin, PERMISSION_CREATE_MUSIC_BOTS) == FALSE)
     {
-        server_msg__administration__send_access_denied_to_single_client(admin, NULL_POINTER);
+        server_msg__administration__send_permission_denied_to_single_client(admin, permissions__name(PERMISSION_CREATE_MUSIC_BOTS));
         goto label_client_msg__process_create_music_bot_end;
     }
 
@@ -379,7 +379,7 @@ void client_msg__musicbot__process_delete_request(cJSON *json_root, uint64 sende
 
     if (permissions__is_allowed(admin, PERMISSION_DELETE_MUSIC_BOTS) == FALSE)
     {
-        server_msg__administration__send_access_denied_to_single_client(admin, NULL_POINTER);
+        server_msg__administration__send_permission_denied_to_single_client(admin, permissions__name(PERMISSION_DELETE_MUSIC_BOTS));
         goto label_client_msg__process_delete_music_bot_end;
     }
 
@@ -642,7 +642,7 @@ void client_msg__musicbot__process_remove_song_request(cJSON *json_root, uint64 
     if (permissions__is_allowed(sender_client, PERMISSION_DELETE_MUSIC_TRACKS) == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s", "sender is not admin");
-        server_msg__administration__send_access_denied_to_single_client(sender_client, NULL_POINTER);
+        server_msg__administration__send_permission_denied_to_single_client(sender_client, permissions__name(PERMISSION_DELETE_MUSIC_TRACKS));
         goto label_client_msg__process_remove_song_from_music_bot_request_end;
     }
 

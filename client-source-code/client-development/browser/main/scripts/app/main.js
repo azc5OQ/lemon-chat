@@ -231,12 +231,20 @@ async function main__window_onload()
         g_are_server_details_predefined = true;
         g_is_autoconnect_without_user_action_active = true;
         g_autoconnect_details = {
-            host: window.location.hostname,
+            // a page from the server uses its own address; a page opened from a file uses the address written into it
+            host: (typeof window.__SERVER_CONFIG__.host === "string" && window.__SERVER_CONFIG__.host.length > 0)
+                ? window.__SERVER_CONFIG__.host : window.location.hostname,
             port: window.__SERVER_CONFIG__.port,
             keys: window.__SERVER_CONFIG__.keys,
             wss_port: window.__SERVER_CONFIG__.wss_port
         };
         document.getElementById("connect-form-grid").style.display = "none";
+    }
+
+    // the start page (start-page.js): when the page options ask for it, nothing connects until the user pressed its connect button
+    if (typeof start_page__init === "function")
+    {
+        start_page__init();
     }
 
     if (g_is_running_in_android_webview == false)
@@ -272,7 +280,7 @@ async function main__window_onload()
     g_textarea_log = document.getElementById("textarea-log");
 
     // member list gestures: in the themes that show the member list instead of the channel tree
-    // (simpledark, bluebell), a tap is on the clones in the right-pane member list, which are
+    // (bluebell), a tap is on the clones in the right-pane member list, which are
     // rebuilt on every sync, so delegated listeners forward tap (open chat / show channel chat) and
     // hold (row menu / channel switch list) to the real tree rows; touch and mouse both register
 
@@ -280,7 +288,8 @@ async function main__window_onload()
     {
         UI.delete_contextmenus();
 
-        let menu_items_html = "";
+        // the first line says what the list is for: without it the list was taken for an unrelated menu
+        let menu_items_html = "<p class='context-menu-item context-menu-item-disabled'>switch to channel:</p>\n";
         for (let i = 0; i < g_channel_list.length; i++)
         {
             let channel = g_channel_list[i];
@@ -346,13 +355,8 @@ async function main__window_onload()
                 let switch_channel_id = this.getAttribute("data-switch-channel-id");
                 UI.delete_contextmenus(true);
 
-                // same flow as double clicking the channel in the tree: handles the
-                // current-channel guard and the password dialog for locked channels
-                let name_element = document.querySelector('#channel-list-container .single-channel[data-channel-id="' + switch_channel_id + '"] [data-channel-name-id]');
-                if (name_element != null)
-                {
-                    UI.single_channel_doubleclick_join({ stopPropagation: function() {}, target: name_element });
-                }
+                // join chosen channel
+                member_conversations__join_channel(switch_channel_id);
             };
         }
     }
@@ -366,24 +370,11 @@ async function main__window_onload()
         {
             if (is_short_click == true)
             {
-                // bring the channel chat back on screen - same as tapping its conversation tab.
-                // a tab fresh from the html has no handler yet - give it the standard one
-                let channel_tab = document.querySelector('.chat-context-selector[data-chat-context-selector-id="channel-' + channel_circle.getAttribute("data-member-list-channel-id") + '"]');
-                if (channel_tab != null)
-                {
-                    if (channel_tab.onclick == null)
-                    {
-                        channel_tab.onclick = UI.chat_context_selector_onclick;
-                    }
-
-                    channel_tab.click();
-                    if (typeof member_conversations__show_selected_chat === "function")
-                    {
-                        member_conversations__show_selected_chat();
-                    }
-                }
+                // bring the channel chat back on screen - same as tapping its conversation tab
+                member_conversations__open_channel_chat(channel_circle.getAttribute("data-member-list-channel-id"));
             }
-            else
+            // a theme with the conversation list has a button for the channel list, so a hold opens no menu there
+            else if (member_conversations.active == false)
             {
                 member_list_show_channel_switch_menu(click_x, click_y);
             }
@@ -468,7 +459,8 @@ async function main__window_onload()
          */
         function current_member_list_press_target()
         {
-            if (member_list_press_target == null || !g_is_websocket_connected
+            // g_is_websocket_connected is no longer updated, so the connection is checked like in ui.js
+            if (member_list_press_target == null || !g_is_authenticated || g_worker_connection_ended
                 || member_list_press_generation != g_worker_connection_generation
                 || member_list_press_channel != g_current_channel_id)
             {
@@ -509,6 +501,8 @@ async function main__window_onload()
             }
             else if (is_short_press)
             {
+                // stops the browser from sending mouse events for the same tap after the layout changed
+                event.preventDefault();
                 member_list_forward(target_element, event.changedTouches[0].clientX, event.changedTouches[0].clientY, true);
             }
         }
@@ -799,10 +793,21 @@ async function main__window_onload()
     document.getElementById("msgr-me-button").onclick = function()
     {
         let local_row = document.querySelector("#channel-list-container .connected-local-client");
+        let button = this.getBoundingClientRect();
+        let bar = document.getElementById("communication-system-head-menu").getBoundingClientRect();
+        let menu_x = Math.max(8, Math.min(button.left, window.innerWidth - 200));
+        let menu_y = button.bottom + 4;
         if (local_row == null) { return; }
 
+        // a button inside the top bar: the menu opens under the bar, not over it
+        if (button.bottom <= bar.bottom && bar.height <= 120)
+        {
+            menu_y = bar.bottom + 4;
+        }
+
+        // open the menu
         let forwarded_event = { stopPropagation: function() {}, currentTarget: null, which: null };
-        UI.connected_user_onmousedown(forwarded_event, true, window.innerWidth - 190, 48, local_row, false);
+        UI.connected_user_onmousedown(forwarded_event, true, menu_x, menu_y, local_row, false);
     };
 
     document.getElementById("msgr-scale-slider").oninput = function()
@@ -1641,7 +1646,9 @@ async function main__window_onload()
                 });
             }
 
-            bars[i].addEventListener("mousedown", function(e)
+            // pointer events work for mouse, finger and pen; touch-action none stops the page from scrolling during a drag
+            bars[i].style.touchAction = "none";
+            bars[i].addEventListener("pointerdown", function(e)
             {
                 let dialog = this.parentElement;
                 let rect = null;
@@ -1670,7 +1677,7 @@ async function main__window_onload()
                 e.preventDefault();
             });
         }
-        document.addEventListener("mousemove", function(e)
+        document.addEventListener("pointermove", function(e)
         {
             let left = 0;
             let top = 0;
@@ -1694,7 +1701,11 @@ async function main__window_onload()
             dragging.style.left = left + "px";
             dragging.style.top = top + "px";
         });
-        document.addEventListener("mouseup", function()
+        document.addEventListener("pointerup", function()
+        {
+            dragging = null;
+        });
+        document.addEventListener("pointercancel", function()
         {
             dragging = null;
         });

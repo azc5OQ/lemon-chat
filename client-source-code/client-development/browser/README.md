@@ -186,11 +186,11 @@ For example, run `build.bat --unminified` after editing the chat label:
 2. Compile Opus/Speex, minimp3, RSA and connection crypto into a temporary
    directory below `client-webassemblies/build`. Each project uses only its own
    sources and third-party libraries. Every module must have zero host imports.
-3. Run the codec, cipher and RSA compatibility tests. Opus is checked against the
-   preserved previous module in both directions, including packet-loss recovery
-   and resampling. MP3 PCM is compared with the old decoder. RSA must reproduce
-   every recorded identity vector exactly, and cipher outputs must match their
-   reference vectors and OpenSSL counterparts.
+3. Run the codec, cipher and RSA tests. Opus encodes a tone and decodes its own
+   packets, including packet-loss recovery and resampling. MP3 decoding must give
+   audible output and the same samples when a file is decoded again. RSA must
+   reproduce every recorded identity vector exactly, and cipher outputs must match
+   their reference vectors and OpenSSL counterparts.
 4. Only after every test passes, publish the complete set into `main/wasm`.
    Compiler or test failure keeps the previous set. Builds use a lock so two
    processes cannot publish competing sets. After an interrupted build, remove
@@ -241,27 +241,6 @@ mode without prompting; command-line mode takes precedence.
 `--minify-js` and `--no-optimize` remain aliases for `--minified` and
 `--unminified`. On Windows the wrapper pauses only with no arguments and no
 mode environment variable, and preserves the build's exit code.
-
-### Build with checked prebuilt modules
-
-If you cannot compile the WebAssembly projects, use the checked modules in
-`client-webassemblies/prebuilt-backup`. That directory contains a SHA-256 manifest
-and the matching loader required by its older Opus binary. Its RSA and MP3 modules
-include the current secret-clearing and input-bounds fixes; this is not an
-unchanged historical snapshot. Normal builds never overwrite that directory.
-To deliberately build an HTML page using this set, run:
-
-```sh
-node build.cjs --unminified --prebuilt-wasm --output preview/prebuilt-modules.html
-```
-
-This verifies the hashes and runs RSA, MP3, cipher, and Opus compatibility and
-security regressions before embedding the modules and matching loader. A failed
-check stops the build. It does not compile C or replace `main/wasm`. Removing
-`--output` makes it the shipped page instead. A compiler failure never selects
-this set automatically. Return to the normal command to compile current sources
-again. The [prebuilt guide](client-webassemblies/prebuilt-backup/README.md)
-records which modules were refreshed and how to run their checks separately.
 
 ### Server and Android builds
 

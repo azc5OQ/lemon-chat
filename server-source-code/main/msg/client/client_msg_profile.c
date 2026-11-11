@@ -196,6 +196,9 @@ void client_msg__profile__process_change_client_username(cJSON *json_root, uint6
                 server_logs__username_changed(client_to_alter->username, json_message_value->valuestring);
 
                 clib__null_memory(client_to_alter->username, USERNAME_MAX_LENGTH);
+
+                // the client chose this name itself, so it is the name to save with the identity
+                clib__null_memory(client_to_alter->preferred_username, USERNAME_MAX_LENGTH);
                 clib__string_copy_n(client_to_alter->username, sizeof(client_to_alter->username), json_message_value->valuestring, new_username_length);
                 is_change_success = TRUE;
             }
@@ -252,7 +255,7 @@ void client_msg__profile__process_request_stored_clients(cJSON *json_root, uint6
     // Groups can change who may view the stored names and avatars.
     if (permissions__is_allowed(client, PERMISSION_VIEW_STORED_USERS) == FALSE)
     {
-        server_msg__administration__send_access_denied_to_single_client(client, NULL_POINTER);
+        server_msg__administration__send_permission_denied_to_single_client(client, permissions__name(PERMISSION_VIEW_STORED_USERS));
         DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client_msg__profile__process_request_stored_clients client_id", sender_client_id, "cannot view stored users \n");
         goto label_client_msg__process_request_stored_clients_end;
     }

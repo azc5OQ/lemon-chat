@@ -12,7 +12,14 @@
 #include "../../../third-party/rxi-log/log.h"
 #include "../../../third-party/zhicheng/base64.h"
 
+// The purposes a direct message can name in its "purpose" field.
+#define DIRECT_MESSAGE_PURPOSE_CONVERSATION "conversation"
+#define DIRECT_MESSAGE_PURPOSE_CHANNEL_KEYS "channel_keys"
+#define DIRECT_MESSAGE_PURPOSE_SEEN_RECEIPT "seen_receipt"
+
 // declarations
+static cstring _client_msg_chat_internal__read_direct_message_purpose(cJSON *json_message_object);
+static cstring _client_msg_chat_internal__channel_message_refusal(client_t *sender, channel_t *channel);
 static boole _client_msg_chat_internal__is_json_chat_message_format_valid(cJSON *json_root, uint64 client_id);
 static void _client_msg_chat_internal__process_chat_message_action(cJSON *json_root, uint64 sender_client_id, char *outbound_action_type, boole is_edit);
 static boole _client_msg_chat_internal__is_json_poke_client_request_format_valid(cJSON *json_root, uint64 client_id);
@@ -89,6 +96,49 @@ static boole _client_msg_chat_internal__is_json_chat_message_format_valid(cJSON 
 }
 
 /**
+ * @brief Reads what a direct message is for, as named by its sender.
+ *
+ *        The content of a direct message is encrypted for the receiver, so the server cannot
+ *        tell what two clients say to each other from the channel keys that a channel's
+ *        maintainer hands out, or from a "message seen" receipt. The sender names the purpose
+ *        in the request. The server applies the rules of that purpose and passes the purpose on
+ *        with the message. The receiving client reads the content only as what the purpose
+ *        says, so a text message sent as "channel_keys" is not shown as text.
+ *
+ *        "conversation" covers everything that belongs to a conversation between two clients:
+ *        text, edits, reactions and the notice that one side closed the conversation's window.
+ *        The server cannot tell these apart and does not need to.
+ *
+ *        The purpose tells the server which kind of direct message it relays. That is the price
+ *        of being able to refuse direct texts by permission and power; the content stays unreadable.
+ *
+ * @param cJSON* json_message_object -> the "message" object of the request
+ *
+ * @return cstring -> DIRECT_MESSAGE_PURPOSE_CHANNEL_KEYS, DIRECT_MESSAGE_PURPOSE_SEEN_RECEIPT or DIRECT_MESSAGE_PURPOSE_CONVERSATION; a request that names no purpose or an unknown one is handled as conversation content
+ */
+static cstring _client_msg_chat_internal__read_direct_message_purpose(cJSON *json_message_object)
+{
+    cJSON *json_purpose = cJSON_GetObjectItemCaseSensitive(json_message_object, "purpose");
+
+    // Default is conversation.
+    if (cJSON_IsString(json_purpose) == FALSE || json_purpose->valuestring == NULL_POINTER)
+    {
+        return DIRECT_MESSAGE_PURPOSE_CONVERSATION;
+    }
+
+    // Known purposes.
+    if (clib__strcmp(json_purpose->valuestring, DIRECT_MESSAGE_PURPOSE_CHANNEL_KEYS) == 0)
+    {
+        return DIRECT_MESSAGE_PURPOSE_CHANNEL_KEYS;
+    }
+    if (clib__strcmp(json_purpose->valuestring, DIRECT_MESSAGE_PURPOSE_SEEN_RECEIPT) == 0)
+    {
+        return DIRECT_MESSAGE_PURPOSE_SEEN_RECEIPT;
+    }
+    return DIRECT_MESSAGE_PURPOSE_CONVERSATION;
+}
+
+/**
  * @brief This function processes direct chat message
  *
  * @param cJSON* json_root -> the parsed client request
@@ -102,10 +152,15 @@ void client_msg__chat__process_direct_chat_message(cJSON *json_root, uint64 send
     boole is_receiver_existing = FALSE;
     boole is_receiver_idle = FALSE;
     boole is_receiver_music_bot = FALSE;
+    boole is_receipt = FALSE;
     cJSON *json_receiver_id = NULL_POINTER;
     cJSON *json_local_message_id = NULL_POINTER;
     cJSON *json_chat_message_value = NULL_POINTER;
     cJSON *json_message_object = NULL_POINTER;
+    client_t *sender = NULL_POINTER;
+    client_t *receiver = NULL_POINTER;
+    cstring purpose = NULL_POINTER;
+    cstring refusal = NULL_POINTER;
     uint64 server_chat_message_id = 0;
 
     // because maintainer of channel sends out channel keys to each client individually,
@@ -133,6 +188,7 @@ void client_msg__chat__process_direct_chat_message(cJSON *json_root, uint64 send
         return;
     }
 
+    // Lock the clients.
     clib__read_lock(&g_clients_global_rwlock_guard);
     if (base__is_current_client_request(sender_client_id) == FALSE)
     {
@@ -140,28 +196,67 @@ void client_msg__chat__process_direct_chat_message(cJSON *json_root, uint64 send
         return;
     }
 
-    // private messaging can be switched off server-wide, making this a channels-only server.
-    // music bots are addressed the same way, so they keep working regardless
-    if (g_server_settings.is_private_messaging_allowed == FALSE && g_clients_array[json_receiver_id->valueint].is_music_bot == FALSE)
-    {
-        DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client_msg__chat__process_direct_chat_message client : ", sender_client_id, " private messages are disabled on this server \n");
-        clib__unlock(&g_clients_global_rwlock_guard);
-        return;
-    }
+    // Sender and receiver.
+    sender = &g_clients_array[sender_client_id];
+    receiver = &g_clients_array[json_receiver_id->valueint];
+
+    // Read the purpose.
+    purpose = _client_msg_chat_internal__read_direct_message_purpose(json_message_object);
 
     // Read the recipient state while holding the clients lock.
-    is_receiver_existing = g_clients_array[json_receiver_id->valueint].is_authenticated;
-    is_receiver_idle = g_clients_array[json_receiver_id->valueint].is_idle;
-    is_receiver_music_bot = g_clients_array[json_receiver_id->valueint].is_music_bot;
+    is_receiver_existing = receiver->is_authenticated;
+    is_receiver_idle = receiver->is_idle;
+    is_receiver_music_bot = receiver->is_music_bot;
 
-    // Require both the server setting and permission to message an idle recipient.
-    if (is_receiver_idle == TRUE &&
-        (g_server_settings.is_sending_text_to_idle_clients_allowed == FALSE || permissions__is_allowed(&g_clients_array[sender_client_id], PERMISSION_MESSAGE_IDLE_CLIENTS) == FALSE))
+    // Channel keys.
+    if (clib__strcmp(purpose, DIRECT_MESSAGE_PURPOSE_CHANNEL_KEYS) == 0)
     {
-        server_msg__administration__send_access_denied_to_single_client(&g_clients_array[sender_client_id], NULL_POINTER);
-        clib__unlock(&g_clients_global_rwlock_guard);
-        return;
+        // Channel keys always reach the members of the sender's channel; no other check applies.
+        if (is_receiver_existing == FALSE || sender->is_idle == TRUE || is_receiver_idle == TRUE || sender->channel_id != receiver->channel_id)
+        {
+            clib__unlock(&g_clients_global_rwlock_guard);
+            return;
+        }
     }
+    else
+    {
+        // Private messaging can be switched off for the whole server; music bots still receive messages.
+        if (g_server_settings.is_private_messaging_allowed == FALSE && is_receiver_music_bot == FALSE)
+        {
+            DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client_msg__chat__process_direct_chat_message client : ", sender_client_id, " private messages are disabled on this server \n");
+            clib__unlock(&g_clients_global_rwlock_guard);
+            return;
+        }
+
+        // A read receipt needs no permission; it is dropped without a notice when it cannot be delivered.
+        is_receipt = (boole)(clib__strcmp(purpose, DIRECT_MESSAGE_PURPOSE_SEEN_RECEIPT) == 0);
+
+        // Require both the server setting and permission to message an idle recipient.
+        if (is_receiver_idle == TRUE &&
+            (g_server_settings.is_sending_text_to_idle_clients_allowed == FALSE || permissions__is_allowed(sender, PERMISSION_MESSAGE_IDLE_CLIENTS) == FALSE))
+        {
+            if (is_receipt == FALSE)
+            {
+                server_msg__administration__send_permission_denied_to_single_client(sender, permissions__name(PERMISSION_MESSAGE_IDLE_CLIENTS));
+            }
+            clib__unlock(&g_clients_global_rwlock_guard);
+            return;
+        }
+
+        // The sender needs the permission and enough power against the receiver's protection.
+        if (is_receipt == FALSE && is_receiver_existing == TRUE && is_receiver_music_bot == FALSE)
+        {
+            refusal = permissions__contact_refusal(sender, receiver, PERMISSION_SEND_DIRECT_MESSAGES);
+            if (refusal != NULL_POINTER)
+            {
+                server_msg__administration__send_permission_denied_to_single_client(sender, refusal);
+                clib__unlock(&g_clients_global_rwlock_guard);
+                return;
+            }
+        }
+    }
+
+    // Forward the message.
     if (is_receiver_existing == TRUE &&
         (is_receiver_idle == FALSE || g_server_settings.is_sending_text_to_idle_clients_allowed == TRUE) &&
         is_receiver_music_bot == FALSE)
@@ -171,8 +266,8 @@ void client_msg__chat__process_direct_chat_message(cJSON *json_root, uint64 send
         // Assign a server message ID, acknowledge it and forward the encrypted content.
         server_chat_message_id = base__get_chat_message_id();
         base__increment_chat_message_id();
-        server_msg__chat__send_server_chat_message_id_for_local_chat_message_id_to_single_client(&g_clients_array[sender_client_id], server_chat_message_id, (uint64)json_local_message_id->valuedouble);
-        server_msg__chat__send_message_to_single_client(&g_clients_array[json_receiver_id->valueint], &g_clients_array[sender_client_id], server_chat_message_id, json_chat_message_value->valuestring);
+        server_msg__chat__send_server_chat_message_id_for_local_chat_message_id_to_single_client(sender, server_chat_message_id, (uint64)json_local_message_id->valuedouble);
+        server_msg__chat__send_message_to_single_client(receiver, sender, server_chat_message_id, json_chat_message_value->valuestring, purpose);
     }
     else
     {
@@ -180,6 +275,27 @@ void client_msg__chat__process_direct_chat_message(cJSON *json_root, uint64 send
     }
 
     clib__unlock(&g_clients_global_rwlock_guard);
+}
+
+/**
+ * @brief Checks whether a client may send or edit text in the channel it is in.
+ *
+ * @param client_t* sender -> client making the request, with the clients lock held
+ * @param channel_t* channel -> the sender's channel, with the channels lock held
+ *
+ * @return cstring -> NULL_POINTER when allowed; otherwise the name of the permission or power that refused it
+ */
+static cstring _client_msg_chat_internal__channel_message_refusal(client_t *sender, channel_t *channel)
+{
+    if (permissions__is_allowed(sender, PERMISSION_SEND_CHANNEL_MESSAGES) == FALSE)
+    {
+        return permissions__name(PERMISSION_SEND_CHANNEL_MESSAGES);
+    }
+    if (permissions__can_use_channel(sender, channel, PERMISSION_CHANNEL_MESSAGE_POWER) == FALSE)
+    {
+        return permissions__power_name(PERMISSION_CHANNEL_MESSAGE_POWER);
+    }
+    return NULL_POINTER;
 }
 
 /**
@@ -199,6 +315,7 @@ void client_msg__chat__process_channel_chat_message(cJSON *json_root, uint64 sen
     cJSON *json_local_message_id = NULL_POINTER;
     cJSON *json_chat_message_value = NULL_POINTER;
     cJSON *json_message_object = NULL_POINTER;
+    cstring refusal = NULL_POINTER;
     uint64 channel_id = 0;
     uint64 server_chat_message_id = 0;
 
@@ -233,9 +350,10 @@ void client_msg__chat__process_channel_chat_message(cJSON *json_root, uint64 sen
 
     if (is_channel_existing == TRUE)
     {
-        if (permissions__can_use_channel(&g_clients_array[sender_client_id], &g_channel_array[channel_id], PERMISSION_CHANNEL_MESSAGE_POWER) == FALSE)
+        refusal = _client_msg_chat_internal__channel_message_refusal(&g_clients_array[sender_client_id], &g_channel_array[channel_id]);
+        if (refusal != NULL_POINTER)
         {
-            server_msg__administration__send_access_denied_to_single_client(&g_clients_array[sender_client_id], NULL_POINTER);
+            server_msg__administration__send_permission_denied_to_single_client(&g_clients_array[sender_client_id], refusal);
             goto channel_message_done;
         }
         DBG_CLIENT_MESSAGE log_info("%s %llu %s", "receiving channel exists: ", channel_id, "\n");
@@ -282,6 +400,7 @@ static void _client_msg_chat_internal__process_chat_message_action(cJSON *json_r
     char *receiver_type = NULL_POINTER;
     char *new_message_value = NULL_POINTER;
     char *requester_public_key = NULL_POINTER;
+    cstring refusal = NULL_POINTER;
     uint64 target_chat_message_id = 0;
     uint64 channel_id = 0;
     uint64 receiver_id = 0;
@@ -351,7 +470,16 @@ static void _client_msg_chat_internal__process_chat_message_action(cJSON *json_r
                 // Deletion remains available when sending new private content has been disabled.
                 if (is_edit == TRUE && (g_server_settings.is_private_messaging_allowed == FALSE || (g_clients_array[receiver_id].is_idle == TRUE && (g_server_settings.is_sending_text_to_idle_clients_allowed == FALSE || permissions__is_allowed(&g_clients_array[sender_client_id], PERMISSION_MESSAGE_IDLE_CLIENTS) == FALSE))))
                 {
-                    server_msg__administration__send_access_denied_to_single_client(&g_clients_array[sender_client_id], NULL_POINTER);
+                    server_msg__administration__send_permission_denied_to_single_client(&g_clients_array[sender_client_id], permissions__name(PERMISSION_MESSAGE_IDLE_CLIENTS));
+                    clib__unlock(&g_clients_global_rwlock_guard);
+                    return;
+                }
+
+                // an edit carries new text, so it needs the same rights as a new direct message
+                refusal = is_edit == TRUE ? permissions__contact_refusal(&g_clients_array[sender_client_id], &g_clients_array[receiver_id], PERMISSION_SEND_DIRECT_MESSAGES) : NULL_POINTER;
+                if (refusal != NULL_POINTER)
+                {
+                    server_msg__administration__send_permission_denied_to_single_client(&g_clients_array[sender_client_id], refusal);
                     clib__unlock(&g_clients_global_rwlock_guard);
                     return;
                 }
@@ -368,9 +496,10 @@ static void _client_msg_chat_internal__process_chat_message_action(cJSON *json_r
         channel_id = g_clients_array[sender_client_id].channel_id;
         if (channel_id < g_server_settings.max_channel_count && g_channel_array[channel_id].is_existing == TRUE)
         {
-            if (is_edit == TRUE && permissions__can_use_channel(&g_clients_array[sender_client_id], &g_channel_array[channel_id], PERMISSION_CHANNEL_MESSAGE_POWER) == FALSE)
+            refusal = is_edit == TRUE ? _client_msg_chat_internal__channel_message_refusal(&g_clients_array[sender_client_id], &g_channel_array[channel_id]) : NULL_POINTER;
+            if (refusal != NULL_POINTER)
             {
-                server_msg__administration__send_access_denied_to_single_client(&g_clients_array[sender_client_id], NULL_POINTER);
+                server_msg__administration__send_permission_denied_to_single_client(&g_clients_array[sender_client_id], refusal);
             }
             else
             {
@@ -479,6 +608,7 @@ void client_msg__chat__process_poke_client_request(cJSON *json_root, uint64 send
     cJSON *json_message_object = NULL_POINTER;
     cJSON *json_receiver_id = NULL_POINTER;
     cJSON *json_poke_message = NULL_POINTER;
+    cstring refusal = NULL_POINTER;
 
     if (base__is_request_allowed_based_on_spam_protection(sender_client_id) == FALSE)
     {
@@ -506,7 +636,16 @@ void client_msg__chat__process_poke_client_request(cJSON *json_root, uint64 send
 
     if (g_clients_array[json_receiver_id->valueint].is_authenticated == TRUE)
     {
-        server_msg__chat__send_poke_to_single_client(&g_clients_array[json_receiver_id->valueint], &g_clients_array[sender_client_id], json_poke_message->valuestring);
+        // The sender needs the poke permission and enough poke power against the receiver's protection.
+        refusal = permissions__contact_refusal(&g_clients_array[sender_client_id], &g_clients_array[json_receiver_id->valueint], PERMISSION_SEND_POKES);
+        if (refusal != NULL_POINTER)
+        {
+            server_msg__administration__send_permission_denied_to_single_client(&g_clients_array[sender_client_id], refusal);
+        }
+        else
+        {
+            server_msg__chat__send_poke_to_single_client(&g_clients_array[json_receiver_id->valueint], &g_clients_array[sender_client_id], json_poke_message->valuestring);
+        }
     }
 
     clib__unlock(&g_clients_global_rwlock_guard);
@@ -580,6 +719,12 @@ void client_msg__chat__process_typing_indicator_request(cJSON *json_root, uint64
     // a channel indicator may only be sent into the channel the sender actually stands in, so nobody
     // can announce itself into a room it is not in
     if (is_direct_message == FALSE && g_clients_array[sender_client_id].channel_id != receiver_id)
+    {
+        goto label_client_msg__process_typing_indicator_request_end;
+    }
+
+    // a client that may not send a direct message to somebody may not announce typing to them either
+    if (is_direct_message == TRUE && (g_server_settings.is_private_messaging_allowed == FALSE || permissions__contact_refusal(&g_clients_array[sender_client_id], &g_clients_array[receiver_id], PERMISSION_SEND_DIRECT_MESSAGES) != NULL_POINTER))
     {
         goto label_client_msg__process_typing_indicator_request_end;
     }
@@ -760,7 +905,7 @@ void client_msg__chat__process_call_idle_client_message(cJSON *json_root, uint64
 
     if (g_server_settings.is_idle_mode_allowed == FALSE || permissions__is_allowed(caller, PERMISSION_CALL_IDLE_CLIENTS) == FALSE)
     {
-        server_msg__administration__send_access_denied_to_single_client(caller, NULL_POINTER);
+        server_msg__administration__send_permission_denied_to_single_client(caller, g_server_settings.is_idle_mode_allowed == TRUE ? permissions__name(PERMISSION_CALL_IDLE_CLIENTS) : NULL_POINTER);
         goto label_client_msg__process_call_idle_client_message_end;
     }
     callee = &g_clients_array[json_callee_client_id->valueint];

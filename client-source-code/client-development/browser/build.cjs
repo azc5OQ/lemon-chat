@@ -31,7 +31,7 @@ function rawElements(html, tag)
     return elements;
 }
 
-function assemble(wasmDirectory = path.join(sourceDirectory, 'wasm'), prebuilt = false)
+function assemble(wasmDirectory = path.join(sourceDirectory, 'wasm'))
 {
     let includes = 0;
     let assemblies = 0;
@@ -44,9 +44,7 @@ function assemble(wasmDirectory = path.join(sourceDirectory, 'wasm'), prebuilt =
         }
         includes++;
         const included = match[1].trim();
-        const file = prebuilt && included === 'scripts/app/audio/opus-runtime.js'
-            ? path.join(wasmDirectory, 'libopus.emscripten.js') : path.join(sourceDirectory, included);
-        return fs.readFileSync(file, 'utf8');
+        return fs.readFileSync(path.join(sourceDirectory, included), 'utf8');
     }).join('\n');
     html = html.replace(/@@WASM:([^@]+)@@/g, (_match, file) =>
     {
@@ -423,7 +421,7 @@ function writeAtomic(file, content)
 
 function options(arguments_)
 {
-    const result = {mode: null, output: null, serverCopy: true, check: false, prebuilt: false, downloads: 'ask'};
+    const result = {mode: null, output: null, serverCopy: true, check: false, downloads: 'ask'};
     const modes = {'--minified': 'minified', '--minify-js': 'minified', '--unminified': 'unminified',
         '--no-optimize': 'unminified', '--no-minify-js': 'assets'};
     for (let index = 0; index < arguments_.length; index++)
@@ -444,10 +442,6 @@ function options(arguments_)
         else if (argument === '--no-server-copy')
         {
             result.serverCopy = false;
-        }
-        else if (argument === '--prebuilt-wasm')
-        {
-            result.prebuilt = true;
         }
         else if (argument === '--download-tools' || argument === '--no-download-tools')
         {
@@ -513,9 +507,8 @@ async function main(arguments_ = process.argv.slice(2))
     if (arguments_.includes('--help'))
     {
         console.log('node build.cjs [--minified | --unminified] [--output file] [--no-server-copy]\n'
-            + '  [--download-tools | --no-download-tools] [--prebuilt-wasm]\n'
-            + 'Normal builds compile and test all four WebAssembly modules before embedding.\n'
-            + '--prebuilt-wasm verifies and uses the checked prebuilt modules explicitly.\n'
+            + '  [--download-tools | --no-download-tools]\n'
+            + 'A build compiles and tests all four WebAssembly modules before embedding.\n'
             + 'node build.cjs --check (syntax only; no compilation or downloads)\nnode build.cjs --check-minifier\n' + installHint);
         return;
     }
@@ -547,11 +540,7 @@ async function main(arguments_ = process.argv.slice(2))
     }
     const webassemblies = require('./client-webassemblies/build.cjs');
     let wasmDirectory = path.join(sourceDirectory, 'wasm');
-    if (settings.prebuilt)
-    {
-        wasmDirectory = webassemblies.backup();
-    }
-    else if (!settings.check)
+    if (!settings.check)
     {
         wasmDirectory = webassemblies.build(await setup.ensureZig(settings.downloads));
     }
@@ -559,7 +548,7 @@ async function main(arguments_ = process.argv.slice(2))
     {
         console.log('\nAssembling client.html and embedding the four WebAssembly modules as Base64.');
     }
-    const assembled = assemble(wasmDirectory, settings.prebuilt);
+    const assembled = assemble(wasmDirectory);
     checkHtml(assembled.html);
     if (settings.check)
     {

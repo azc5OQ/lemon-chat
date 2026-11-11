@@ -9,6 +9,8 @@ void channel__commit_resize(channel_t *replacement, uint64 count);
 
 boole channel__read_required_powers(cJSON *object, channel_t *channel);
 boole channel__write_required_powers(cJSON *object, const channel_t *channel);
+boole channel__has_same_required_powers(const channel_t *first, const channel_t *second);
+void channel__clear_required_powers(channel_t *channel);
 cstring channel__type_change_error(const client_t *actor, const channel_t *channel, boole temporary);
 void channel__set_temporary(client_t *actor, channel_t *channel, boole temporary);
 
@@ -26,7 +28,13 @@ void channel__welcome_client(client_t *client);
 boole channel__find_new_maintainer_for_channel(uint64 *_out__new_index_of_maintainer, uint64 channel_id, uint64 index_of_client_that_left, boole do_not_include_client_that_left_when_searching_for_new_maintainer);
 boole channel__find_voted_maintainer_replacement(uint64 *replacement, channel_t *channel);
 
-void channel__send_hidden_members(client_t *client, channel_t *channel);
+boole channel__are_members_visible(const client_t *viewer, const channel_t *channel);
+boole channel__is_description_visible(const client_t *viewer, const channel_t *channel);
+boole channel__is_client_location_visible(const client_t *viewer, const client_t *subject);
+void channel__remember_sent_view(client_t *client);
+void channel__send_view_changes_to_client(client_t *client);
+void channel__apply_permission_changes(void);
+void channel__send_view_changes_for_channel(const channel_t *previous, channel_t *channel);
 
 void channel__set_maintainer(channel_t *channel, int64 client_id);
 

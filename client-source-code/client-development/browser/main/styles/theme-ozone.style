@@ -418,6 +418,13 @@ html.custom-cursor-off::after
     transition: background-color 180ms ease, box-shadow 180ms ease;
 }
 
+/* The icons of a channel row and of a client row end 8px before the right edge of the row; layout.style reads the value. */
+#channel-list-container,
+#idle-clients-container
+{
+    --tree-row-inset: 8px;
+}
+
 .connected-client:hover,
 .connected-local-client:hover
 {

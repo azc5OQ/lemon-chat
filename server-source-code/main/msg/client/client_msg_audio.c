@@ -348,7 +348,7 @@ void client_msg__audio__process_microphone_usage(cJSON *json_root, uint64 sender
             clib__unlock(&g_channels_global_rwlock_guard);
             if (status == FALSE)
             {
-                server_msg__administration__send_access_denied_to_single_client(client, NULL_POINTER);
+                server_msg__administration__send_permission_denied_to_single_client(client, permissions__power_name(PERMISSION_TALK_POWER));
                 goto label_client_msg__process_microphone_usage_end;
             }
             if (client->audio_state != MICROPHONE_USAGE__ACTIVATE_PUSH_TO_TALK_AND_SEND_AUDIO)

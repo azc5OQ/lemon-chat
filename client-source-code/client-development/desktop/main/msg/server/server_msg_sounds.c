@@ -24,7 +24,7 @@ void server_msg__sounds__receive(desktop_session_t *session, const cJSON *messag
     {
         sound = clib__strcmp(reason, "ban") == 0 ? DESKTOP_SOUND_USER_IN_YOUR_CHANNEL_WAS_BANNED_FROM_THE_SERVER : DESKTOP_SOUND_USER_DISCONNECTED_FROM_YOUR_CHANNEL;
     }
-    else if (clib__strcmp(type, "channel_join") == 0 && client && channel != client->channel)
+    else if (clib__strcmp(type, "channel_join") == 0 && client && channel != client->channel && clib__strcmp(reason, "visibility") != 0)
     {
         if (id == session->model.local_id)
         {

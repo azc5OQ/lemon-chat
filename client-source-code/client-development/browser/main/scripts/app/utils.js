@@ -65,44 +65,113 @@ function utils__sleep(ms)
     return new Promise(resolve => window.setTimeout(resolve, ms));
 }
 
-var utils_log_pending = "";
+// the log entries waiting to be added to the log: { text, kind, time }
+var utils_log_pending = [];
 var utils_log_timer = null;
+
+// the log keeps this many lines; older lines are removed
+var UTILS_LOG_MAX_LINES = 1000;
 
 /**
  * @brief Collects log lines and adds them to the log together every 100 ms.
  * Updating the textarea for every file piece can delay chat and keepalives.
  *
- * @param string text -> the line to log
+ * @param string text -> the line to log; several lines separated by "\n" become several log lines
+ * @param string kind -> "permission_denied" for a request the server refused, shown in red; omitted for an ordinary line
  *
  * @return void
  */
-function utils__custom_log(text)
+function utils__custom_log(text, kind)
 {
-    utils_log_pending += text + "\n";
-    if (utils_log_pending.length > 50000)
+    // queue the line
+    utils_log_pending.push({ text: String(text), kind: (typeof kind === "string") ? kind : "", time: new Date().toLocaleTimeString() });
+
+    // drop oldest lines
+    if (utils_log_pending.length > UTILS_LOG_MAX_LINES)
     {
-        utils_log_pending = utils_log_pending.slice(-25000);
+        utils_log_pending.splice(0, utils_log_pending.length - UTILS_LOG_MAX_LINES);
     }
+
+    // timer already running
     if (utils_log_timer != null)
     {
         return;
     }
+
+    // show lines later
     utils_log_timer = setTimeout(function()
     {
-        let lines = utils_log_pending;
-        utils_log_pending = "";
+        let entries = utils_log_pending;
+        utils_log_pending = [];
         utils_log_timer = null;
         if (g_textarea_log == null)
         {
-            global.postMessage({ type: "log", value: lines });
+            // a worker has no log element: the page adds the lines
+            global.postMessage({ type: "log", value: entries.map(function(entry)
+            {
+                return entry.text;
+            }).join("\n") });
             return;
         }
-        if (g_textarea_log.value.length > 50000)
-        {
-            g_textarea_log.value = g_textarea_log.value.slice(-25000);
-        }
-        g_textarea_log.value += new Date().toLocaleTimeString() + " | " + lines;
+        utils__append_log_entries(entries);
     }, 100);
+}
+
+/**
+ * @brief Adds entries to the log element: one line element per text line, each with its time.
+ * Empty lines are left out. The log scrolls to the new lines when it showed its end before.
+ *
+ * @param array entries -> { text, kind, time } objects collected by utils__custom_log
+ *
+ * @return void
+ */
+function utils__append_log_entries(entries)
+{
+    let is_end_visible = true;
+    let line = null;
+    let texts = null;
+
+    // the node build has no real page: its log element only collects text
+    if (G_HAS_DOM == false)
+    {
+        for (let entry of entries)
+        {
+            g_textarea_log.value = String(g_textarea_log.value || "").slice(-25000) + entry.time + " | " + entry.text + "\n";
+        }
+        return;
+    }
+
+    // remember scroll position
+    is_end_visible = g_textarea_log.scrollTop + g_textarea_log.clientHeight >= g_textarea_log.scrollHeight - 20;
+
+    // add the lines
+    for (let entry of entries)
+    {
+        texts = entry.text.split("\n");
+        for (let i = 0; i < texts.length; i++)
+        {
+            if (texts[i].trim().length == 0)
+            {
+                continue;
+            }
+            line = document.createElement("div");
+            line.className = (entry.kind == "permission_denied") ? "log-line log-line-permission-denied" : "log-line";
+            line.textContent = entry.time + " | " + texts[i];
+            g_textarea_log.appendChild(line);
+        }
+    }
+
+    // remove oldest lines
+    while (g_textarea_log.childElementCount > UTILS_LOG_MAX_LINES)
+    {
+        g_textarea_log.firstElementChild.remove();
+    }
+
+    // keep end visible
+    if (is_end_visible == true)
+    {
+        g_textarea_log.scrollTop = g_textarea_log.scrollHeight;
+    }
 }
 
 /**

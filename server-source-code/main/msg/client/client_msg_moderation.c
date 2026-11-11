@@ -92,7 +92,7 @@ void client_msg__moderation__process_channel_group(cJSON *json_root, uint64 send
     actor = &g_clients_array[sender_client_id];
     if (!base__is_client_valid(sender_client_id) || !g_server_settings.is_permission_system_enabled || !permissions__is_allowed(actor, permission))
     {
-        server_msg__administration__send_access_denied_to_single_client(actor, NULL_POINTER);
+        server_msg__administration__send_permission_denied_to_single_client(actor, g_server_settings.is_permission_system_enabled ? permissions__name(permission) : NULL_POINTER);
         goto end;
     }
     if (!clib__strcmp(action->valuestring, "create"))
@@ -173,6 +173,7 @@ end:
         server_msg__administration__send_permission_updates_to_all_clients();
         audio_channel__apply_permission_changes();
         video_channel__apply_permission_changes();
+        channel__apply_permission_changes();
     }
     clib__unlock(&g_clients_global_rwlock_guard);
 }
@@ -236,7 +237,7 @@ void client_msg__moderation__process_music_control(cJSON *json_root, uint64 send
     bot = &g_clients_array[bot_id];
     if (!permissions__is_allowed(actor, PERMISSION_CONTROL_MUSIC_PLAYBACK))
     {
-        server_msg__administration__send_access_denied_to_single_client(actor, NULL_POINTER);
+        server_msg__administration__send_permission_denied_to_single_client(actor, permissions__name(PERMISSION_CONTROL_MUSIC_PLAYBACK));
     }
     else if (base__is_client_valid_musicbot(bot_id))
     {
@@ -336,6 +337,8 @@ void client_msg__moderation__process_channel_access(cJSON *json_root, uint64 sen
             (cJSON_IsString(identity)) != FALSE &&
             (base__is_client_valid(target_id)) != FALSE &&
             g_clients_array[target_id].channel_id == channel_id &&
+            // without this check the answer would tell a client, who may not see the members of the channel, that the target is in it
+            channel__is_client_location_visible(&g_clients_array[sender_client_id], &g_clients_array[target_id]) == TRUE &&
             !clib__strcmp(g_clients_array[target_id].public_key, identity->valuestring))
         {
             server_msg__moderation__send_client_access(&g_clients_array[sender_client_id], &g_clients_array[target_id], &g_channel_array[channel_id]);
@@ -486,7 +489,6 @@ void client_msg__moderation__process_client_action(cJSON *json_root, uint64 send
                 target->temp_channel_id = 0;
             }
             channel__move_client_into_channel(target_id, destination_id, permission == PERMISSION_KICK_FROM_CHANNEL ? "kick" : "move");
-            channel__send_hidden_members(target, &g_channel_array[destination_id]);
             if (delete_temp)
             {
                 channel__destroy_temp_channel(channel_id);
@@ -521,6 +523,7 @@ end:
     clib__unlock(&g_channels_global_rwlock_guard);
     audio_channel__apply_permission_changes();
     video_channel__apply_permission_changes();
+    channel__apply_permission_changes();
     clib__unlock(&g_clients_global_rwlock_guard);
 }
 
@@ -554,7 +557,7 @@ void client_msg__moderation__process_bans(cJSON *json_root, uint64 sender_client
         token != NULL_POINTER &&
         !permissions__is_allowed(actor, PERMISSION_REMOVE_BANS))
     {
-        server_msg__administration__send_access_denied_to_single_client(actor, NULL_POINTER);
+        server_msg__administration__send_permission_denied_to_single_client(actor, permissions__name(permissions__is_allowed(actor, PERMISSION_VIEW_BANS) ? PERMISSION_REMOVE_BANS : PERMISSION_VIEW_BANS));
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
     }

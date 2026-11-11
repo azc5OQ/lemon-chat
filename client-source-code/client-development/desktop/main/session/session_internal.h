@@ -16,6 +16,7 @@ typedef struct desktop_session_command_t
     boole attach;
     boole join;
     boole direct;
+    boole is_direct_closed;
     boole edit;
     uint64 chat_sequence;
     uint64 connection_serial;

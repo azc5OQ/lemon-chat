@@ -1627,3 +1627,77 @@
 {
     z-index: 150;
 }
+
+/* The local setting "only my channel": the member list shows only the people in the user's channel. */
+div#local-settings-container .local-settings-row-member-list:has(#local-settings-member-list-neighbors)
+{
+    display: flex !important;
+}
+
+body.msgr-neighbors-only #member-list-body .member-list-client:not(.in-current-channel)
+{
+    display: none !important;
+}
+
+/* The "Switch channel" button in the list header. */
+:root #member-list-header > #pocket-channel-switch
+{
+    float: right;
+    min-height: 32px;
+    margin: -5px 0 0 0;
+    padding: 4px 14px;
+    border: 1px solid var(--mono-line);
+    border-radius: 16px;
+    background: transparent;
+    color: var(--mono-text);
+    font: inherit;
+    cursor: pointer;
+}
+
+/* The server settings button is not shown in this theme; the other declarations style it in case it is shown again. */
+:root #communication-system-head-menu > #enter-server-settings
+{
+    display: none !important;
+    position: fixed;
+    inset: calc(12px + env(safe-area-inset-top, 0px)) 108px auto auto;
+    width: 44px;
+    height: 44px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: transparent url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%2319191c%22%20stroke-width%3D%221.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M14.7%206.3a1%201%200%200%200%200%201.4l1.6%201.6a1%201%200%200%200%201.4%200l3.77-3.77a6%206%200%200%201-7.94%207.94l-6.91%206.91a2.12%202.12%200%200%201-3-3l6.91-6.91a6%206%200%200%201%207.94-7.94l-3.76%203.76z%22%2F%3E%3C%2Fsvg%3E") center / 22px no-repeat;
+    color: transparent;
+    font-size: 0;
+    box-shadow: none;
+    z-index: 42;
+    filter: var(--mono-icon-filter);
+}
+
+/* The captions "Settings" and "Voice" of the bottom bar. */
+:root #communication-system-head-menu::after
+{
+    content: "Settings";
+    position: fixed;
+    top: auto;
+    bottom: calc(5px + env(safe-area-inset-bottom, 0px));
+    left: 50%;
+    width: 25%;
+    text-align: center;
+    font: 10px/12px var(--set-font);
+    z-index: 46;
+}
+
+:root body::after
+{
+    content: "Voice";
+    position: fixed;
+    bottom: calc(5px + env(safe-area-inset-bottom, 0px));
+    left: 75%;
+    width: 25%;
+    color: var(--mono-muted);
+    font: 10px/12px var(--set-font);
+    text-align: center;
+    pointer-events: none;
+    z-index: 46;
+}

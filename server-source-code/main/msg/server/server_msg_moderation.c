@@ -120,7 +120,7 @@ void server_msg__moderation__send_channel_group_changed(client_t *subject)
         {
             continue;
         }
-        if (g_server_settings.is_hide_clients_in_password_protected_channels_active && g_channel_array[subject->channel_id].is_using_password && receiver->channel_id != subject->channel_id)
+        if (channel__is_client_location_visible(receiver, subject) == FALSE)
         {
             continue;
         }

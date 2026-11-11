@@ -9,6 +9,12 @@ var SERVER_SETTINGS_FIELDS = [
     { key: "is_client_http_enabled", id: "server-http-enabled", kind: "bool", tab: "general" },
     { key: "is_client_http_blank_when_disabled", id: "server-http-disable-mode", kind: "http-mode", tab: "general" },
     { key: "is_client_config_embedded", id: "server-http-embed", kind: "bool", tab: "general" },
+
+    // start page buttons and default themes of the served page
+    { key: "is_start_page_connect_button_enabled", id: "server-start-page-connect-button", kind: "bool", tab: "general" },
+    { key: "is_start_page_import_identity_button_enabled", id: "server-start-page-import-identity-button", kind: "bool", tab: "general" },
+    { key: "default_theme", id: "server-default-theme", kind: "select", fallback: "", tab: "general" },
+    { key: "default_mobile_theme", id: "server-default-mobile-theme", kind: "select", fallback: "", tab: "general" },
     {
         key: "dh_exchange_count",
         id: "server-encryption-dh_exchange_count",
@@ -364,6 +370,46 @@ function server_settings_tab__show_page(page)
 }
 
 /**
+ * @brief fills the two default theme selects with the themes this page contains, once. the list
+ *        is read from the theme buttons of the local settings, so a theme added to the page shows
+ *        up here without a second list. the first entry (an empty name) leaves the choice to the page
+ *
+ * @return void
+ */
+function server_settings_tab__fill_theme_selects()
+{
+    let desktop_select = document.getElementById("server-default-theme");
+    let mobile_select = document.getElementById("server-default-mobile-theme");
+    let theme_buttons = document.getElementsByClassName("choose-theme-item");
+    let name = "";
+    let label = "";
+
+    // fill only once
+    if (desktop_select == null || mobile_select == null || desktop_select.options.length > 0)
+    {
+        return;
+    }
+
+    // first entry
+    desktop_select.appendChild(new Option("the page's own default", ""));
+    mobile_select.appendChild(new Option("the page's own default", ""));
+
+    // one entry per theme
+    for (let i = 0; i < theme_buttons.length; i++)
+    {
+        name = theme_buttons[i].getAttribute("data-name");
+        label = theme_buttons[i].textContent;
+        desktop_select.appendChild(new Option(label, name));
+
+        // a phone only accepts the themes made for a phone (UI.is_theme_allowed_on_this_device)
+        if (theme_buttons[i].getAttribute("data-mobile") === "true")
+        {
+            mobile_select.appendChild(new Option(label, name));
+        }
+    }
+}
+
+/**
  * @brief fills the tab's inputs from a server_settings_values message; a number the server left out shows its fallback
  *
  * @param object values -> the message body
@@ -376,6 +422,7 @@ function server_settings_tab__apply_server_settings_values_to_tab(values)
     {
         server_info__apply_admin_settings(values);
     }
+    server_settings_tab__fill_theme_selects();
     for (let i = 0; i < SERVER_SETTINGS_FIELDS.length; i++)
     {
         let field = SERVER_SETTINGS_FIELDS[i];

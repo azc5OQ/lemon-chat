@@ -3,7 +3,7 @@
 // at its right end): two buttons, "connections" and "bookmarks", each opening a list below it, like the menus of a
 // desktop program. "connections" opens the connect window (the connection form, which used to be a page of its own;
 // connection.js owns it) or ends the connection; "bookmarks" lists the saved servers, and a click connects to one.
-// the group is hidden on android and in the two member list themes (simpledark, bluebell), which keep the connect
+// the group is hidden on android and in the member list theme bluebell, which keeps the connect
 // form as a page of its own; the stylesheets do that hiding
 // main.js calls head_menu__init once the page exists; connection.js asks for a repaint of the bookmarks list
 

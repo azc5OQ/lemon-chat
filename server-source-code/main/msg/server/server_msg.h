@@ -25,7 +25,8 @@ void server_msg__channel__send_maintainer_id_to_single_client(client_t *receiver
 void server_msg__channel__send_create_message_to_all_clients(channel_t *channel, client_t *creator);
 void server_msg__channel__send_edit_message_to_all_clients(channel_t *channel, client_t *editor);
 void server_msg__channel__send_join_message_to_all_clients(client_t *subject, channel_t *new_channel, const char *reason);
-void server_msg__channel__send_join_message_to_single_client(client_t *receiver, client_t *subject, channel_t *new_channel);
+void server_msg__channel__send_join_message_to_single_client(client_t *receiver, client_t *subject, channel_t *new_channel, boole is_channel_visible);
+void server_msg__channel__send_description_to_single_client(client_t *receiver, channel_t *channel, boole is_visible);
 void server_msg__channel__send_maintainer_id_to_clients_in_same_channel(channel_t *channel, uint64 maintainer_id);
 void server_msg__channel__send_delete_message_to_all_clients(uint64 deleted_channel_id, uint64 channel_deletor_id);
 void server_msg__channel__send_icon_changed_event_to_all_clients(uint64 channel_id, boole has_channel_icon, uint64 icon_id);
@@ -34,7 +35,7 @@ void server_msg__channel__send_client_going_to_idle_mode_info_to_all_clients(cli
 void server_msg__channel__send_client_coming_back_from_idle_mode_info_to_all_clients(client_t *subject, uint64 channel_the_client_joins);
 
 void server_msg__chat__send_server_chat_message_id_for_local_chat_message_id_to_single_client(client_t *receiver, uint64 chat_message_id, uint64 local_message_id);
-void server_msg__chat__send_message_to_single_client(client_t *receiver, client_t *sender, uint64 server_chat_message_id, char *chat_message_value);
+void server_msg__chat__send_message_to_single_client(client_t *receiver, client_t *sender, uint64 server_chat_message_id, char *chat_message_value, cstring purpose);
 void server_msg__chat__send_message_to_clients_in_same_channel(client_t *sender, uint64 channel_id, uint64 server_chat_message_id, char *chat_message_value);
 void server_msg__chat__send_message_action_to_single_client(client_t *receiver, char *action_type, uint64 target_chat_message_id, char *requester_public_key, boole requester_is_admin, char *new_message_value);
 void server_msg__chat__send_message_action_to_clients_in_same_channel(uint64 receiving_channel_id, char *action_type, uint64 target_chat_message_id, char *requester_public_key, boole requester_is_admin, char *new_message_value);
@@ -82,6 +83,7 @@ void server_msg__administration__send_admin_status_to_single_client(client_t *re
 void server_msg__administration__send_identity_list_to_single_client(client_t *receiver);
 void server_msg__administration__send_force_admin_password_change_to_single_client(client_t *receiver);
 void server_msg__administration__send_access_denied_to_single_client(client_t *receiver, const char *reason);
+void server_msg__administration__send_permission_denied_to_single_client(client_t *receiver, cstring permission);
 void server_msg__administration__send_admin_log_to_single_client(client_t *receiver);
 void server_msg__administration__send_add_group_to_client_event_to_all_clients(client_t *subject, uint64 group_id);
 void server_msg__administration__send_remove_group_from_client_event_to_all_clients(client_t *subject, uint64 group_id);

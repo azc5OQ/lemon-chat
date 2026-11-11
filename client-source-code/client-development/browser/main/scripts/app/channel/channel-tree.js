@@ -85,6 +85,9 @@ var PREFETCH_AVATARS_AUTOMATICALLY = true;
 
 var AVATAR_PREFETCH_INTERVAL_MS = 300;
 
+// true once the two controls of the country flag setting have their change listeners
+var is_flag_preference_listener_added = false;
+
 // ---- lookups and the client row ----
 
 /**
@@ -907,7 +910,7 @@ function channel_tree__start_avatar_prefetch()
 {
     if (PREFETCH_AVATARS_AUTOMATICALLY == false || g_server_policy.is_avatar_upload_allowed == false) { return; }
 
-    // the member list themes (simpledark/bluebell) show everybody at once and already bulk-load
+    // the member list theme (bluebell) shows everybody at once and already bulk-loads
     // through channel_tree__enqueue_all_avatars_for_loading; prefetching on top would double the requests
     if (g_avatar.grid_visible == true) { return; }
 
@@ -997,20 +1000,102 @@ function channel_tree__pump_avatar_load_queue(chunk_size)
 }
 
 /**
- * @brief Restores the local choice to hide server icons and connects its checkbox.
+ * @brief Restores the three local choices that each hide one kind of icon in the channel list
+ *        (server group icons, channel group icons, channel icons) and connects their checkboxes.
+ *        One name is used for the checkbox, the stored value and the class set on the body.
+ *        main.js calls this once at start; the country flag choice is restored from here too.
+ *
+ * @return void
  */
 function channel_tree__setup_icon_preference()
 {
+    // only with a page
     if (!G_HAS_DOM)
     {
         return;
     }
-    let checkbox = document.getElementById("local-settings-hide-server-icons");
-    checkbox.checked = utils__storage_get("lemon_hide_server_icons") === "1";
-    document.body.classList.toggle("hide-server-icons-in-channel-list", checkbox.checked);
-    checkbox.onchange = function()
+
+    // each icon setting
+    for (let name of ["server-group-icons", "channel-group-icons", "channel-icons"])
     {
-        utils__storage_set("lemon_hide_server_icons", checkbox.checked ? "1" : "0");
-        document.body.classList.toggle("hide-server-icons-in-channel-list", checkbox.checked);
+        let checkbox = document.getElementById("local-settings-hide-" + name);
+        let storage_key = "lemon_hide_" + name.replaceAll("-", "_");
+        let body_class = "hide-" + name + "-in-channel-list";
+
+        // restore saved value
+        checkbox.checked = utils__storage_get(storage_key) === "1";
+        document.body.classList.toggle(body_class, checkbox.checked);
+
+        // save on change
+        checkbox.onchange = function()
+        {
+            utils__storage_set(storage_key, checkbox.checked ? "1" : "0");
+            document.body.classList.toggle(body_class, checkbox.checked);
+        };
+    }
+
+    // flag setting
+    channel_tree__setup_flag_preference();
+}
+
+/**
+ * @brief Adds or removes the body class that hides every country flag, from g_show_hide_toggle (true = the flags are hidden).
+ *        The class is on the body, so it also applies to the rows that are created later.
+ *
+ * @param boolean is_saved -> true also writes the choice to localStorage
+ *
+ * @return void
+ */
+function channel_tree__apply_flag_preference(is_saved)
+{
+    document.body.classList.toggle("hide-country-flags", g_show_hide_toggle == true);
+    if (is_saved == true)
+    {
+        utils__storage_set("lemon_show_flags", g_show_hide_toggle == true ? "0" : "1");
+    }
+}
+
+/**
+ * @brief Restores the local choice to show or hide country flags and follows the two controls that change it.
+ *        The checkbox in the local settings and the button in the head menu both call
+ *        UI.hide_show_flags_button_onclick (ui.js), which changes g_show_hide_toggle.
+ *
+ * @return void
+ */
+function channel_tree__setup_flag_preference()
+{
+    let checkbox = document.getElementById("local-settings-country-flags");
+    let button = document.getElementById("hide-show-flags-button");
+    let follow_change = function()
+    {
+        // the timer runs after every handler of the event, so g_show_hide_toggle already has its new value
+        setTimeout(function() { channel_tree__apply_flag_preference(true); }, 0);
     };
+
+    // restore saved setting
+    g_show_hide_toggle = utils__storage_get("lemon_show_flags") === "0";
+    channel_tree__apply_flag_preference(false);
+    if (checkbox != null)
+    {
+        checkbox.checked = (g_show_hide_toggle == false);
+    }
+
+    // add listeners once
+    if (is_flag_preference_listener_added == true)
+    {
+        return;
+    }
+    is_flag_preference_listener_added = true;
+
+    // connect the checkbox
+    if (checkbox != null)
+    {
+        checkbox.addEventListener("change", follow_change);
+    }
+
+    // connect the button
+    if (button != null)
+    {
+        button.addEventListener("click", follow_change);
+    }
 }

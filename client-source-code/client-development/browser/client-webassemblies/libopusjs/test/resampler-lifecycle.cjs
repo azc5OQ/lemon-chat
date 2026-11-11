@@ -2,16 +2,13 @@ const assert = require('node:assert/strict');
 const vm = require('node:vm');
 
 // Native handles need separate tracking: native Speex allocations bypass Module._malloc.
-function checkResampler(context, legacy = false)
+function checkResampler(context)
 {
-    const Resampler = legacy ? context.SpeexResampler : vm.runInContext('SpeexResampler', context);
+    const Resampler = vm.runInContext('SpeexResampler', context);
     const module = context.Module;
     const malloc = module._malloc;
     const free = module._free;
     const runtimeCall = context.opus_runtime__call;
-    const init = context._speex_resampler_init;
-    const destroy = context._speex_resampler_destroy;
-    const process = context._speex_resampler_process_interleaved_float;
     const buffers = new Map();
     const handles = new Set();
     let failAt = 0;
@@ -23,10 +20,6 @@ function checkResampler(context, legacy = false)
         allocationCalls++;
         if (failAt !== 0 && allocationCalls === failAt)
         {
-            if (legacy)
-            {
-                return 0;
-            }
             throw new Error('Injected resampler allocation failure');
         }
         const pointer = malloc(size);
@@ -68,28 +61,10 @@ function checkResampler(context, legacy = false)
         return result;
     }
 
-    if (legacy)
+    context.opus_runtime__call = function(name, args)
     {
-        context._speex_resampler_init = function(...args)
-        {
-            return observe('speex_resampler_init', args, () => init(...args));
-        };
-        context._speex_resampler_destroy = function(...args)
-        {
-            return observe('speex_resampler_destroy', args, () => destroy(...args));
-        };
-        context._speex_resampler_process_interleaved_float = function(...args)
-        {
-            return observe('speex_resampler_process_interleaved_float', args, () => process(...args));
-        };
-    }
-    else
-    {
-        context.opus_runtime__call = function(name, args)
-        {
-            return observe(name, args, () => runtimeCall(name, args));
-        };
-    }
+        return observe(name, args, () => runtimeCall(name, args));
+    };
 
     function empty(label)
     {
@@ -160,19 +135,9 @@ function checkResampler(context, legacy = false)
     {
         module._malloc = malloc;
         module._free = free;
-        if (legacy)
-        {
-            context._speex_resampler_init = init;
-            context._speex_resampler_destroy = destroy;
-            context._speex_resampler_process_interleaved_float = process;
-        }
-        else
-        {
-            context.opus_runtime__call = runtimeCall;
-        }
+        context.opus_runtime__call = runtimeCall;
     }
-    console.log('PASS: ' + (legacy ? 'prebuilt' : 'current')
-        + ' Speex native handles, constructor failures, input/output growth failure retries and double destroy.');
+    console.log('PASS: Speex native handles, constructor failures, input/output growth failure retries and double destroy.');
 }
 
 module.exports = {checkResampler};

@@ -55,6 +55,50 @@ boole identity_store__is_public_key_present_in_client_stored_data(char *public_k
 }
 
 /**
+ * @brief Copies the username that was saved with an identity when it was last connected.
+ *
+ * @param const char* public_key -> the public key of the client that is logging in
+ * @param char* out_username -> receives the saved username
+ * @param uint64 out_username_size -> size of out_username in bytes
+ *
+ * @return boole -> TRUE when the identity is saved and has a username; FALSE otherwise, out_username is then empty
+ */
+boole identity_store__read_identity_username(const char *public_key, char *out_username, uint64 out_username_size)
+{
+    char identity_hash[BASE64_ENCODE_OUT_SIZE(32)] = { 0 };
+    uint64 i = 0;
+    boole is_found = FALSE;
+
+    // Check arguments.
+    if (public_key == NULL_POINTER || public_key[0] == 0 || out_username == NULL_POINTER || out_username_size == 0)
+    {
+        return FALSE;
+    }
+
+    // Hash the key.
+    out_username[0] = 0;
+    util__hash_password_to_base64(public_key, identity_hash, sizeof(identity_hash));
+
+    // Find the identity.
+    pthread_mutex_lock(&g_client_stored_data_mutex);
+    for (i = 0; i < MAX_CLIENT_STORED_DATA; i++)
+    {
+        if (clib__is_string_equal(g_client_stored_data[i].public_key, identity_hash) == TRUE)
+        {
+            if (g_client_stored_data[i].username[0] != 0)
+            {
+                clib__string_copy(out_username, out_username_size, g_client_stored_data[i].username);
+                is_found = TRUE;
+            }
+            break;
+        }
+    }
+    pthread_mutex_unlock(&g_client_stored_data_mutex);
+
+    return is_found;
+}
+
+/**
  * @brief Restores a client's saved groups using the hash of its public key. Restoring the admin
  *        group also restores admin access.
  *
@@ -317,7 +361,9 @@ void identity_store__sync_client_identity_in_store(client_t *client)
     clib__null_memory(&g_client_stored_data[slot].username[0], USERNAME_MAX_LENGTH);
     clib__null_memory(&g_client_stored_data[slot].group_ids[0], sizeof(g_client_stored_data[slot].group_ids));
     clib__string_copy(g_client_stored_data[slot].public_key, sizeof(g_client_stored_data[slot].public_key), identity_hash);
-    clib__string_copy(g_client_stored_data[slot].username, sizeof(g_client_stored_data[slot].username), client->username); // remember the last-seen username for the admin ui
+
+    // Save the username without the letter that is added while another client uses the name.
+    clib__string_copy(g_client_stored_data[slot].username, sizeof(g_client_stored_data[slot].username), client->preferred_username[0] != 0 ? client->preferred_username : client->username);
 
     g_client_stored_data[slot].group_id_count = 0;
     for (t = 0; t < cvector_size(client->group_ids) && g_client_stored_data[slot].group_id_count < MAX_GROUPS_FOR_SINGLE_CLIENT; t++)

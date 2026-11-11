@@ -18,6 +18,7 @@ boole client_msg__connection__send_challenge_response(desktop_session_t *session
 boole client_msg__connection__send_keepalive(desktop_session_t *session);
 void client_msg__chat__send_channel_message(desktop_session_t *session, int64 channel, const char *text, const desktop_chat_format_t *format);
 void client_msg__chat__send_direct_message(desktop_session_t *session, int64 peer, uint64 serial, const char *text, const desktop_chat_format_t *format);
+void client_msg__chat__send_direct_closed_notice(desktop_session_t *session, int64 peer, uint64 serial);
 void client_msg__chat__send_edit(desktop_session_t *session, uint64 sequence, uint64 connection_serial, const char *text);
 void client_msg__dispatch_command(desktop_session_t *session);
 void client_msg__actions__send(desktop_session_t *session, const desktop_action_t *action);
