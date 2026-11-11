@@ -60,32 +60,39 @@ static httpclient_error_t _httpclient_internal__wait(https_connection_t *connect
     uint64 remaining = 0;
     uint64 wait_ms = 0;
     int64 result = 0;
-    int socket_error = 0; // getsockopt writes an int.
-    int size = sizeof(socket_error); // getsockopt requires int*.
+    int socket_error = 0; // getsockopt writes an int
+    int size = sizeof(socket_error); // getsockopt requires int*
 
+    // repeat until an event
     for (;;)
     {
-        // Check shared deadline
+        // check shared deadline
         now = GetTickCount64();
         if (now >= connection->deadline)
         {
             return HTTPCLIENT_TIMEOUT;
         }
+
+        // set the wait time
         remaining = connection->deadline - now;
         wait_ms = remaining > INT_MAX ? INT_MAX : remaining;
         timeout.tv_sec = (long)(wait_ms / 1000);
         timeout.tv_usec = (long)((wait_ms % 1000) * 1000);
 
-        // Prepare socket wait
+        // prepare socket wait
         FD_ZERO(&ready);
         FD_ZERO(&failed);
         FD_SET(connection->socket, &ready);
         FD_SET(connection->socket, &failed);
+
+        // wait for the socket
         result = select(0, writing ? NULL : &ready, writing ? &ready : NULL, &failed, &timeout);
         if (result == 0)
         {
             continue;
         }
+
+        // report socket error
         if (result == SOCKET_ERROR || FD_ISSET(connection->socket, &failed))
         {
             socket_error = WSAGetLastError();
@@ -117,19 +124,23 @@ static httpclient_error_t _httpclient_internal__send(https_connection_t *connect
     int64 native = 0;
     httpclient_error_t error = HTTPCLIENT_OK;
 
+    // send all bytes
     while (position < size)
     {
+        // wait for the socket
         error = _httpclient_internal__wait(connection, 1);
         if (error != HTTPCLIENT_OK)
         {
             return error;
         }
 
-        // Limit socket chunk
+        // limit socket chunk
         amount = size - position > INT_MAX ? INT_MAX : size - position;
+
+        // send the bytes
         result = send(connection->socket, (const char *)data + position, (int)amount, 0);
 
-        // Handle socket errors
+        // handle socket errors
         if (result <= 0)
         {
             native = result < 0 ? WSAGetLastError() : WSAECONNRESET;
@@ -140,6 +151,8 @@ static httpclient_error_t _httpclient_internal__send(https_connection_t *connect
             connection->response->native_error = (uint)native;
             return HTTPCLIENT_SOCKET;
         }
+
+        // count sent bytes
         position += (uint64)result;
     }
     return HTTPCLIENT_OK;
@@ -160,22 +173,26 @@ static httpclient_error_t _httpclient_internal__receive(https_connection_t *conn
     int64 native = 0;
     httpclient_error_t error = HTTPCLIENT_OK;
 
+    // clear the eof flag
     *eof = 0;
 
-    // Check receive capacity
+    // check receive capacity
     if (connection->used == TLS_BUFFER_LIMIT)
     {
         return HTTPCLIENT_LIMIT;
     }
+
+    // repeat until data arrives
     for (;;)
     {
+        // wait for the socket
         error = _httpclient_internal__wait(connection, 0);
         if (error != HTTPCLIENT_OK)
         {
             return error;
         }
 
-        // Append received bytes
+        // append received bytes
         received = recv(connection->socket, (char *)connection->encrypted + connection->used, (int)(TLS_BUFFER_LIMIT - connection->used), 0);
         if (received >= 0)
         {
@@ -183,6 +200,8 @@ static httpclient_error_t _httpclient_internal__receive(https_connection_t *conn
             connection->used += (uint64)received;
             return HTTPCLIENT_OK;
         }
+
+        // report socket error
         native = WSAGetLastError();
         if (native != WSAEWOULDBLOCK)
         {
@@ -212,7 +231,7 @@ static httpclient_error_t _httpclient_internal__handshake(https_connection_t *co
     TimeStamp expiry;
     int64 status = SEC_E_OK;
     int64 completed = SEC_E_OK;
-    ULONG attributes = 0; // Schannel writes a ULONG.
+    ULONG attributes = 0; // Schannel writes a ULONG
     uint64 flags = ISC_REQ_ALLOCATE_MEMORY | ISC_REQ_CONFIDENTIALITY | ISC_REQ_REPLAY_DETECT | ISC_REQ_SEQUENCE_DETECT | ISC_REQ_STREAM | ISC_REQ_EXTENDED_ERROR | ISC_REQ_USE_SUPPLIED_CREDS;
     uint64 extra = 0;
     uint64 index = 0;
@@ -221,14 +240,16 @@ static httpclient_error_t _httpclient_internal__handshake(https_connection_t *co
     boole need_more = 0;
     httpclient_error_t error = HTTPCLIENT_OK;
 
+    // repeat until handshake ends
     for (;;)
     {
+        // check the deadline
         if (GetTickCount64() >= connection->deadline)
         {
             return HTTPCLIENT_TIMEOUT;
         }
 
-        // Read handshake bytes
+        // read handshake bytes
         if (need_more)
         {
             error = _httpclient_internal__receive(connection, &eof);
@@ -238,7 +259,7 @@ static httpclient_error_t _httpclient_internal__handshake(https_connection_t *co
             }
         }
 
-        // Prepare TLS buffers
+        // prepare TLS buffers
         clib__memset(input, 0, sizeof(input));
         clib__memset(output, 0, sizeof(output));
         input[0].BufferType = SECBUFFER_TOKEN;
@@ -254,10 +275,12 @@ static httpclient_error_t _httpclient_internal__handshake(https_connection_t *co
         outgoing.cBuffers = 2;
         outgoing.pBuffers = output;
 
-        // Continue TLS handshake
+        // continue TLS handshake
         status = InitializeSecurityContextW(&connection->credential, first ? NULL : &connection->context, connection->hostname, (ULONG)flags, 0, 0, first ? NULL : &incoming, 0, &connection->context, &outgoing, &attributes, &expiry);
         connection->has_context = (boole)SecIsValidHandle(&connection->context);
         first = 0;
+
+        // complete the token
         if (status == SEC_I_COMPLETE_NEEDED || status == SEC_I_COMPLETE_AND_CONTINUE)
         {
             completed = CompleteAuthToken(&connection->context, &outgoing);
@@ -271,13 +294,13 @@ static httpclient_error_t _httpclient_internal__handshake(https_connection_t *co
             }
         }
 
-        // A successful final handshake can still have a token that must be sent.
+        // a successful final handshake can still have a token that must be sent
         if (output[0].cbBuffer != 0 && output[0].pvBuffer != NULL)
         {
             error = _httpclient_internal__send(connection, output[0].pvBuffer, output[0].cbBuffer);
         }
 
-        // Release TLS output
+        // release TLS output
         for (index = 0; index < 2; index++)
         {
             if (output[index].pvBuffer != NULL)
@@ -285,22 +308,28 @@ static httpclient_error_t _httpclient_internal__handshake(https_connection_t *co
                 FreeContextBuffer(output[index].pvBuffer);
             }
         }
+
+        // report send failure
         if (error != HTTPCLIENT_OK)
         {
             return error;
         }
+
+        // more bytes are needed
         if (status == SEC_E_INCOMPLETE_MESSAGE)
         {
             need_more = 1;
             continue;
         }
+
+        // report the TLS error
         if (status != SEC_E_OK && status != SEC_I_CONTINUE_NEEDED)
         {
             connection->response->native_error = (uint)status;
             return status == SEC_I_INCOMPLETE_CREDENTIALS ? HTTPCLIENT_UNSUPPORTED : HTTPCLIENT_TLS;
         }
 
-        // Keep unread bytes
+        // keep unread bytes
         extra = input[1].BufferType == SECBUFFER_EXTRA ? input[1].cbBuffer : 0;
         if (extra > connection->used)
         {
@@ -311,14 +340,17 @@ static httpclient_error_t _httpclient_internal__handshake(https_connection_t *co
             clib__memmove(connection->encrypted, connection->encrypted + connection->used - extra, extra);
         }
         connection->used = extra;
+
+        // handshake is complete
         if (status == SEC_E_OK)
         {
+            // check connection attributes
             if ((attributes & (ISC_RET_CONFIDENTIALITY | ISC_RET_STREAM)) != (ISC_RET_CONFIDENTIALITY | ISC_RET_STREAM))
             {
                 return HTTPCLIENT_TLS;
             }
 
-            // Read connection settings
+            // read connection settings
             status = QueryContextAttributesW(&connection->context, SECPKG_ATTR_STREAM_SIZES, &connection->sizes);
             if (status == SEC_E_OK)
             {
@@ -329,15 +361,19 @@ static httpclient_error_t _httpclient_internal__handshake(https_connection_t *co
                 connection->response->native_error = (uint)status;
                 return HTTPCLIENT_TLS;
             }
+
+            // store TLS version
             connection->response->tls_protocol = information.dwProtocol;
 
-            // Check negotiated limits
+            // check negotiated limits
             if ((information.dwProtocol & (SP_PROT_TLS1_2_CLIENT | SP_PROT_TLS1_3_CLIENT)) == 0 || connection->sizes.cbMaximumMessage == 0 || connection->sizes.cbMaximumMessage > TLS_BUFFER_LIMIT || connection->sizes.cbHeader > TLS_BUFFER_LIMIT || connection->sizes.cbTrailer > TLS_BUFFER_LIMIT)
             {
                 return HTTPCLIENT_TLS;
             }
             return HTTPCLIENT_OK;
         }
+
+        // read more when empty
         need_more = extra == 0;
     }
 }
@@ -363,7 +399,7 @@ static httpclient_error_t _httpclient_internal__encrypt(https_connection_t *conn
     uint64 capacity = 0;
     httpclient_error_t error = HTTPCLIENT_OK;
 
-    // Allocate TLS record
+    // allocate TLS record
     capacity = (uint64)connection->sizes.cbHeader + connection->sizes.cbMaximumMessage + connection->sizes.cbTrailer;
     if (capacity > SIZE_MAX)
     {
@@ -374,16 +410,18 @@ static httpclient_error_t _httpclient_internal__encrypt(https_connection_t *conn
     {
         return HTTPCLIENT_MEMORY;
     }
+
+    // repeat for each record
     while (position < size && error == HTTPCLIENT_OK)
     {
-        // Split request bytes
+        // split request bytes
         amount = size - position;
         if (amount > connection->sizes.cbMaximumMessage)
         {
             amount = connection->sizes.cbMaximumMessage;
         }
 
-        // Prepare TLS record
+        // prepare TLS record
         clib__memset(buffers, 0, sizeof(buffers));
         buffers[0].BufferType = SECBUFFER_STREAM_HEADER;
         buffers[0].pvBuffer = record;
@@ -395,12 +433,16 @@ static httpclient_error_t _httpclient_internal__encrypt(https_connection_t *conn
         buffers[2].pvBuffer = record + connection->sizes.cbHeader + amount;
         buffers[2].cbBuffer = connection->sizes.cbTrailer;
         buffers[3].BufferType = SECBUFFER_EMPTY;
+
+        // copy request bytes
         clib__memcpy(buffers[1].pvBuffer, (const ubyte *)data + position, amount);
+
+        // fill buffer description
         message.ulVersion = SECBUFFER_VERSION;
         message.cBuffers = 4;
         message.pBuffers = buffers;
 
-        // Encrypt request bytes
+        // encrypt request bytes
         status = EncryptMessage(&connection->context, 0, &message, 0);
         if (status != SEC_E_OK)
         {
@@ -409,13 +451,17 @@ static httpclient_error_t _httpclient_internal__encrypt(https_connection_t *conn
             break;
         }
 
-        // Send encrypted record
+        // send encrypted record
         for (index = 0; index < 3 && error == HTTPCLIENT_OK; index++)
         {
             error = _httpclient_internal__send(connection, buffers[index].pvBuffer, buffers[index].cbBuffer);
         }
+
+        // count sent bytes
         position += amount;
     }
+
+    // free the record
     free(record);
     return error;
 }
@@ -442,16 +488,20 @@ static httpclient_error_t _httpclient_internal__read(https_connection_t *connect
     boole need_more = 0;
     httpclient_error_t error = HTTPCLIENT_OK;
 
+    // set starting values
     *closed = 0;
     need_more = connection->used == 0;
+
+    // repeat for incomplete records
     for (;;)
     {
+        // check the deadline
         if (GetTickCount64() >= connection->deadline)
         {
             return HTTPCLIENT_TIMEOUT;
         }
 
-        // Read encrypted bytes
+        // read encrypted bytes
         if (need_more)
         {
             error = _httpclient_internal__receive(connection, &eof);
@@ -461,7 +511,7 @@ static httpclient_error_t _httpclient_internal__read(https_connection_t *connect
             }
         }
 
-        // Prepare TLS buffers
+        // prepare TLS buffers
         clib__memset(buffers, 0, sizeof(buffers));
         buffers[0].BufferType = SECBUFFER_DATA;
         buffers[0].pvBuffer = connection->encrypted;
@@ -470,29 +520,31 @@ static httpclient_error_t _httpclient_internal__read(https_connection_t *connect
         message.cBuffers = 4;
         message.pBuffers = buffers;
 
-        // Decrypt response bytes
+        // decrypt response bytes
         status = DecryptMessage(&connection->context, &message, 0, NULL);
 
-        // Await complete record
+        // await complete record
         if (status == SEC_E_INCOMPLETE_MESSAGE)
         {
             need_more = 1;
             continue;
         }
+
+        // report the TLS error
         if (status != SEC_E_OK && status != SEC_I_CONTEXT_EXPIRED && status != SEC_I_RENEGOTIATE)
         {
             connection->response->native_error = (uint)status;
             return HTTPCLIENT_TLS;
         }
 
-        // A shutdown/control status does not promise application plaintext in the input DATA slot.
+        // a shutdown/control status does not promise application plaintext in the input DATA slot
         if (status == SEC_I_CONTEXT_EXPIRED)
         {
             *closed = 1;
             return HTTPCLIENT_OK;
         }
 
-        // Parse decrypted bytes
+        // parse decrypted bytes
         extra = 0;
         for (index = 0; index < 4; index++)
         {
@@ -514,7 +566,7 @@ static httpclient_error_t _httpclient_internal__read(https_connection_t *connect
             }
         }
 
-        // Keep unread bytes
+        // keep unread bytes
         if (extra > connection->used)
         {
             return HTTPCLIENT_TLS;
@@ -524,9 +576,11 @@ static httpclient_error_t _httpclient_internal__read(https_connection_t *connect
             clib__memmove(connection->encrypted, connection->encrypted + connection->used - extra, extra);
         }
         connection->used = extra;
+
+        // continue the handshake
         if (status == SEC_I_RENEGOTIATE)
         {
-            // TLS 1.3 post-handshake messages also use this Schannel status.
+            // TLS 1.3 post-handshake messages also use this Schannel status
             return _httpclient_internal__handshake(connection, 0);
         }
         return HTTPCLIENT_OK;
@@ -549,13 +603,13 @@ static httpclient_error_t _httpclient_internal__connect(https_connection_t *conn
     ADDRINFOA hints;
     ADDRINFOA *addresses = NULL_POINTER;
     ADDRINFOA *current = NULL_POINTER;
-    ULONG nonblocking = 1; // ioctlsocket requires ULONG*.
-    int native = 0; // getsockopt writes an int.
+    ULONG nonblocking = 1; // ioctlsocket requires ULONG*
+    int native = 0; // getsockopt writes an int
     int64 result = 0;
-    int size = 0; // getsockopt requires int*.
+    int size = 0; // getsockopt requires int*
     httpclient_error_t error = HTTPCLIENT_SOCKET;
 
-    // Resolve website address
+    // resolve website address
     clib__memset(&hints, 0, sizeof(hints));
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
@@ -567,7 +621,7 @@ static httpclient_error_t _httpclient_internal__connect(https_connection_t *conn
         return HTTPCLIENT_DNS;
     }
 
-    // Set shared deadline
+    // set shared deadline
     now = GetTickCount64();
     if (timeout > UINT64_MAX - now)
     {
@@ -576,13 +630,16 @@ static httpclient_error_t _httpclient_internal__connect(https_connection_t *conn
     }
     connection->deadline = now + timeout;
 
-    // Try allowed addresses
+    // try allowed addresses
     for (current = addresses; current != NULL; current = current->ai_next)
     {
+        // skip addresses not allowed
         if (connection->public_addresses_only && !httpclient_internal__address_allowed(current->ai_addr))
         {
             continue;
         }
+
+        // create the socket
         connection->socket = socket(current->ai_family, current->ai_socktype, current->ai_protocol);
         if (connection->socket == INVALID_SOCKET)
         {
@@ -590,20 +647,24 @@ static httpclient_error_t _httpclient_internal__connect(https_connection_t *conn
             continue;
         }
 
-        // Enable nonblocking socket
+        // enable nonblocking socket
         result = ioctlsocket(connection->socket, FIONBIO, &nonblocking);
+
+        // connect the socket
         if (result == 0)
         {
             result = connect(connection->socket, current->ai_addr, (int)current->ai_addrlen);
         }
         native = result == 0 ? 0 : WSAGetLastError();
         error = result == 0 ? HTTPCLIENT_OK : HTTPCLIENT_SOCKET;
+
+        // wait for the connection
         if (native == WSAEWOULDBLOCK)
         {
             error = _httpclient_internal__wait(connection, 1);
             if (error == HTTPCLIENT_OK)
             {
-                // Check completed connection
+                // check completed connection
                 size = sizeof(native);
                 result = getsockopt(connection->socket, SOL_SOCKET, SO_ERROR, (char *)&native, &size);
                 if (result != 0 || native != 0)
@@ -613,24 +674,32 @@ static httpclient_error_t _httpclient_internal__connect(https_connection_t *conn
                 }
             }
         }
+
+        // stop when connected
         if (error == HTTPCLIENT_OK)
         {
             connection->response->native_error = 0;
             break;
         }
+
+        // store the socket error
         if (native != 0 && native != WSAEWOULDBLOCK)
         {
             connection->response->native_error = (uint)native;
         }
 
-        // Discard failed socket
+        // discard failed socket
         closesocket(connection->socket);
         connection->socket = INVALID_SOCKET;
+
+        // stop after timeout
         if (error == HTTPCLIENT_TIMEOUT)
         {
             break;
         }
     }
+
+    // free the addresses
     freeaddrinfo(addresses);
     return error;
 }
@@ -644,12 +713,13 @@ static httpclient_error_t _httpclient_internal__connect(https_connection_t *conn
  */
 void httpclient_transport__close(https_connection_t *connection)
 {
+    // nothing to close
     if (connection == NULL)
     {
         return;
     }
 
-    // Release TLS handles
+    // release TLS handles
     if (connection->has_context)
     {
         DeleteSecurityContext(&connection->context);
@@ -659,15 +729,19 @@ void httpclient_transport__close(https_connection_t *connection)
         FreeCredentialsHandle(&connection->credential);
     }
 
-    // Close Windows socket
+    // close Windows socket
     if (connection->socket != INVALID_SOCKET)
     {
         closesocket(connection->socket);
     }
+
+    // stop Windows sockets
     if (connection->winsock_started)
     {
         WSACleanup();
     }
+
+    // free the connection
     free(connection);
 }
 
@@ -695,18 +769,20 @@ httpclient_error_t httpclient_transport__open(const httpclient_request_t *reques
     int64 result;
     https_connection_t *connection = calloc(1, sizeof(*connection));
 
-    // Keep cleanup handle
+    // keep cleanup handle
     *output = connection;
     if (connection == NULL)
     {
         return HTTPCLIENT_MEMORY;
     }
+
+    // set connection fields
     connection->socket = INVALID_SOCKET;
     connection->response = response;
     connection->is_https = (boole)url->is_https;
     connection->public_addresses_only = (boole)request->public_addresses_only;
 
-    // Start Windows sockets
+    // start Windows sockets
     result = WSAStartup(MAKEWORD(2, 2), &winsock);
     if (result != 0)
     {
@@ -714,25 +790,32 @@ httpclient_error_t httpclient_transport__open(const httpclient_request_t *reques
         return HTTPCLIENT_SOCKET;
     }
     connection->winsock_started = 1;
+
+    // prepare for HTTPS
     if (connection->is_https)
     {
+        // mark handles invalid
         SecInvalidateHandle(&connection->credential);
         SecInvalidateHandle(&connection->context);
+
+        // copy the hostname
         for (index = 0; url->host[index] != 0; index++)
         {
             connection->hostname[index] = (WCHAR)(ubyte)url->host[index];
         }
 
-        // Prepare TLS credentials
+        // prepare TLS credentials
         clib__memset(&credentials, 0, sizeof(credentials));
         clib__memset(&tls, 0, sizeof(tls));
         tls.grbitDisabledProtocols = SP_PROT_SSL2_CLIENT | SP_PROT_SSL3_CLIENT | SP_PROT_TLS1_CLIENT | SP_PROT_TLS1_1_CLIENT;
         credentials.dwVersion = SCH_CREDENTIALS_VERSION;
 
-        // Require certificate verification
+        // require certificate verification
         credentials.dwFlags = SCH_CRED_AUTO_CRED_VALIDATION | SCH_CRED_NO_DEFAULT_CREDS | SCH_USE_STRONG_CRYPTO | SCH_CRED_REVOCATION_CHECK_CHAIN_EXCLUDE_ROOT;
         credentials.cTlsParameters = 1;
         credentials.pTlsParameters = &tls;
+
+        // get TLS credentials
         security = AcquireCredentialsHandleW(NULL, UNISP_NAME_W, SECPKG_CRED_OUTBOUND, NULL, &credentials, NULL, NULL, &connection->credential, &expiry);
         if (security != SEC_E_OK)
         {
@@ -742,11 +825,11 @@ httpclient_error_t httpclient_transport__open(const httpclient_request_t *reques
         connection->has_credential = 1;
     }
 
-    // Connect to website
+    // connect to website
     error = _httpclient_internal__connect(connection, url->host, url->port, request->timeout_ms == 0 ? 15000u : request->timeout_ms);
     if (error == HTTPCLIENT_OK && connection->is_https)
     {
-        // Establish TLS connection
+        // establish TLS connection
         error = _httpclient_internal__handshake(connection, 1);
     }
     return error;
@@ -763,14 +846,19 @@ httpclient_error_t httpclient_transport__open(const httpclient_request_t *reques
  */
 httpclient_error_t httpclient_transport__write(httpclient_connection_t *connection, const void *data, uint64 size)
 {
+    // check the size
     if (size > SIZE_MAX)
     {
         return HTTPCLIENT_LIMIT;
     }
+
+    // encrypt for HTTPS
     if (connection->is_https)
     {
         return _httpclient_internal__encrypt(connection, data, size);
     }
+
+    // send without encryption
     return _httpclient_internal__send(connection, data, size);
 }
 
@@ -790,20 +878,23 @@ httpclient_error_t httpclient_transport__read(httpclient_connection_t *connectio
 {
     httpclient_error_t error = 0;
 
+    // read HTTPS bytes
     if (connection->is_https)
     {
         return _httpclient_internal__read(connection, parser, closed);
     }
 
-    // Read HTTP bytes
+    // read HTTP bytes
     error = _httpclient_internal__receive(connection, closed);
+
+    // pass bytes to parser
     if (error == HTTPCLIENT_OK && connection->used != 0)
     {
         error = _httpclient_internal__append(&parser->pending, connection->encrypted, connection->used, HTTP_HEADER_LIMIT + TLS_BUFFER_LIMIT);
         connection->used = 0;
         if (error == HTTPCLIENT_OK)
         {
-            // Parse received bytes
+            // parse received bytes
             error = _httpclient_internal__parse(parser, connection->response);
         }
     }

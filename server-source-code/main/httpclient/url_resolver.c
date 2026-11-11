@@ -91,10 +91,13 @@ static boole _url_resolver_internal__same_session(const url_resolver_job_t *job)
 {
     client_t *client = NULL_POINTER;
 
+    // check the client id
     if (job->client_id >= g_server_settings.max_client_count)
     {
         return FALSE;
     }
+
+    // compare socket and keys
     client = &g_clients_array[job->client_id];
     return client->is_existing && client->is_authenticated && client->session_keys.is_ready && client->p_ws_connection == job->socket && clib__memcmp(&client->session_keys.authentication, &job->session_authentication, sizeof(job->session_authentication)) == 0;
 }
@@ -118,7 +121,7 @@ static cJSON *_url_resolver_internal__result(const char *url)
     url_resolver_cache_t *entry = NULL_POINTER;
     uint64 now = util__get_timestamp_ms();
 
-    // Check cached preview
+    // check cached preview
     pthread_mutex_lock(&g_url_resolver_mutex);
     for (index = 0; index < URL_RESOLVER_CACHE_SIZE; index++)
     {
@@ -132,10 +135,10 @@ static cJSON *_url_resolver_internal__result(const char *url)
     }
     pthread_mutex_unlock(&g_url_resolver_mutex);
 
-    // Download missing preview
+    // download missing preview
     succeeded = url_preview__resolve(url, &preview);
 
-    // Build preview response
+    // build preview response
     result = cJSON_CreateObject();
     cJSON_AddStringToObject(result, "status", succeeded ? "ok" : "unavailable");
     cJSON_AddStringToObject(result, "url", url);
@@ -150,11 +153,14 @@ static cJSON *_url_resolver_internal__result(const char *url)
             cJSON_AddStringToObject(result, "image", preview.image_data);
         }
     }
+
+    // free the preview
     url_preview__free(&preview);
 
+    // lock the cache
     pthread_mutex_lock(&g_url_resolver_mutex);
 
-    // Cache preview result
+    // cache preview result
     entry = &g_url_resolver_cache[g_url_resolver_cache_next++ % URL_RESOLVER_CACHE_SIZE];
     cJSON_Delete(entry->result);
     clib__string_copy(entry->url, sizeof(entry->url), url);
@@ -182,17 +188,20 @@ static void *_url_resolver_internal__worker(void *unused)
     cJSON *result = NULL_POINTER;
 
     (void)unused;
+
+    // repeat for every request
     for (;;)
     {
+        // lock the queue
         pthread_mutex_lock(&g_url_resolver_mutex);
 
-        // Wait for work
+        // wait for work
         while (g_url_resolver_head == NULL_POINTER)
         {
             pthread_cond_wait(&g_url_resolver_changed, &g_url_resolver_mutex);
         }
 
-        // Take queued request
+        // take queued request
         job = g_url_resolver_head;
         g_url_resolver_head = job->next;
         if (g_url_resolver_head == NULL_POINTER)
@@ -202,23 +211,27 @@ static void *_url_resolver_internal__worker(void *unused)
         g_url_resolver_queued--;
         pthread_mutex_unlock(&g_url_resolver_mutex);
 
+        // lock the clients
         clib__read_lock(&g_clients_global_rwlock_guard);
 
-        // Check requesting session
+        // check requesting session
         active = _url_resolver_internal__same_session(job) && g_server_settings.is_link_preview_allowed;
         clib__unlock(&g_clients_global_rwlock_guard);
+
+        // get the preview
         result = active ? _url_resolver_internal__result(job->url) : NULL_POINTER;
 
+        // lock the clients
         clib__read_lock(&g_clients_global_rwlock_guard);
 
-        // Recheck before replying
+        // recheck before replying
         if (_url_resolver_internal__same_session(job) != FALSE)
         {
             server_msg__chat__send_url_resolved_to_single_client(&g_clients_array[job->client_id], job->request_id, job->url, g_server_settings.is_link_preview_allowed ? result : NULL_POINTER);
         }
         clib__unlock(&g_clients_global_rwlock_guard);
 
-        // Release job memory
+        // release job memory
         cJSON_Delete(result);
         clib__memset(&job->session_authentication, 0, sizeof(job->session_authentication));
         free(job);
@@ -240,12 +253,13 @@ static void _url_resolver_internal__start(void)
     pthread_t thread = 0;
     pthread_attr_t attributes;
 
+    // create thread attributes
     if (pthread_attr_init(&attributes) != 0)
     {
         return;
     }
 
-    // Start detached workers
+    // start detached workers
     if (pthread_attr_setdetachstate(&attributes, PTHREAD_CREATE_DETACHED) == 0)
     {
         for (index = 0; index < URL_RESOLVER_WORKERS; index++)
@@ -256,6 +270,8 @@ static void _url_resolver_internal__start(void)
             }
         }
     }
+
+    // free thread attributes
     pthread_attr_destroy(&attributes);
 }
 
@@ -273,7 +289,7 @@ void url_resolver__queue_lookup(cstring url, cstring request_id, uint64 client_i
     uint64 now = 0;
     url_resolver_job_t *job = NULL_POINTER;
 
-    // Validate requesting session
+    // validate requesting session
     clib__write_lock(&g_clients_global_rwlock_guard);
     if (client_id >= g_server_settings.max_client_count || !g_clients_array[client_id].is_existing || !g_clients_array[client_id].is_authenticated || !g_clients_array[client_id].session_keys.is_ready || g_clients_array[client_id].p_ws_connection != socket)
     {
@@ -282,6 +298,8 @@ void url_resolver__queue_lookup(cstring url, cstring request_id, uint64 client_i
     }
     client = &g_clients_array[client_id];
     now = util__get_timestamp_ms();
+
+    // previews are disabled
     if (!g_server_settings.is_link_preview_allowed)
     {
         server_msg__chat__send_url_resolved_to_single_client(client, request_id, url, NULL_POINTER);
@@ -289,7 +307,7 @@ void url_resolver__queue_lookup(cstring url, cstring request_id, uint64 client_i
         return;
     }
 
-    // Limit request frequency
+    // limit request frequency
     if (now - client->timestamp_last_url_lookup < 500)
     {
         server_msg__chat__send_url_resolved_to_single_client(client, request_id, url, NULL_POINTER);
@@ -298,7 +316,7 @@ void url_resolver__queue_lookup(cstring url, cstring request_id, uint64 client_i
     }
     client->timestamp_last_url_lookup = now;
 
-    // Copy request details
+    // copy request details
     job = calloc(1, sizeof(*job));
     if (job != NULL_POINTER)
     {
@@ -312,30 +330,42 @@ void url_resolver__queue_lookup(cstring url, cstring request_id, uint64 client_i
     {
         server_msg__chat__send_url_resolved_to_single_client(client, request_id, url, NULL_POINTER);
     }
+
+    // unlock the clients
     clib__unlock(&g_clients_global_rwlock_guard);
+
+    // allocation failed
     if (job == NULL_POINTER)
     {
         return;
     }
+
+    // start workers once
     pthread_once(&g_url_resolver_once, _url_resolver_internal__start);
+
+    // lock the queue
     pthread_mutex_lock(&g_url_resolver_mutex);
 
-    // Check queue capacity
+    // check queue capacity
     if (g_url_resolver_workers == 0 || g_url_resolver_queued >= URL_RESOLVER_QUEUE_LIMIT)
     {
         pthread_mutex_unlock(&g_url_resolver_mutex);
+
+        // answer without preview
         clib__read_lock(&g_clients_global_rwlock_guard);
         if (_url_resolver_internal__same_session(job) != FALSE)
         {
             server_msg__chat__send_url_resolved_to_single_client(&g_clients_array[job->client_id], job->request_id, job->url, NULL_POINTER);
         }
         clib__unlock(&g_clients_global_rwlock_guard);
+
+        // free the job
         clib__memset(&job->session_authentication, 0, sizeof(job->session_authentication));
         free(job);
         return;
     }
 
-    // Append queued request
+    // append queued request
     if (g_url_resolver_tail == NULL_POINTER)
     {
         g_url_resolver_head = job;
@@ -347,7 +377,7 @@ void url_resolver__queue_lookup(cstring url, cstring request_id, uint64 client_i
     g_url_resolver_tail = job;
     g_url_resolver_queued++;
 
-    // Wake waiting worker
+    // wake waiting worker
     pthread_cond_signal(&g_url_resolver_changed);
     pthread_mutex_unlock(&g_url_resolver_mutex);
 }

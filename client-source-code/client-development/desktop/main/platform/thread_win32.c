@@ -42,12 +42,17 @@ desktop_thread_t *desktop_thread__start(desktop_thread_function_t function, void
 {
     desktop_thread_t *thread = calloc(1, sizeof(*thread));
 
+    // check the allocation
     if (!thread)
     {
         return NULL;
     }
+
+    // store function and context
     thread->function = function;
     thread->context = context;
+
+    // start the thread
     thread->handle = CreateThread(NULL, 0, _thread_internal__run, thread, 0, NULL);
     if (!thread->handle)
     {
@@ -65,6 +70,7 @@ desktop_thread_t *desktop_thread__start(desktop_thread_function_t function, void
  */
 void desktop_thread__join(desktop_thread_t *thread)
 {
+    // wait and free thread
     if (thread)
     {
         WaitForSingleObject(thread->handle, INFINITE);
@@ -82,6 +88,7 @@ desktop_mutex_t *desktop_mutex__create(void)
 {
     desktop_mutex_t *mutex = calloc(1, sizeof(*mutex));
 
+    // create the mutex
     if (mutex && !InitializeCriticalSectionEx(&mutex->lock, 0, 0))
     {
         desktop_memory__erase(mutex, sizeof(*mutex));
@@ -98,6 +105,7 @@ desktop_mutex_t *desktop_mutex__create(void)
  */
 void desktop_mutex__destroy(desktop_mutex_t *mutex)
 {
+    // delete and free mutex
     if (mutex)
     {
         DeleteCriticalSection(&mutex->lock);

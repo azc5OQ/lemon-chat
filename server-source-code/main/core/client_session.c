@@ -35,10 +35,13 @@
  */
 void client_session__close_websocket_connection(uint64 client_index, boole use_readlock)
 {
+    // lock the clients
     if (use_readlock == TRUE)
     {
         clib__read_lock(&g_clients_global_rwlock_guard);
     }
+
+    // close the socket
     if (g_clients_array[client_index].is_existing == TRUE)
     {
         if (g_clients_array[client_index].is_authenticated == TRUE)
@@ -57,6 +60,7 @@ void client_session__close_websocket_connection(uint64 client_index, boole use_r
         DBG_CLOSE_CONNECTION log_info("%s %llu %s", "client_session__close_websocket_connection client doesnt exist", client_index, "\n");
     }
 
+    // unlock the clients
     if (use_readlock == TRUE)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
@@ -82,9 +86,11 @@ boole client_session__assign_username_for_newly_joined_client(uint64 client_inde
     uint64 i = 0;
     boole result = FALSE;
 
+    // read the public key
     public_key = &g_clients_array[client_index].public_key[0];
     DBG_AUTHENTICATION log_info("%s %s %s", "newly joined client public key is -> ", public_key, "\n");
 
+    // check for stored key
     if (identity_store__is_public_key_present_in_client_stored_data(public_key) == TRUE)
     {
         DBG_AUTHENTICATION log_info("%s", "public key present \n");
@@ -100,6 +106,7 @@ boole client_session__assign_username_for_newly_joined_client(uint64 client_inde
         // try "<default_name><n>" for n = 0, 1, 2, ... until a username no client is using is found
         for (username_suffix_number = 0; username_suffix_number < g_server_settings.max_client_count; username_suffix_number++)
         {
+            // build candidate username
             clib__null_memory(candidate_username, USERNAME_MAX_LENGTH);
             clib__string_copy(candidate_username, sizeof(candidate_username), g_server_settings.default_client_name);
 
@@ -115,6 +122,7 @@ boole client_session__assign_username_for_newly_joined_client(uint64 client_inde
             DBG_AUTHENTICATION log_info("%s %s %s", "index_suffix_buffer -> ", index_suffix_buffer, "\n");
             DBG_AUTHENTICATION log_info("%s %s %s", "candidate_username -> ", candidate_username, "\n");
 
+            // compare with all clients
             for (i = 0; i < g_server_settings.max_client_count; i++)
             {
                 // is_existing needs to be guarded with mutex, while opening client, rwlock is not usable
@@ -126,16 +134,19 @@ boole client_session__assign_username_for_newly_joined_client(uint64 client_inde
                     goto final_check;
                 }
 
+                // skip unauthenticated clients
                 if (g_clients_array[i].is_authenticated == FALSE)
                 {
                     goto final_check;
                 }
 
+                // skip this client
                 if (i == client_index)
                 { // skip current client
                     goto final_check;
                 }
 
+                // username already used
                 if (clib__is_string_equal(g_clients_array[i].username, candidate_username) == TRUE)
                 { // username used by some of the clients, start another loop, with incremented numeric part of client's username
                     DBG_AUTHENTICATION log_info("%s %s %s", "username ", candidate_username, " it is not available \n");
@@ -144,6 +155,7 @@ boole client_session__assign_username_for_newly_joined_client(uint64 client_inde
 
 final_check:
 
+                // username is free
                 if ((i + 1) == g_server_settings.max_client_count)
                 { // if loop reached its end and username currently used in this loop was found to not be used by any of the clients
 
@@ -158,9 +170,11 @@ final_check:
         }
     }
 
+    // no username assigned
     return result; // either code jumps to end_loop or it returns false here
 
 end_loop:
+    // store the username
     clib__string_copy(g_clients_array[client_index].username, sizeof(g_clients_array[client_index].username), candidate_username);
     DBG_AUTHENTICATION log_info("%s %llu %s %s", "client: ", client_index, g_clients_array[client_index].username, "\n");
 
@@ -207,23 +221,28 @@ uint64 client_session__disconnect_other_clients_with_same_public_key(uint64 clie
     uint64 disconnected_count = 0;
     uint64 i = 0;
 
+    // check the key
     if (public_key == NULL_POINTER || public_key[0] == 0)
     {
         return 0;
     }
 
+    // disconnect the other sessions
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
+        // skip the kept client
         if (i == client_index_to_keep)
         {
             continue;
         }
 
+        // skip unauthenticated clients
         if (g_clients_array[i].is_existing == FALSE || g_clients_array[i].is_authenticated == FALSE)
         {
             continue;
         }
 
+        // skip other keys
         if (clib__is_string_equal(g_clients_array[i].public_key, public_key) == FALSE)
         {
             continue;
@@ -266,11 +285,13 @@ int64 client_session__adopt_socket_into_existing_session(uint64 new_client_index
     client_t *new_entry = NULL_POINTER;
     ws_cli_conn_t *old_ws_connection = NULL_POINTER;
 
+    // check the key
     if (public_key == NULL_POINTER || public_key[0] == 0)
     {
         return -1;
     }
 
+    // find the old session
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
         if (i == new_client_index || g_clients_array[i].is_existing == FALSE || g_clients_array[i].is_authenticated == FALSE)
@@ -285,11 +306,13 @@ int64 client_session__adopt_socket_into_existing_session(uint64 new_client_index
         }
     }
 
+    // no open session
     if (old_session == NULL_POINTER)
     {
         return -1;
     }
 
+    // disconnect audio and video
     new_entry = &g_clients_array[new_client_index];
     audio_websocket__disconnect(old_session);
     video_websocket__disconnect(old_session);
@@ -307,14 +330,18 @@ int64 client_session__adopt_socket_into_existing_session(uint64 new_client_index
     new_entry->password_keys = NULL_POINTER;
     atomic_store_explicit(&old_session->media_send_counter, atomic_load_explicit(&new_entry->media_send_counter, memory_order_relaxed), memory_order_relaxed);
     clib__copy_memory(new_entry->challenge_string, old_session->challenge_string, CHALLENGE_STRING_LENGTH, CHALLENGE_STRING_LENGTH);
+
+    // copy address and country
     clib__null_memory(old_session->ip_address, sizeof(old_session->ip_address));
     clib__string_copy(old_session->ip_address, sizeof(old_session->ip_address), new_entry->ip_address);
     clib__null_memory(old_session->country_iso_code, sizeof(old_session->country_iso_code));
     clib__string_copy(old_session->country_iso_code, sizeof(old_session->country_iso_code), new_entry->country_iso_code);
+
+    // update the timestamps
     old_session->timestamp_last_maintain_connection_message_received = timestamp_now;
     old_session->timestamp_last_action = timestamp_now;
 
-    // Replacing a socket must not move an idle client into root without a channel-join message.
+    // replacing a socket must not move an idle client into root without a channel-join message
     old_session->has_pending_maintainer_reset_vote = FALSE;
 
     // an upload that was running on the old socket ended with it
@@ -338,6 +365,8 @@ int64 client_session__adopt_socket_into_existing_session(uint64 new_client_index
     {
         memorymanager__free((nuint)new_entry->file_upload_extension.file_upload_buffer);
     }
+
+    // clear the new entry
     clib__null_memory(new_entry, sizeof(client_t));
 
     log_info("%s %llu %s %llu %s", "fast reconnect: session", i, "adopted the socket of entry", new_client_index, "\n");
@@ -361,11 +390,13 @@ boole client_session__is_there_another_authenticated_client_with_same_public_key
 {
     uint64 i = 0;
 
+    // check the key
     if (public_key == NULL_POINTER || public_key[0] == 0)
     {
         return FALSE;
     }
 
+    // find the same key
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
         if (i == client_index || g_clients_array[i].is_existing == FALSE || g_clients_array[i].is_authenticated == FALSE)
@@ -393,6 +424,7 @@ boole client_session__is_there_a_client_with_same_public_key(cstring public_key)
     boole result = FALSE;
     uint64 i = 0;
 
+    // find the same key
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
         if (g_clients_array[i].is_existing == FALSE)
@@ -429,6 +461,7 @@ boole client_session__is_there_an_unfinished_handshake_from_same_ip_address(cstr
 {
     uint64 i = 0;
 
+    // find an unfinished handshake
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
         if (g_clients_array[i].is_existing == FALSE || g_clients_array[i].is_authenticated == TRUE)
@@ -462,18 +495,22 @@ boole client_session__is_there_another_authenticated_client_with_same_ip_address
 {
     uint64 i = 0;
 
+    // find the same address
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
+        // skip unauthenticated clients
         if (i == client_index || g_clients_array[i].is_existing == FALSE || g_clients_array[i].is_authenticated == FALSE)
         {
             continue;
         }
 
+        // skip the same identity
         if (clib__is_string_equal(g_clients_array[i].public_key, public_key) == TRUE)
         {
             continue;
         }
 
+        // compare the address
         if (clib__is_string_equal(g_clients_array[i].ip_address, ip_address) == TRUE)
         {
             return TRUE;
@@ -504,8 +541,10 @@ void client_session__process_client_disconnect(uint64 client_index)
 
     DBG_CLIENT_DISCONNECT log_info("%s %llu %s", "client_session__process_client_disconnect ", client_index, "\n");
 
+    // find the client
     client = &g_clients_array[client_index];
 
+    // check the client exists
     if (client->is_existing == TRUE)
     {
         DBG_CLIENT_DISCONNECT log_info("%s %llu %s", "client_session__process_client_disconnect is_existing TRUE ", client_index, "\n");
@@ -521,22 +560,26 @@ void client_session__process_client_disconnect(uint64 client_index)
             identity_store__touch_identity_last_seen_by_hash(last_seen_identity_hash);
         }
 
+        // disconnect audio and video
         audio_channel__process_client_disconnect(client);
         video_websocket__disconnect(client);
 
         // a streamer leaving ends its stream for the channel, a viewer leaving drops off the streamer's count
         video_channel__process_client_leaving_channel(client, client->channel_id);
 
+        // copy the channel id
         channel_id = g_clients_array[client_index].channel_id;
 
         /* Idle clients use a marker value outside the valid channel range instead of a real channel. */
         is_client_also_channel_maintainer = (boole)(channel_id < g_server_settings.max_channel_count && g_channel_array[channel_id].is_existing == TRUE && g_channel_array[channel_id].is_channel_maintainer_present == TRUE && g_channel_array[channel_id].maintainer_id == client_index);
 
+        // copy temporary channel state
         owns_temp_channel = client->is_temp_admin_channel;
         owned_temp_channel_id = client->temp_channel_id;
 
         DBG_CLIENT_DISCONNECT log_info("%s %llu %s", "client_session__process_client_disconnect setting client struct to null ", client_index, "\n");
 
+        // free the group list
         if (client->group_ids != NULL_POINTER)
         {
             cvector_free(client->group_ids);
@@ -558,19 +601,22 @@ void client_session__process_client_disconnect(uint64 client_index)
             client->base64_avatar = NULL_POINTER;
         }
 
+        // clear the client record
         disconnect_reason = client->is_disconnect_ban ? "ban" : NULL_POINTER;
         crypto_metadata__release_passwords(client->password_keys);
         ciphers__clear(client, sizeof(client_t));
 
+        // send disconnect message
         server_msg__connection__send_client_disconnect_message_to_all_clients(client_index, disconnect_reason);
 
+        // destroy temporary channel
         if (owns_temp_channel == TRUE)
         {
-            // Remove any temporary channel this client still owns.
+            // remove any temporary channel this client still owns
             channel__destroy_temp_channel(owned_temp_channel_id);
         }
 
-        // After returning from idle, the client may maintain a different channel.
+        // after returning from idle, the client may maintain a different channel
         if (is_client_also_channel_maintainer == TRUE && g_channel_array[channel_id].is_existing == TRUE)
         {
             DBG_CLIENT_DISCONNECT log_info("%s %llu %s", "client_session__process_client_disconnect client was maintainer of channel ", client_index, "\n");

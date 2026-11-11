@@ -304,7 +304,7 @@ The channel list always shows every channel by name. Who is inside a channel, an
 
 For example, the channel "staff" requires view power 50. A guest with view power 25 sees "staff" in the list with nobody in it and without its description. A moderator with view power 50 sees both. The members of a channel are shown or hidden together; single members are never hidden.
 
-A user who may not see a channel's members still receives the names of the people on the server and can write to them. Only the channel they are in is withheld. The server applies a change at once: when a group, a membership or the channel's requirement changes, connected users receive the members and the description they may now see, or lose the ones they may no longer see.
+A user who may not see a channel's members still receives the names of the people on the server. Only the channel they are in is withheld. The browser client shows no row for a person whose channel is withheld, so a conversation with that person cannot be started from the lists. The server applies a change at once: when a group, a membership or the channel's requirement changes, connected users receive the members and the description they may now see, or lose the ones they may no longer see.
 
 To give guests no view at all, set **View channel members** and **View channel descriptions** to Disable in the Guest group. The older server setting that hides the members of password protected channels still applies in addition.
 

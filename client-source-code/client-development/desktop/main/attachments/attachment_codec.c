@@ -25,20 +25,29 @@ static cJSON *_attachment_codec_internal__parse(const char *text)
     int64 tokens = 0;
     boole quoted = FALSE;
     boole escaped = FALSE;
+
+    // check the text
     if (!text)
     {
         return NULL;
     }
+
+    // count depth and tokens
     for (index = 0; text[index]; index++)
     {
+        // refuse too long text
         if (index >= DESKTOP_ATTACHMENT_WIRE_LIMIT)
         {
             return NULL;
         }
+
+        // read one character
         if (quoted)
         {
+            // read inside a string
             if (escaped)
             {
+                // refuse escaped zero character
                 if (text[index] == 'u' && clib__strncmp(text + index, "u0000", 5) == 0)
                 {
                     return NULL;
@@ -56,27 +65,35 @@ static cJSON *_attachment_codec_internal__parse(const char *text)
         }
         else if (text[index] == '"')
         {
+            // a string starts
             quoted = TRUE;
             tokens++;
         }
         else if (text[index] == '{' || text[index] == '[')
         {
+            // increase the depth
             depth++;
             tokens++;
         }
         else if (text[index] == '}' || text[index] == ']')
         {
+            // decrease the depth
             depth--;
         }
         else if (text[index] == ',' || text[index] == ':')
         {
+            // count a separator
             tokens++;
         }
+
+        // check the limits
         if (depth < 0 || depth > 4 || tokens > 64)
         {
             return NULL;
         }
     }
+
+    // read the JSON
     return !quoted && !depth ? desktop_protocol__parse_json(text, index, DESKTOP_ATTACHMENT_WIRE_LIMIT, 4) : NULL;
 }
 
@@ -91,6 +108,8 @@ static char *_attachment_codec_internal__base64(const ubyte *bytes, uint64 size)
     uint64 capacity = (size + 2) / 3 * 4 + 1;
     size_t written = 0;
     char *result = calloc(1, capacity);
+
+    // encode the bytes
     if (result && mbedtls_base64_encode((ubyte *)result, capacity, &written, bytes, size) != 0)
     {
         mbedtls_platform_zeroize(result, capacity);
@@ -114,6 +133,7 @@ static char *_attachment_codec_internal__seal(desktop_attachment_record_t *recor
     char *encrypted_body = NULL_POINTER;
     char *result = NULL_POINTER;
 
+    // encrypt for a channel
     if (record->view.peer < 0)
     {
         encrypted_body = record->view.picture ? crypto_session__picture_encrypt(crypto, &record->keys, text, padding) : crypto_session__attachment_encrypt(crypto, &record->keys, text, padding);
@@ -121,6 +141,8 @@ static char *_attachment_codec_internal__seal(desktop_attachment_record_t *recor
         crypto_session__free_text(encrypted_body);
         return result;
     }
+
+    // encrypt for one client
     if (crypto_session__content_keys(crypto, &keys))
     {
         encrypted_body = crypto_session__direct_content_encrypt(&keys, text, padding, !record->view.picture);
@@ -129,6 +151,8 @@ static char *_attachment_codec_internal__seal(desktop_attachment_record_t *recor
     {
         result = crypto_session__direct_seal(crypto, record->public_key, &keys, encrypted_body);
     }
+
+    // free and erase buffers
     crypto_session__free_text(encrypted_body);
     mbedtls_platform_zeroize(&keys, sizeof(keys));
     return result;
@@ -149,10 +173,13 @@ static char *_attachment_codec_internal__open(desktop_attachment_record_t *recor
     char *encrypted_body = NULL_POINTER;
     char *result = NULL_POINTER;
 
+    // check the text size
     if (!text || clib__strlen(text) > DESKTOP_ATTACHMENT_WIRE_LIMIT)
     {
         return NULL;
     }
+
+    // decrypt channel or direct
     if (record->view.peer < 0)
     {
         encrypted_body = crypto_session__channel_open(keys, text);
@@ -170,6 +197,8 @@ static char *_attachment_codec_internal__open(desktop_attachment_record_t *recor
             result = crypto_session__direct_content_decrypt(&direct, encrypted_body, !record->view.picture);
         }
     }
+
+    // free and erase buffers
     crypto_session__free_text(encrypted_body);
     crypto_session__free_json(envelope);
     mbedtls_platform_zeroize(&direct, sizeof(direct));
@@ -195,6 +224,8 @@ void desktop_attachment_codec__pack(desktop_attachment_record_t *record, desktop
     uint64 index = 0;
     uint64 capacity = 0;
     boole complete = FALSE;
+
+    // read the file
     record->bytes = desktop_attachment_file__read(record->path, record->raw_limit, &record->view.size);
     record->bytes_capacity = record->view.size;
     if (!record->bytes)
@@ -202,7 +233,11 @@ void desktop_attachment_codec__pack(desktop_attachment_record_t *record, desktop
         desktop_attachment_record__fail(record, "Could not read this file, or it exceeds the allowed size.");
         return;
     }
+
+    // copy the file name
     desktop_attachment_file__name(record->view.name, sizeof(record->view.name), record->path);
+
+    // check the picture format
     mime = record->view.picture ? desktop_attachment_image__mime(record->bytes, record->view.size) : "application/octet-stream";
     if (record->view.picture)
     {
@@ -214,11 +249,15 @@ void desktop_attachment_codec__pack(desktop_attachment_record_t *record, desktop
         }
     }
     clib__string_copy(record->view.mime, sizeof(record->view.mime), mime);
+
+    // encode the file bytes
     base64 = _attachment_codec_internal__base64(record->bytes, record->view.size);
     if (!base64)
     {
         goto label_finished;
     }
+
+    // build the plaintext
     if (record->view.picture)
     {
         capacity = clib__strlen(base64) + 64;
@@ -230,6 +269,7 @@ void desktop_attachment_codec__pack(desktop_attachment_record_t *record, desktop
     }
     else
     {
+        // build header and body
         root = cJSON_CreateObject();
         if (root && cJSON_AddStringToObject(root, "name", record->view.name) && cJSON_AddNumberToObject(root, "size", (double)record->view.size) && cJSON_AddStringToObject(root, "mime", mime))
         {
@@ -239,42 +279,62 @@ void desktop_attachment_codec__pack(desktop_attachment_record_t *record, desktop
                 plaintext = cJSON_PrintUnformatted(root);
             }
         }
+
+        // free the JSON
         crypto_session__free_json(root);
         root = NULL;
+
+        // encrypt the header
         record->header = header ? _attachment_codec_internal__seal(record, crypto, header, 1024) : NULL;
     }
+
+    // encrypt the body
     record->wire = plaintext ? _attachment_codec_internal__seal(record, crypto, plaintext, 4096) : NULL;
     complete = record->wire && (record->view.picture || record->header);
+
+    // build the direct offer
     if (complete && record->view.peer >= 0)
     {
+        // create the offer ID
         complete = crypto_session__random(crypto, random, sizeof(random));
         for (index = 0; index < sizeof(random); index++)
         {
             record->view.offer[index * 2] = hex[random[index] >> 4];
             record->view.offer[index * 2 + 1] = hex[random[index] & 15];
         }
+
+        // build the offer JSON
         root = cJSON_CreateObject();
         if (complete && root && cJSON_AddStringToObject(root, "offer_id", record->view.offer) && cJSON_AddBoolToObject(root, "is_picture", record->view.picture) && cJSON_AddStringToObject(root, "name", record->view.name) && cJSON_AddNumberToObject(root, "size", (double)record->view.size))
         {
             offer = cJSON_PrintUnformatted(root);
         }
+
+        // encrypt the offer
         record->preview = offer ? _attachment_codec_internal__seal(record, crypto, offer, 1024) : NULL;
         complete = complete && record->preview;
     }
+
+    // check the encrypted size
     record->wire_size = complete ? clib__strlen(record->wire) : 0;
     record->wire_capacity = record->wire_size ? record->wire_size + 1 : 0;
     complete = complete && record->wire_size <= DESKTOP_ATTACHMENT_WIRE_LIMIT;
 label_finished:
+    // free the buffers
     crypto_session__free_json(root);
     crypto_session__free_text(base64);
     crypto_session__free_text(plaintext);
     crypto_session__free_text(header);
     crypto_session__free_text(offer);
+
+    // erase keys and path
     mbedtls_platform_zeroize(random, sizeof(random));
     mbedtls_platform_zeroize(record->path, sizeof(record->path));
     mbedtls_platform_zeroize(record->public_key, sizeof(record->public_key));
     mbedtls_platform_zeroize(&record->keys, sizeof(record->keys));
     mbedtls_platform_zeroize(&record->previous, sizeof(record->previous));
+
+    // store the result state
     if (complete)
     {
         record->view.state = record->view.peer >= 0 ? DESKTOP_ATTACHMENT_WAITING : DESKTOP_ATTACHMENT_UPLOADING;
@@ -314,13 +374,17 @@ static boole _attachment_codec_internal__body(desktop_attachment_record_t *recor
     int64 width = 0;
     int64 height = 0;
     boole valid = FALSE;
+
+    // check the plaintext
     if (!plaintext)
     {
         return FALSE;
     }
+
+    // find the encoded data
     if (record->view.picture)
     {
-        // Check the image data URL before reading its Base64 contents.
+        // check the image data URL before reading its Base64 contents
         separator = clib__strchr(plaintext, ',');
         if (!separator || separator - plaintext > 40 || clib__strncmp(plaintext, "data:image/", 11) != 0 || separator - plaintext < 7 || clib__memcmp(separator - 7, ";base64", 7) != 0)
         {
@@ -330,6 +394,7 @@ static boole _attachment_codec_internal__body(desktop_attachment_record_t *recor
     }
     else
     {
+        // read body and header
         root = _attachment_codec_internal__parse(plaintext);
         metadata = header ? _attachment_codec_internal__parse(header) : NULL;
         name = cJSON_GetObjectItemCaseSensitive(root, "name");
@@ -338,7 +403,7 @@ static boole _attachment_codec_internal__body(desktop_attachment_record_t *recor
         header_name = cJSON_GetObjectItemCaseSensitive(metadata, "name");
         header_size = cJSON_GetObjectItemCaseSensitive(metadata, "size");
 
-        // Require the file body's name and size to match its decrypted header.
+        // require the file body's name and size to match its decrypted header
         if (!cJSON_IsString(name) || clib__strlen(name->valuestring) > 255 || !cJSON_IsNumber(size) || !(size->valuedouble >= 1 && size->valuedouble <= (double)maximum) || size->valuedouble != (double)(uint64)size->valuedouble || !cJSON_IsString(data) || !cJSON_IsString(header_name) || !cJSON_IsNumber(header_size) || clib__strcmp(name->valuestring, header_name->valuestring) != 0 || size->valuedouble != header_size->valuedouble)
         {
             goto label_finished;
@@ -346,7 +411,7 @@ static boole _attachment_codec_internal__body(desktop_attachment_record_t *recor
         encoded = data->valuestring;
     }
 
-    // Bound the decoded allocation before allocating or decoding any bytes.
+    // bound the decoded allocation before allocating or decoding any bytes
     length = clib__strlen(encoded);
     capacity = length / 4 * 3 + 3;
     if (!length || length > (maximum + 2) / 3 * 4 || capacity > maximum + 3)
@@ -354,15 +419,17 @@ static boole _attachment_codec_internal__body(desktop_attachment_record_t *recor
         goto label_finished;
     }
 
-    // Decode Base64 and check the actual byte count against the file size.
+    // decode Base64 and check the actual byte count against the file size
     bytes = calloc(1, capacity);
     if (!bytes || mbedtls_base64_decode(bytes, capacity, &written, (const ubyte *)encoded, length) != 0 || !written || written > maximum || (!record->view.picture && (double)written != size->valuedouble))
     {
         goto label_finished;
     }
+
+    // choose name and type
     if (record->view.picture)
     {
-        // Identify and decode the image before keeping it for display.
+        // identify and decode the image before keeping it for display
         mime = desktop_attachment_image__mime(bytes, written);
         pixels = desktop_attachment_image__decode(bytes, written, &width, &height);
         if (!mime || !pixels)
@@ -376,12 +443,14 @@ static boole _attachment_codec_internal__body(desktop_attachment_record_t *recor
         mime = "application/octet-stream";
         desktop_attachment_file__name(record->view.name, sizeof(record->view.name), name->valuestring);
     }
+
+    // store type and size
     clib__string_copy(record->view.mime, sizeof(record->view.mime), mime);
     record->view.size = written;
     record->view.image_width = width;
     record->view.image_height = height;
 
-    // Transfer ownership to the record so cleanup keeps the accepted data.
+    // transfer ownership to the record so cleanup keeps the accepted data
     record->bytes = bytes;
     record->bytes_capacity = capacity;
     record->pixels = pixels;
@@ -389,7 +458,7 @@ static boole _attachment_codec_internal__body(desktop_attachment_record_t *recor
     pixels = NULL;
     valid = TRUE;
 
-// Clear and release any data that was not accepted.
+// clear and release any data that was not accepted
 label_finished:
     if (bytes)
     {
@@ -419,6 +488,8 @@ void desktop_attachment_codec__decode(desktop_attachment_record_t *record, deskt
     const desktop_content_keys_t *keys = NULL_POINTER;
     int64 attempt = 0;
     boole valid = FALSE;
+
+    // try each key set
     for (attempt = 0; attempt < (record->view.peer < 0 && record->have_previous ? 2 : 1); attempt++)
     {
         keys = attempt ? &record->previous : &record->keys;
@@ -432,6 +503,8 @@ void desktop_attachment_codec__decode(desktop_attachment_record_t *record, deskt
             break;
         }
     }
+
+    // free the encrypted text
     crypto_session__free_text(record->wire);
     crypto_session__free_text(record->header);
     record->wire = NULL;
@@ -439,8 +512,12 @@ void desktop_attachment_codec__decode(desktop_attachment_record_t *record, deskt
     record->wire_size = 0;
     record->wire_capacity = 0;
     record->received = 0;
+
+    // erase the keys
     mbedtls_platform_zeroize(&record->keys, sizeof(record->keys));
     mbedtls_platform_zeroize(&record->previous, sizeof(record->previous));
+
+    // store the result state
     if (valid)
     {
         record->view.state = DESKTOP_ATTACHMENT_READY;
@@ -468,6 +545,8 @@ void desktop_attachment_codec__offer(desktop_attachment_record_t *record, deskto
     const cJSON *size = cJSON_GetObjectItemCaseSensitive(root, "size");
     const cJSON *picture = cJSON_GetObjectItemCaseSensitive(root, "is_picture");
     uint64 maximum = record->view.picture ? DESKTOP_ATTACHMENT_IMAGE_LIMIT : DESKTOP_ATTACHMENT_RAW_LIMIT;
+
+    // check the offer fields
     if (cJSON_IsString(id) && clib__strcmp(id->valuestring, record->view.offer) == 0 && cJSON_IsString(name) && clib__strlen(name->valuestring) <= 255 && cJSON_IsBool(picture) && cJSON_IsTrue(picture) == record->view.picture && cJSON_IsNumber(size) && size->valuedouble > 0 && size->valuedouble <= (double)maximum && size->valuedouble == (double)(uint64)size->valuedouble)
     {
         desktop_attachment_file__name(record->view.name, sizeof(record->view.name), name->valuestring);
@@ -480,6 +559,8 @@ void desktop_attachment_codec__offer(desktop_attachment_record_t *record, deskto
         desktop_attachment_record__fail(record, "Invalid or oversized attachment offer.");
         record->decision = 2;
     }
+
+    // free the buffers
     crypto_session__free_json(root);
     crypto_session__free_text(plaintext);
     crypto_session__free_text(record->preview);

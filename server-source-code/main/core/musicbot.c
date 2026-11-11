@@ -32,21 +32,27 @@ client_t *musicbot__allocate(uint64 channel_id, const char *name)
     int64 index = 0;
     client_t *bot = NULL_POINTER;
 
+    // check channel and name
     if (channel_id >= g_server_settings.max_channel_count || !g_channel_array[channel_id].is_existing || g_channel_array[channel_id].is_temp_channel || name == NULL_POINTER || name[0] == 0 || strlen(name) >= USERNAME_MAX_LENGTH)
     {
         return NULL_POINTER;
     }
 #ifndef MUSICBOT_DEBUG_ALLOW_MULTIPLE_BOTS_PER_CHANNEL
+    // refuse a second bot
     if (g_channel_array[channel_id].is_music_bot_active_in_channel)
     {
         return NULL_POINTER;
     }
 #endif
+
+    // find a free slot
     index = client_session__get_new_index_for_client();
     if (index < 0)
     {
         return NULL_POINTER;
     }
+
+    // allocate songs and keys
     bot = &g_clients_array[index];
     bot->music_bot_client_extension.songs = (music_bot_single_song_data_t *)memorymanager__allocate(sizeof(music_bot_single_song_data_t) * MUSIC_BOT_MAX_FILE_COUNT, MEMALLOC_MUSICBOT_SONG);
     bot->music_bot_client_extension.audio_keys = calloc(1, sizeof(music_bot_audio_keys_t));
@@ -57,6 +63,8 @@ client_t *musicbot__allocate(uint64 channel_id, const char *name)
         memset(bot, 0, sizeof(*bot));
         return NULL_POINTER;
     }
+
+    // fill the bot client
     bot->is_authenticated = TRUE;
     bot->is_existing = TRUE;
     bot->is_music_bot = TRUE;
@@ -66,16 +74,21 @@ client_t *musicbot__allocate(uint64 channel_id, const char *name)
     bot->timestamp_connected = util__get_timestamp_ms();
     bot->audio_state = AUDIO_STATE__PUSH_TO_TALK_ACTIVE;
     clib__string_copy(bot->username, sizeof(bot->username), (char *)name);
+
+    // reset the control flags
     atomic_init(&bot->music_bot_client_extension.is_music_bot_running, FALSE);
     atomic_init(&bot->music_bot_client_extension.is_restore_pending, FALSE);
     atomic_init(&bot->music_bot_client_extension.is_playback_paused, FALSE);
     atomic_init(&bot->music_bot_client_extension.is_skip_requested, FALSE);
+
+    // mark bot in channel
     g_channel_array[channel_id].is_music_bot_active_in_channel = TRUE;
     return bot;
 }
 
 boole musicbot__start(client_t *bot)
 {
+    // start the bot thread
     atomic_store(&bot->music_bot_client_extension.is_music_bot_running, TRUE);
     if (pthread_create((pthread_t *)&bot->music_bot_client_extension.music_bot_pthread_handle, NULL_POINTER, musicbot__threadstart, bot) != 0)
     {
@@ -94,15 +107,22 @@ void musicbot__free_unstarted(client_t *bot)
     uint64 index = 0;
     uint64 channel_id = bot->channel_id;
 
+    // free the song buffers
     for (song_index = 0; song_index < MUSIC_BOT_MAX_FILE_COUNT; song_index++)
     {
         song = &bot->music_bot_client_extension.songs[song_index];
         memorymanager__free((nuint)song->mp3_data_buffer);
     }
     memorymanager__free((nuint)bot->music_bot_client_extension.songs);
+
+    // clear and free keys
     ciphers__clear(bot->music_bot_client_extension.audio_keys, sizeof(music_bot_audio_keys_t));
     free(bot->music_bot_client_extension.audio_keys);
+
+    // clear the client slot
     memset(bot, 0, sizeof(*bot));
+
+    // update the channel flag
     g_channel_array[channel_id].is_music_bot_active_in_channel = FALSE;
     for (index = 0; index < g_server_settings.max_client_count; index++)
     {
@@ -123,6 +143,7 @@ static boole _musicbot_internal__wait_for_playback(client_t *client, uint64 *pla
     uint64 pause_start = 0;
     uint64 pause_end = 0;
 
+    // wait while paused
     if (atomic_load(&client->music_bot_client_extension.is_playback_paused))
     {
         pause_start = util__get_timestamp_ms();
@@ -136,6 +157,8 @@ static boole _musicbot_internal__wait_for_playback(client_t *client, uint64 *pla
             *playback_start_ms += pause_end - pause_start;
         }
     }
+
+    // check song and skip
     return _musicbot_internal__song_matches(client, song_index, generation) && !atomic_exchange(&client->music_bot_client_extension.is_skip_requested, FALSE);
 }
 
@@ -144,10 +167,13 @@ static boole _musicbot_internal__working_set_allowed(uint64 compressed, uint64 f
     uint64 resampled = 0;
     uint64 working = 0;
 
+    // check the limits
     if (compressed > 256ULL * 1024 * 1024 || rate < 8000 || rate > 192000 || channels < 1 || channels > 2 || frames == 0 || frames > rate * 1001)
     {
         return FALSE;
     }
+
+    // calculate the needed memory
     resampled = frames * 48000 / rate;
     working = compressed + frames * channels * sizeof(float) + resampled * channels * sizeof(opus_int16);
     if (rate != 48000)
@@ -197,6 +223,7 @@ static void _musicbot_internal__prepare_song(client_t *music_bot_client, int64 s
     float sample = 0;
     uint64 channel = 0;
 
+    // reset the result
     clib__null_memory((void *)out_prepared, sizeof(musicbot_prepared_song_t));
     out_prepared->song_index = song_index;
 
@@ -205,32 +232,40 @@ static void _musicbot_internal__prepare_song(client_t *music_bot_client, int64 s
     // buffer directly - it works on this private copy
     clib__read_lock(&g_clients_global_rwlock_guard);
 
+    // check index and bot
     if (song_index < 0 || song_index >= MUSIC_BOT_MAX_FILE_COUNT || !music_bot_client->music_bot_client_extension.is_music_bot_running)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
     }
+
+    // find the song slot
     song = &music_bot_client->music_bot_client_extension.songs[song_index];
 
+    // check the song data
     if (song->is_existing == FALSE || song->mp3_data_buffer == NULL_POINTER || song->mp3_data_buffer_length == 0)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
     }
 
+    // prepare the song copy
     out_prepared->generation = song->generation;
     clib__string_copy(out_prepared->song_name, sizeof(out_prepared->song_name), song->song_name);
     mp3_copy_length = song->mp3_data_buffer_length;
     mp3_copy = (ubyte *)memorymanager__allocate(mp3_copy_length, MEMALLOC_MUSICBOT_SONG);
 
+    // check the allocation
     if (mp3_copy == NULL_POINTER)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
     }
 
+    // copy the MP3 data
     clib__copy_memory((void *)song->mp3_data_buffer, (void *)mp3_copy, mp3_copy_length, mp3_copy_length);
 
+    // unlock the clients
     clib__unlock(&g_clients_global_rwlock_guard);
 
     // decode the whole mp3 into float PCM
@@ -241,6 +276,7 @@ static void _musicbot_internal__prepare_song(client_t *music_bot_client, int64 s
         return;
     }
 
+    // count the frames
     decoded_frame_count = drmp3_get_pcm_frame_count(&mp3_decoder);
 
     // reject files dr_mp3 could not make sense of (also avoids a division by zero below)
@@ -251,6 +287,7 @@ static void _musicbot_internal__prepare_song(client_t *music_bot_client, int64 s
         return;
     }
 
+    // store channels and length
     out_prepared->channels = mp3_decoder.channels;
     out_prepared->song_length_seconds = decoded_frame_count / mp3_decoder.sampleRate;
 
@@ -262,13 +299,14 @@ static void _musicbot_internal__prepare_song(client_t *music_bot_client, int64 s
         return;
     }
 
-    // Bound the complete working set before allocating PCM. The allocation manager
-    // additionally limits all current/preloaded/preparing music buffers to 512 MiB.
+    // bound the complete working set before allocating PCM. the allocation manager
+    // additionally limits all current/preloaded/preparing music buffers to 512 MiB
     if (!_musicbot_internal__working_set_allowed(mp3_copy_length, decoded_frame_count, mp3_decoder.sampleRate, mp3_decoder.channels))
     {
         goto prepare_song_cleanup;
     }
 
+    // decode all frames
     decoded_pcm = (float *)memorymanager__allocate(decoded_frame_count * mp3_decoder.channels * sizeof(float), MEMALLOC_MUSICBOT_SONG);
     if (decoded_pcm == NULL_POINTER)
     {
@@ -284,8 +322,10 @@ static void _musicbot_internal__prepare_song(client_t *music_bot_client, int64 s
     resampled_pcm = decoded_pcm;
     resampled_frame_count = decoded_frame_count;
 
+    // resample to 48 kHz
     if (mp3_decoder.sampleRate != opus_sample_rate)
     {
+        // allocate the resampled buffer
         resampled_frame_count = (drmp3_uint64)(decoded_frame_count * (double)opus_sample_rate / mp3_decoder.sampleRate);
         resampled_pcm = (float *)memorymanager__allocate(resampled_frame_count * mp3_decoder.channels * sizeof(float), MEMALLOC_MUSICBOT_SONG);
         if (resampled_pcm == NULL_POINTER)
@@ -293,10 +333,13 @@ static void _musicbot_internal__prepare_song(client_t *music_bot_client, int64 s
             goto prepare_song_cleanup;
         }
 
+        // store the last index
         last_frame_index = decoded_frame_count - 1;
 
+        // calculate each new frame
         for (resample_index = 0; resample_index < resampled_frame_count; resample_index++)
         {
+            // find the source position
             source_sample_position = resample_index * ((double)mp3_decoder.sampleRate / opus_sample_rate);
             source_index = (drmp3_uint64)source_sample_position;
 
@@ -305,12 +348,15 @@ static void _musicbot_internal__prepare_song(client_t *music_bot_client, int64 s
                 source_index = last_frame_index;
             }
 
+            // calculate the fraction
             interpolation_fraction = source_sample_position - source_index;
 
+            // find the neighbor frames
             index_previous = source_index > 0 ? source_index - 1 : 0;
             index_next = source_index < last_frame_index ? source_index + 1 : last_frame_index;
             index_after_next = source_index + 2 <= last_frame_index ? source_index + 2 : last_frame_index;
 
+            // interpolate each channel
             for (channel = 0; channel < mp3_decoder.channels; channel++)
             {
                 tap0 = decoded_pcm[index_previous * mp3_decoder.channels + channel];
@@ -330,6 +376,7 @@ static void _musicbot_internal__prepare_song(client_t *music_bot_client, int64 s
         goto prepare_song_cleanup;
     }
 
+    // convert every sample
     for (sample_index = 0; sample_index < resampled_frame_count * mp3_decoder.channels; sample_index++)
     {
         sample = resampled_pcm[sample_index];
@@ -344,10 +391,12 @@ static void _musicbot_internal__prepare_song(client_t *music_bot_client, int64 s
         out_prepared->pcm_int16[sample_index] = (opus_int16)(sample * 32767.0f);
     }
 
+    // mark result as valid
     out_prepared->frame_count = resampled_frame_count;
     out_prepared->is_valid = TRUE;
 
 prepare_song_cleanup:
+    // free the work buffers
     if (resampled_pcm != decoded_pcm)
     {
         memorymanager__free((nuint)resampled_pcm);
@@ -390,10 +439,11 @@ static void *_musicbot_internal__reaper_thread(void *arg_void)
     music_bot_single_song_data_t *single_song = NULL_POINTER;
     uint64 song_slot_index = 0;
 
+    // wait for the thread
     pthread_join((pthread_t)music_bot_client->music_bot_client_extension.music_bot_pthread_handle, NULL_POINTER);
 
-    // Detached uploads also hold pointers into the song table. Their count is
-    // changed under this lock, and they drop it only after their final access.
+    // detached uploads also hold pointers into the song table. their count is
+    // changed under this lock, and they drop it only after their final access
     for (;;)
     {
         clib__write_lock(&g_clients_global_rwlock_guard);
@@ -405,6 +455,7 @@ static void *_musicbot_internal__reaper_thread(void *arg_void)
         util__sleep_for_milliseconds(10);
     }
 
+    // free the song buffers
     for (song_slot_index = 0; song_slot_index < MUSIC_BOT_MAX_FILE_COUNT; song_slot_index++)
     {
         single_song = &music_bot_client->music_bot_client_extension.songs[song_slot_index];
@@ -415,14 +466,18 @@ static void *_musicbot_internal__reaper_thread(void *arg_void)
         }
     }
 
+    // free table and keys
     memorymanager__free((nuint)music_bot_client->music_bot_client_extension.songs);
     if (music_bot_client->music_bot_client_extension.audio_keys != NULL_POINTER)
     {
         clib__null_memory(music_bot_client->music_bot_client_extension.audio_keys, sizeof(music_bot_audio_keys_t));
         free(music_bot_client->music_bot_client_extension.audio_keys);
     }
+
+    // clear the client slot
     clib__null_memory((void *)music_bot_client, sizeof(client_t));
 
+    // unlock the clients
     clib__unlock(&g_clients_global_rwlock_guard);
 
     return NULL_POINTER;
@@ -440,13 +495,14 @@ static void *_musicbot_internal__reaper_thread(void *arg_void)
  */
 boole musicbot__begin_delete(client_t *music_bot_client)
 {
-    // The caller holds the clients write lock, so cleanup cannot release the
-    // table before these flags are set. If creation fails, leave the bot alive.
+    // the caller holds the clients write lock, so cleanup cannot release the
+    // table before these flags are set. if creation fails, leave the bot alive
     if (util__start_detached_thread(_musicbot_internal__reaper_thread, music_bot_client) == FALSE)
     {
         return FALSE;
     }
 
+    // clear the running flag
     music_bot_client->music_bot_client_extension.is_music_bot_running = FALSE;
 
     // hidden from client lists and every relay loop, but the slot stays reserved for the reaper
@@ -470,13 +526,19 @@ void musicbot__remove_song(client_t *music_bot, uint64 song_id)
 {
     boole clear_buffered_audio = FALSE;
 
+    // check the song slot
     if (song_id >= MUSIC_BOT_MAX_FILE_COUNT || music_bot->music_bot_client_extension.songs == NULL_POINTER || music_bot->music_bot_client_extension.songs[song_id].is_existing == FALSE)
     {
         return;
     }
+
+    // check for buffered audio
     clear_buffered_audio = music_bot->music_bot_client_extension.songs[song_id].is_currently_playing || music_bot->music_bot_client_extension.songs[song_id].playback_buffered_until_ms > util__get_timestamp_ms();
+
+    // mark song as removed
     music_bot->music_bot_client_extension.songs[song_id].is_existing = FALSE;
 
+    // free the MP3 buffer
     if (music_bot->music_bot_client_extension.songs[song_id].mp3_data_buffer != NULL_POINTER)
     {
         memorymanager__free((nuint)music_bot->music_bot_client_extension.songs[song_id].mp3_data_buffer);
@@ -486,12 +548,13 @@ void musicbot__remove_song(client_t *music_bot, uint64 song_id)
     // null out single music_bot_single_song_data_t entry
     clib__null_memory((void *)&music_bot->music_bot_client_extension.songs[song_id], sizeof(music_bot_single_song_data_t));
 
+    // decrease the song count
     if (music_bot->music_bot_client_extension.music_bot_songs_count > 0)
     {
         music_bot->music_bot_client_extension.music_bot_songs_count--;
     }
 
-    // Removing an unplayed/preloaded track must not interrupt the audible one.
+    // removing an unplayed/preloaded track must not interrupt the audible one
     if (clear_buffered_audio)
     {
         server_msg__musicbot__send_stop_song_stream_message_to_clients_in_same_channel(music_bot);
@@ -524,6 +587,7 @@ void musicbot__add_song(musicbot_add_song_arg_struct_t *arg)
     // find free song index
     for (i = 0; i < MUSIC_BOT_MAX_FILE_COUNT; i++)
     {
+        // reset the counters
         frameCount = 0;
         seconds_length = 0;
 
@@ -532,6 +596,7 @@ void musicbot__add_song(musicbot_add_song_arg_struct_t *arg)
 
         clib__write_lock(&g_clients_global_rwlock_guard);
 
+        // check bot and sender
         if (!(base__is_client_valid_musicbot(arg->music_bot->client_id) && arg->music_bot->music_bot_client_extension.next_song_generation < UINT64_MAX && permissions__is_allowed(&g_clients_array[arg->sender_client_id], PERMISSION_UPLOAD_MUSIC_TRACKS) && clib__strcmp(g_clients_array[arg->sender_client_id].public_key, arg->sender_identity) == 0))
         {
             memorymanager__free((nuint)arg->mp3_data_buffer);
@@ -540,6 +605,7 @@ void musicbot__add_song(musicbot_add_song_arg_struct_t *arg)
             break;
         }
 
+        // skip a used slot
         song_in_loop = &arg->music_bot->music_bot_client_extension.songs[i];
         if (song_in_loop->is_existing == TRUE || song_in_loop->is_being_uploaded == TRUE)
         {
@@ -547,6 +613,7 @@ void musicbot__add_song(musicbot_add_song_arg_struct_t *arg)
             continue;
         }
 
+        // reserve the song slot
         song_in_loop->is_being_uploaded = TRUE; // so other thread won't start uploading to the same slot
         song_in_loop->mp3_data_buffer = arg->mp3_data_buffer;
         song_in_loop->mp3_data_buffer_length = arg->mp3_data_buffer_length;
@@ -554,10 +621,11 @@ void musicbot__add_song(musicbot_add_song_arg_struct_t *arg)
         clib__string_copy(song_in_loop->song_name, sizeof(song_in_loop->song_name), arg->song_name);
         clib__null_memory((void *)&mp3, sizeof(drmp3));
 
-        // Decode MP3
+        // decode MP3
         mp3_data_buffer1 = song_in_loop->mp3_data_buffer;
         mp3_data_buffer_length1 = song_in_loop->mp3_data_buffer_length;
 
+        // unlock the clients
         clib__unlock(&g_clients_global_rwlock_guard);
 
         // unlock write lock here because drmp3_init_memory is very time consuming
@@ -568,10 +636,12 @@ void musicbot__add_song(musicbot_add_song_arg_struct_t *arg)
         decoder_initialized = drmp3_init_memory(&mp3, mp3_data_buffer1, mp3_data_buffer_length1, NULL_POINTER) != 0;
         frameCount = decoder_initialized ? drmp3_get_pcm_frame_count(&mp3) : 0;
 
-        // Reject failed initialization and songs that cannot fit preparation before accepting the upload.
+        // reject failed initialization and songs that cannot fit preparation before accepting the upload
         if (!decoder_initialized || !_musicbot_internal__working_set_allowed(mp3_data_buffer_length1, frameCount, mp3.sampleRate, mp3.channels))
         {
             DBG_MUSIC_BOT log_info("%s", "musicbot__add_song: undecodable mp3, rejecting song \n");
+
+            // close the decoder
             if (decoder_initialized)
             {
                 drmp3_uninit(&mp3);
@@ -588,11 +658,13 @@ void musicbot__add_song(musicbot_add_song_arg_struct_t *arg)
             }
             clib__unlock(&g_clients_global_rwlock_guard);
 
+            // free buffer and argument
             memorymanager__free((nuint)arg->mp3_data_buffer);
             memorymanager__free((nuint)arg);
             break;
         }
 
+        // calculate the song length
         seconds_length = frameCount / mp3.sampleRate;
         DBG_MUSIC_BOT log_info("%s", "music bot add song success");
         drmp3_uninit(&mp3);
@@ -600,6 +672,7 @@ void musicbot__add_song(musicbot_add_song_arg_struct_t *arg)
         // do check here, again
         clib__write_lock(&g_clients_global_rwlock_guard);
 
+        // check the bot again
         if (base__is_client_valid_musicbot(arg->music_bot->client_id) == FALSE)
         {
             memorymanager__free((nuint)arg->mp3_data_buffer);
@@ -608,6 +681,7 @@ void musicbot__add_song(musicbot_add_song_arg_struct_t *arg)
             break;
         }
 
+        // check the sender again
         if (!permissions__is_allowed(&g_clients_array[arg->sender_client_id], PERMISSION_UPLOAD_MUSIC_TRACKS) || clib__strcmp(g_clients_array[arg->sender_client_id].public_key, arg->sender_identity) != 0)
         {
             clib__memset(song_in_loop, 0, sizeof(*song_in_loop));
@@ -625,19 +699,23 @@ void musicbot__add_song(musicbot_add_song_arg_struct_t *arg)
             continue;
         }
 
+        // store the new song
         song_in_loop->generation = ++arg->music_bot->music_bot_client_extension.next_song_generation;
         song_in_loop->length_seconds = seconds_length;
         arg->music_bot->music_bot_client_extension.music_bot_songs_count++;
         song_in_loop->is_existing = TRUE;
         song_in_loop->is_being_uploaded = FALSE;
 
+        // set the success flag
         is_song_added_succesfully = TRUE;
 
+        // unlock the clients
         clib__unlock(&g_clients_global_rwlock_guard);
 
         break;
     }
 
+    // no free slot found
     if (i == MUSIC_BOT_MAX_FILE_COUNT && is_song_added_succesfully == FALSE)
     {
         memorymanager__free((nuint)arg->mp3_data_buffer);
@@ -645,6 +723,7 @@ void musicbot__add_song(musicbot_add_song_arg_struct_t *arg)
         return;
     }
 
+    // send the song list
     if (is_song_added_succesfully == TRUE)
     {
         clib__read_lock(&g_clients_global_rwlock_guard);
@@ -690,13 +769,13 @@ void *musicbot__threadstart(void *argument)
     uint64 streamed_song_length_seconds = 0;
     uint64 sleep_slice_ms = 0;
 
-    // The 16-bit frame sequence continues across songs and wraps when sent.
+    // the 16-bit frame sequence continues across songs and wraps when sent
     uint64 song_stream_sequence_number = 0;
     uint64 timestamp_started_playing = 0;
     uint64 timestamp_stopped_playing = 0;
     uint64 remaining_play_ms = 0;
 
-    // The receiver starts MUSIC_BOT_LEAD_MS behind the sender; consecutive songs keep that lead.
+    // the receiver starts MUSIC_BOT_LEAD_MS behind the sender; consecutive songs keep that lead
     uint64 song_playback_start_ms = 0;
     uint64 previous_song_end_playback_ms = 0;
     uint64 frames_done = 0;
@@ -705,7 +784,7 @@ void *musicbot__threadstart(void *argument)
     boole is_stop_reason_sudden_song_deletion = FALSE;
     drmp3_uint64 available_samples = 0;
 
-    // DBG_MUSIC_BOT compares the audio duration with elapsed playback time.
+    // DBG_MUSIC_BOT compares the audio duration with elapsed playback time
     uint64 probe_song_start = 0;
     uint64 probe_frames_sent = 0;
     uint64 probe_elapsed = 0;
@@ -713,8 +792,8 @@ void *musicbot__threadstart(void *argument)
     drmp3_uint64 frame_offset = 0;
     client_t *music_bot_client = (client_t *)argument;
 
-    // A restore starts every worker behind this gate. Failed startup can stop
-    // and join them while holding the clients lock because no worker takes it yet.
+    // a restore starts every worker behind this gate. failed startup can stop
+    // and join them while holding the clients lock because no worker takes it yet
     while (atomic_load(&music_bot_client->music_bot_client_extension.is_restore_pending))
     {
         if (!atomic_load(&music_bot_client->music_bot_client_extension.is_music_bot_running))
@@ -724,12 +803,16 @@ void *musicbot__threadstart(void *argument)
         util__sleep_for_milliseconds(10);
     }
 
+    // clear the prepared song
     clib__null_memory((void *)&prepared_song, sizeof(musicbot_prepared_song_t));
 
+    // repeat the song list
     while (music_bot_client->music_bot_client_extension.is_music_bot_running == TRUE)
     {
+        // wait one second
         util__sleep_for_milliseconds(1000);
 
+        // play every song
         for (song_index = 0; song_index < MUSIC_BOT_MAX_FILE_COUNT; song_index++)
         {
             // stop promptly if the bot was shut down (e.g. deleted) while looping
@@ -738,6 +821,7 @@ void *musicbot__threadstart(void *argument)
                 break;
             }
 
+            // skip empty song slots
             clib__read_lock(&g_clients_global_rwlock_guard);
             song_exists = music_bot_client->music_bot_client_extension.songs[song_index].is_existing;
             clib__unlock(&g_clients_global_rwlock_guard);
@@ -755,6 +839,7 @@ void *musicbot__threadstart(void *argument)
                 is_preload_running = FALSE;
             }
 
+            // use preload or prepare
             if (preload_arg != NULL_POINTER && preload_arg->result.is_valid == TRUE && preload_arg->song_index == song_index && _musicbot_internal__song_matches(music_bot_client, song_index, preload_arg->result.generation))
             {
                 prepared_song = preload_arg->result;
@@ -769,6 +854,7 @@ void *musicbot__threadstart(void *argument)
                 _musicbot_internal__prepare_song(music_bot_client, song_index, &prepared_song);
             }
 
+            // free the preload argument
             if (preload_arg != NULL_POINTER)
             {
                 memorymanager__free((nuint)preload_arg);
@@ -782,6 +868,7 @@ void *musicbot__threadstart(void *argument)
                 continue;
             }
 
+            // log for debugging
             DBG_MUSIC_BOT log_info("%s %llu %s", "seconds length is ->", prepared_song.song_length_seconds, "\n");
 
             // start preparing the NEXT song in the rotation while this one streams
@@ -796,6 +883,8 @@ void *musicbot__threadstart(void *argument)
                 }
             }
             clib__unlock(&g_clients_global_rwlock_guard);
+
+            // start the preload thread
             if (preload_song_index >= 0)
             {
                 preload_arg = (musicbot_prepare_arg_t *)memorymanager__allocate(sizeof(musicbot_prepare_arg_t), MEMALLOC_MUSICBOT_SONG);
@@ -827,6 +916,8 @@ void *musicbot__threadstart(void *argument)
                 clib__null_memory((void *)&prepared_song, sizeof(musicbot_prepared_song_t));
                 continue;
             }
+
+            // set bitrate and complexity
             opus_encoder_ctl(opus_encoder, OPUS_SET_BITRATE(160000));
             opus_encoder_ctl(opus_encoder, OPUS_SET_COMPLEXITY(10));
 
@@ -844,8 +935,11 @@ void *musicbot__threadstart(void *argument)
             {
                 song_playback_start_ms = timestamp_started_playing;
             }
+
+            // reset the frame count
             frames_done = 0;
 
+            // send the song start
             clib__write_lock(&g_clients_global_rwlock_guard);
             song_exists = music_bot_client->music_bot_client_extension.is_music_bot_running && music_bot_client->music_bot_client_extension.songs[song_index].is_existing && music_bot_client->music_bot_client_extension.songs[song_index].generation == prepared_song.generation;
             if (song_exists)
@@ -858,16 +952,20 @@ void *musicbot__threadstart(void *argument)
             }
             clib__unlock(&g_clients_global_rwlock_guard);
 
+            // reset the stop reason
             is_stop_reason_sudden_song_deletion = FALSE;
 
+            // reset the debug counters
             DBG_MUSIC_BOT
             {
                 probe_song_start = util__get_timestamp_ms();
                 probe_frames_sent = 0;
             }
 
+            // send every frame
             for (frame_offset = 0; frame_offset < prepared_song.frame_count; frame_offset += frame_size)
             {
+                // wait while paused
                 if (_musicbot_internal__wait_for_playback(music_bot_client, &song_playback_start_ms, song_index, prepared_song.generation) == FALSE)
                 {
                     is_stop_reason_sudden_song_deletion = TRUE;
@@ -884,14 +982,17 @@ void *musicbot__threadstart(void *argument)
                 // always encode exactly frame_size samples, zero-padding the last frame
                 clib__null_memory(frame_samples, sizeof(frame_samples));
 
+                // count the samples left
                 available_samples = prepared_song.frame_count - frame_offset;
                 if (available_samples > frame_size)
                 {
                     available_samples = frame_size;
                 }
 
+                // copy the samples
                 clib__copy_memory((void *)(prepared_song.pcm_int16 + frame_offset * prepared_song.channels), (void *)frame_samples, available_samples * prepared_song.channels * sizeof(opus_int16), available_samples * prepared_song.channels * sizeof(opus_int16));
 
+                // encode the frame
                 encoded_byte_count = opus_encode(opus_encoder, frame_samples, frame_size, opus_packet, sizeof(opus_packet));
                 if (encoded_byte_count < 0)
                 {
@@ -899,6 +1000,7 @@ void *musicbot__threadstart(void *argument)
                     break;
                 }
 
+                // send the frame
                 audio_channel__send_music_bot_data(music_bot_client->client_id, channel_snapshot, song_stream_sequence_number, opus_packet, encoded_byte_count, song_index, prepared_song.generation);
                 song_stream_sequence_number = (song_stream_sequence_number + 1) & 0xffff;
                 DBG_MUSIC_BOT probe_frames_sent++;
@@ -917,6 +1019,7 @@ void *musicbot__threadstart(void *argument)
                 }
             }
 
+            // send the stop message
             if (is_stop_reason_sudden_song_deletion)
             {
                 clib__read_lock(&g_clients_global_rwlock_guard);
@@ -937,6 +1040,7 @@ void *musicbot__threadstart(void *argument)
                 log_info("%s %llu %s %llu %s %llu %s %s %s", "MUSICBOT PACING frames", probe_frames_sent, "audio_ms", probe_audio_ms, "wall_ms", probe_elapsed, "status", probe_elapsed > probe_audio_ms ? "behind" : "ok", "\n");
             }
 
+            // mark song as stopped
             clib__write_lock(&g_clients_global_rwlock_guard);
             if (music_bot_client->music_bot_client_extension.songs[song_index].generation == prepared_song.generation)
             {
@@ -981,6 +1085,8 @@ void *musicbot__threadstart(void *argument)
     {
         pthread_join(preload_thread, NULL_POINTER);
     }
+
+    // free the preload argument
     if (preload_arg != NULL_POINTER)
     {
         if (preload_arg->result.pcm_int16 != NULL_POINTER)
@@ -997,6 +1103,7 @@ static boole _musicbot_internal__song_matches(client_t *client, int64 song_index
 {
     boole matches = FALSE;
 
+    // compare slot and generation
     clib__read_lock(&g_clients_global_rwlock_guard);
     matches = song_index >= 0 && song_index < MUSIC_BOT_MAX_FILE_COUNT && client->music_bot_client_extension.is_music_bot_running && client->music_bot_client_extension.songs != NULL_POINTER && client->music_bot_client_extension.songs[song_index].is_existing && client->music_bot_client_extension.songs[song_index].generation == generation;
     clib__unlock(&g_clients_global_rwlock_guard);

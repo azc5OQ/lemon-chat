@@ -21,6 +21,8 @@ static boole _crypto_media_internal__mac(const ubyte *key, const ubyte *bytes, u
 static void _crypto_media_internal__u64(ubyte *bytes, uint64 value)
 {
     int64 index = 0;
+
+    // write eight bytes
     for (index = 0; index < 8; index++)
     {
         bytes[index] = (ubyte)(value >> (56 - index * 8));
@@ -36,6 +38,8 @@ static uint64 _crypto_media_internal__read_u64(const ubyte *bytes)
 {
     uint64 value = 0;
     int64 index = 0;
+
+    // read eight bytes
     for (index = 0; index < 8; index++)
     {
         value = (value << 8) | bytes[index];
@@ -54,8 +58,12 @@ static uint64 _crypto_media_internal__read_u64(const ubyte *bytes)
 static void _crypto_media_internal__crypt(const ubyte *key, const ubyte *block, ubyte *bytes, uint64 size)
 {
     struct AES_ctx context = { 0 };
+
+    // apply the cipher
     AES_init_ctx_iv(&context, key, block);
     AES_CTR_xcrypt_buffer(&context, bytes, size);
+
+    // clear cipher state
     mbedtls_platform_zeroize(&context, sizeof(context));
 }
 
@@ -84,17 +92,26 @@ boole crypto_media__hex(const char *text, ubyte *output, uint64 size)
     uint64 index = 0;
     int64 value = 0;
     ubyte character = 0;
+
+    // check arguments
     if (!text || !output || size > 64)
     {
         return 0;
     }
+
+    // clear the output
     clib__null_memory(output, size);
+
+    // check text length
     if (clib__strlen(text) != size * 2)
     {
         return 0;
     }
+
+    // convert hex text
     for (index = 0; index < size * 2; index++)
     {
+        // read one hex digit
         character = (ubyte)text[index];
         if (character >= '0' && character <= '9')
         {
@@ -113,6 +130,8 @@ boole crypto_media__hex(const char *text, ubyte *output, uint64 size)
             clib__null_memory(output, size);
             return 0;
         }
+
+        // add digit to byte
         output[index / 2] = (ubyte)((output[index / 2] << 4) | value);
     }
     return 1;
@@ -128,6 +147,7 @@ boole crypto_media__hex(const char *text, ubyte *output, uint64 size)
  */
 boole crypto_media__proof(const ubyte key[32], const ubyte ticket[16], uint id, ubyte output[53])
 {
+    // write type, id, ticket
     clib__null_memory(output, 53);
     output[0] = 1;
     output[1] = (ubyte)(id >> 24);
@@ -135,6 +155,8 @@ boole crypto_media__proof(const ubyte key[32], const ubyte ticket[16], uint id, 
     output[3] = (ubyte)(id >> 8);
     output[4] = (ubyte)id;
     clib__memcpy(output + 5, ticket, 16);
+
+    // add the HMAC
     return _crypto_media_internal__mac(key, output, 21, output + 21);
 }
 
@@ -150,10 +172,14 @@ boole crypto_media__acknowledgement(const ubyte key[32], const ubyte ticket[16],
 {
     ubyte code[32] = { 0 };
     boole valid = 0;
+
+    // check ticket and HMAC
     if (bytes && size == 49 && bytes[0] == 2 && _crypto_media_internal__mac(key, bytes, 17, code))
     {
         valid = (mbedtls_ct_memcmp(ticket, bytes + 1, 16) | mbedtls_ct_memcmp(code, bytes + 17, 32)) == 0;
     }
+
+    // clear HMAC buffer
     mbedtls_platform_zeroize(code, sizeof(code));
     return valid;
 }
@@ -172,11 +198,15 @@ void crypto_media__layer(const ubyte key[32], const ubyte *iv, uint sender, uint
 {
     ubyte block[16] = { 0 };
     int64 index = 0;
+
+    // build counter block
     for (index = 0; index < 4; index++)
     {
         block[index] = (ubyte)(sender >> (index * 8));
     }
     _crypto_media_internal__u64(block + 4, counter);
+
+    // XOR with channel IV
     if (iv)
     {
         for (index = 0; index < 16; index++)
@@ -184,6 +214,8 @@ void crypto_media__layer(const ubyte key[32], const ubyte *iv, uint sender, uint
             block[index] ^= iv[index];
         }
     }
+
+    // apply the cipher
     _crypto_media_internal__crypt(key, block, data, size);
 }
 
@@ -203,32 +235,45 @@ uint64 crypto_media__seal(const desktop_media_keys_t *keys, uint sender, uint64 
     ubyte block[16] = { 0 };
     ubyte code[32] = { 0 };
     uint64 index = 0;
+
+    // check arguments
     if (!keys || !content || !output || size < 3 || size > DESKTOP_MEDIA_CONTENT || capacity < size + DESKTOP_MEDIA_OVERHEAD || keys->server_count > 8)
     {
         return 0;
     }
+
+    // write version and counter
     clib__null_memory(output, size + DESKTOP_MEDIA_OVERHEAD);
     output[0] = 2;
     _crypto_media_internal__u64(output + 1, counter);
+
+    // write sender and content
     for (index = 0; index < 4; index++)
     {
         output[9 + index] = (ubyte)(sender >> (index * 8));
     }
     _crypto_media_internal__u64(output + 13, counter);
     clib__memcpy(output + 21, content, size);
+
+    // encrypt with server keys
     for (index = 0; index < keys->server_count; index++)
     {
+        // build counter block
         clib__null_memory(block, sizeof(block));
         for (unsigned int byte = 0; byte < 4; byte++)
         {
             block[byte] = (ubyte)(sender >> (byte * 8));
         }
         _crypto_media_internal__u64(block + 4, counter);
+
+        // encrypt the content
         if (!ciphers__crypt(keys->server_types[index] ? keys->server_types[index] : LEMON_AES256, keys->server[index], block, output + 21, size))
         {
             return 0;
         }
     }
+
+    // encrypt with session keys
     clib__null_memory(block, sizeof(block));
     _crypto_media_internal__u64(block, counter);
     if (keys->negotiated.count)
@@ -242,6 +287,8 @@ uint64 crypto_media__seal(const desktop_media_keys_t *keys, uint sender, uint64 
     {
         _crypto_media_internal__crypt(keys->encryption, block, output + 9, size + 12);
     }
+
+    // add the HMAC
     if (!_crypto_media_internal__mac(keys->authentication, output, size + 21, code))
     {
         clib__null_memory(output, size + DESKTOP_MEDIA_OVERHEAD);
@@ -271,19 +318,27 @@ uint64 crypto_media__open(const desktop_media_keys_t *keys, const ubyte *frame, 
     ubyte code[32] = { 0 };
     uint64 length = 0;
     uint64 index = 0;
+
+    // check arguments
     if (!keys || !frame || !sender || !sender_counter || !frame_counter || !content || keys->server_count > 8 || size < DESKTOP_MEDIA_OVERHEAD + 3 || size > DESKTOP_MEDIA_FRAME || frame[0] != 2)
     {
         return 0;
     }
+
+    // check size and HMAC
     length = size - DESKTOP_MEDIA_OVERHEAD;
     if (capacity < length || !_crypto_media_internal__mac(keys->negotiated.count ? keys->negotiated.server_mac : keys->authentication, frame, size - 8, code) || mbedtls_ct_memcmp(code, frame + size - 8, 8) != 0)
     {
         mbedtls_platform_zeroize(code, sizeof(code));
         return 0;
     }
+
+    // read frame counter
     *frame_counter = _crypto_media_internal__read_u64(frame + 1);
     _crypto_media_internal__u64(block, *frame_counter);
     block[8] = 1;
+
+    // decrypt with session keys
     clib__memcpy(body, frame + 9, length + 12);
     if (keys->negotiated.count)
     {
@@ -296,23 +351,34 @@ uint64 crypto_media__open(const desktop_media_keys_t *keys, const ubyte *frame, 
     {
         _crypto_media_internal__crypt(keys->encryption, block, body, length + 12);
     }
+
+    // read sender and counter
     *sender = (uint)body[0] | ((uint)body[1] << 8) | ((uint)body[2] << 16) | ((uint)body[3] << 24);
     *sender_counter = _crypto_media_internal__read_u64(body + 4);
+
+    // decrypt with server keys
     for (index = keys->server_count; index > 0; index--)
     {
+        // build counter block
         clib__null_memory(block, sizeof(block));
         for (unsigned int byte = 0; byte < 4; byte++)
         {
             block[byte] = (ubyte)(*sender >> (byte * 8));
         }
         _crypto_media_internal__u64(block + 4, *sender_counter);
+
+        // decrypt the content
         if (!ciphers__crypt(keys->server_types[index - 1] ? keys->server_types[index - 1] : LEMON_AES256, keys->server[index - 1], block, body + 12, length))
         {
             ciphers__clear(body, sizeof(body));
             return 0;
         }
     }
+
+    // copy the content
     clib__memcpy(content, body + 12, length);
+
+    // clear the buffers
     mbedtls_platform_zeroize(body, sizeof(body));
     mbedtls_platform_zeroize(code, sizeof(code));
     return length;

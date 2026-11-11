@@ -54,6 +54,7 @@ static boole _url_preview_internal__download(char *url, uint64 url_capacity, uin
  */
 static boole _url_preview_internal__same(const char *left, const char *right)
 {
+    // compare the letters
     while (*left && *right)
     {
         if (clib__tolower((ubyte)*left++) != clib__tolower((ubyte)*right++))
@@ -75,6 +76,7 @@ static boole _url_preview_internal__same(const char *left, const char *right)
  */
 static boole _url_preview_internal__starts_with(const char *text, const char *prefix)
 {
+    // compare the prefix
     while (*prefix)
     {
         if (clib__tolower((ubyte)*text++) != clib__tolower((ubyte)*prefix++))
@@ -98,6 +100,7 @@ static const char *_url_preview_internal__find(const char *text, const char *wan
     uint64 index = 0;
     uint64 size = clib__strlen(wanted);
 
+    // try every position
     for (; *text; text++)
     {
         index = 0;
@@ -125,10 +128,13 @@ static const char *_url_preview_internal__find(const char *text, const char *wan
  */
 static void _url_preview_internal__copy(char *output, uint64 capacity, const char *text, uint64 length)
 {
+    // limit the length
     if (length >= capacity)
     {
         length = capacity - 1;
     }
+
+    // copy the text
     clib__memcpy(output, text, length);
     output[length] = 0;
 }
@@ -166,14 +172,17 @@ static void _url_preview_internal__text(const char *source, uint64 length, char 
     uint64 count = 0;
     uint64 written = 0;
 
+    // convert every character
     for (index = 0; index < length && source[index];)
     {
+        // read one byte
         code = (ubyte)source[index];
         consumed = 1;
 
-        // Decode HTML entities
+        // decode HTML entities
         if (code == '&')
         {
+            // find the semicolon
             end = index + 1;
             while (end < length && end - index < 16 && source[end] && source[end] != ';')
             {
@@ -181,11 +190,15 @@ static void _url_preview_internal__text(const char *source, uint64 length, char 
             }
             if (end < length && source[end] == ';')
             {
+                // copy entity name
                 clib__memset(entity, 0, sizeof(entity));
                 _url_preview_internal__copy(entity, sizeof(entity), source + index + 1, end - index - 1);
                 entity_code = 0;
+
+                // find character code
                 if (entity[0] == '#')
                 {
+                    // read numeric entity
                     tail = NULL;
                     hexadecimal = entity[1] == 'x' || entity[1] == 'X';
                     digits = entity + (hexadecimal ? 2 : 1);
@@ -219,6 +232,8 @@ static void _url_preview_internal__text(const char *source, uint64 length, char 
                 {
                     entity_code = ' ';
                 }
+
+                // use valid code
                 if (entity_code > 0 && entity_code <= 0x10ffff && !(entity_code >= 0xd800 && entity_code <= 0xdfff))
                 {
                     code = (uint64)entity_code;
@@ -228,23 +243,29 @@ static void _url_preview_internal__text(const char *source, uint64 length, char 
         }
         else if (code >= 128)
         {
-            // Validate UTF-8
+            // validate UTF-8
             input_count = code >= 0xc2 && code <= 0xdf ? 2 : code >= 0xe0 && code <= 0xef ? 3 : code >= 0xf0 && code <= 0xf4 ? 4 : 0;
             decoded = input_count == 2 ? code & 31 : input_count == 3 ? code & 15 : code & 7;
             valid = input_count != 0 && index + input_count <= length;
+
+            // read following bytes
             for (part = 1; valid && part < input_count; part++)
             {
                 byte = (ubyte)source[index + part];
                 valid = (byte & 0xc0) == 0x80;
                 decoded = (decoded << 6) | (byte & 63);
             }
+
+            // check code range
             valid = valid && decoded >= (input_count == 2 ? 0x80u : input_count == 3 ? 0x800u : 0x10000u) && decoded <= 0x10ffff && !(decoded >= 0xd800 && decoded <= 0xdfff);
             code = valid ? decoded : 0xfffd;
             consumed = valid ? input_count : 1;
         }
+
+        // go to next character
         index += consumed;
 
-        // Combine whitespace
+        // combine whitespace
         if (code <= 32 || code == 127 || code == 160)
         {
             if (written == 0 || output[written - 1] == ' ')
@@ -254,7 +275,7 @@ static void _url_preview_internal__text(const char *source, uint64 length, char 
             code = ' ';
         }
 
-        // Encode UTF-8
+        // encode UTF-8
         clib__memset(bytes, 0, sizeof(bytes));
         count = 1;
         if (code < 128)
@@ -283,18 +304,24 @@ static void _url_preview_internal__text(const char *source, uint64 length, char 
             bytes[3] = (ubyte)(0x80 | (code & 63));
         }
 
-        // Fit whole character
+        // fit whole character
         if (written + count >= capacity)
         {
             break;
         }
+
+        // write the character
         clib__memcpy(output + written, bytes, count);
         written += count;
     }
+
+    // remove last space
     if (written && output[written - 1] == ' ')
     {
         written--;
     }
+
+    // write ending zero
     output[written] = 0;
 }
 
@@ -312,6 +339,7 @@ static void _url_preview_internal__text(const char *source, uint64 length, char 
  */
 static void _url_preview_internal__choose(char *output, uint64 capacity, const char *value, int64 priority, int64 *previous)
 {
+    // accept higher priority
     if (value[0] && priority > *previous)
     {
         _url_preview_internal__text(value, clib__strlen(value), output, capacity);
@@ -354,9 +382,10 @@ void url_preview__read_html(const char *html, url_preview_t *preview)
     int64 image_priority = 0;
     const char *cursor = html;
 
-    // Find HTML tags
+    // find HTML tags
     while ((cursor = clib__strchr(cursor, '<')) != NULL)
     {
+        // skip HTML comments
         if (!clib__strncmp(cursor, "<!--", 4))
         {
             cursor = clib__strstr(cursor + 4, "-->");
@@ -367,6 +396,8 @@ void url_preview__read_html(const char *html, url_preview_t *preview)
             cursor += 3;
             continue;
         }
+
+        // check closing tags
         cursor++;
         if (*cursor == '/')
         {
@@ -377,7 +408,7 @@ void url_preview__read_html(const char *html, url_preview_t *preview)
             continue;
         }
 
-        // Read tag name
+        // read tag name
         name_start = cursor;
         while (clib__isalnum((ubyte)*cursor))
         {
@@ -385,14 +416,17 @@ void url_preview__read_html(const char *html, url_preview_t *preview)
         }
         clib__memset(tag, 0, sizeof(tag));
         _url_preview_internal__copy(tag, sizeof(tag), name_start, (uint64)(cursor - name_start));
+
+        // clear attribute values
         clib__memset(name, 0, sizeof(name));
         clib__memset(property, 0, sizeof(property));
         clib__memset(content, 0, sizeof(content));
 
-        // Attribute values can contain '>', and attributes may arrive in any
-        // order. Read each quoted value before looking for the next attribute.
+        // attribute values can contain '>', and attributes may arrive in any
+        // order. read each quoted value before looking for the next attribute
         while (*cursor && *cursor != '>')
         {
+            // skip the spaces
             while (clib__isspace((ubyte)*cursor) || *cursor == '/')
             {
                 cursor++;
@@ -402,7 +436,7 @@ void url_preview__read_html(const char *html, url_preview_t *preview)
                 break;
             }
 
-            // Read attribute name
+            // read attribute name
             attribute_start = cursor;
             while (*cursor && !clib__isspace((ubyte)*cursor) && *cursor != '=' && *cursor != '>')
             {
@@ -410,6 +444,8 @@ void url_preview__read_html(const char *html, url_preview_t *preview)
             }
             clib__memset(attribute, 0, sizeof(attribute));
             _url_preview_internal__copy(attribute, sizeof(attribute), attribute_start, (uint64)(cursor - attribute_start));
+
+            // find the equals sign
             while (clib__isspace((ubyte)*cursor))
             {
                 cursor++;
@@ -424,7 +460,7 @@ void url_preview__read_html(const char *html, url_preview_t *preview)
                 cursor++;
             }
 
-            // Read attribute value
+            // read attribute value
             quote = *cursor == '"' || *cursor == '\'' ? *cursor++ : 0;
             value = cursor;
             while (*cursor && (quote ? *cursor != quote : !clib__isspace((ubyte)*cursor) && *cursor != '>'))
@@ -432,6 +468,8 @@ void url_preview__read_html(const char *html, url_preview_t *preview)
                 cursor++;
             }
             length = (uint64)(cursor - value);
+
+            // store known attributes
             if (_url_preview_internal__same(attribute, "name"))
             {
                 _url_preview_internal__copy(name, sizeof(name), value, length);
@@ -444,18 +482,22 @@ void url_preview__read_html(const char *html, url_preview_t *preview)
             {
                 _url_preview_internal__copy(content, sizeof(content), value, length);
             }
+
+            // skip closing quote
             if (quote && *cursor == quote)
             {
                 cursor++;
             }
         }
+
+        // check for text end
         if (!*cursor)
         {
             break;
         }
         cursor++;
 
-        // Skip scripts
+        // skip scripts
         if (_url_preview_internal__same(tag, "script") || _url_preview_internal__same(tag, "style"))
         {
             cursor = _url_preview_internal__find(cursor, _url_preview_internal__same(tag, "script") ? "</script" : "</style");
@@ -466,16 +508,18 @@ void url_preview__read_html(const char *html, url_preview_t *preview)
             continue;
         }
 
-        // Read page title
+        // read page title
         if (_url_preview_internal__same(tag, "title"))
         {
             end = _url_preview_internal__find(cursor, "</title");
             if (end == NULL)
             {
-                // An unclosed title consumes the remaining text. Do not search
-                // the same suffix again for every nested opening title tag.
+                // an unclosed title consumes the remaining text. do not search
+                // the same suffix again for every nested opening title tag
                 break;
             }
+
+            // store title if none
             if (title_priority == 0)
             {
                 _url_preview_internal__text(cursor, (uint64)(end - cursor), preview->title, sizeof(preview->title));
@@ -485,7 +529,7 @@ void url_preview__read_html(const char *html, url_preview_t *preview)
         }
         else if (_url_preview_internal__same(tag, "meta"))
         {
-            // Choose preview fields
+            // choose preview fields
             key = property[0] ? property : name;
             if (_url_preview_internal__same(key, "og:title") || _url_preview_internal__same(key, "twitter:title"))
             {
@@ -530,20 +574,24 @@ static void _url_preview_internal__remove_directory_steps(char *url)
     char *path = (char *)clib__strchr(authority, '/');
     char *query = (char *)clib__strchr(authority, '?');
 
+    // no path to change
     if (path == NULL || (query != NULL && query < path))
     {
         return;
     }
+
+    // find path end
     end = path + strcspn(path, "?");
     read = path;
     write = path;
 
-    // Resolve directory steps
+    // resolve directory steps
     while (read < end)
     {
         remaining = (uint64)(end - read);
         if ((remaining >= 3 && !clib__strncmp(read, "/./", 3)) || (remaining == 2 && !clib__strncmp(read, "/.", 2)))
         {
+            // skip current directory
             read += 2;
             if (read == end)
             {
@@ -552,6 +600,7 @@ static void _url_preview_internal__remove_directory_steps(char *url)
         }
         else if ((remaining >= 4 && !clib__strncmp(read, "/../", 4)) || (remaining == 3 && !clib__strncmp(read, "/..", 3)))
         {
+            // remove previous directory
             read += 3;
             while (write > path && write[-1] != '/')
             {
@@ -568,6 +617,7 @@ static void _url_preview_internal__remove_directory_steps(char *url)
         }
         else
         {
+            // copy path part
             *write++ = *read++;
             while (read < end && *read != '/')
             {
@@ -576,7 +626,7 @@ static void _url_preview_internal__remove_directory_steps(char *url)
         }
     }
 
-    // Keep query unchanged
+    // keep query unchanged
     clib__memmove(write, end, clib__strlen(end) + 1);
 }
 
@@ -601,12 +651,13 @@ boole url_preview__absolute_url(const char *base, const char *reference, char *o
     char *slash = NULL_POINTER;
     httpclient_url_t parsed;
 
+    // check arguments
     if (httpclient__parse_url(base, &parsed) != HTTPCLIENT_OK || reference == NULL || capacity == 0 || capacity > SIZE_MAX)
     {
         return 0;
     }
 
-    // Remove URL fragment
+    // remove URL fragment
     length = strcspn(reference, "#");
     if (length >= sizeof(clean))
     {
@@ -614,7 +665,7 @@ boole url_preview__absolute_url(const char *base, const char *reference, char *o
     }
     _url_preview_internal__copy(clean, sizeof(clean), reference, length);
 
-    // Resolve relative link
+    // resolve relative link
     if (_url_preview_internal__starts_with(clean, "http://") || _url_preview_internal__starts_with(clean, "https://"))
     {
         written = clib__string_format(output, capacity, "%s", clean);
@@ -625,30 +676,38 @@ boole url_preview__absolute_url(const char *base, const char *reference, char *o
     }
     else
     {
-        // A colon before the first slash means a different URL scheme, not a
-        // relative filename. Never turn file:, data: or javascript: into a fetch.
+        // a colon before the first slash means a different URL scheme, not a
+        // relative filename. never turn file:, data: or javascript: into a fetch
         if (strcspn(clean, ":") < strcspn(clean, "/?"))
         {
             return 0;
         }
+
+        // remove base query
         query = (char *)clib__strchr(parsed.target, '?');
         if (query != NULL && clean[0] != 0)
         {
             *query = 0;
         }
+
+        // keep base directory
         if (clean[0] != '/' && clean[0] != '?' && clean[0] != 0)
         {
             slash = (char *)clib__strrchr(parsed.target, '/');
             slash[1] = 0;
         }
+
+        // build complete URL
         written = clib__string_format(output, capacity, "%s://%s%s%s:%s%s%s", parsed.is_https ? "https" : "http", parsed.is_ipv6 ? "[" : "", parsed.host, parsed.is_ipv6 ? "]" : "", parsed.port, clean[0] == '/' ? "" : parsed.target, clean);
     }
 
-    // Validate complete URL
+    // validate complete URL
     if (written <= 0 || (uint64)written >= capacity || httpclient__parse_url(output, &parsed) != HTTPCLIENT_OK)
     {
         return 0;
     }
+
+    // resolve directory steps
     _url_preview_internal__remove_directory_steps(output);
     return 1;
 }
@@ -671,12 +730,16 @@ static boole _url_preview_internal__header(const char *headers, const char *name
     char field[128] = { 0 };
     const char *value = NULL_POINTER;
 
+    // clear the output
     output[0] = 0;
 
-    // Skip status line
+    // skip status line
     line = clib__strstr(headers, "\r\n");
+
+    // check every header line
     while (line != NULL && line[2])
     {
+        // find line end
         line += 2;
         end = clib__strstr(line, "\r\n");
         colon = clib__strchr(line, ':');
@@ -686,13 +749,14 @@ static boole _url_preview_internal__header(const char *headers, const char *name
         }
         if (colon != NULL && colon < end)
         {
+            // copy header name
             clib__memset(field, 0, sizeof(field));
             _url_preview_internal__copy(field, sizeof(field), line, (uint64)(colon - line));
 
-            // Match header name
+            // match header name
             if (_url_preview_internal__same(field, name))
             {
-                // Trim surrounding spaces
+                // trim surrounding spaces
                 value = colon + 1;
                 while (value < end && clib__isspace((ubyte)*value))
                 {
@@ -702,14 +766,20 @@ static boole _url_preview_internal__header(const char *headers, const char *name
                 {
                     end--;
                 }
+
+                // refuse long value
                 if ((uint64)(end - value) >= capacity)
                 {
                     return 0;
                 }
+
+                // copy the value
                 _url_preview_internal__copy(output, capacity, value, (uint64)(end - value));
                 return 1;
             }
         }
+
+        // go to next line
         line = end;
     }
     return 0;
@@ -737,10 +807,10 @@ static boole _url_preview_internal__download(char *url, uint64 url_capacity, uin
     boole follows = FALSE;
     const httpclient_header_t headers[] = { { "User-Agent", "LemonChat-LinkPreview/1.0" }, { "Accept", "text/html,application/xhtml+xml,image/png,image/jpeg,image/gif,image/webp;q=0.8,*/*;q=0.1" } };
 
-    // Limit redirect count
+    // limit redirect count
     for (redirect = 0; redirect <= PREVIEW_REDIRECT_LIMIT; redirect++)
     {
-        // Set download limits
+        // set download limits
         request = (httpclient_request_t){ 0 };
         request.url = url;
         request.timeout_ms = 8000;
@@ -748,31 +818,39 @@ static boole _url_preview_internal__download(char *url, uint64 url_capacity, uin
         request.public_addresses_only = 1;
         request.headers = headers;
         request.header_count = sizeof(headers) / sizeof(headers[0]);
+
+        // send the request
         if (httpclient__request(&request, response) != HTTPCLIENT_OK)
         {
             return 0;
         }
 
-        // Check response encoding
+        // check response encoding
         if (response->status_code == 200)
         {
             clib__memset(encoding, 0, sizeof(encoding));
             return !_url_preview_internal__header(response->headers, "Content-Encoding", encoding, sizeof(encoding)) || _url_preview_internal__same(encoding, "identity");
         }
 
-        // Resolve redirect target
+        // resolve redirect target
         clib__memset(location, 0, sizeof(location));
         clib__memset(next, 0, sizeof(next));
         follows = (response->status_code == 301 || response->status_code == 302 || response->status_code == 303 || response->status_code == 307 || response->status_code == 308) && _url_preview_internal__header(response->headers, "Location", location, sizeof(location)) && url_preview__absolute_url(url, location, next, sizeof(next));
 
-        // Release previous response
+        // release previous response
         httpclient__response_free(response);
+
+        // no redirect to follow
         if (!follows)
         {
             return 0;
         }
+
+        // use the new URL
         clib__string_copy(url, url_capacity, next);
     }
+
+    // too many redirects
     return 0;
 }
 
@@ -798,19 +876,24 @@ boole url_preview__resolve(const char *url, url_preview_t *preview)
     const ubyte *bytes = NULL_POINTER;
     uint64 capacity = 0;
     int64 prefix = 0;
-    size_t written = 0; // mbedTLS requires size_t*.
+    size_t written = 0; // mbedTLS requires size_t*
 
+    // clear the preview
     clib__memset(preview, 0, sizeof(*preview));
+
+    // check the URL
     if (url == NULL || clib__strlen(url) > 2048)
     {
         return 0;
     }
+
+    // copy the URL
     clib__string_copy(preview->url, sizeof(preview->url), url);
 
-    // Download preview page
+    // download preview page
     success = _url_preview_internal__download(preview->url, sizeof(preview->url), PREVIEW_PAGE_LIMIT, &response);
 
-    // Check HTML type
+    // check HTML type
     if (success && _url_preview_internal__header(response.headers, "Content-Type", content_type, sizeof(content_type)))
     {
         separator = (char *)clib__strchr(content_type, ';');
@@ -826,27 +909,33 @@ boole url_preview__resolve(const char *url, url_preview_t *preview)
     }
     if (success)
     {
-        // Extract preview fields
+        // extract preview fields
         url_preview__read_html((const char *)response.body, preview);
         success = preview->title[0] || preview->description[0];
     }
+
+    // free the response
     httpclient__response_free(&response);
+
+    // preview has no text
     if (!success)
     {
         return 0;
     }
+
+    // no usable picture URL
     if (!preview->image_url[0] || !url_preview__absolute_url(preview->url, preview->image_url, image_url, sizeof(image_url)))
     {
         return 1;
     }
 
-    // Download preview image
+    // download preview image
     if (_url_preview_internal__download(image_url, sizeof(image_url), PREVIEW_IMAGE_LIMIT, &response))
     {
         mime = NULL;
         bytes = response.body;
 
-        // Check image signature
+        // check image signature
         if (response.body_size >= 8 && !clib__memcmp(bytes, "\x89PNG\r\n\x1a\n", 8))
         {
             mime = "image/png";
@@ -865,7 +954,7 @@ boole url_preview__resolve(const char *url, url_preview_t *preview)
         }
         if (mime != NULL)
         {
-            // Encode image data
+            // encode image data
             capacity = ((uint64)response.body_size + 2) / 3 * 4 + 64;
             preview->image_data = malloc(capacity);
             if (preview->image_data != NULL)
@@ -880,6 +969,8 @@ boole url_preview__resolve(const char *url, url_preview_t *preview)
             }
         }
     }
+
+    // free the response
     httpclient__response_free(&response);
     return 1;
 }

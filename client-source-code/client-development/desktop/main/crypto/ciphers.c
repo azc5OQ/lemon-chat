@@ -13,6 +13,7 @@ void ciphers__clear(void *data, uint64 size)
 {
     volatile ubyte *bytes = data;
 
+    // write zero bytes
     while (size > 0)
     {
         *bytes++ = 0;
@@ -22,6 +23,7 @@ void ciphers__clear(void *data, uint64 size)
 
 const char *ciphers__name(int64 type)
 {
+    // convert type to name
     switch (type)
     {
     case LEMON_AES256:
@@ -43,6 +45,7 @@ const char *ciphers__name(int64 type)
 
 int64 ciphers__type(const char *name)
 {
+    // convert name to type
     if (name != NULL)
     {
         if (strcmp(name, "aes256") == 0)
@@ -70,6 +73,8 @@ int64 ciphers__type(const char *name)
             return LEMON_SERPENT256;
         }
     }
+
+    // no cipher found
     return 0;
 }
 
@@ -87,21 +92,32 @@ boole ciphers__hmac(const ubyte key[32], const ubyte *data, uint64 size, ubyte o
     uint64 index = 0;
     boole status = FALSE;
 
+    // check the size
     if (size > SIZE_MAX)
     {
         return 0;
     }
+
+    // build the inner pad
     mbedtls_sha256_init(&context);
     for (index = 0; index < sizeof(pad); index++)
     {
         pad[index] = (index < 32 ? key[index] : 0) ^ 0x36;
     }
+
+    // hash pad and data
     status = mbedtls_sha256_starts(&context, 0) == 0 && mbedtls_sha256_update(&context, pad, sizeof(pad)) == 0 && mbedtls_sha256_update(&context, data, size) == 0 && mbedtls_sha256_finish(&context, digest) == 0;
+
+    // build the outer pad
     for (index = 0; index < sizeof(pad); index++)
     {
         pad[index] ^= 0x36 ^ 0x5c;
     }
+
+    // hash pad and digest
     status = status && mbedtls_sha256_starts(&context, 0) == 0 && mbedtls_sha256_update(&context, pad, sizeof(pad)) == 0 && mbedtls_sha256_update(&context, digest, sizeof(digest)) == 0 && mbedtls_sha256_finish(&context, output) == 0;
+
+    // clear the buffers
     mbedtls_sha256_free(&context);
     ciphers__clear(pad, sizeof(pad));
     ciphers__clear(digest, sizeof(digest));
@@ -111,10 +127,13 @@ boole ciphers__hmac(const ubyte key[32], const ubyte *data, uint64 size, ubyte o
 /** @brief Applies a cipher symmetrically in place. Trivium-80 compatibility deliberately ignores the message IV. */
 boole ciphers__crypt(int64 type, const ubyte key[32], const ubyte iv[16], ubyte *data, uint64 size)
 {
+    // check arguments
     if (key == NULL || iv == NULL || data == NULL || size > SIZE_MAX)
     {
         return 0;
     }
+
+    // choose the cipher
     switch (type)
     {
     case LEMON_AES256:

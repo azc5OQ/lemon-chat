@@ -30,6 +30,8 @@ boole desktop_ui_input__limits(void)
     gui_node_t *node = NULL_POINTER;
     int64 index = 0;
     boole complete = TRUE;
+
+    // set every text limit
     for (index = 0; index < (int64)(sizeof(limits) / sizeof(limits[0])); index++)
     {
         node = scene__find_by_id((char *)limits[index].id);
@@ -38,6 +40,8 @@ boole desktop_ui_input__limits(void)
             complete = FALSE;
         }
     }
+
+    // update the connection fields
     return desktop_ui_connection__refresh() && complete;
 }
 
@@ -53,12 +57,15 @@ boole desktop_ui_input__limits(void)
  */
 static void _ui_input_internal__layout(gui_node_t *node, float x, float y, float width, float height, float scale)
 {
+    // call the original layout
     g_original_input.layout(node, x, y, width, height, scale);
+
+    // set the field width
     if ((clib__strcmp(node->id, "message-input") == 0 || node->resolved.width_pct > 0) && width > 0)
     {
         if (clib__strcmp(node->id, "message-input") == 0 && node->parent && clib__strcmp(node->parent->id, "composer-input-row") == 0 && node->resolved.size_w > 0)
         {
-            // Keep the width reserved for Send beside the draft.
+            // keep the width reserved for Send beside the draft
             node->bounds.w = clib__fminf(width, node->resolved.size_w * scale);
         }
         else
@@ -77,6 +84,7 @@ static void _ui_input_internal__layout(gui_node_t *node, float x, float y, float
  */
 static void _ui_input_internal__key(gui_node_t *node, int64 key, boole down)
 {
+    // submit on Enter
     if (clib__strcmp(node->id, "message-input") == 0 && key == 13)
     {
         if (down && g_submit)
@@ -85,6 +93,8 @@ static void _ui_input_internal__key(gui_node_t *node, int64 key, boole down)
         }
         return;
     }
+
+    // call the original function
     if (g_original_input.on_key)
     {
         g_original_input.on_key(node, key, down);
@@ -98,7 +108,10 @@ static void _ui_input_internal__key(gui_node_t *node, int64 key, boole down)
  */
 static void _ui_input_internal__destroy(gui_node_t *node)
 {
+    // erase the text
     desktop_memory__erase(node->text, node->text_capacity);
+
+    // call the original function
     if (g_original_input.on_destroy)
     {
         g_original_input.on_destroy(node);
@@ -113,11 +126,17 @@ static void _ui_input_internal__destroy(gui_node_t *node)
 void desktop_ui_input__register(void (*submit)(void))
 {
     const widget_vtable_t *original = widget_registry__get(GUI_NODE_TYPE__INPUT);
+
+    // check the original widget
     if (!original || !original->layout || original == &g_desktop_input)
     {
         return;
     }
+
+    // store the callback
     g_submit = submit;
+
+    // replace the input functions
     g_original_input = *original;
     g_desktop_input = *original;
     g_desktop_input.layout = _ui_input_internal__layout;

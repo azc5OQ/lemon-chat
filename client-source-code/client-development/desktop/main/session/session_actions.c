@@ -17,10 +17,14 @@ boole desktop_session__allows(const desktop_session_view_t *view, const desktop_
     int64 kind = action == DESKTOP_ACTION_BAN ? 1 : 0;
     int64 protection = 0;
     boole negated = FALSE;
+
+    // check view and client
     if (!view || !client || !view->connected || view->idle || client->music)
     {
         return FALSE;
     }
+
+    // check a group change
     if (action == DESKTOP_ACTION_GROUP_ADD || action == DESKTOP_ACTION_GROUP_REMOVE)
     {
         if (!view->permission_system || value < 0 || value >= DESKTOP_TREE_GROUPS)
@@ -30,24 +34,35 @@ boole desktop_session__allows(const desktop_session_view_t *view, const desktop_
         group = &view->groups[value];
         return group->exists && !group->default_guest && (view->administrator || (client->id != view->local_id && !(client->groups[0] & 1) && (action == DESKTOP_ACTION_GROUP_ADD ? view->can_assign_groups && group->can_assign : view->can_remove_groups && group->can_remove)));
     }
+
+    // check a channel group
     if (action == DESKTOP_ACTION_CHANNEL_GROUP)
     {
         return view->permission_system && !client->idle && client->access_known && value >= 0 && value < DESKTOP_TREE_CHANNEL_GROUPS && (value == 0 || view->channel_groups[value].exists) && (client->assignable_roles[value / 64] & (1ULL << (value % 64)));
     }
+
+    // check kick or ban
     if (action == DESKTOP_ACTION_KICK_SERVER || action == DESKTOP_ACTION_BAN)
     {
+        // refuse the local client
         if (client->id == view->local_id)
         {
             return FALSE;
         }
+
+        // admins are allowed
         if (view->administrator)
         {
             return TRUE;
         }
+
+        // check target and permission
         if ((client->groups[0] & 1) || !(kind ? view->can_ban : view->can_kick))
         {
             return FALSE;
         }
+
+        // calculate the target protection
         for (index = 0; index < DESKTOP_TREE_GROUPS; index++)
         {
             if (!(client->groups[index / 64] & (1ULL << (index % 64))))
@@ -65,8 +80,12 @@ boole desktop_session__allows(const desktop_session_view_t *view, const desktop_
                 protection = group->protection[kind];
             }
         }
+
+        // compare power with protection
         return view->moderation_power[kind] >= protection;
     }
+
+    // refuse other actions
     return FALSE;
 }
 
@@ -90,12 +109,18 @@ boole desktop_session__attach(desktop_session_t *session, const desktop_attachme
 {
     desktop_session_command_t command = { 0 };
     boole queued = FALSE;
+
+    // check session and path
     if (!session || !request || clib__string_length(request->path, sizeof(request->path)) <= 0)
     {
         return FALSE;
     }
+
+    // fill the command
     command.attach = TRUE;
     command.attachment_request = *request;
+
+    // queue the command
     desktop_mutex__lock(session->mutex);
     if (session->running && !session->stop && session->published.connected && session->command_count < 8)
     {
@@ -103,6 +128,8 @@ boole desktop_session__attach(desktop_session_t *session, const desktop_attachme
         queued = TRUE;
     }
     desktop_mutex__unlock(session->mutex);
+
+    // erase the command copy
     mbedtls_platform_zeroize(&command, sizeof(command));
     return queued;
 }
@@ -119,11 +146,17 @@ boole desktop_session__action(desktop_session_t *session, const desktop_action_t
     int64 index = 0;
     boole queued = 0;
     boole valid = 1;
+
+    // check the action
     if (!session || !action || action->type <= DESKTOP_ACTION_NONE || action->type > DESKTOP_ACTION_VOLUME || clib__string_length(action->text, sizeof(action->text)) < 0)
     {
         return 0;
     }
+
+    // fill the command
     command.action = *action;
+
+    // find the target client
     desktop_mutex__lock(session->mutex);
     if (action->type >= DESKTOP_ACTION_POKE)
     {
@@ -137,12 +170,16 @@ boole desktop_session__action(desktop_session_t *session, const desktop_action_t
             }
         }
     }
+
+    // queue the command
     if (valid && session->running && !session->stop && session->published.connected && session->command_count < 8)
     {
         session->commands[session->command_count++] = command;
         queued = 1;
     }
     desktop_mutex__unlock(session->mutex);
+
+    // erase the command copy
     mbedtls_platform_zeroize(&command, sizeof(command));
     return queued;
 }
@@ -158,11 +195,17 @@ boole desktop_session__channel_request(desktop_session_t *session, const desktop
     desktop_session_command_t command = { 0 };
     int64 index = 0;
     boole queued = 0;
+
+    // check the request
     if (!session || !request || request->action <= DESKTOP_CHANNEL_NONE || request->action > DESKTOP_CHANNEL_REMOVE || clib__string_length(request->channel.name, sizeof(request->channel.name)) < 0 || clib__string_length(request->channel.description, sizeof(request->channel.description)) < 0 || clib__string_length(request->password, sizeof(request->password)) < 0)
     {
         return 0;
     }
+
+    // fill the command
     command.channel_request = *request;
+
+    // find the channel revision
     desktop_mutex__lock(session->mutex);
     for (index = 0; index < session->published.channel_count; index++)
     {
@@ -171,12 +214,16 @@ boole desktop_session__channel_request(desktop_session_t *session, const desktop
             break;
         }
     }
+
+    // queue the command
     if (session->running && !session->stop && session->published.connected && !session->published.idle && session->command_count < 8 && index < session->published.channel_count)
     {
         session->commands[session->command_count++] = command;
         queued = 1;
     }
     desktop_mutex__unlock(session->mutex);
+
+    // erase the command copy
     mbedtls_platform_zeroize(&command, sizeof(command));
     return queued;
 }

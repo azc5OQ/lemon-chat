@@ -133,6 +133,7 @@ static uint64 _http_server_internal__monotonic_ms(void)
 #else
     struct timespec now;
 
+    // read the clock
     if (clock_gettime(CLOCK_MONOTONIC, &now) != 0)
     {
         return 0;
@@ -150,7 +151,7 @@ static int64 _http_server_internal__file_size(FILE *file)
 {
     int64 size = -1;
 
-    // Read file length
+    // read file length
 #ifdef WIN32
     if (_fseeki64(file, 0, SEEK_END) != 0)
     {
@@ -165,7 +166,7 @@ static int64 _http_server_internal__file_size(FILE *file)
     size = ftello(file);
 #endif
 
-    // Rewind for reading
+    // rewind for reading
 #ifdef WIN32
     if (_fseeki64(file, 0, SEEK_SET) != 0)
 #else
@@ -205,26 +206,37 @@ static uint64 _http_server_internal__read_request(http_socket_t client_socket, c
     uint64 received = 0;
     uint64 deadline = _http_server_internal__monotonic_ms() + HTTP_SERVER_RECV_TIMEOUT_SECONDS * 1000;
 
+    // check arguments
     if (buffer == NULL_POINTER || capacity < 2 || capacity > SIZE_MAX)
     {
         return 0;
     }
+
+    // start with empty text
     buffer[0] = 0;
+
+    // read until headers end
     for (;;)
     {
+        // read the time
         now = _http_server_internal__monotonic_ms();
         remaining_ms = 0;
         received_now = 0;
 
+        // check the deadline
         if (now >= deadline)
         {
             return 0;
         }
+
+        // refuse long headers
         if (received == capacity - 1)
         {
             _http_server_internal__send_simple_response(client_socket, "431 Request Header Fields Too Large", "431 Request Header Fields Too Large");
             return 0;
         }
+
+        // set receive timeout
         remaining_ms = deadline - now;
 #ifdef WIN32
         timeout_ms = (DWORD)remaining_ms;
@@ -240,24 +252,32 @@ static uint64 _http_server_internal__read_request(http_socket_t client_socket, c
             return 0;
         }
 #endif
-        // Limit socket read
+        // limit socket read
         amount = capacity - 1 - received;
         if (amount > INT_MAX)
         {
             amount = INT_MAX;
         }
+
+        // read from the socket
         received_now = recv(client_socket, buffer + received, (int)amount, 0);
         if (received_now <= 0)
         {
             return 0;
         }
+
+        // refuse zero bytes
         if (clib__memchr(buffer + received, 0, (uint64)received_now) != NULL_POINTER)
         {
             _http_server_internal__send_simple_response(client_socket, "400 Bad Request", "400 Bad Request");
             return 0;
         }
+
+        // count received bytes
         received += (uint64)received_now;
         buffer[received] = 0;
+
+        // headers are complete
         if (clib__strstr(buffer, "\r\n\r\n") != NULL_POINTER)
         {
             return received;
@@ -291,21 +311,29 @@ static boole _http_server_internal__send_all(http_socket_t client_socket, void *
     uint64 remaining = 0;
     uint64 chunk_length = 0;
 
+    // check arguments
     if ((data == NULL_POINTER && length != 0) || length > SIZE_MAX)
     {
         return FALSE;
     }
+
+    // send all bytes
     while (total_sent < length)
     {
+        // set deadline if none
         now = _http_server_internal__monotonic_ms();
         if (g_http_response_deadline == 0)
         {
             g_http_response_deadline = now + 30000;
         }
+
+        // check the deadline
         if (now >= g_http_response_deadline)
         {
             return FALSE;
         }
+
+        // set send timeout
         remaining_ms = g_http_response_deadline - now;
 #ifdef _WIN32
         timeout = (DWORD)remaining_ms;
@@ -316,15 +344,19 @@ static boole _http_server_internal__send_all(http_socket_t client_socket, void *
         {
             return FALSE;
         }
+
+        // send one chunk
         remaining = length - total_sent;
         chunk_length = remaining > 65536 ? 65536 : remaining;
         sent_now = send(client_socket, (char *)data + total_sent, (int)chunk_length, HTTP_SEND_FLAGS);
 
+        // report send failure
         if (sent_now <= 0)
         {
             return FALSE;
         }
 
+        // count sent bytes
         total_sent = total_sent + (uint64)sent_now;
     }
     return TRUE;
@@ -343,10 +375,13 @@ static void _http_server_internal__send_simple_response(http_socket_t client_soc
 {
     char response[HTTP_SERVER_HEADER_SIZE] = { 0 };
 
+    // clear the buffer
     clib__null_memory(response, sizeof(response));
 
+    // build the response
     clib__string_format(response, sizeof(response), "HTTP/1.1 %s\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: %llu\r\nConnection: close\r\n\r\n%s", status_line, clib__utf8_string_length(body), body);
 
+    // send the response
     _http_server_internal__send_all(client_socket, response, clib__utf8_string_length(response));
 }
 
@@ -362,6 +397,7 @@ static boole _http_server_internal__is_request_path_safe(const char *request_pat
     uint64 i = 0;
     uint64 length = 0;
 
+    // read the path length
     length = clib__utf8_string_length(request_path);
 
     /* must be a site-absolute path */
@@ -370,6 +406,7 @@ static boole _http_server_internal__is_request_path_safe(const char *request_pat
         return FALSE;
     }
 
+    // check every character
     for (i = 0; i < length; i++)
     {
         /* a backslash or any ".." segment could climb out of the webroot */
@@ -400,10 +437,13 @@ void http_server__set_client_config(char *config_script)
     uint64 size = config_script == NULL_POINTER ? 0 : strlen(config_script) + 1;
     char *copy = size != 0 ? malloc(size) : NULL_POINTER;
 
+    // copy the script
     if (copy != NULL_POINTER)
     {
         memcpy(copy, config_script, size);
     }
+
+    // replace stored script
     pthread_mutex_lock(&g_http_config_mutex);
     if (g_http_client_config_script != NULL_POINTER)
     {
@@ -432,11 +472,13 @@ static char *_http_server_internal__find_bytes(char *haystack, uint64 haystack_l
     uint64 i = 0;
     uint64 j = 0;
 
+    // check the lengths
     if ((needle_length == 0) || (haystack_length < needle_length))
     {
         return NULL_POINTER;
     }
 
+    // try every position
     for (i = 0; i <= haystack_length - needle_length; i++)
     {
         for (j = 0; j < needle_length; j++)
@@ -460,6 +502,7 @@ static char *_http_server_internal__find_bytes(char *haystack, uint64 haystack_l
 // when a settings change replaces the cached response.
 static void _http_server_internal__release_gzip_page(http_gzip_page_t *page)
 {
+    // free after last reference
     if (page != NULL_POINTER && --page->references == 0)
     {
         memset(page->data, 0, page->size);
@@ -479,11 +522,14 @@ static http_gzip_page_t *_http_server_internal__compress_page(char *page, uint64
     uint64 body_size;
     http_gzip_page_t *compressed;
 
+    // check total size
     if (size > SIZE_MAX - config_size)
     {
         return NULL_POINTER;
     }
     body_size = (uint64)size;
+
+    // find config marker
     if (config_size != 0)
     {
         marker = _http_server_internal__find_bytes(page, size, "/*LEMONCFG", 10);
@@ -492,20 +538,28 @@ static http_gzip_page_t *_http_server_internal__compress_page(char *page, uint64
             end = _http_server_internal__find_bytes(marker, size - (uint64)(marker - page), "*/", 2);
         }
     }
+
+    // insert the config
     if (end != NULL_POINTER)
     {
         prefix = (uint64)(marker - page);
         suffix = (uint64)size - (uint64)(end + 2 - page);
         body_size = prefix + config_size + suffix;
+
+        // allocate new body
         body = malloc(body_size);
         if (body == NULL_POINTER)
         {
             return NULL_POINTER;
         }
+
+        // copy the three parts
         memcpy(body, page, prefix);
         memcpy(body + prefix, config, config_size);
         memcpy(body + prefix + config_size, end + 2, suffix);
     }
+
+    // compress the body
     compressed = calloc(1, sizeof(*compressed));
     if (compressed != NULL_POINTER)
     {
@@ -517,6 +571,8 @@ static http_gzip_page_t *_http_server_internal__compress_page(char *page, uint64
             compressed = NULL_POINTER;
         }
     }
+
+    // free temporary body
     if (body != page)
     {
         memset(body, 0, body_size);
@@ -532,6 +588,7 @@ static void _http_server_internal__refresh_gzip_page(void)
 {
     http_gzip_page_t *replacement = NULL_POINTER;
 
+    // compress cached page
     if (g_http_client_page_cache != NULL_POINTER)
     {
         replacement = _http_server_internal__compress_page(g_http_client_page_cache, g_http_client_page_cache_size, g_http_client_config_script);
@@ -540,6 +597,8 @@ static void _http_server_internal__refresh_gzip_page(void)
             log_warn("%s", "http server: gzip cache unavailable, serving uncompressed HTML when accepted");
         }
     }
+
+    // replace old page
     _http_server_internal__release_gzip_page(g_http_gzip_page_cache);
     g_http_gzip_page_cache = replacement;
 }
@@ -558,9 +617,11 @@ static void _http_server_internal__cache_client_page(void)
     int64 file_size = 0;
     uint64 read_count = 0;
 
+    // build file path
     clib__null_memory(file_path, sizeof(file_path));
     clib__string_format(file_path, sizeof(file_path), "%s%s", g_http_server_webroot, "/client.html");
 
+    // open the file
     file = fopen(file_path, "rb");
     if (file == NULL_POINTER)
     {
@@ -568,14 +629,17 @@ static void _http_server_internal__cache_client_page(void)
         return;
     }
 
+    // read the file size
     file_size = _http_server_internal__file_size(file);
 
+    // refuse wrong size
     if (file_size <= 0 || (uint64)file_size > SIZE_MAX)
     {
         fclose(file);
         return;
     }
 
+    // allocate the cache
     g_http_client_page_cache = (char *)malloc((uint64)file_size);
     if (g_http_client_page_cache == NULL_POINTER)
     {
@@ -584,9 +648,11 @@ static void _http_server_internal__cache_client_page(void)
         return;
     }
 
+    // read the file
     read_count = fread(g_http_client_page_cache, 1, (uint64)file_size, file);
     fclose(file);
 
+    // refuse incomplete read
     if (read_count != (uint64)file_size)
     {
         free(g_http_client_page_cache);
@@ -595,6 +661,7 @@ static void _http_server_internal__cache_client_page(void)
         return;
     }
 
+    // store cache size
     g_http_client_page_cache_size = (uint64)file_size;
 }
 #endif
@@ -628,7 +695,10 @@ static void _http_server_internal__serve_file(http_socket_t client_socket, char 
     boole owned = FALSE;
     http_gzip_page_t *compressed = NULL_POINTER;
 
+    // lock the config
     pthread_mutex_lock(&g_http_config_mutex);
+
+    // page is disabled
     if (!g_http_page_enabled)
     {
         blank = g_http_blank_when_disabled;
@@ -640,12 +710,15 @@ static void _http_server_internal__serve_file(http_socket_t client_socket, char 
         return;
     }
 #ifndef DEBUG_ACTIVE
+    // use cached gzip page
     if (encoding == HTTP_ENCODING_GZIP && g_http_gzip_page_cache != NULL_POINTER)
     {
         compressed = g_http_gzip_page_cache;
         compressed->references++;
     }
 #endif
+
+    // copy config script
     if (compressed == NULL_POINTER && g_http_client_config_script != NULL_POINTER)
     {
         config_size = strlen(g_http_client_config_script);
@@ -655,39 +728,57 @@ static void _http_server_internal__serve_file(http_socket_t client_socket, char 
             memcpy(config, g_http_client_config_script, config_size + 1);
         }
     }
+
+    // unlock the config
     pthread_mutex_unlock(&g_http_config_mutex);
+
+    // report allocation failure
     if (config_size != 0 && config == NULL_POINTER)
     {
         _http_server_internal__send_simple_response(client_socket, "503 Service Unavailable", "503 Service Unavailable");
         return;
     }
+
+    // check the request path
     if (!_http_server_internal__is_request_path_safe(request_path))
     {
         _http_server_internal__send_simple_response(client_socket, "403 Forbidden", "403 Forbidden");
         goto done;
     }
+
+    // refuse other paths
     if (strcmp(request_path, "/") != 0 && strcmp(request_path, "/client.html") != 0)
     {
         _http_server_internal__send_simple_response(client_socket, "404 Not Found", "404 Not Found");
         goto done;
     }
+
+    // no accepted encoding
     if (encoding == HTTP_ENCODING_UNACCEPTABLE)
     {
         _http_server_internal__send_simple_response(client_socket, "406 Not Acceptable", "No acceptable content encoding");
         goto done;
     }
+
+    // send cached gzip
     if (compressed != NULL_POINTER)
     {
         goto send_gzip;
     }
 #ifndef DEBUG_ACTIVE
+    // use cached page
     page = g_http_client_page_cache;
     size = g_http_client_page_cache_size;
 #endif
+
+    // read page from disk
     if (page == NULL_POINTER)
     {
+        // open the file
         snprintf(file_path, sizeof(file_path), "%s/client.html", g_http_server_webroot);
         file = fopen(file_path, "rb");
+
+        // read the file
         if (file != NULL_POINTER)
         {
             length = _http_server_internal__file_size(file);
@@ -701,10 +792,14 @@ static void _http_server_internal__serve_file(http_socket_t client_socket, char 
                 }
             }
         }
+
+        // close the file
         if (file != NULL_POINTER)
         {
             fclose(file);
         }
+
+        // report missing page
         if (size == 0)
         {
             _http_server_internal__send_simple_response(client_socket, "404 Not Found", "404 Not Found");
@@ -712,12 +807,13 @@ static void _http_server_internal__serve_file(http_socket_t client_socket, char 
         }
     }
 
-    // Debug builds and the uncached disk fallback read the current file on each request.
+    // debug builds and the uncached disk fallback read the current file on each request
     if (encoding == HTTP_ENCODING_GZIP && owned)
     {
         compressed = _http_server_internal__compress_page(page, size, config);
     }
 send_gzip:
+    // send compressed page
     if (compressed != NULL_POINTER)
     {
         snprintf(header, sizeof(header), "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Encoding: gzip\r\nVary: Accept-Encoding\r\nContent-Length: %llu\r\nConnection: close\r\nCache-Control: no-store\r\n\r\n", (uint64)compressed->size);
@@ -727,11 +823,15 @@ send_gzip:
         }
         goto done;
     }
+
+    // identity is not accepted
     if (!identity_allowed)
     {
         _http_server_internal__send_simple_response(client_socket, "503 Service Unavailable", "Compressed response unavailable");
         goto done;
     }
+
+    // find config marker
     if (config_size != 0)
     {
         marker = _http_server_internal__find_bytes(page, size, "/*LEMONCFG", 10);
@@ -740,6 +840,8 @@ send_gzip:
             end = _http_server_internal__find_bytes(marker, size - (uint64)(marker - page), "*/", 2);
         }
     }
+
+    // measure the page parts
     prefix = size;
     if (end != NULL_POINTER)
     {
@@ -750,20 +852,29 @@ send_gzip:
     {
         config_size = 0;
     }
+
+    // build the header
     snprintf(header, sizeof(header), "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nVary: Accept-Encoding\r\nContent-Length: %llu\r\nConnection: close\r\nCache-Control: no-store\r\n\r\n", (uint64)(prefix + config_size + suffix));
+
+    // send page with config
     if (_http_server_internal__send_all(client_socket, header, strlen(header)) && _http_server_internal__send_all(client_socket, page, prefix) && _http_server_internal__send_all(client_socket, config, config_size) && suffix != 0)
     {
         _http_server_internal__send_all(client_socket, end + 2, suffix);
     }
 done:
+    // release compressed page
     pthread_mutex_lock(&g_http_config_mutex);
     _http_server_internal__release_gzip_page(compressed);
     pthread_mutex_unlock(&g_http_config_mutex);
+
+    // free config copy
     if (config != NULL_POINTER)
     {
         memset(config, 0, strlen(config));
         free(config);
     }
+
+    // free the page copy
     if (owned)
     {
         free(page);
@@ -788,40 +899,53 @@ static boole _http_server_internal__is_https_proxy_request(http_socket_t client_
     uint64 value_size = 0;
     struct sockaddr_in peer;
 #ifdef WIN32
-    int peer_size = sizeof(peer); // getpeername writes an int.
+    int peer_size = sizeof(peer); // getpeername writes an int
 #else
     socklen_t peer_size = sizeof(peer);
 #endif
 
+    // check the peer address
     memset(&peer, 0, sizeof(peer));
     if (getpeername(client_socket, (struct sockaddr *)&peer, &peer_size) != 0 || peer.sin_family != AF_INET || ntohl(peer.sin_addr.s_addr) != 0x7f000001U)
     {
         return FALSE;
     }
 
+    // set header name
     name = "x-stunnel-client-ip";
     name_size = strlen(name);
+
+    // skip the request line
     line = strstr(request, "\r\n");
     if (line == NULL_POINTER)
     {
         return FALSE;
     }
     line += 2;
+
+    // read every header line
     for (;;)
     {
+        // find line end
         end = strstr(line, "\r\n");
         if (end == NULL_POINTER)
         {
             return FALSE;
         }
+
+        // stop at empty line
         if (end == line)
         {
             return found;
         }
+
+        // refuse leading spaces
         if (*line == ' ' || *line == '\t')
         {
             return FALSE;
         }
+
+        // compare header name
         matched = 0;
         if ((uint64)(end - line) > name_size && line[name_size] == ':')
         {
@@ -839,11 +963,15 @@ static boole _http_server_internal__is_https_proxy_request(http_socket_t client_
                 matched++;
             }
         }
+
+        // check marker value
         if (matched == name_size)
         {
             value = line + name_size + 1;
             value_end = end;
             clib__memset(address, 0, sizeof(address));
+
+            // remove surrounding spaces
             while (value < value_end && (*value == ' ' || *value == '\t'))
             {
                 value++;
@@ -852,11 +980,15 @@ static boole _http_server_internal__is_https_proxy_request(http_socket_t client_
             {
                 value_end--;
             }
+
+            // check value size
             value_size = (uint64)(value_end - value);
             if (found || value_size == 0 || value_size >= sizeof(address))
             {
                 return FALSE;
             }
+
+            // check the address
             memcpy(address, value, value_size);
             address[value_size] = '\0';
             if (inet_pton(AF_INET, address, &binary) != 1 && inet_pton(AF_INET6, address, &binary) != 1)
@@ -865,6 +997,8 @@ static boole _http_server_internal__is_https_proxy_request(http_socket_t client_
             }
             found = TRUE;
         }
+
+        // go to next line
         line = end + 2;
     }
 }
@@ -893,28 +1027,40 @@ static boole _http_server_internal__redirect_host(const char *request, char *hos
     const char *value = NULL_POINTER;
     const char *value_end = NULL_POINTER;
 
+    // check arguments
     if (capacity == 0 || line == NULL_POINTER)
     {
         return FALSE;
     }
+
+    // clear the output
     host[0] = 0;
+
+    // read every header line
     line += 2;
     for (;;)
     {
+        // find line end
         end = strstr(line, "\r\n");
         if (end == NULL_POINTER)
         {
             return FALSE;
         }
+
+        // stop at empty line
         if (end == line)
         {
             break;
         }
+
+        // find the colon
         colon = memchr(line, ':', (uint64)(end - line));
         if (colon == NULL_POINTER || colon == line)
         {
             return FALSE;
         }
+
+        // check name characters
         for (name_cursor = line; name_cursor < colon; name_cursor++)
         {
             name_letter = (ubyte)*name_cursor;
@@ -923,6 +1069,8 @@ static boole _http_server_internal__redirect_host(const char *request, char *hos
                 return FALSE;
             }
         }
+
+        // refuse control characters
         for (current = colon + 1; current < end; current++)
         {
             value_letter = (ubyte)*current;
@@ -931,12 +1079,17 @@ static boole _http_server_internal__redirect_host(const char *request, char *hos
                 return FALSE;
             }
         }
+
+        // read Host value
         if (colon - line == 4 && clib__tolower((ubyte)line[0]) == 'h' && clib__tolower((ubyte)line[1]) == 'o' && clib__tolower((ubyte)line[2]) == 's' && clib__tolower((ubyte)line[3]) == 't')
         {
+            // refuse second Host
             if (value != NULL_POINTER)
             {
                 return FALSE;
             }
+
+            // remove surrounding spaces
             value = colon + 1;
             value_end = end;
             while (value < value_end && (*value == ' ' || *value == '\t'))
@@ -948,21 +1101,30 @@ static boole _http_server_internal__redirect_host(const char *request, char *hos
                 value_end--;
             }
         }
+
+        // go to next line
         line = end + 2;
     }
+
+    // refuse missing Host
     if (value == NULL_POINTER || value == value_end)
     {
         return FALSE;
     }
+
+    // check host format
     host_end = value;
     if (*value == '[')
     {
+        // find closing bracket
         clib__memset(address, 0, sizeof(address));
         closing = memchr(value + 1, ']', (uint64)(value_end - value - 1));
         if (closing == NULL_POINTER || closing == value + 1 || (uint64)(closing - value - 1) >= sizeof(address))
         {
             return FALSE;
         }
+
+        // check IPv6 address
         memcpy(address, value + 1, (uint64)(closing - value - 1));
         address[closing - value - 1] = 0;
         if (inet_pton(AF_INET6, address, &binary) != 1)
@@ -973,6 +1135,7 @@ static boole _http_server_internal__redirect_host(const char *request, char *hos
     }
     else
     {
+        // check name characters
         label = value;
         while (host_end < value_end && *host_end != ':')
         {
@@ -981,6 +1144,8 @@ static boole _http_server_internal__redirect_host(const char *request, char *hos
             {
                 return FALSE;
             }
+
+            // check the label
             if (letter == '.')
             {
                 if (host_end == label || host_end - label > 63 || *label == '-' || host_end[-1] == '-')
@@ -991,12 +1156,16 @@ static boole _http_server_internal__redirect_host(const char *request, char *hos
             }
             host_end++;
         }
+
+        // check name length
         name_size = (uint64)(host_end - value);
         if (name_size == 0 || name_size > 254 || (name_size == 254 && host_end[-1] != '.') || host_end - label > 63 || (host_end > label && (*label == '-' || host_end[-1] == '-')))
         {
             return FALSE;
         }
     }
+
+    // check optional port
     if (host_end < value_end)
     {
         port = host_end;
@@ -1005,6 +1174,8 @@ static boole _http_server_internal__redirect_host(const char *request, char *hos
         {
             return FALSE;
         }
+
+        // read port digits
         while (port < value_end)
         {
             if (*port < '0' || *port > '9')
@@ -1013,16 +1184,22 @@ static boole _http_server_internal__redirect_host(const char *request, char *hos
             }
             number = number * 10 + (uint64)(*port++ - '0');
         }
+
+        // check port range
         if (number == 0 || number > 65535)
         {
             return FALSE;
         }
     }
+
+    // check host size
     host_size = (uint64)(host_end - value);
     if (host_size >= capacity)
     {
         return FALSE;
     }
+
+    // copy the host
     memcpy(host, value, host_size);
     host[host_size] = 0;
     return TRUE;
@@ -1036,7 +1213,7 @@ static boole _http_server_internal__redirect_host(const char *request, char *hos
 static void _http_server_internal__handle_connection(http_socket_t client_socket)
 {
 #if !defined(WIN32) && defined(SO_NOSIGPIPE)
-    int nosigpipe_on = 1; // setsockopt reads an int.
+    int nosigpipe_on = 1; // setsockopt reads an int
 #endif
 #ifndef WIN32
     struct timeval send_timeout = { 0 };
@@ -1058,12 +1235,13 @@ static void _http_server_internal__handle_connection(http_socket_t client_socket
     boole identity_allowed = TRUE;
     http_encoding_t encoding;
 
+    // set response deadline
     g_http_response_deadline = _http_server_internal__monotonic_ms() + 30000;
 
-    // Stop a visitor that no longer reads the response from keeping its thread
+    // stop a visitor that no longer reads the response from keeping its thread
     // forever. Windows expects this timeout in milliseconds; the other systems
-    // expect seconds and microseconds. The request reader sets its own timeout
-    // using the time left to receive the complete headers.
+    // expect seconds and microseconds. the request reader sets its own timeout
+    // using the time left to receive the complete headers
 #ifdef WIN32
     send_timeout_ms = HTTP_SERVER_SEND_TIMEOUT_SECONDS * 1000;
     if (setsockopt(client_socket, SOL_SOCKET, SO_SNDTIMEO, (const char *)&send_timeout_ms, (int)sizeof(send_timeout_ms)) != 0)
@@ -1084,9 +1262,11 @@ static void _http_server_internal__handle_connection(http_socket_t client_socket
 #endif
 #endif
 
+    // clear the buffers
     clib__null_memory(request_buffer, sizeof(request_buffer));
     clib__null_memory(request_path, sizeof(request_path));
 
+    // read the request
     received = _http_server_internal__read_request(client_socket, request_buffer, sizeof(request_buffer));
     if (received == 0)
     {
@@ -1116,12 +1296,18 @@ static void _http_server_internal__handle_connection(http_socket_t client_socket
         i++;
     }
 
+    // write ending zero
     request_path[path_length] = 0;
+
+    // choose the encoding
     encoding = http_gzip__choose_encoding(request_buffer, &identity_allowed);
 
+    // read page setting
     pthread_mutex_lock(&g_http_config_mutex);
     page_enabled = g_http_page_enabled;
     pthread_mutex_unlock(&g_http_config_mutex);
+
+    // page is disabled
     if (!page_enabled)
     {
         _http_server_internal__serve_file(client_socket, request_path, encoding, identity_allowed);
@@ -1132,16 +1318,19 @@ static void _http_server_internal__handle_connection(http_socket_t client_socket
        must still redirect even when their request contains a forged marker. */
     if (g_http_https_redirect_enabled == TRUE && !_http_server_internal__is_https_proxy_request(client_socket, request_buffer))
     {
+        // clear the buffers
         clib__null_memory(redirect_host, sizeof(redirect_host));
         clib__null_memory(redirect_location, sizeof(redirect_location));
         clib__null_memory(redirect_response, sizeof(redirect_response));
 
+        // read the Host header
         if (!_http_server_internal__redirect_host(request_buffer, redirect_host, sizeof(redirect_host)))
         {
             _http_server_internal__send_simple_response(client_socket, "400 Bad Request", "400 Bad Request");
             return;
         }
 
+        // build redirect address
         formatted = 0;
         if (g_http_https_redirect_port == 443)
         {
@@ -1151,12 +1340,15 @@ static void _http_server_internal__handle_connection(http_socket_t client_socket
         {
             formatted = clib__string_format(redirect_location, sizeof(redirect_location), "https://%s:%lld%s", redirect_host, g_http_https_redirect_port, request_path);
         }
+
+        // refuse long address
         if (formatted < 0 || (uint64)formatted >= sizeof(redirect_location))
         {
             _http_server_internal__send_simple_response(client_socket, "414 URI Too Long", "414 URI Too Long");
             return;
         }
 
+        // send the redirect
         formatted = clib__string_format(redirect_response, sizeof(redirect_response), "HTTP/1.1 301 Moved Permanently\r\nLocation: %s\r\nContent-Length: 0\r\nConnection: close\r\n\r\n", redirect_location);
         if (formatted >= 0 && (uint64)formatted < sizeof(redirect_response))
         {
@@ -1165,6 +1357,7 @@ static void _http_server_internal__handle_connection(http_socket_t client_socket
         return;
     }
 
+    // send the page
     _http_server_internal__serve_file(client_socket, request_path, encoding, identity_allowed);
 }
 
@@ -1174,12 +1367,14 @@ static boole _http_server_internal__listener_ready(http_socket_t listener)
     fd_set ready;
     struct timeval timeout = { 0, 100000 };
 
+    // wait for a connection
     FD_ZERO(&ready);
     FD_SET(listener, &ready);
     return select(0, &ready, NULL_POINTER, NULL_POINTER, &timeout) > 0;
 #else
     struct pollfd ready = { listener, POLLIN, 0 };
 
+    // wait for a connection
     return poll(&ready, 1, 100) > 0 && (ready.revents & POLLIN) != 0;
 #endif
 }
@@ -1195,7 +1390,7 @@ static boole _http_server_internal__listener_ready(http_socket_t listener)
 static void *_http_server_internal__server_thread(void *argument)
 {
 #ifndef WIN32
-    int flags = 0; // fcntl expects an int mask.
+    int flags = 0; // fcntl expects an int mask
 #endif
 
     http_socket_t client_socket = 0;
@@ -1206,21 +1401,27 @@ static void *_http_server_internal__server_thread(void *argument)
     pthread_t thread = 0;
     http_socket_t listener = *(http_socket_t *)argument;
 
+    // free the argument
     free(argument);
+
+    // accept connections until stopped
     while (atomic_load(&g_http_listener_running))
     {
+        // wait for a connection
         if (!_http_server_internal__listener_ready(listener))
         {
             continue;
         }
+
+        // accept the connection
         client_socket = accept(listener, NULL_POINTER, NULL_POINTER);
         if (client_socket == HTTP_INVALID_SOCKET)
         {
             continue;
         }
 
-        // Accepted sockets must block with the request/send timeouts, even on
-        // platforms that inherit the listener's nonblocking flag.
+        // accepted sockets must block with the request/send timeouts, even on
+        // platforms that inherit the listener's nonblocking flag
 #ifdef WIN32
         blocking = 0;
         ioctlsocket(client_socket, FIONBIO, &blocking);
@@ -1228,6 +1429,8 @@ static void *_http_server_internal__server_thread(void *argument)
         flags = fcntl(client_socket, F_GETFL, 0);
         fcntl(client_socket, F_SETFL, flags & ~O_NONBLOCK);
 #endif
+
+        // check connection limit
         pthread_mutex_lock(&g_http_connections_mutex);
         if (g_http_active_connections >= HTTP_SERVER_MAX_CONNECTIONS)
         {
@@ -1237,6 +1440,8 @@ static void *_http_server_internal__server_thread(void *argument)
         }
         g_http_active_connections++;
         pthread_mutex_unlock(&g_http_connections_mutex);
+
+        // start connection thread
         connection_socket = malloc(sizeof(*connection_socket));
         if (connection_socket != NULL_POINTER)
         {
@@ -1248,11 +1453,15 @@ static void *_http_server_internal__server_thread(void *argument)
             }
             free(connection_socket);
         }
+
+        // thread start failed
         http_close_socket(client_socket);
         pthread_mutex_lock(&g_http_connections_mutex);
         g_http_active_connections--;
         pthread_mutex_unlock(&g_http_connections_mutex);
     }
+
+    // close the listener
     http_close_socket(listener);
     return NULL_POINTER;
 }
@@ -1268,10 +1477,14 @@ static void *_http_server_internal__connection_thread(void *arg_socket)
 {
     http_socket_t client_socket = *(http_socket_t *)arg_socket;
 
+    // free the argument
     free(arg_socket);
 
+    // answer the request
     _http_server_internal__handle_connection(client_socket);
     http_close_socket(client_socket);
+
+    // decrease connection count
     pthread_mutex_lock(&g_http_connections_mutex);
     g_http_active_connections--;
     pthread_mutex_unlock(&g_http_connections_mutex);
@@ -1297,16 +1510,23 @@ void http_server__set_https_redirect(boole enabled, int64 https_port)
 // Initialize once even when HTTP starts disabled, so it can be enabled live.
 void http_server__initialize(int64 port, char *webroot)
 {
+    // initialize only once
     if (g_http_server_webroot != NULL_POINTER)
     {
         return;
     }
+
+    // store the port
     g_http_server_port = port;
+
+    // allocate webroot text
     g_http_server_webroot = calloc(HTTP_SERVER_WEBROOT_SIZE, 1);
     if (g_http_server_webroot == NULL_POINTER)
     {
         return;
     }
+
+    // copy the webroot
     if (!clib__string_copy(g_http_server_webroot, HTTP_SERVER_WEBROOT_SIZE, webroot))
     {
         free(g_http_server_webroot);
@@ -1314,6 +1534,7 @@ void http_server__initialize(int64 port, char *webroot)
         return;
     }
 #ifndef DEBUG_ACTIVE
+    // cache the client page
     _http_server_internal__cache_client_page();
     pthread_mutex_lock(&g_http_config_mutex);
     _http_server_internal__refresh_gzip_page();
@@ -1326,12 +1547,12 @@ void http_server__initialize(int64 port, char *webroot)
 boole http_server__set_mode(boole enabled, boole blank_when_disabled)
 {
 #ifndef WIN32
-    int flags = 0; // fcntl expects an int mask.
+    int flags = 0; // fcntl expects an int mask
 #endif
 
     http_socket_t *listener = NULL_POINTER;
     struct sockaddr_in address = { 0 };
-    int reuse = 0; // setsockopt reads an int.
+    int reuse = 0; // setsockopt reads an int
 #ifdef WIN32
     WSADATA data = { 0 };
     u_long nonblocking = 0;
@@ -1339,9 +1560,13 @@ boole http_server__set_mode(boole enabled, boole blank_when_disabled)
 
     boole success = FALSE;
 
+    // lock the control mutex
     pthread_mutex_lock(&g_http_control_mutex);
+
+    // start the listener
     if ((enabled || blank_when_disabled) && !atomic_load(&g_http_listener_running))
     {
+        // check webroot and port
         listener = NULL_POINTER;
         reuse = 1;
         if (g_http_server_webroot == NULL_POINTER || g_http_server_port < 1 || g_http_server_port > 65535)
@@ -1349,21 +1574,28 @@ boole http_server__set_mode(boole enabled, boole blank_when_disabled)
             goto done;
         }
 #ifdef WIN32
+        // start Windows sockets
         if (WSAStartup(MAKEWORD(2, 2), &data) != 0)
         {
             goto done;
         }
 #endif
+
+        // allocate listener memory
         listener = malloc(sizeof(*listener));
         if (listener == NULL_POINTER)
         {
             goto startup_failed;
         }
+
+        // create the socket
         *listener = socket(AF_INET, SOCK_STREAM, 0);
         if (*listener == HTTP_INVALID_SOCKET)
         {
             goto startup_failed;
         }
+
+        // bind and listen
         setsockopt(*listener, SOL_SOCKET, SO_REUSEADDR, (const char *)&reuse, sizeof(reuse));
         memset(&address, 0, sizeof(address));
         address.sin_family = AF_INET;
@@ -1374,6 +1606,7 @@ boole http_server__set_mode(boole enabled, boole blank_when_disabled)
             goto startup_failed;
         }
 #ifdef WIN32
+        // enable nonblocking socket
         nonblocking = 1;
         if (ioctlsocket(*listener, FIONBIO, &nonblocking) != 0)
 #else
@@ -1383,6 +1616,8 @@ boole http_server__set_mode(boole enabled, boole blank_when_disabled)
         {
             goto startup_failed;
         }
+
+        // start listener thread
         atomic_store(&g_http_listener_running, TRUE);
         if (pthread_create(&g_http_listener_thread, NULL_POINTER, _http_server_internal__server_thread, listener) != 0)
         {
@@ -1391,6 +1626,7 @@ boole http_server__set_mode(boole enabled, boole blank_when_disabled)
         }
         goto apply;
 startup_failed:
+        // close failed listener
         if (listener != NULL_POINTER)
         {
             if (*listener != HTTP_INVALID_SOCKET)
@@ -1402,27 +1638,35 @@ startup_failed:
 #ifdef WIN32
         WSACleanup();
 #endif
+
+        // log the failure
         log_error("HTTP listener could not start on port %lld", (int64)g_http_server_port);
         goto done;
     }
 apply:
+    // store the mode
     pthread_mutex_lock(&g_http_config_mutex);
     g_http_page_enabled = enabled;
     g_http_blank_when_disabled = blank_when_disabled;
     pthread_mutex_unlock(&g_http_config_mutex);
+
+    // stop the listener
     if (!enabled && !blank_when_disabled && atomic_load(&g_http_listener_running))
     {
         atomic_store(&g_http_listener_running, FALSE);
         pthread_join(g_http_listener_thread, NULL_POINTER);
 
-        // Release the listener reference; the chat listener keeps Winsock active
-        // while accepted HTTP requests finish.
+        // release the listener reference; the chat listener keeps Winsock active
+        // while accepted HTTP requests finish
 #ifdef WIN32
         WSACleanup();
 #endif
     }
+
+    // report success
     success = TRUE;
 done:
+    // unlock the control mutex
     pthread_mutex_unlock(&g_http_control_mutex);
     return success;
 }

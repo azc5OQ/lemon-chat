@@ -46,25 +46,30 @@ static void _video_channel_internal__announce_viewer_state(channel_t *channel, u
     client_t *member = NULL_POINTER;
     uint64 i = 0;
 
+    // check the stream
     if (channel == NULL_POINTER || channel->is_video_stream_active == FALSE || base__is_client_valid(channel->video_streamer_client_id) == FALSE)
     {
         return;
     }
 
+    // send to allowed members
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
         member = &g_clients_array[i];
 
+        // skip other clients
         if (member->is_existing == FALSE || member->is_authenticated == FALSE || member->is_music_bot == TRUE || member->channel_id != channel->channel_id)
         {
             continue;
         }
 
+        // skip members not allowed
         if (member->client_id != channel->video_streamer_client_id && member->is_video_viewer_allowed == FALSE)
         {
             continue;
         }
 
+        // send the viewer state
         server_msg__video__send_viewer_state_to_single_client(member, viewer_client_id, is_watching);
     }
 }
@@ -82,9 +87,11 @@ static void _video_channel_internal__clear_viewer(client_t *client, client_t *st
 {
     boole was_watching = client->is_video_viewer_watching;
 
+    // clear both viewer flags
     client->is_video_viewer_allowed = FALSE;
     client->is_video_viewer_watching = FALSE;
 
+    // report the stopped viewer
     if (was_watching == TRUE && streamer != NULL_POINTER && streamer->channel_id < g_server_settings.max_channel_count)
     {
         _video_channel_internal__announce_viewer_state(&g_channel_array[streamer->channel_id], client->client_id, FALSE);
@@ -114,40 +121,48 @@ boole video_channel__start(client_t *streamer, cstring source, cstring codec, in
     client_t *member = NULL_POINTER;
     uint64 i = 0;
 
+    // clear the refusal reason
     *out_refusal_reason = "";
 
+    // check the streamer
     if (streamer == NULL_POINTER || streamer->is_existing == FALSE || streamer->is_authenticated == FALSE || streamer->is_music_bot == TRUE || streamer->is_idle == TRUE)
     {
         *out_refusal_reason = "not_allowed";
         return FALSE;
     }
 
+    // check the channel id
     if (streamer->channel_id >= g_server_settings.max_channel_count)
     {
         *out_refusal_reason = "not_allowed";
         return FALSE;
     }
 
+    // find the channel
     channel = &g_channel_array[streamer->channel_id];
 
+    // check the channel
     if (channel->is_existing == FALSE)
     {
         *out_refusal_reason = "not_allowed";
         return FALSE;
     }
 
+    // check the server setting
     if (g_server_settings.is_video_streaming_active == FALSE)
     {
         *out_refusal_reason = "disabled";
         return FALSE;
     }
 
+    // check the channel setting
     if (channel->is_video_stream_enabled == FALSE)
     {
         *out_refusal_reason = "channel_disabled";
         return FALSE;
     }
 
+    // check the stream power
     if (permissions__can_use_channel(streamer, channel, PERMISSION_STREAM_POWER) == FALSE)
     {
         *out_refusal_reason = "insufficient_permissions";
@@ -169,6 +184,7 @@ boole video_channel__start(client_t *streamer, cstring source, cstring codec, in
         }
     }
 
+    // store the stream data
     streamer->is_streaming_video = TRUE;
     clib__null_memory(streamer->video_stream_source, VIDEO_STREAM_SOURCE_MAX_LENGTH);
     clib__string_copy(streamer->video_stream_source, sizeof(streamer->video_stream_source), source);
@@ -182,32 +198,39 @@ boole video_channel__start(client_t *streamer, cstring source, cstring codec, in
     streamer->is_video_viewer_allowed = FALSE;
     streamer->is_video_viewer_watching = FALSE;
 
+    // set the channel stream
     channel->is_video_stream_active = TRUE;
     channel->video_streamer_client_id = streamer->client_id;
 
+    // log for debugging
     DBG_VIDEO_CHANNEL log_info("%s %llu %s %llu %s %s", "video_channel__start client", streamer->client_id, "channel", channel->channel_id, "source", source);
 
     // the members present now are allowed by the streamer's choice of "share with current channel";
     // each still has to accept on its side before a single frame goes its way
     server_msg__video__send_state_to_clients_in_same_channel(channel->channel_id, TRUE, streamer->client_id, "started");
 
+    // send offers to members
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
         member = &g_clients_array[i];
 
+        // check the client state
         if (member->is_existing == FALSE || member->is_authenticated == FALSE || member->is_music_bot == TRUE || member->is_idle == TRUE)
         {
             continue;
         }
 
+        // skip streamer, other channels
         if (member->channel_id != channel->channel_id || member->client_id == streamer->client_id)
         {
             continue;
         }
 
+        // allow the member
         member->is_video_viewer_allowed = TRUE;
         member->is_video_viewer_watching = FALSE;
 
+        // send the offer
         server_msg__video__send_offer_to_single_client(member, streamer);
     }
 
@@ -231,37 +254,46 @@ void video_channel__stop(uint64 channel_id, cstring reason)
     uint64 streamer_client_id = 0;
     uint64 i = 0;
 
+    // check the channel id
     if (channel_id >= g_server_settings.max_channel_count)
     {
         return;
     }
 
+    // find the channel
     channel = &g_channel_array[channel_id];
 
+    // nothing to stop
     if (channel->is_video_stream_active == FALSE)
     {
         return;
     }
 
+    // copy the streamer id
     streamer_client_id = channel->video_streamer_client_id;
 
+    // log for debugging
     DBG_VIDEO_CHANNEL log_info("%s %llu %s %s", "video_channel__stop channel", channel_id, "reason", reason);
 
+    // reset the channel members
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
         member = &g_clients_array[i];
 
+        // skip other clients
         if (member->is_existing == FALSE || member->channel_id != channel_id)
         {
             continue;
         }
 
+        // clear the video queue
         video_websocket__clear_queue(member);
 
         // no viewer-state message to the streamer here: it learns everything from the state broadcast
         member->is_video_viewer_allowed = FALSE;
         member->is_video_viewer_watching = FALSE;
 
+        // clear the stream data
         if (member->client_id == streamer_client_id)
         {
             member->is_streaming_video = FALSE;
@@ -274,9 +306,11 @@ void video_channel__stop(uint64 channel_id, cstring reason)
         }
     }
 
+    // clear the channel stream
     channel->is_video_stream_active = FALSE;
     channel->video_streamer_client_id = 0;
 
+    // send the stream state
     server_msg__video__send_state_to_clients_in_same_channel(channel_id, FALSE, streamer_client_id, reason);
 }
 
@@ -290,30 +324,44 @@ void video_channel__apply_permission_changes(void)
     channel_t *channel = NULL_POINTER;
     client_t *streamer = NULL_POINTER;
 
+    // permission system is off
     if (g_server_settings.is_permission_system_enabled == FALSE)
     {
         return;
     }
+
+    // lock the channels
     clib__write_lock(&g_channels_global_rwlock_guard);
+
+    // check every streamer
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
+        // skip clients not streaming
         streamer = &g_clients_array[i];
         if (streamer->is_existing == FALSE || streamer->is_authenticated == FALSE || streamer->is_streaming_video == FALSE || streamer->channel_id >= g_server_settings.max_channel_count)
         {
             continue;
         }
+
+        // check the channel stream
         channel = &g_channel_array[streamer->channel_id];
         if (channel->is_existing == FALSE || channel->is_video_stream_active == FALSE || channel->video_streamer_client_id != streamer->client_id)
         {
             continue;
         }
+
+        // power is still enough
         if (permissions__can_use_channel(streamer, channel, PERMISSION_STREAM_POWER) == TRUE)
         {
             continue;
         }
+
+        // stop the stream
         server_msg__administration__send_permission_denied_to_single_client(streamer, permissions__power_name(PERMISSION_STREAM_POWER));
         video_channel__stop(channel->channel_id, "insufficient_permissions");
     }
+
+    // unlock the channels
     clib__unlock(&g_channels_global_rwlock_guard);
 }
 
@@ -328,6 +376,7 @@ void video_channel__stop_all(cstring reason)
 {
     uint64 i = 0;
 
+    // stop every active stream
     for (i = 0; i < g_server_settings.max_channel_count; i++)
     {
         if (g_channel_array[i].is_existing == TRUE && g_channel_array[i].is_video_stream_active == TRUE)
@@ -347,11 +396,13 @@ void video_channel__stop_all(cstring reason)
  */
 void video_channel__process_channel_toggle_changed(uint64 channel_id)
 {
+    // check the channel id
     if (channel_id >= g_server_settings.max_channel_count)
     {
         return;
     }
 
+    // stop the disabled stream
     if (g_channel_array[channel_id].is_video_stream_enabled == FALSE && g_channel_array[channel_id].is_video_stream_active == TRUE)
     {
         video_channel__stop(channel_id, "channel_disabled");
@@ -372,6 +423,7 @@ void video_channel__process_client_leaving_channel(client_t *client, uint64 old_
 {
     channel_t *channel = NULL_POINTER;
 
+    // check arguments
     if (client == NULL_POINTER || old_channel_id >= g_server_settings.max_channel_count)
     {
         return;
@@ -380,8 +432,10 @@ void video_channel__process_client_leaving_channel(client_t *client, uint64 old_
     // no packet of the old channel follows the client over its video socket
     video_websocket__clear_queue(client);
 
+    // find the channel
     channel = &g_channel_array[old_channel_id];
 
+    // no stream is active
     if (channel->is_video_stream_active == FALSE)
     {
         client->is_video_viewer_allowed = FALSE;
@@ -389,12 +443,14 @@ void video_channel__process_client_leaving_channel(client_t *client, uint64 old_
         return;
     }
 
+    // stop when streamer leaves
     if (channel->video_streamer_client_id == client->client_id)
     {
         video_channel__stop(old_channel_id, "streamer_left");
         return;
     }
 
+    // remove the viewer
     _video_channel_internal__clear_viewer(client, base__is_client_valid(channel->video_streamer_client_id) ? &g_clients_array[channel->video_streamer_client_id] : NULL_POINTER);
 }
 
@@ -411,26 +467,32 @@ void video_channel__process_client_joined_channel(client_t *client)
 {
     channel_t *channel = NULL_POINTER;
 
+    // check the client
     if (client == NULL_POINTER || client->is_music_bot == TRUE || client->channel_id >= g_server_settings.max_channel_count)
     {
         return;
     }
 
+    // clear both viewer flags
     client->is_video_viewer_allowed = FALSE;
     client->is_video_viewer_watching = FALSE;
 
+    // find the channel
     channel = &g_channel_array[client->channel_id];
 
+    // check the stream
     if (channel->is_existing == FALSE || channel->is_video_stream_active == FALSE || channel->video_streamer_client_id == client->client_id)
     {
         return;
     }
 
+    // check the streamer
     if (base__is_client_valid(channel->video_streamer_client_id) == FALSE)
     {
         return;
     }
 
+    // send the viewer request
     server_msg__video__send_viewer_request_to_single_client(&g_clients_array[channel->video_streamer_client_id], client);
 }
 
@@ -449,41 +511,50 @@ boole video_channel__set_viewer_watching(client_t *viewer, boole is_watching, cs
 {
     channel_t *channel = NULL_POINTER;
 
+    // clear the refusal reason
     *out_refusal_reason = "";
 
+    // check the viewer
     if (viewer == NULL_POINTER || viewer->is_authenticated == FALSE || viewer->is_music_bot == TRUE || viewer->channel_id >= g_server_settings.max_channel_count)
     {
         *out_refusal_reason = "not_allowed";
         return FALSE;
     }
 
+    // find the channel
     channel = &g_channel_array[viewer->channel_id];
 
+    // check the stream
     if (channel->is_existing == FALSE || channel->is_video_stream_active == FALSE || channel->video_streamer_client_id == viewer->client_id)
     {
         *out_refusal_reason = "no_stream";
         return FALSE;
     }
 
+    // check the streamer
     if (base__is_client_valid(channel->video_streamer_client_id) == FALSE)
     {
         *out_refusal_reason = "no_stream";
         return FALSE;
     }
 
+    // refuse viewers not allowed
     if (is_watching == TRUE && viewer->is_video_viewer_allowed == FALSE)
     {
         *out_refusal_reason = "not_allowed";
         return FALSE;
     }
 
+    // nothing to change
     if (viewer->is_video_viewer_watching == is_watching)
     {
         return TRUE;
     }
 
+    // store the new state
     viewer->is_video_viewer_watching = is_watching;
 
+    // report the viewer state
     _video_channel_internal__announce_viewer_state(channel, viewer->client_id, is_watching);
 
     return TRUE;
@@ -504,30 +575,37 @@ boole video_channel__allow_viewer(client_t *streamer, uint64 viewer_client_id, b
     channel_t *channel = NULL_POINTER;
     client_t *viewer = NULL_POINTER;
 
+    // check the streamer
     if (streamer == NULL_POINTER || streamer->is_streaming_video == FALSE || streamer->channel_id >= g_server_settings.max_channel_count)
     {
         return FALSE;
     }
 
+    // find the channel
     channel = &g_channel_array[streamer->channel_id];
 
+    // check the stream
     if (channel->is_video_stream_active == FALSE || channel->video_streamer_client_id != streamer->client_id)
     {
         return FALSE;
     }
 
+    // check the viewer id
     if (viewer_client_id == streamer->client_id || base__is_client_valid_and_not_music_bot(viewer_client_id) == FALSE)
     {
         return FALSE;
     }
 
+    // find the viewer
     viewer = &g_clients_array[viewer_client_id];
 
+    // check the viewer channel
     if (viewer->channel_id != streamer->channel_id)
     {
         return FALSE;
     }
 
+    // allow or remove viewer
     if (is_allowed == TRUE)
     {
         viewer->is_video_viewer_allowed = TRUE;
@@ -558,26 +636,32 @@ void video_channel__forward_keyframe_request(client_t *viewer)
     client_t *streamer = NULL_POINTER;
     uint64 now_ms = 0;
 
+    // check the viewer
     if (viewer == NULL_POINTER || viewer->is_video_viewer_watching == FALSE || viewer->channel_id >= g_server_settings.max_channel_count)
     {
         return;
     }
 
+    // find the channel
     channel = &g_channel_array[viewer->channel_id];
 
+    // check the stream
     if (channel->is_video_stream_active == FALSE || base__is_client_valid(channel->video_streamer_client_id) == FALSE)
     {
         return;
     }
 
+    // read streamer and time
     streamer = &g_clients_array[channel->video_streamer_client_id];
     now_ms = util__get_timestamp_ms();
 
+    // limit the request rate
     if (now_ms - streamer->timestamp_last_video_keyframe_request_forwarded_ms < VIDEO_KEYFRAME_REQUEST_MIN_INTERVAL_MS)
     {
         return;
     }
 
+    // send to the streamer
     streamer->timestamp_last_video_keyframe_request_forwarded_ms = now_ms;
     server_msg__video__send_keyframe_request_to_single_client(streamer);
 }
@@ -597,11 +681,13 @@ void video_channel__process_transport_lost(uint64 client_id)
     client_t *client = NULL_POINTER;
     channel_t *channel = NULL_POINTER;
 
+    // check the client id
     if (base__is_client_valid(client_id) == FALSE)
     {
         return;
     }
 
+    // find the client
     client = &g_clients_array[client_id];
 
     // the video websocket still carries the client's video: nothing is lost
@@ -610,20 +696,24 @@ void video_channel__process_transport_lost(uint64 client_id)
         return;
     }
 
+    // client has no channel
     if (client->channel_id >= g_server_settings.max_channel_count)
     {
         client->is_video_viewer_watching = FALSE;
         return;
     }
 
+    // find the channel
     channel = &g_channel_array[client->channel_id];
 
+    // stop the stream
     if (channel->is_video_stream_active == TRUE && channel->video_streamer_client_id == client_id)
     {
         video_channel__stop(client->channel_id, "streamer_transport_lost");
         return;
     }
 
+    // report the stopped viewer
     if (client->is_video_viewer_watching == TRUE)
     {
         client->is_video_viewer_watching = FALSE;
@@ -658,19 +748,26 @@ void video_channel__relay_packet(uint64 sender_id, ws_cli_conn_t *socket, int da
     uint64 channel_id = 0;
     uint64 i = 0;
 
+    // check id and size
     if (sender_id >= g_server_settings.max_client_count || size <= MEDIA_FRAME_OVERHEAD || size > WS_VIDEO_FRAME_MAX)
     {
         return;
     }
+
+    // lock clients, peers, channels
     clib__read_lock(&g_clients_global_rwlock_guard);
     clib__read_lock(&g_webrtc_peers_rwlock_guard);
     clib__read_lock(&g_channels_global_rwlock_guard);
+
+    // check the sender
     sender = &g_clients_array[sender_id];
     channel_id = sender->channel_id;
     if (sender->is_existing == FALSE || sender->is_authenticated == FALSE || sender->is_idle == TRUE || sender->is_streaming_video == FALSE || channel_id >= g_server_settings.max_channel_count)
     {
         goto done;
     }
+
+    // find the channel
     channel = &g_channel_array[channel_id];
 
     // the server-wide switch and the channel toggle are checked live, exactly like the audio relay
@@ -678,6 +775,8 @@ void video_channel__relay_packet(uint64 sender_id, ws_cli_conn_t *socket, int da
     {
         goto done;
     }
+
+    // check the stream power
     if (permissions__can_use_channel(sender, channel, PERMISSION_STREAM_POWER) == FALSE)
     {
         goto done;
@@ -697,19 +796,26 @@ void video_channel__relay_packet(uint64 sender_id, ws_cli_conn_t *socket, int da
         DBG_VIDEO_CHANNEL log_info("%s %llu %s", "relay: data channel packet of client", sender_id, "dropped: the channel is not the client's current one");
         goto done;
     }
+
+    // decrypt the packet
     body_size = crypto_media__decrypt_from_client(sender, MEDIA_STREAM_VIDEO, data, size, body, sizeof(body));
     if (body_size == 0)
     {
         DBG_VIDEO_CHANNEL log_info("%s %llu %s", "relay: packet of client", sender_id, "dropped: the authentication code or the sender id inside did not match");
         goto done;
     }
+
+    // send to every viewer
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
+        // skip clients not watching
         receiver = &g_clients_array[i];
         if (i == sender_id || receiver->is_existing == FALSE || receiver->is_authenticated == FALSE || receiver->is_idle == TRUE || receiver->is_music_bot == TRUE || receiver->channel_id != channel_id || receiver->is_video_viewer_allowed == FALSE || receiver->is_video_viewer_watching == FALSE)
         {
             continue;
         }
+
+        // use the video websocket
         if (receiver->is_video_websocket_authenticated == TRUE)
         {
             frame_size = crypto_media__encrypt_for_client(receiver, MEDIA_STREAM_VIDEO, body, body_size, frame, sizeof(frame));
@@ -719,10 +825,14 @@ void video_channel__relay_packet(uint64 sender_id, ws_cli_conn_t *socket, int da
             }
             continue;
         }
+
+        // check the data channel
         if (video_webrtc__can_send(i) == FALSE)
         {
             continue;
         }
+
+        // send over data channel
         frame_size = crypto_media__encrypt_for_client(receiver, MEDIA_STREAM_VIDEO, body, body_size, frame, sizeof(frame));
         if (frame_size > 0)
         {
@@ -730,6 +840,7 @@ void video_channel__relay_packet(uint64 sender_id, ws_cli_conn_t *socket, int da
         }
     }
 done:
+    // unlock channels, peers, clients
     clib__unlock(&g_channels_global_rwlock_guard);
     clib__unlock(&g_webrtc_peers_rwlock_guard);
     clib__unlock(&g_clients_global_rwlock_guard);

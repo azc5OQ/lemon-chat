@@ -58,6 +58,7 @@ static uint64 *_clib_rwlock_internal__get_read_count(custom_rwlock_t *lock)
 // @attention The caller holds lock->mutex.
 static void _clib_rwlock_internal__enqueue(custom_rwlock_t *lock, fifo_rwlock_node_t *node)
 {
+    // add node at end
     node->next = NULL_POINTER;
     if (lock->queue_tail == NULL_POINTER)
     {
@@ -78,6 +79,7 @@ static fifo_rwlock_node_t *_clib_rwlock_internal__dequeue(custom_rwlock_t *lock)
 {
     fifo_rwlock_node_t *node = NULL_POINTER;
 
+    // remove the first node
     node = lock->queue_head;
     if (node != NULL_POINTER)
     {
@@ -101,23 +103,32 @@ void clib__rwlock_init(custom_rwlock_t *lock)
 {
     uint64 slot = 0;
 
+    // find a free slot
     pthread_mutex_lock(&g_slot_mutex);
     while (slot < CLIB_RWLOCK_SLOTS && g_slots[slot])
     {
         slot++;
     }
+
+    // no free slot left
     if (slot == CLIB_RWLOCK_SLOTS)
     {
         pthread_mutex_unlock(&g_slot_mutex);
-        abort(); // Startup/configuration error: no unbounded lock creation is supported.
+        abort(); // startup/configuration error: no unbounded lock creation is supported
     }
+
+    // reserve the slot
     g_slots[slot] = TRUE;
     lock->read_count_slot = slot;
     pthread_mutex_unlock(&g_slot_mutex);
+
+    // create mutex and conditions
     if (pthread_mutex_init(&lock->mutex, NULL_POINTER) != 0 || pthread_cond_init(&lock->wait_cv, NULL_POINTER) != 0 || pthread_cond_init(&lock->upgrade_cv, NULL_POINTER) != 0)
     {
-        abort(); // A server must not start with a failed synchronization primitive.
+        abort(); // a server must not start with a failed synchronization primitive
     }
+
+    // reset the lock state
     lock->next_ticket = 0;
     lock->serving_ticket = 0;
     lock->writer_thread = 0;
@@ -134,10 +145,12 @@ void clib__rwlock_init(custom_rwlock_t *lock)
 // @attention No thread may hold, wait for or start using this lock during destruction.
 void clib__rwlock_destroy(custom_rwlock_t *lock)
 {
-    // Destruction requires no holders or waiters; queue nodes belong to waiting stacks.
+    // destruction requires no holders or waiters; queue nodes belong to waiting stacks
     pthread_cond_destroy(&lock->wait_cv);
     pthread_cond_destroy(&lock->upgrade_cv);
     pthread_mutex_destroy(&lock->mutex);
+
+    // release the counter slot
     pthread_mutex_lock(&g_slot_mutex);
     g_slots[lock->read_count_slot] = FALSE;
     pthread_mutex_unlock(&g_slot_mutex);
@@ -155,21 +168,24 @@ void clib__read_lock(custom_rwlock_t *lock)
     fifo_rwlock_node_t waiter = { 0 };
     fifo_rwlock_node_t *node = &waiter;
 
+    // log the call
     DBG_RWLOCKS log_info("%s", "clib__read_lock ");
 
+    // lock the mutex
     pthread_mutex_lock(&lock->mutex);
     self = pthread_self();
 
+    // find the read counter
     my_read_count = _clib_rwlock_internal__get_read_count(lock);
 
-    // Fast-path 1: this thread already holds the write lock.
+    // fast-path 1: this thread already holds the write lock.
     //
-    // Allow the nested read without queuing. num_readers is intentionally NOT
+    // allow the nested read without queuing. num_readers is intentionally NOT
     // incremented: the writer already has exclusive access, and incrementing
     // would leave num_readers > 0 after the write lock is released, which would
-    // block subsequent writers from acquiring. The TLS counter is incremented
+    // block subsequent writers from acquiring. the TLS counter is incremented
     // so clib__unlock can distinguish these nested reads from the write lock
-    // itself and release them in LIFO order.
+    // itself and release them in LIFO order
     if (lock->write_recursion > 0 && pthread_equal(lock->writer_thread, self))
     {
         (*my_read_count)++;
@@ -177,13 +193,13 @@ void clib__read_lock(custom_rwlock_t *lock)
         return;
     }
 
-    // Fast-path 2: this thread already holds a read lock on this same lock.
+    // fast-path 2: this thread already holds a read lock on this same lock.
     //
-    // A naïve implementation would take a new FIFO ticket and wait. This
+    // a naïve implementation would take a new FIFO ticket and wait. this
     // deadlocks if a writer is already queued: the thread would wait for
     // serving_ticket to advance past the writer's position, but serving_ticket
     // cannot advance until all current readers release — including this thread,
-    // which is now blocked. Bypassing the queue here breaks the cycle.
+    // which is now blocked. bypassing the queue here breaks the cycle
     if (*my_read_count > 0)
     {
         (*my_read_count)++;
@@ -192,41 +208,48 @@ void clib__read_lock(custom_rwlock_t *lock)
         return;
     }
 
-    // Slow path: first acquisition for this thread on this lock.
+    // slow path: first acquisition for this thread on this lock.
     //
-    // Take a FIFO ticket and wait until ALL three conditions are clear:
+    // take a FIFO ticket and wait until ALL three conditions are clear:
     // (a) our ticket is at the front (FIFO ordering)
     // (b) no writer currently holds the lock (write_recursion == 0)
     // (c) no thread is mid-upgrade (upgrade_pending == 0)
     // — this prevents new readers from sneaking in and delaying an
     // upgrader that is waiting for the reader count to drain.
     //
-    // After acquiring, we signal the next waiter immediately. If it is also
-    // a reader, it will acquire concurrently (parallel readers). If it is a
-    // writer, it sees num_readers > 0 and goes back to sleep.
+    // after acquiring, we signal the next waiter immediately. if it is also
+    // a reader, it will acquire concurrently (parallel readers). if it is a
+    // writer, it sees num_readers > 0 and goes back to sleep
     ticket = lock->next_ticket++;
 
+    // fill the queue node
     node->is_writer = FALSE;
     node->ticket = ticket;
 
+    // add node to queue
     _clib_rwlock_internal__enqueue(lock, node);
 
+    // wait for the conditions
     while (node->ticket != lock->serving_ticket || lock->write_recursion > 0 || lock->upgrade_pending != FALSE)
     {
         pthread_cond_wait(&lock->wait_cv, &lock->mutex);
     }
 
+    // count the new reader
     (*my_read_count)++;
     lock->num_readers++;
 
+    // remove node, advance ticket
     _clib_rwlock_internal__dequeue(lock);
     lock->serving_ticket++;
 
+    // wake the next thread
     if (lock->queue_head != NULL_POINTER)
     {
         pthread_cond_broadcast(&lock->wait_cv);
     }
 
+    // unlock the mutex
     pthread_mutex_unlock(&lock->mutex);
 }
 
@@ -244,8 +267,10 @@ void clib__write_lock(custom_rwlock_t *lock)
     fifo_rwlock_node_t waiter = { 0 };
     fifo_rwlock_node_t *node = &waiter;
 
+    // log the call
     DBG_RWLOCKS log_info("%s", "clib__write_lock ");
 
+    // lock the mutex
     pthread_mutex_lock(&lock->mutex);
     self = pthread_self();
 
@@ -257,6 +282,7 @@ void clib__write_lock(custom_rwlock_t *lock)
         return;
     }
 
+    // find the read counter
     my_read_count = _clib_rwlock_internal__get_read_count(lock);
 
     // ---- Case 2: read-to-write upgrade -------------------------------------
@@ -264,96 +290,104 @@ void clib__write_lock(custom_rwlock_t *lock)
     {
         if (lock->upgrade_pending == FALSE)
         {
-            // We got the upgrade slot. Setting upgrade_pending = 1 prevents new
+            // we got the upgrade slot. setting upgrade_pending = 1 prevents new
             // slow-path readers from acquiring, so we cannot be starved.
-            // We then wait for all OTHER readers to release. Our own reads are
+            // we then wait for all OTHER readers to release. our own reads are
             // still counted in num_readers, so the condition is
             // num_readers > *my_read_count (other readers still active).
-            // clib__unlock signals upgrade_cv each time a reader releases.
+            // clib__unlock signals upgrade_cv each time a reader releases
             lock->upgrade_pending = TRUE;
 
+            // wait for other readers
             while (lock->num_readers > *my_read_count)
             {
                 pthread_cond_wait(&lock->upgrade_cv, &lock->mutex);
             }
 
-            // We are now the sole reader. Atomically convert: subtract our
+            // we are now the sole reader. atomically convert: subtract our
             // reads from num_readers, zero the TLS counter, and become the
-            // writer. All N read acquisitions collapse into write_recursion = 1.
-            // One clib__unlock will release the write lock.
+            // writer. all N read acquisitions collapse into write_recursion = 1.
+            // one clib__unlock will release the write lock
             lock->num_readers -= *my_read_count;
             *my_read_count = 0;
             lock->writer_thread = self;
             lock->write_recursion = 1;
             lock->upgrade_pending = FALSE;
 
-            // Wake the queue head. Any readers stalled by upgrade_pending will
+            // wake the queue head. any readers stalled by upgrade_pending will
             // re-check conditions, see write_recursion > 0, and go back to sleep
-            // until we release. Writers in the queue also wait for
-            // write_recursion == 0 and will sleep too.
+            // until we release. writers in the queue also wait for
+            // write_recursion == 0 and will sleep too
             if (lock->queue_head != NULL_POINTER)
             {
                 pthread_cond_broadcast(&lock->wait_cv);
             }
 
+            // unlock the mutex
             pthread_mutex_unlock(&lock->mutex);
             return;
         }
         else
         {
-            // Another thread is already mid-upgrade. If we also wait for our
+            // another thread is already mid-upgrade. if we also wait for our
             // reads to drain we deadlock — each waiter holds a read that the
-            // other needs to release before it can proceed. Surrender our reads
+            // other needs to release before it can proceed. surrender our reads
             // now and re-enter as a normal write-lock contender via the FIFO
-            // queue. Another writer may change the protected data before we acquire it.
+            // queue. another writer may change the protected data before we acquire it
             lock->num_readers -= *my_read_count;
             *my_read_count = 0;
 
-            // Signal the upgrader — it may now be the only remaining reader.
+            // signal the upgrader — it may now be the only remaining reader
             pthread_cond_signal(&lock->upgrade_cv);
 
-            // Fall through to Case 3.
+            // fall through to Case 3
         }
     }
 
     // ---- Case 3: normal slow path -----------------------------------------
-    // Wait until:
+    // wait until:
     // (a) our ticket is at the front of the FIFO queue
     // (b) no readers are active          (num_readers == 0)
     // (c) no other writer holds the lock (write_recursion == 0)
     //
-    // Condition (c) is necessary because serving_ticket advances when a
-    // holder ACQUIRES (not when it releases). Without it, a second writer
+    // condition (c) is necessary because serving_ticket advances when a
+    // holder ACQUIRES (not when it releases). without it, a second writer
     // arriving after the first has already acquired would find its ticket
     // matching serving_ticket and num_readers == 0, and would incorrectly
-    // skip the wait — giving two simultaneous writers.
+    // skip the wait — giving two simultaneous writers
     ticket = lock->next_ticket++;
 
+    // fill the queue node
     node->is_writer = TRUE;
     node->ticket = ticket;
 
+    // add node to queue
     _clib_rwlock_internal__enqueue(lock, node);
 
+    // wait for the conditions
     while (node->ticket != lock->serving_ticket || lock->num_readers > 0 || lock->write_recursion > 0)
     {
         pthread_cond_wait(&lock->wait_cv, &lock->mutex);
     }
 
+    // store the new writer
     lock->writer_thread = self;
     lock->write_recursion = 1;
 
+    // remove node, advance ticket
     _clib_rwlock_internal__dequeue(lock);
     lock->serving_ticket++;
 
-    // Signal the next waiter even though we just took exclusive access.
-    // It will re-check conditions, find write_recursion > 0, and sleep.
-    // This keeps the wakeup chain live — without it, a waiter that arrived
-    // just before our signal here would have no one to wake it later.
+    // signal the next waiter even though we just took exclusive access.
+    // it will re-check conditions, find write_recursion > 0, and sleep.
+    // this keeps the wakeup chain live — without it, a waiter that arrived
+    // just before our signal here would have no one to wake it later
     if (lock->queue_head != NULL_POINTER)
     {
         pthread_cond_broadcast(&lock->wait_cv);
     }
 
+    // unlock the mutex
     pthread_mutex_unlock(&lock->mutex);
 }
 
@@ -367,13 +401,17 @@ void clib__unlock(custom_rwlock_t *lock)
     uint64 *my_read_count = NULL_POINTER;
     boole is_writer = FALSE;
 
+    // lock the mutex
     pthread_mutex_lock(&lock->mutex);
     self = pthread_self();
 
+    // find the read counter
     my_read_count = _clib_rwlock_internal__get_read_count(lock);
 
+    // check for the writer
     is_writer = (lock->write_recursion > 0 && pthread_equal(lock->writer_thread, self));
 
+    // release one lock level
     if (is_writer && *my_read_count > 0)
     {
         // A: release one writer-nested read
@@ -397,8 +435,8 @@ void clib__unlock(custom_rwlock_t *lock)
         (*my_read_count)--;
         lock->num_readers--;
 
-        // If a thread is mid-upgrade, it wakes here to check whether it is
-        // now the sole remaining reader.
+        // if a thread is mid-upgrade, it wakes here to check whether it is
+        // now the sole remaining reader
         if (lock->upgrade_pending != FALSE)
         {
             pthread_cond_signal(&lock->upgrade_cv);
@@ -406,18 +444,19 @@ void clib__unlock(custom_rwlock_t *lock)
     }
     else
     {
-        // Called without holding this lock — log and ignore rather than
-        // silently corrupting state.
+        // called without holding this lock — log and ignore rather than
+        // silently corrupting state
         DBG_RWLOCKS log_info("%s", "clib__unlock: WARNING called by thread that does not hold this lock");
         pthread_mutex_unlock(&lock->mutex);
         return;
     }
 
-    // Wake the next queued waiter when the lock is fully free.
+    // wake the next queued waiter when the lock is fully free
     if (lock->num_readers == 0 && lock->write_recursion == 0 && lock->queue_head)
     {
         pthread_cond_broadcast(&lock->wait_cv);
     }
 
+    // unlock the mutex
     pthread_mutex_unlock(&lock->mutex);
 }

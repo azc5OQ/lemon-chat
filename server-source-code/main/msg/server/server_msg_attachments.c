@@ -41,10 +41,13 @@ void server_msg__attachments__send_channel_chat_picture_metadata_to_clients_in_s
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // create picture metadata message
     root = server_msg__delivery__new_message("channel_chat_picture_metadata", &message);
 
+    // add the three ids
     cJSON_AddNumberToObject(message, "sender_id", (double)sender->client_id);
     cJSON_AddNumberToObject(message, "channel_id", channel_id);
     cJSON_AddNumberToObject(message, "picture_id", server_chat_message_id);
@@ -52,8 +55,10 @@ void server_msg__attachments__send_channel_chat_picture_metadata_to_clients_in_s
     // the encrypted length the receiver counts its chunks against, for the progress ring
     cJSON_AddNumberToObject(message, "size", (double)encrypted_size);
 
+    // send to other members
     _server_msg_attachments_internal__send_attachment_to_channel(root, channel_id, sender, "channel_chat_picture");
 
+    // free the message
     cJSON_Delete(root);
 }
 
@@ -74,18 +79,23 @@ void server_msg__attachments__send_channel_chat_picture_to_clients_in_same_chann
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // create chat picture message
     root = server_msg__delivery__new_message("channel_chat_picture", &message);
 
+    // add picture and sender
     cJSON_AddStringToObject(message, "value", chat_message_value);
     cJSON_AddStringToObject(message, "username", sender->username);
     cJSON_AddNumberToObject(message, "sender_id", (double)sender->client_id);
     cJSON_AddNumberToObject(message, "channel_id", channel_id);
     cJSON_AddNumberToObject(message, "picture_id", server_chat_message_id);
 
+    // send to other members
     server_msg__delivery__send_json_to_channel(root, channel_id, sender);
 
+    // free the message
     cJSON_Delete(root);
 }
 
@@ -105,12 +115,16 @@ void server_msg__attachments__send_image_status_to_single_client(client_t *recei
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 
+    // create image status message
     root = server_msg__delivery__new_message("image_sent_status", &message);
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // add the status text
     cJSON_AddStringToObject(message, "value", status);
 
+    // send to the receiver
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
 }
@@ -132,10 +146,13 @@ void server_msg__attachments__send_chat_picture_metadata_to_single_client(client
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // create picture metadata message
     root = server_msg__delivery__new_message("direct_chat_picture_metadata", &message);
 
+    // add sender and picture
     cJSON_AddStringToObject(message, "sender_username", sender->username);
     cJSON_AddNumberToObject(message, "sender_id", sender->client_id);
     cJSON_AddNumberToObject(message, "picture_id", server_chat_message_id);
@@ -143,6 +160,7 @@ void server_msg__attachments__send_chat_picture_metadata_to_single_client(client
     // the encrypted length the receiver counts its chunks against, for the progress ring
     cJSON_AddNumberToObject(message, "size", (double)encrypted_size);
 
+    // send to the receiver
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
 }
@@ -167,18 +185,23 @@ void server_msg__attachments__send_channel_chat_file_metadata_to_clients_in_same
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // create file metadata message
     root = server_msg__delivery__new_message("channel_chat_file_metadata", &message);
 
+    // add ids, header, size
     cJSON_AddNumberToObject(message, "sender_id", (double)sender->client_id);
     cJSON_AddNumberToObject(message, "channel_id", channel_id);
     cJSON_AddNumberToObject(message, "file_id", server_chat_message_id);
     cJSON_AddStringToObject(message, "file_header", file_header);
     cJSON_AddNumberToObject(message, "encrypted_size", (double)encrypted_size);
 
+    // send to other members
     _server_msg_attachments_internal__send_attachment_to_channel(root, channel_id, sender, "channel_chat_file");
 
+    // free the message
     cJSON_Delete(root);
 }
 
@@ -201,16 +224,20 @@ void server_msg__attachments__send_chat_file_metadata_to_single_client(client_t 
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // create file metadata message
     root = server_msg__delivery__new_message("direct_chat_file_metadata", &message);
 
+    // add sender, header, size
     cJSON_AddStringToObject(message, "sender_username", sender->username);
     cJSON_AddNumberToObject(message, "sender_id", sender->client_id);
     cJSON_AddNumberToObject(message, "file_id", server_chat_message_id);
     cJSON_AddStringToObject(message, "file_header", file_header);
     cJSON_AddNumberToObject(message, "encrypted_size", (double)encrypted_size);
 
+    // send to the receiver
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
 }
@@ -233,14 +260,18 @@ void server_msg__attachments__send_file_send_error_to_single_client(client_t *re
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s %s %s", "server_msg__attachments__send_file_send_error_to_single_client", reason, "\n");
 
+    // create file error message
     root = server_msg__delivery__new_message("file_send_error", &message);
 
+    // add reason, id, limit
     cJSON_AddStringToObject(message, "reason", reason);
     cJSON_AddNumberToObject(message, "local_message_id", (double)local_message_id);
     cJSON_AddNumberToObject(message, "file_upload_max_size", (double)g_server_settings.file_upload_max_size_bytes);
 
+    // send to the receiver
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
 }
@@ -261,10 +292,13 @@ void server_msg__attachments__send_file_send_completed_status_to_single_client(c
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // create file success message
     root = server_msg__delivery__new_message("file_send_success", &message);
 
+    // send to the receiver
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
 }
@@ -290,6 +324,7 @@ int64 server_msg__attachments__send_file_by_chunk_to_single_client(client_t *rec
     char *plaintext = server_msg__attachments__prepare_file_chunk(sender->client_id, chunk, server_chat_message_id);
     int64 result = -1;
 
+    // queue the chunk message
     if (plaintext != NULL_POINTER)
     {
         result = server_msg__attachments__queue_file_chunk(receiver, plaintext);
@@ -311,12 +346,15 @@ char *server_msg__attachments__prepare_file_chunk(uint64 sender_id, char *chunk,
     cJSON *message = NULL_POINTER;
     char *plaintext = NULL_POINTER;
 
+    // create file chunk message
     root = server_msg__delivery__new_message("file_receive_chunk", &message);
 
+    // add chunk and ids
     cJSON_AddStringToObject(message, "value", chunk);
     cJSON_AddNumberToObject(message, "sender_id", (double)sender_id);
     cJSON_AddNumberToObject(message, "server_chat_message_id", server_chat_message_id);
 
+    // convert message to text
     plaintext = cJSON_PrintUnformatted(root);
     cJSON_Delete(root);
     return plaintext;
@@ -352,14 +390,18 @@ void server_msg__attachments__send_file_receive_completed_to_single_client(clien
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // create file completed message
     root = server_msg__delivery__new_message("file_receive_completed", &message);
 
+    // add type and ids
     cJSON_AddStringToObject(message, "receive_type", receive_type);
     cJSON_AddNumberToObject(message, "sender_id", (double)info->client_sender_id);
     cJSON_AddNumberToObject(message, "server_chat_message_id", info->server_chat_message_id);
 
+    // send to the receiver
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
 }

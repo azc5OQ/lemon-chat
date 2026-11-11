@@ -19,11 +19,17 @@ static void _server_msg_tree_internal__country(desktop_client_t *client, const c
 {
     int64 index = 0;
     char letter = 0;
+
+    // clear the old code
     clib__null_memory(client->country, sizeof(client->country));
+
+    // refuse wrong length
     if (clib__strlen(code) != 2)
     {
         return;
     }
+
+    // copy as lower case
     for (index = 0; index < 2; index++)
     {
         letter = code[index];
@@ -46,6 +52,8 @@ static void _server_msg_tree_internal__country(desktop_client_t *client, const c
 static void _server_msg_tree_internal__song(desktop_client_t *client, const cJSON *item)
 {
     const cJSON *streaming = cJSON_GetObjectItemCaseSensitive(item, "is_streaming_song");
+
+    // replace the song title
     clib__null_memory(client->song, sizeof(client->song));
     if (!cJSON_IsFalse(streaming))
     {
@@ -64,9 +72,13 @@ void server_msg__tree__read_client(desktop_client_t *client, const cJSON *item)
     const cJSON *group = NULL_POINTER;
     const cJSON *groups = cJSON_GetObjectItemCaseSensitive(item, "group_ids");
     int64 id = 0;
+
+    // read group, country, song
     client->channel_group = server_msg__read_number(item, "channel_group_id");
     _server_msg_tree_internal__country(client, server_msg__read_string(item, "country_iso_code"));
     _server_msg_tree_internal__song(client, item);
+
+    // set the group bits
     if (cJSON_IsArray(groups))
     {
         cJSON_ArrayForEach(group, groups)
@@ -100,23 +112,35 @@ static void _server_msg_tree_internal__group(desktop_session_t *session, const c
     const cJSON *flags = cJSON_GetObjectItemCaseSensitive(permissions, "flags");
     const char *protections[2] = { "kick_protection", "ban_protection" };
     int64 index = 0;
+
+    // check the group ID
     if (id < 0 || id >= (channel ? DESKTOP_TREE_CHANNEL_GROUPS : DESKTOP_TREE_GROUPS))
     {
         return;
     }
+
+    // clear the group entry
     group = channel ? &session->model.channel_groups[id] : &session->model.groups[id];
     clib__null_memory(group, sizeof(*group));
     group->exists = TRUE;
     group->icon = -1;
+
+    // read the access flags
     group->default_guest = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(item, "is_default_guest"));
     group->can_assign = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(access, "assign_groups"));
     group->can_remove = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(access, "remove_groups"));
+
+    // read the protection values
     for (index = 0; index < 2; index++)
     {
         group->protection[index] = server_msg__read_number(permissions, protections[index]);
         group->negate_protection[index] = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(cJSON_GetObjectItemCaseSensitive(flags, protections[index]), "negate"));
     }
+
+    // copy the group name
     clib__string_copy(group->name, sizeof(group->name), server_msg__read_string(item, channel ? "name" : "group_name"));
+
+    // read the icon ID
     if (channel)
     {
         group->icon = cJSON_IsNumber(icon) ? (icon->valuedouble == -2 ? -2 : server_msg__read_number(item, "icon_id")) : -1;
@@ -139,16 +163,24 @@ static void _server_msg_tree_internal__icon(desktop_session_t *session, const cJ
     ubyte pixels[DESKTOP_TREE_ICON_BYTES] = { 0 };
     int64 id = server_msg__read_number(item, "icon_id");
     boole valid = FALSE;
+
+    // check the icon ID
     if (id < 0 || id >= DESKTOP_TREE_GROUPS)
     {
         return;
     }
+
+    // decode the icon pixels
     valid = !remove && desktop_tree_icons__decode(server_msg__read_string(item, "base64_icon"), pixels, sizeof(pixels));
+
+    // lock and store icon
     desktop_mutex__lock(session->mutex);
     session->tree_icons_revision = 0;
     clib__memcpy(session->tree_icons[id], pixels, sizeof(pixels));
     session->tree_icon_present[id] = valid;
     desktop_mutex__unlock(session->mutex);
+
+    // erase the pixel copy
     desktop_memory__erase(pixels, sizeof(pixels));
 }
 
@@ -164,15 +196,23 @@ static void _server_msg_tree_internal__icon(desktop_session_t *session, const cJ
 boole desktop_session__tree_icon(desktop_session_t *session, int64 id, uint64 revision, ubyte *pixels, uint64 capacity)
 {
     boole valid = FALSE;
+
+    // check the buffer size
     if (!pixels || capacity < DESKTOP_TREE_ICON_BYTES)
     {
         return FALSE;
     }
+
+    // clear the pixel buffer
     clib__null_memory(pixels, capacity);
+
+    // check session and ID
     if (!session || id < 0 || id >= DESKTOP_TREE_GROUPS)
     {
         return FALSE;
     }
+
+    // lock and copy icon
     desktop_mutex__lock(session->mutex);
     valid = session->tree_icons_revision == revision && session->tree_icon_present[id];
     if (valid)
@@ -200,6 +240,8 @@ void server_msg__tree__receive(desktop_session_t *session, const cJSON *message)
     int64 id = server_msg__read_number(message, "group_id");
     int64 index = 0;
     boole catalog = FALSE;
+
+    // choose by message type
     if (clib__strcmp(type, "authentication_status") == 0)
     {
         session->model.policy_song_titles = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(message, "is_music_bot_marquee_visible_to_everyone"));
@@ -214,13 +256,18 @@ void server_msg__tree__receive(desktop_session_t *session, const cJSON *message)
     }
     else if (clib__strcmp(type, "group_list") == 0)
     {
+        // clear the group lists
         clib__null_memory(session->model.groups, sizeof(session->model.groups));
         clib__null_memory(session->model.channel_groups, sizeof(session->model.channel_groups));
+
+        // read the server groups
         items = cJSON_GetObjectItemCaseSensitive(message, "groups");
         cJSON_ArrayForEach(item, items)
         {
             _server_msg_tree_internal__group(session, item, FALSE);
         }
+
+        // read the channel groups
         items = cJSON_GetObjectItemCaseSensitive(message, "channel_groups");
         cJSON_ArrayForEach(item, items)
         {
@@ -235,6 +282,7 @@ void server_msg__tree__receive(desktop_session_t *session, const cJSON *message)
     }
     else if (id >= 0 && id < DESKTOP_TREE_GROUPS && clib__strcmp(type, "group_delete") == 0)
     {
+        // remove the deleted group
         clib__null_memory(&session->model.groups[id], sizeof(session->model.groups[id]));
         for (index = 0; index < session->model.client_count; index++)
         {
@@ -244,6 +292,7 @@ void server_msg__tree__receive(desktop_session_t *session, const cJSON *message)
     }
     else if (id >= 0 && id < DESKTOP_TREE_GROUPS && clib__strcmp(type, "group_icon_changed") == 0)
     {
+        // store the group icon
         session->model.groups[id].icon = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(message, "has_icon")) ? server_msg__read_number(message, "group_linked_icon_id") : -1;
         catalog = TRUE;
     }
@@ -257,11 +306,14 @@ void server_msg__tree__receive(desktop_session_t *session, const cJSON *message)
     }
     else if (clib__strcmp(type, "icon_list") == 0)
     {
+        // clear all stored icons
         desktop_mutex__lock(session->mutex);
         session->tree_icons_revision = 0;
         clib__null_memory(session->tree_icons, sizeof(session->tree_icons));
         clib__null_memory(session->tree_icon_present, sizeof(session->tree_icon_present));
         desktop_mutex__unlock(session->mutex);
+
+        // read every icon
         items = cJSON_GetObjectItemCaseSensitive(message, "icons");
         cJSON_ArrayForEach(item, items)
         {
@@ -276,6 +328,7 @@ void server_msg__tree__receive(desktop_session_t *session, const cJSON *message)
     }
     else if (clib__strcmp(type, "channel_icon_changed") == 0)
     {
+        // store the channel icon
         slot = desktop_session__channel(session, server_msg__read_number(message, "channel_id"));
         if (slot >= 0)
         {
@@ -288,6 +341,7 @@ void server_msg__tree__receive(desktop_session_t *session, const cJSON *message)
     }
     else if (client && (clib__strcmp(type, "channel_group_changed") == 0 || clib__strcmp(type, "channel_join") == 0 || clib__strcmp(type, "client_coming_back_from_idle_mode") == 0))
     {
+        // update group and song
         if (client->channel == server_msg__read_number(message, "channel_id"))
         {
             client->channel_group = server_msg__read_number(message, "channel_group_id");
@@ -307,6 +361,7 @@ void server_msg__tree__receive(desktop_session_t *session, const cJSON *message)
     }
     else if (clib__strcmp(type, "current_channel_active_microphone_usage") == 0)
     {
+        // read the song titles
         items = cJSON_GetObjectItemCaseSensitive(message, "clients");
         cJSON_ArrayForEach(item, items)
         {
@@ -317,6 +372,8 @@ void server_msg__tree__receive(desktop_session_t *session, const cJSON *message)
             }
         }
     }
+
+    // clear hidden song titles
     for (index = 0; index < session->model.client_count; index++)
     {
         client = &session->model.clients[index];
@@ -325,6 +382,8 @@ void server_msg__tree__receive(desktop_session_t *session, const cJSON *message)
             clib__null_memory(client->song, sizeof(client->song));
         }
     }
+
+    // set the tree revision
     if (catalog)
     {
         session->model.tree_revision = ++session->next_tree_revision;

@@ -42,11 +42,16 @@ crypto_password_set_t *crypto_metadata__snapshot_passwords(const crypto_key_t *k
 {
     crypto_password_set_t *result = NULL_POINTER;
 
+    // check arguments
     if (count > 100 || (count != 0 && keys == NULL_POINTER))
     {
         return NULL_POINTER;
     }
+
+    // allocate the password set
     result = (crypto_password_set_t *)memorymanager__allocate(sizeof(*result) + count * sizeof(crypto_key_t), MEMALLOC_TYPE_ENCRYPT);
+
+    // fill the password set
     if (result != NULL_POINTER)
     {
         atomic_init(&result->references, 1);
@@ -61,6 +66,7 @@ crypto_password_set_t *crypto_metadata__snapshot_passwords(const crypto_key_t *k
 
 crypto_password_set_t *crypto_metadata__retain_passwords(crypto_password_set_t *passwords)
 {
+    // add one reference
     if (passwords != NULL_POINTER)
     {
         atomic_fetch_add_explicit(&passwords->references, 1, memory_order_relaxed);
@@ -70,6 +76,7 @@ crypto_password_set_t *crypto_metadata__retain_passwords(crypto_password_set_t *
 
 void crypto_metadata__release_passwords(crypto_password_set_t *passwords)
 {
+    // free after last reference
     if (passwords != NULL_POINTER && atomic_fetch_sub_explicit(&passwords->references, 1, memory_order_acq_rel) == 1)
     {
         ciphers__clear(passwords, sizeof(*passwords) + passwords->count * sizeof(crypto_key_t));
@@ -108,10 +115,13 @@ boole crypto_metadata__key_init(crypto_key_t *key, crypto_key_type_t type, const
 {
     crypto_key_t initialized = { 0 };
 
+    // check the argument
     if (key == NULL)
     {
         return 0;
     }
+
+    // copy the key bytes
     if (bytes != NULL)
     {
         switch (type)
@@ -145,6 +155,8 @@ boole crypto_metadata__key_init(crypto_key_t *key, crypto_key_type_t type, const
         }
         }
     }
+
+    // store the key
     *key = initialized;
     mbedtls_platform_zeroize(&initialized, sizeof(initialized));
     return key->type != CRYPTO_KEY_NONE;
@@ -165,15 +177,18 @@ boole crypto_metadata__key_from_password(crypto_key_t *key, crypto_key_type_t ty
     const mbedtls_md_info_t *md = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
     int64 result = 0;
 
+    // check the argument
     if (key == NULL)
     {
         return 0;
     }
+
+    // clear the key
     clib__memset(key, 0, sizeof(*key));
 
-    // The server settings currently store passwords as text. SHA256 turns each
-    // password into its 32 stored key bytes, just as the client does. The key
-    // type records which supported encryption method will use those bytes.
+    // the server settings currently store passwords as text. SHA256 turns each
+    // password into its 32 stored key bytes, just as the client does. the key
+    // type records which supported encryption method will use those bytes
     if (ciphers__name(type) != NULL && password != NULL && md != NULL)
     {
         if (mbedtls_md(md, (const ubyte *)password, clib__strlen(password), digest) == 0)
@@ -181,6 +196,8 @@ boole crypto_metadata__key_from_password(crypto_key_t *key, crypto_key_type_t ty
             result = crypto_metadata__key_init(key, type, digest, sizeof(digest));
         }
     }
+
+    // clear the digest
     mbedtls_platform_zeroize(digest, sizeof(digest));
     return result;
 }
@@ -224,16 +241,19 @@ boole crypto_metadata__derive_session_keys(const char *shared_secret, crypto_ses
     boole result = FALSE;
     boole status = FALSE;
 
+    // check the argument
     if (keys == NULL)
     {
         return 0;
     }
+
+    // clear the old keys
     crypto_metadata__clear_session_keys(keys);
 
-    // The client uses the same salt and info strings and writes the shared
-    // secret as decimal text too. Both ends must do this exactly the same way
+    // the client uses the same salt and info strings and writes the shared
+    // secret as decimal text too. both ends must do this exactly the same way
     // to get the same keys: the first 32 bytes are the encryption key, and the
-    // next 32 bytes are the key used to check whether a message was changed.
+    // next 32 bytes are the key used to check whether a message was changed
     status = shared_secret != NULL;
     if (status == TRUE)
     {
@@ -243,10 +263,14 @@ boole crypto_metadata__derive_session_keys(const char *shared_secret, crypto_ses
     {
         status = md != NULL;
     }
+
+    // create the key material
     if (status == TRUE)
     {
         status = mbedtls_hkdf(md, salt, sizeof(salt) - 1, (const ubyte *)shared_secret, clib__strlen(shared_secret), info, sizeof(info) - 1, material, sizeof(material)) == 0;
     }
+
+    // store the two keys
     if (status == TRUE)
     {
         status = crypto_metadata__key_init(&keys->encryption, CRYPTO_KEY_AES_256_CTR, material, 32) != 0;
@@ -255,6 +279,8 @@ boole crypto_metadata__derive_session_keys(const char *shared_secret, crypto_ses
     {
         status = crypto_metadata__key_init(&keys->authentication, CRYPTO_KEY_HMAC_SHA256, material + 32, 32) != 0;
     }
+
+    // mark ready or clear
     if (status == TRUE)
     {
         keys->is_ready = 1;
@@ -264,6 +290,8 @@ boole crypto_metadata__derive_session_keys(const char *shared_secret, crypto_ses
     {
         crypto_metadata__clear_session_keys(keys);
     }
+
+    // clear the key material
     mbedtls_platform_zeroize(material, sizeof(material));
     return result;
 }
@@ -284,27 +312,33 @@ boole crypto_metadata__crypt(const crypto_key_t *key, const ubyte *nonce, uint64
 {
     struct AES_ctx aes = { 0 };
 
+    // check arguments
     if (key == NULL || nonce == NULL || data == NULL || size > SIZE_MAX || direction != CRYPTO_ENCRYPT && direction != CRYPTO_DECRYPT)
     {
         return 0;
     }
+
+    // use the other ciphers
     if (key->type != CRYPTO_KEY_AES_256_CTR)
     {
         return nonce_size == 16 && ciphers__crypt(key->type, key->material.raw, nonce, data, size);
     }
+
+    // apply the AES cipher
     switch (key->type)
     {
     case CRYPTO_KEY_AES_256_CTR:
     {
+        // check the nonce size
         if (nonce_size != AES_BLOCKLEN)
         {
             return 0;
         }
 
-        // Use tiny-AES to encrypt or decrypt the supplied bytes. With this
+        // use tiny-AES to encrypt or decrypt the supplied bytes. with this
         // AES mode, applying the same key and starting value a second time
         // turns the encrypted bytes back into the original bytes, so both
-        // directions call the same function.
+        // directions call the same function
         AES_init_ctx_iv(&aes, key->material.aes_256_ctr, nonce);
         AES_CTR_xcrypt_buffer(&aes, data, size);
         mbedtls_platform_zeroize(&aes, sizeof(aes));
@@ -337,6 +371,7 @@ boole crypto_metadata__crypt_layers(const crypto_key_t *keys, uint64 count, cons
     uint64 i = 0;
     uint64 index = 0;
 
+    // check arguments
     if (count != 0 &&
         keys == NULL ||
         count > SIZE_MAX / sizeof(*keys) ||
@@ -349,10 +384,10 @@ boole crypto_metadata__crypt_layers(const crypto_key_t *keys, uint64 count, cons
         return 0;
     }
 
-    // Encrypt with the keys in their stored order, then decrypt in the opposite
-    // order. For example, data encrypted with A, then B, then C must be opened
-    // with C, then B, then A. Keep this rule even though the current AES mode
-    // also happens to work when the order changes; another method might not.
+    // encrypt with the keys in their stored order, then decrypt in the opposite
+    // order. for example, data encrypted with A, then B, then C must be opened
+    // with C, then B, then A. keep this rule even though the current AES mode
+    // also happens to work when the order changes; another method might not
     for (i = 0; i < count; i++)
     {
         index = direction == CRYPTO_ENCRYPT ? i : count - 1 - i;
@@ -382,10 +417,13 @@ boole crypto_metadata__hmac_sha256(const crypto_key_t *key, const ubyte *first, 
     mbedtls_md_context_t context;
     int64 result = 0;
 
+    // check the key
     if (key == NULL)
     {
         return 0;
     }
+
+    // check the other arguments
     if (key->type != CRYPTO_KEY_HMAC_SHA256 ||
         out_tag == NULL ||
         md == NULL ||
@@ -398,12 +436,16 @@ boole crypto_metadata__hmac_sha256(const crypto_key_t *key, const ubyte *first, 
     {
         return 0;
     }
+
+    // start the HMAC
     mbedtls_md_init(&context);
     result = mbedtls_md_setup(&context, md, 1);
     if (result == 0)
     {
         result = mbedtls_md_hmac_starts(&context, key->material.hmac_sha256, sizeof(key->material.hmac_sha256));
     }
+
+    // add both data parts
     if (result == 0 && first_size != 0)
     {
         result = mbedtls_md_hmac_update(&context, first, first_size);
@@ -412,10 +454,14 @@ boole crypto_metadata__hmac_sha256(const crypto_key_t *key, const ubyte *first, 
     {
         result = mbedtls_md_hmac_update(&context, second, second_size);
     }
+
+    // write the tag
     if (result == 0)
     {
         result = mbedtls_md_hmac_finish(&context, out_tag);
     }
+
+    // free the context
     mbedtls_md_free(&context);
     return result == 0;
 }
@@ -434,6 +480,7 @@ boole crypto_metadata__equal(const ubyte *left, const ubyte *right, uint64 size)
     ubyte difference = 0;
     uint64 i = 0;
 
+    // compare every byte
     for (i = 0; i < size; i++)
     {
         difference |= left[i] ^ right[i];
@@ -458,11 +505,14 @@ static boole _crypto_metadata_internal__tag(const crypto_session_keys_t *session
     const crypto_key_t *key = &session->authentication;
     boole result = FALSE;
 
+    // choose the HMAC key
     if (session->negotiated.count != 0 && sending == FALSE)
     {
         crypto_metadata__key_init(&incoming, CRYPTO_KEY_HMAC_SHA256, session->negotiated.client_mac, 32);
         key = &incoming;
     }
+
+    // calculate the tag
     result = crypto_metadata__hmac_sha256(key, (const ubyte *)iv, clib__strlen(iv), (const ubyte *)data, clib__strlen(data), out);
     ciphers__clear(&incoming, sizeof(incoming));
     return result;
@@ -485,7 +535,7 @@ static char *_crypto_metadata_internal__encrypt(const char *plaintext, int64 *ou
     uint64 text_size = 0;
     uint64 buffer_size = 0;
     uint64 encoded_capacity = 0;
-    size_t written = 0; // mbedTLS writes through size_t*.
+    size_t written = 0; // mbedTLS writes through size_t*
     uint64 envelope_capacity = 0;
     int64 envelope_size = 0;
     ubyte iv[METADATA_IV_SIZE] = { 0 };
@@ -499,16 +549,21 @@ static char *_crypto_metadata_internal__encrypt(const char *plaintext, int64 *ou
     boole status1 = FALSE;
     boole status2 = FALSE;
 
+    // check the output pointer
     if (out_size == NULL_POINTER)
     {
         return NULL_POINTER;
     }
     *out_size = 0;
+
+    // check the text
     status0 = plaintext == NULL_POINTER;
     if (status0 == TRUE)
     {
         return NULL_POINTER;
     }
+
+    // check session and limit
     if (session != NULL_POINTER)
     {
         status0 = session->is_ready == FALSE;
@@ -519,7 +574,7 @@ static char *_crypto_metadata_internal__encrypt(const char *plaintext, int64 *ou
         return NULL_POINTER;
     }
 
-    // Check the padded size before calculating the Base64 buffer size.
+    // check the padded size before calculating the Base64 buffer size
     text_size = clib__strlen(plaintext);
     buffer_size = text_size < METADATA_PADDED_SIZE ? METADATA_PADDED_SIZE : text_size;
     status0 = buffer_size > (uint64)g_server_settings.websocket_message_max_length;
@@ -528,6 +583,8 @@ static char *_crypto_metadata_internal__encrypt(const char *plaintext, int64 *ou
     {
         return NULL_POINTER;
     }
+
+    // check the base64 size
     encoded_capacity = 4 * ((buffer_size + 2) / 3) + 1;
     status0 = encoded_capacity > (uint64)g_server_settings.websocket_message_max_length;
     if (status0 == TRUE)
@@ -535,16 +592,16 @@ static char *_crypto_metadata_internal__encrypt(const char *plaintext, int64 *ou
         return NULL_POINTER;
     }
 
-    // Generate a fresh IV for this encrypted request.
+    // generate a fresh IV for this encrypted request
     status0 = util__fill_secure_random_bytes(iv, sizeof(iv)) == FALSE;
     if (status0 == TRUE)
     {
         return NULL_POINTER;
     }
 
-    // memorymanager__allocate fills new memory with zero bytes. After the text
+    // memorymanager__allocate fills new memory with zero bytes. after the text
     // is copied in, those zeros fill the rest of a short message up to 1026
-    // bytes. This keeps the same minimum encrypted message size as before.
+    // bytes. this keeps the same minimum encrypted message size as before
     buffer = (ubyte *)memorymanager__allocate(buffer_size, MEMALLOC_TYPE_ENCRYPT);
     encoded = (ubyte *)memorymanager__allocate(encoded_capacity, MEMALLOC_TYPE_ENCRYPT);
     status0 = buffer == NULL_POINTER;
@@ -555,9 +612,9 @@ static char *_crypto_metadata_internal__encrypt(const char *plaintext, int64 *ou
     }
     clib__memcpy(buffer, plaintext, text_size);
 
-    // For a message sent by the server, encrypt with each key from the server
-    // settings first. Then encrypt that result with the key that this client
-    // and the server made from their shared secret when they connected.
+    // for a message sent by the server, encrypt with each key from the server
+    // settings first. then encrypt that result with the key that this client
+    // and the server made from their shared secret when they connected
     if (!crypto_metadata__crypt_layers(passwords, password_count, iv, sizeof(iv), buffer, buffer_size, CRYPTO_ENCRYPT))
     {
         goto done;
@@ -571,7 +628,7 @@ static char *_crypto_metadata_internal__encrypt(const char *plaintext, int64 *ou
         }
     }
 
-    // Encode the encrypted bytes as text for the JSON envelope.
+    // encode the encrypted bytes as text for the JSON envelope
     status0 = mbedtls_base64_encode(encoded, encoded_capacity, &written, buffer, buffer_size) == 0;
     if (status0 == FALSE)
     {
@@ -583,10 +640,10 @@ static char *_crypto_metadata_internal__encrypt(const char *plaintext, int64 *ou
         goto done;
     }
 
-    // Make a check value from the message's starting value and encrypted data,
-    // using the separate message-checking key. The client calculates it again
-    // when the message arrives. If the values differ, it rejects the message.
-    // Both ends calculate this over the base64 text sent in the JSON fields.
+    // make a check value from the message's starting value and encrypted data,
+    // using the separate message-checking key. the client calculates it again
+    // when the message arrives. if the values differ, it rejects the message.
+    // both ends calculate this over the base64 text sent in the JSON fields
     if (session != NULL_POINTER)
     {
         status0 = _crypto_metadata_internal__tag(session, (char *)iv_base64, (char *)encoded, tag, TRUE) != 0;
@@ -600,6 +657,8 @@ static char *_crypto_metadata_internal__encrypt(const char *plaintext, int64 *ou
             goto done;
         }
     }
+
+    // allocate the envelope
     envelope_capacity = encoded_capacity + sizeof(iv_base64) + sizeof(tag_base64) + 40;
     envelope = (char *)memorymanager__allocate(envelope_capacity, MEMALLOC_TYPE_ENCRYPT);
     if (envelope == NULL_POINTER)
@@ -607,9 +666,9 @@ static char *_crypto_metadata_internal__encrypt(const char *plaintext, int64 *ou
         goto done;
     }
 
-    // These values contain only base64 characters, so there are no quotes or
-    // backslashes inside them that need special handling. They can be written
-    // straight into the JSON string without creating a cJSON object first.
+    // these values contain only base64 characters, so there are no quotes or
+    // backslashes inside them that need special handling. they can be written
+    // straight into the JSON string without creating a cJSON object first
     if (session != NULL_POINTER)
     {
         envelope_size = clib__string_format(envelope, envelope_capacity, "{\"iv\":\"%s\",\"data\":\"%s\",\"tag\":\"%s\"}", iv_base64, encoded, tag_base64);
@@ -618,6 +677,8 @@ static char *_crypto_metadata_internal__encrypt(const char *plaintext, int64 *ou
     {
         envelope_size = clib__string_format(envelope, envelope_capacity, "{\"iv\":\"%s\",\"data\":\"%s\"}", iv_base64, encoded);
     }
+
+    // check the envelope size
     status0 = envelope_size <= 0;
     status1 = (uint64)envelope_size >= envelope_capacity;
     status2 = envelope_size > g_server_settings.websocket_message_max_length;
@@ -627,9 +688,12 @@ static char *_crypto_metadata_internal__encrypt(const char *plaintext, int64 *ou
         envelope = NULL_POINTER;
         goto done;
     }
+
+    // set the output size
     *out_size = envelope_size + 1;
 
 done:
+    // free the buffers
     if (buffer != NULL_POINTER)
     {
         memorymanager__free((nuint)buffer);
@@ -656,18 +720,25 @@ char *crypto_metadata__encrypt_with_secret(const char *plaintext, int64 *out_siz
     crypto_session_keys_t session = { 0 };
     char *result = NULL_POINTER;
 
+    // use server keys only
     if (shared_secret == NULL_POINTER)
     {
         return crypto_metadata__encrypt(plaintext, out_size, NULL_POINTER);
     }
+
+    // reset the output size
     if (out_size != NULL_POINTER)
     {
         *out_size = 0;
     }
+
+    // encrypt with temporary keys
     if (crypto_metadata__derive_session_keys(shared_secret, &session))
     {
         result = crypto_metadata__encrypt(plaintext, out_size, &session);
     }
+
+    // clear the temporary keys
     crypto_metadata__clear_session_keys(&session);
     return result;
 }
@@ -683,15 +754,20 @@ static boole _crypto_metadata_internal__is_flat_envelope(const char *text)
     uint64 strings = 0;
     uint64 fields = 0;
 
+    // check every character
     for (cursor = text; *cursor != 0; cursor++)
     {
+        // refuse control characters
         value = (ubyte)*cursor;
         if (value < 32 && (quoted || (value != '\t' && value != '\r' && value != '\n')))
         {
             return FALSE;
         }
+
+        // count strings, braces, fields
         if (quoted)
         {
+            // read inside the string
             if (escaped)
             {
                 if (strncmp(cursor, "u0000", 5) == 0)
@@ -711,6 +787,7 @@ static boole _crypto_metadata_internal__is_flat_envelope(const char *text)
         }
         else if (value == '"')
         {
+            // count the new string
             if (++strings > 6)
             {
                 return FALSE;
@@ -719,10 +796,12 @@ static boole _crypto_metadata_internal__is_flat_envelope(const char *text)
         }
         else if (value == '[' || value == ']')
         {
+            // refuse arrays
             return FALSE;
         }
         else if (value == '{')
         {
+            // refuse nested objects
             if (++depth > 1)
             {
                 return FALSE;
@@ -730,6 +809,7 @@ static boole _crypto_metadata_internal__is_flat_envelope(const char *text)
         }
         else if (value == '}')
         {
+            // close the object
             if (depth == 0)
             {
                 return FALSE;
@@ -738,9 +818,12 @@ static boole _crypto_metadata_internal__is_flat_envelope(const char *text)
         }
         else if (value == ':' && ++fields > 3)
         {
+            // refuse too many fields
             return FALSE;
         }
     }
+
+    // check the end state
     return !quoted && depth == 0;
 }
 
@@ -763,8 +846,8 @@ boole crypto_metadata__decrypt_from_client(const client_t *client, const char *e
     ubyte iv[METADATA_IV_SIZE] = { 0 };
     ubyte expected_tag[32] = { 0 };
     ubyte expected_tag_base64[45] = { 0 };
-    size_t written = 0; // mbedTLS writes through size_t*.
-    size_t decoded_size = 0; // mbedTLS writes through size_t*.
+    size_t written = 0; // mbedTLS writes through size_t*
+    size_t decoded_size = 0; // mbedTLS writes through size_t*
     cJSON *envelope = NULL_POINTER;
     cJSON *iv_item = NULL_POINTER;
     cJSON *data_item = NULL_POINTER;
@@ -775,33 +858,46 @@ boole crypto_metadata__decrypt_from_client(const client_t *client, const char *e
     boole status0 = FALSE;
     boole status1 = FALSE;
 
+    // check the output buffer
     status0 = out == NULL_POINTER;
     status1 = capacity == 0 || capacity > SIZE_MAX;
     if (status0 == TRUE || status1 == TRUE)
     {
         return FALSE;
     }
+
+    // clear the output buffer
     clib__memset(out, 0, capacity);
+
+    // check text and client
     status0 = envelope_text == NULL_POINTER;
     status1 = client == NULL_POINTER;
     if (status0 == TRUE || status1 == TRUE)
     {
         return FALSE;
     }
+
+    // client must exist
     status0 = client->is_existing == FALSE;
     if (status0 == TRUE)
     {
         return FALSE;
     }
+
+    // check the envelope structure
     if (!_crypto_metadata_internal__is_flat_envelope(envelope_text))
     {
         goto done;
     }
+
+    // read the JSON
     envelope = cJSON_ParseWithOpts(envelope_text, NULL_POINTER, TRUE);
     if (!cJSON_IsObject(envelope))
     {
         goto done;
     }
+
+    // check the field names
     cJSON_ArrayForEach(field, envelope)
     {
         if (!field->string || !cJSON_IsString(field) || cJSON_GetObjectItemCaseSensitive(envelope, field->string) != field || (strcmp(field->string, "iv") != 0 && strcmp(field->string, "data") != 0 && strcmp(field->string, "tag") != 0))
@@ -810,10 +906,14 @@ boole crypto_metadata__decrypt_from_client(const client_t *client, const char *e
         }
         fields++;
     }
+
+    // check the field count
     if (fields < 2 || fields > 3)
     {
         goto done;
     }
+
+    // find IV and data
     iv_item = cJSON_GetObjectItemCaseSensitive(envelope, "iv");
     data_item = cJSON_GetObjectItemCaseSensitive(envelope, "data");
     status0 = cJSON_IsString(iv_item) != 0;
@@ -822,6 +922,8 @@ boole crypto_metadata__decrypt_from_client(const client_t *client, const char *e
     {
         goto done;
     }
+
+    // decode the IV
     status0 = clib__strlen(iv_item->valuestring) == 24;
     if (status0 == FALSE)
     {
@@ -837,8 +939,11 @@ boole crypto_metadata__decrypt_from_client(const client_t *client, const char *e
     {
         goto done;
     }
+
+    // check the message tag
     if (client->is_dh_shared_secret_agreed_upon)
     {
+        // choose the session keys
         session = &client->session_keys;
         if (!session->is_ready)
         {
@@ -848,32 +953,42 @@ boole crypto_metadata__decrypt_from_client(const client_t *client, const char *e
             }
             session = &temporary_session;
         }
+
+        // find the tag
         tag_item = cJSON_GetObjectItemCaseSensitive(envelope, "tag");
 
-        // Once the client and server have agreed on a secret, every message
-        // must include this check value, called the tag. Reject a message that
+        // once the client and server have agreed on a secret, every message
+        // must include this check value, called the tag. reject a message that
         // leaves it out; otherwise someone could remove the tag to skip the
-        // check that the message has not been changed.
+        // check that the message has not been changed
         status0 = cJSON_IsString(tag_item) != 0;
         if (status0 == FALSE)
         {
             goto done;
         }
+
+        // check the tag length
         status0 = clib__strlen(tag_item->valuestring) == 44;
         if (status0 == FALSE)
         {
             goto done;
         }
+
+        // calculate the expected tag
         status0 = _crypto_metadata_internal__tag(session, iv_item->valuestring, data_item->valuestring, expected_tag, FALSE) != 0;
         if (status0 == FALSE)
         {
             goto done;
         }
+
+        // convert tag to base64
         status0 = mbedtls_base64_encode(expected_tag_base64, sizeof(expected_tag_base64), &written, expected_tag, sizeof(expected_tag)) == 0;
         if (status0 == FALSE)
         {
             goto done;
         }
+
+        // compare the tags
         status0 = crypto_metadata__equal(expected_tag_base64, (const ubyte *)tag_item->valuestring, 44) != 0;
         if (status0 == FALSE)
         {
@@ -881,18 +996,18 @@ boole crypto_metadata__decrypt_from_client(const client_t *client, const char *e
         }
     }
 
-    // Leave room for the zero byte that marks the end of a C string. If the
+    // leave room for the zero byte that marks the end of a C string. if the
     // incoming base64 text is invalid or its decoded bytes will not fit, stop
-    // here without trying to decrypt them.
+    // here without trying to decrypt them
     if (mbedtls_base64_decode(out, capacity - 1, &decoded_size, (const ubyte *)data_item->valuestring, clib__strlen(data_item->valuestring)) != 0)
     {
         goto done;
     }
 
-    // A client encrypts its outgoing message with its own connection key first
-    // and then with the keys from the server settings. Undo those steps in the
+    // a client encrypts its outgoing message with its own connection key first
+    // and then with the keys from the server settings. undo those steps in the
     // opposite order: use the server keys from last to first, then use the
-    // client's connection key to get the original text.
+    // client's connection key to get the original text
     if (!crypto_metadata__crypt_layers(client->password_keys != NULL_POINTER ? client->password_keys->keys : NULL_POINTER, client->password_keys != NULL_POINTER ? client->password_keys->count : 0, iv, sizeof(iv), out, decoded_size, CRYPTO_DECRYPT))
     {
         goto done;
@@ -905,14 +1020,19 @@ boole crypto_metadata__decrypt_from_client(const client_t *client, const char *e
             goto done;
         }
     }
+
+    // end the string
     out[decoded_size] = '\0';
     result = TRUE;
 
 done:
+    // clear output on failure
     if (!result)
     {
         clib__memset(out, 0, capacity);
     }
+
+    // free JSON and keys
     cJSON_Delete(envelope);
     crypto_metadata__clear_session_keys(&temporary_session);
     return result;
@@ -921,9 +1041,12 @@ done:
 /** @brief Applies negotiated session layers, preserving the legacy one-layer format. */
 boole crypto_metadata__crypt_session(const crypto_session_keys_t *session, const ubyte *nonce, uint64 nonce_size, ubyte *data, uint64 size, crypto_direction_t direction)
 {
+    // use the negotiated layers
     if (session->negotiated.count != 0)
     {
         return nonce_size == 16 && keys_session__crypt(&session->negotiated, direction == CRYPTO_ENCRYPT, direction == CRYPTO_ENCRYPT, nonce, data, size);
     }
+
+    // use the single key
     return crypto_metadata__crypt(&session->encryption, nonce, nonce_size, data, size, direction);
 }

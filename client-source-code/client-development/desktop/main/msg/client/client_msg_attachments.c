@@ -45,10 +45,14 @@ static boole _client_attachments_internal__extra(cJSON *message, const desktop_a
 static boole _client_attachments_internal__valid(desktop_session_t *session, const desktop_attachment_record_t *record)
 {
     int64 slot = desktop_session__client(session, record->view.peer);
+
+    // check a channel destination
     if (record->view.peer < 0)
     {
         return !session->model.idle && session->model.channel == record->view.channel;
     }
+
+    // check a direct destination
     return slot >= 0 && session->model.clients[slot].serial == record->view.peer_serial;
 }
 
@@ -66,13 +70,19 @@ void client_msg__attachments__send(desktop_session_t *session, const desktop_att
     int64 local = desktop_session__client(session, session->model.local_id);
     int64 index = 0;
     boole valid = FALSE;
+
+    // check destination and policy
     valid = (request->picture ? session->model.policy_pictures : session->model.policy_files) && (request->peer < 0 ? session->model.keys_ready && !session->model.idle && request->channel == session->model.channel : session->model.policy_private && slot >= 0 && session->model.clients[slot].serial == request->peer_serial && request->peer != session->model.local_id && !session->model.clients[slot].music && session->client_keys[slot][0]);
     if (!valid)
     {
         desktop_session__detail(session, "Attachment not sent: the selected destination or server feature is unavailable.", FALSE);
         return;
     }
+
+    // lock the attachments
     desktop_mutex__lock(attachments->mutex);
+
+    // find an unfinished upload
     for (index = 0; index < DESKTOP_ATTACHMENT_COUNT; index++)
     {
         record = &attachments->records[index];
@@ -81,22 +91,33 @@ void client_msg__attachments__send(desktop_session_t *session, const desktop_att
             break;
         }
     }
+
+    // reserve a new record
     record = index == DESKTOP_ATTACHMENT_COUNT && !attachments->uploading ? desktop_attachments__reserve(attachments) : NULL;
+
+    // fill the new record
     if (record)
     {
+        // copy the destination
         record->view.outgoing = TRUE;
         record->view.picture = request->picture;
         record->view.peer = request->peer;
         record->view.peer_serial = request->peer_serial;
         record->view.channel = request->peer < 0 ? request->channel : -1;
         record->view.local_id = ++session->next_local_id;
+
+        // set the size limit
         record->raw_limit = request->picture ? session->model.picture_limit : session->model.file_limit;
         if (record->raw_limit > (request->picture ? DESKTOP_ATTACHMENT_IMAGE_LIMIT : DESKTOP_ATTACHMENT_RAW_LIMIT))
         {
             record->raw_limit = request->picture ? DESKTOP_ATTACHMENT_IMAGE_LIMIT : DESKTOP_ATTACHMENT_RAW_LIMIT;
         }
+
+        // copy keys and path
         record->keys = session->keys;
         clib__string_copy(record->path, sizeof(record->path), request->path);
+
+        // add the chat line
         if (request->peer >= 0)
         {
             clib__string_copy(record->public_key, sizeof(record->public_key), session->client_keys[slot]);
@@ -106,12 +127,20 @@ void client_msg__attachments__send(desktop_session_t *session, const desktop_att
         {
             server_msg__chat__append(session, request->channel, local >= 0 ? session->model.clients[local].name : "You", "Attachment", record->view.local_id);
         }
+
+        // store the attachment ID
         session->model.chats[session->model.chat_count - 1].attachment_id = record->view.id;
+
+        // start the pack job
         record->view.state = DESKTOP_ATTACHMENT_PREPARING;
         clib__string_copy(record->view.detail, sizeof(record->view.detail), "Preparing attachment");
         record->job = ATTACHMENT_JOB_PACK;
     }
+
+    // unlock the attachments
     desktop_mutex__unlock(attachments->mutex);
+
+    // report a pending upload
     if (!record)
     {
         desktop_session__detail(session, "Finish or cancel the current upload before sending another attachment.", FALSE);
@@ -136,24 +165,35 @@ void client_msg__attachments__tick(desktop_session_t *session)
     int64 operation = 0;
     boole complete = FALSE;
     boole sent = FALSE;
+
+    // lock the attachments
     desktop_mutex__lock(attachments->mutex);
+
+    // build the preferences message
     if (attachments->preferences_sent != attachments->preferences_revision)
     {
         message = client_msg__delivery__new_message("set_attachment_receive_preferences");
         complete = message && cJSON_AddBoolToObject(message, "block_direct_chat_pictures", prefs->block_direct_pictures) && cJSON_AddBoolToObject(message, "block_direct_chat_files", prefs->block_direct_files) && cJSON_AddBoolToObject(message, "block_channel_chat_pictures", prefs->block_channel_pictures) && cJSON_AddBoolToObject(message, "block_channel_chat_files", prefs->block_channel_files);
         operation = 1;
     }
+
+    // check every record
     for (index = 0; !message && index < DESKTOP_ATTACHMENT_COUNT; index++)
     {
+        // skip empty slots
         record = &attachments->records[index];
         if (!record->view.id)
         {
             continue;
         }
+
+        // cancel expired or invalid
         if (record->view.state < DESKTOP_ATTACHMENT_READY && record->view.state > DESKTOP_ATTACHMENT_EMPTY && (now > record->deadline || (record->view.outgoing && !_client_attachments_internal__valid(session, record))))
         {
             record->decision = 3;
         }
+
+        // skip busy records
         if (record->busy)
         {
             if (record->decision == 3)
@@ -162,6 +202,8 @@ void client_msg__attachments__tick(desktop_session_t *session)
             }
             continue;
         }
+
+        // finish a cancelled upload
         if (attachments->uploading == record->view.id && record->view.state == DESKTOP_ATTACHMENT_CANCELLED)
         {
             if (record->acknowledged)
@@ -173,16 +215,20 @@ void client_msg__attachments__tick(desktop_session_t *session)
                 desktop_session__detail(session, "Upload acknowledgement timed out. Reconnect before uploading again.", TRUE);
             }
         }
+
+        // choose the next message
         if (record->decision)
         {
             if (record->view.offer[0] && (record->offered || !record->view.outgoing))
             {
+                // build the decision message
                 message = client_msg__delivery__new_message("direct_attachment_decision");
                 complete = message && cJSON_AddNumberToObject(message, "sender_id", (double)(record->view.outgoing ? session->model.local_id : record->view.peer)) && cJSON_AddStringToObject(message, "offer_id", record->view.offer) && cJSON_AddStringToObject(message, "action", record->view.outgoing ? "cancel" : record->decision == 1 ? "accept" : "reject");
                 operation = 2;
             }
             else
             {
+                // cancel the record locally
                 record->view.state = DESKTOP_ATTACHMENT_CANCELLED;
                 record->job = ATTACHMENT_JOB_NONE;
                 record->decision = 0;
@@ -197,6 +243,7 @@ void client_msg__attachments__tick(desktop_session_t *session)
         }
         else if (record->view.state == DESKTOP_ATTACHMENT_WAITING && record->view.outgoing && !record->offered)
         {
+            // build the offer message
             message = client_msg__delivery__new_message("direct_attachment_offer");
             complete = message && cJSON_AddNumberToObject(message, "receiver_id", (double)record->view.peer) && cJSON_AddStringToObject(message, "offer_id", record->view.offer) && cJSON_AddBoolToObject(message, "is_picture", record->view.picture) && cJSON_AddStringToObject(message, "preview", record->preview);
             operation = 3;
@@ -205,36 +252,48 @@ void client_msg__attachments__tick(desktop_session_t *session)
         {
             if (record->acknowledged)
             {
+                // build the completion message
                 message = client_msg__delivery__new_message("file_send_completed");
                 complete = message && _client_attachments_internal__extra(message, record);
                 operation = 5;
             }
             else if (record->wire && record->offset < record->wire_size)
             {
+                // copy the next chunk
                 count = record->wire_size - record->offset;
                 count = count > 16384 ? 16384 : count;
                 clib__string_copy_n(chunk, sizeof(chunk), record->wire + record->offset, count);
+
+                // build the chunk message
                 message = client_msg__delivery__new_message("file_send");
                 complete = message && cJSON_AddNumberToObject(message, "total_bytes_length", (double)record->wire_size) && cJSON_AddStringToObject(message, "data_part_base64", chunk) && cJSON_AddBoolToObject(message, "is_new_file", record->offset == 0) && (record->offset || _client_attachments_internal__extra(message, record));
                 operation = 4;
             }
         }
     }
+
+    // send the built message
     if (message && complete)
     {
-        // The mutex protects copied chunk data and state; this send only queues a bounded message.
+        // the mutex protects copied chunk data and state; this send only queues a bounded message
         sent = client_msg__delivery__try_send(session, message);
         message = NULL;
     }
+
+    // free an unsent message
     crypto_session__free_json(message);
+
+    // update state after sending
     if (sent)
     {
         if (operation == 1)
         {
+            // store the sent revision
             attachments->preferences_sent = attachments->preferences_revision;
         }
         else if (operation == 2)
         {
+            // apply the sent decision
             if (record->decision == 1)
             {
                 record->accepted = TRUE;
@@ -243,6 +302,7 @@ void client_msg__attachments__tick(desktop_session_t *session)
             }
             else
             {
+                // release the cancelled record
                 if (attachments->uploading == record->view.id && (record->offset < record->wire_size || record->acknowledged))
                 {
                     attachments->uploading = 0;
@@ -255,32 +315,41 @@ void client_msg__attachments__tick(desktop_session_t *session)
         }
         else if (operation == 3)
         {
+            // mark the offer sent
             record->offered = TRUE;
             crypto_session__free_text(record->preview);
             record->preview = NULL;
         }
         else if (operation == 4)
         {
+            // update the upload progress
             attachments->uploading = record->view.id;
             record->offset += count;
             record->view.progress = (int64)(record->offset * 100 / record->wire_size);
         }
         else if (operation == 5)
         {
+            // free the uploaded data
             crypto_session__free_text(record->wire);
             crypto_session__free_text(record->header);
             record->wire = NULL;
             record->header = NULL;
             record->wire_capacity = 0;
             record->wire_size = 0;
+
+            // mark the upload ready
             record->completion_sent = TRUE;
             record->view.state = DESKTOP_ATTACHMENT_READY;
             record->view.progress = 100;
             attachments->uploading = 0;
             clib__string_copy(record->view.detail, sizeof(record->view.detail), "Uploaded");
         }
+
+        // increase the revision
         attachments->revision++;
     }
+
+    // unlock and erase chunk
     desktop_mutex__unlock(attachments->mutex);
     mbedtls_platform_zeroize(chunk, sizeof(chunk));
 }

@@ -46,11 +46,17 @@ static void _ui_tree_internal__unread(gui_event_t *event);
 static gui_node_t *_ui_tree_internal__node(gui_node_t *parent, gui_node_type_e type, const char *klass, const char *text)
 {
     gui_node_t *node = NULL_POINTER;
+
+    // check the parent
     if (!parent)
     {
         return NULL;
     }
+
+    // create the node
     node = scene__node_new(type);
+
+    // fill and add node
     if (node)
     {
         clib__string_copy(node->klass, sizeof(node->klass), klass);
@@ -69,6 +75,8 @@ static gui_node_t *_ui_tree_internal__node(gui_node_t *parent, gui_node_type_e t
 static void _ui_tree_internal__release(desktop_tree_texture_t *cache, int64 count)
 {
     int64 index = 0;
+
+    // destroy every texture
     for (index = 0; index < count; index++)
     {
         if (cache[index].texture)
@@ -76,6 +84,8 @@ static void _ui_tree_internal__release(desktop_tree_texture_t *cache, int64 coun
             renderer__destroy_texture(cache[index].texture);
         }
     }
+
+    // erase the cache
     desktop_memory__erase(cache, (uint64)count * sizeof(*cache));
 }
 
@@ -92,8 +102,12 @@ static void _ui_tree_internal__badge(gui_rect_t rect, gui_color_t color, boole c
     gui_vec2_t b = { rect.x + rect.w * 0.85f, a.y };
     gui_vec2_t c = { rect.x + rect.w * 0.5f, rect.y + rect.h * 0.92f };
     gui_color_t light = { 1, 1, 1, 1 };
+
+    // draw the badge body
     renderer__submit_triangle(a, b, c, color);
     renderer__submit_rect((gui_rect_t){ a.x, a.y, rect.w * 0.7f, rect.h * 0.35f }, color, rect.w * 0.08f);
+
+    // draw the inner symbol
     if (channel)
     {
         renderer__submit_circle((gui_vec2_t){ c.x, rect.y + rect.h * 0.42f }, rect.w * 0.13f, light);
@@ -124,6 +138,8 @@ static void _ui_tree_internal__draw(gui_node_t *node, float scale)
     float cycle = 0;
     float phase = 0;
     boole song = clib__strcmp(node->klass, "tree-song") == 0;
+
+    // draw the unread count
     if (clib__strcmp(node->klass, "tree-unread") == 0)
     {
         white = (gui_color_t){ 0.2f, 0.43f, 0.7f, 1 };
@@ -136,36 +152,49 @@ static void _ui_tree_internal__draw(gui_node_t *node, float scale)
         }
         return;
     }
+
+    // skip the spacer
     if (clib__strcmp(node->klass, "tree-spacer") == 0)
     {
         return;
     }
+
+    // draw the channel symbol
     if (clib__strcmp(node->klass, "tree-channel-symbol") == 0)
     {
         desktop_ui_voice__draw_channel(node);
         return;
     }
+
+    // draw name or song
     if (song || clib__strcmp(node->klass, "tree-name") == 0)
     {
+        // find the font
         font = font__at(node->resolved.font_family, node->resolved.font_size * scale);
         if (!font || rect.w <= 0)
         {
             return;
         }
+
+        // calculate the scroll offset
         length = font__measure(font, node->text);
         if (song && length > rect.w)
         {
-            // Pause at both ends, then slide back. The name, flag and badges never move.
+            // pause at both ends, then slide back. the name, flag and badges never move
             travel = (length - rect.w) / (24 * scale);
             cycle = 3 + travel * 2;
             phase = (float)(desktop_system__milliseconds() % (uint64)(cycle * 1000)) / 1000;
             offset = phase < 1.5f ? 0 : phase < 1.5f + travel ? (phase - 1.5f) * 24 * scale : phase < 3 + travel ? length - rect.w : (cycle - phase) * 24 * scale;
         }
+
+        // draw the clipped text
         renderer__push_scissor(rect);
         font__draw(font, rect.x - offset, rect.y + (rect.h - font__line_height(font)) * 0.5f + font__ascent(font), node->resolved.font_color, node->text);
         renderer__pop_scissor();
         return;
     }
+
+    // choose the texture
     if (clib__strcmp(node->klass, "tree-icon") == 0)
     {
         texture = id >= 0 && id < DESKTOP_TREE_GROUPS ? g_tree_icons[id].texture : NULL;
@@ -179,6 +208,8 @@ static void _ui_tree_internal__draw(gui_node_t *node, float scale)
         g_tree_original.emit_draws(node, scale);
         return;
     }
+
+    // draw image or badge
     if (texture)
     {
         renderer__submit_image(rect, texture, white);
@@ -204,6 +235,7 @@ static void _ui_tree_internal__draw(gui_node_t *node, float scale)
  */
 static void _ui_tree_internal__layout(gui_node_t *node, float x, float y, float width, float height, float scale)
 {
+    // set the spacer size
     if (clib__strcmp(node->klass, "tree-spacer") == 0)
     {
         node->bounds = (gui_rect_t){ x, y, node->value * scale, 20 * scale };
@@ -211,6 +243,8 @@ static void _ui_tree_internal__layout(gui_node_t *node, float x, float y, float 
         node->content_h = node->bounds.h;
         return;
     }
+
+    // set the text bounds
     if (clib__strcmp(node->klass, "tree-name") == 0 || clib__strcmp(node->klass, "tree-song") == 0)
     {
         node->bounds = (gui_rect_t){ x, y, width > 0 ? width : 0, (clib__strcmp(node->klass, "tree-song") == 0 ? 16 : 20) * scale };
@@ -218,6 +252,8 @@ static void _ui_tree_internal__layout(gui_node_t *node, float x, float y, float 
         node->content_h = node->bounds.h;
         return;
     }
+
+    // call the original layout
     g_tree_original.layout(node, x, y, width, height, scale);
 }
 
@@ -230,9 +266,15 @@ static void _ui_tree_internal__layout(gui_node_t *node, float x, float y, float 
 void desktop_ui_tree__initialize(desktop_session_t *session, const desktop_session_view_t *view)
 {
     const widget_vtable_t *original = widget_registry__get(GUI_NODE_TYPE__TEXT);
+
+    // store the arguments
     g_tree_session = session;
     g_tree_view = view;
+
+    // register the handler
     scene__register_handler("on_tree_unread", _ui_tree_internal__unread);
+
+    // replace the text functions
     if (original && original != &g_tree_widget)
     {
         g_tree_original = *original;
@@ -250,11 +292,14 @@ void desktop_ui_tree__initialize(desktop_session_t *session, const desktop_sessi
  */
 void desktop_ui_tree__begin(const desktop_session_view_t *view)
 {
+    // release outdated icons
     if (view->tree_revision != g_tree_revision)
     {
         _ui_tree_internal__release(g_tree_icons, DESKTOP_TREE_GROUPS);
         g_tree_revision = view->tree_revision;
     }
+
+    // reset the song flag
     g_tree_songs = FALSE;
 }
 
@@ -266,6 +311,8 @@ void desktop_ui_tree__begin(const desktop_session_view_t *view)
 void *desktop_ui_tree__prepare_icon(int64 id)
 {
     ubyte pixels[DESKTOP_TREE_ICON_BYTES] = { 0 };
+
+    // create the icon texture
     if (id >= 0 && id < DESKTOP_TREE_GROUPS && !g_tree_icons[id].attempted)
     {
         g_tree_icons[id].attempted = TRUE;
@@ -274,6 +321,8 @@ void *desktop_ui_tree__prepare_icon(int64 id)
             g_tree_icons[id].texture = renderer__create_texture_rgba(pixels, 32, 32);
         }
     }
+
+    // erase the pixel buffer
     desktop_memory__erase(pixels, sizeof(pixels));
     return id >= 0 && id < DESKTOP_TREE_GROUPS ? g_tree_icons[id].texture : NULL;
 }
@@ -288,10 +337,14 @@ void *desktop_ui_tree__prepare_icon(int64 id)
 static void _ui_tree_internal__icon(gui_node_t *parent, int64 id, const char *name)
 {
     gui_node_t *node = NULL_POINTER;
+
+    // no icon to add
     if (id == -1)
     {
         return;
     }
+
+    // add the icon node
     desktop_ui_tree__prepare_icon(id);
     node = _ui_tree_internal__node(parent, GUI_NODE_TYPE__TEXT, "tree-icon", name);
     if (node)
@@ -324,21 +377,31 @@ void desktop_ui_tree__member(gui_node_t *row, const desktop_session_view_t *view
     int64 flag = -1;
     uint64 unread = desktop_session_view__unread(client);
     boole song = client->song[0] && !client->idle && (view->policy_song_titles || client->channel == view->channel);
+
+    // check the row
     if (!row)
     {
         return;
     }
+
+    // mark the song row
     if (song)
     {
         clib__string_append(row->klass, sizeof(row->klass), " tree-playing");
         g_tree_songs = TRUE;
     }
+
+    // add the indentation
     node = _ui_tree_internal__node(row, GUI_NODE_TYPE__TEXT, "tree-spacer", "");
     if (node)
     {
         node->value = (float)(depth > 4 ? 32 : depth * 8);
     }
+
+    // add the audio symbol
     desktop_ui_voice__append(row, client->idle ? 4 : client->audio, client->muted);
+
+    // add the client name
     label = _ui_tree_internal__node(row, GUI_NODE_TYPE__DIV, "tree-label", "");
     clib__string_format(name, sizeof(name), "%s%s%s", client->name, client->music ? " [bot]" : "", client->id == view->local_id ? " (you)" : "");
     node = _ui_tree_internal__node(label, GUI_NODE_TYPE__TEXT, "tree-name", name);
@@ -346,10 +409,14 @@ void desktop_ui_tree__member(gui_node_t *row, const desktop_session_view_t *view
     {
         clib__string_format(node->id, sizeof(node->id), "tree-client-%lld", client->id);
     }
+
+    // add the song title
     if (song)
     {
         _ui_tree_internal__node(label, GUI_NODE_TYPE__TEXT, "tree-song", client->song);
     }
+
+    // add the unread count
     if (unread && client->id != view->local_id)
     {
         clib__string_format(extra, sizeof(extra), unread > 99 ? "99+" : "%llu", unread);
@@ -363,10 +430,10 @@ void desktop_ui_tree__member(gui_node_t *row, const desktop_session_view_t *view
     }
     else
     {
-        // Keep the other right-aligned indicators still when unread messages arrive.
+        // keep the other right-aligned indicators still when unread messages arrive
         _ui_tree_internal__node(row, GUI_NODE_TYPE__TEXT, "tree-unread-space", "");
     }
-    // The lowest group ID (normally admin) stays at the same far-right coordinate.
+    // the lowest group ID (normally admin) stays at the same far-right coordinate
     for (id = 0; id < DESKTOP_TREE_GROUPS; id++)
     {
         if ((client->groups[id / 64] & (1ULL << (id % 64))) && view->groups[id].exists)
@@ -382,12 +449,18 @@ void desktop_ui_tree__member(gui_node_t *row, const desktop_session_view_t *view
             }
         }
     }
+
+    // store the group names
     scene__set_text(row, summary, clib__strlen(summary));
+
+    // add the remaining count
     if (count > 3)
     {
         clib__string_format(extra, sizeof(extra), "+%lld", count - 3);
         _ui_tree_internal__node(row, GUI_NODE_TYPE__TEXT, "tree-more", extra);
     }
+
+    // find the third icon
     for (id = 0; id < DESKTOP_TREE_GROUPS; id++)
     {
         if ((client->groups[id / 64] & (1ULL << (id % 64))) && view->groups[id].exists && view->groups[id].icon != -1 && ++shown == 3)
@@ -396,6 +469,8 @@ void desktop_ui_tree__member(gui_node_t *row, const desktop_session_view_t *view
         }
     }
     id = id >= DESKTOP_TREE_GROUPS ? DESKTOP_TREE_GROUPS - 1 : id;
+
+    // add the group icons
     for (; id >= 0; id--)
     {
         if ((client->groups[id / 64] & (1ULL << (id % 64))) && view->groups[id].exists)
@@ -403,10 +478,14 @@ void desktop_ui_tree__member(gui_node_t *row, const desktop_session_view_t *view
             _ui_tree_internal__icon(row, view->groups[id].icon, view->groups[id].name);
         }
     }
+
+    // set the icon ID
     if (row->last_child && clib__strcmp(row->last_child->klass, "tree-icon") == 0)
     {
         clib__string_format(row->last_child->id, sizeof(row->last_child->id), "tree-badges-%lld", client->id);
     }
+
+    // add the channel group
     if (client->channel_group > 0 && client->channel_group < DESKTOP_TREE_CHANNEL_GROUPS && !client->idle)
     {
         group = &view->channel_groups[client->channel_group];
@@ -422,12 +501,17 @@ void desktop_ui_tree__member(gui_node_t *row, const desktop_session_view_t *view
             scene__set_text(row, summary, clib__strlen(summary));
         }
     }
+
+    // add an empty space
     if (!group || !group->exists)
     {
         _ui_tree_internal__node(row, GUI_NODE_TYPE__TEXT, "tree-icon-space", "");
     }
+
+    // add the country flag
     if (client->country[0] >= 'a' && client->country[0] <= 'z' && client->country[1] >= 'a' && client->country[1] <= 'z')
     {
+        // create the flag texture
         flag = (client->country[0] - 'a') * 26 + client->country[1] - 'a';
         if (!g_tree_flags[flag].attempted)
         {
@@ -437,6 +521,8 @@ void desktop_ui_tree__member(gui_node_t *row, const desktop_session_view_t *view
                 g_tree_flags[flag].texture = renderer__create_texture_rgba(pixels, 32, 32);
             }
         }
+
+        // add the flag node
         if (g_tree_flags[flag].texture)
         {
             node = _ui_tree_internal__node(row, GUI_NODE_TYPE__TEXT, "tree-flag", client->country);
@@ -446,10 +532,14 @@ void desktop_ui_tree__member(gui_node_t *row, const desktop_session_view_t *view
             }
         }
     }
+
+    // add an empty space
     if (flag < 0 || !g_tree_flags[flag].texture)
     {
         _ui_tree_internal__node(row, GUI_NODE_TYPE__TEXT, "tree-icon-space", "");
     }
+
+    // erase the pixel buffer
     desktop_memory__erase(pixels, sizeof(pixels));
 }
 
@@ -464,11 +554,15 @@ void desktop_ui_tree__channel(gui_node_t *row, const desktop_channel_t *channel,
 {
     gui_node_t *node = NULL_POINTER;
     char name[160] = { 0 };
+
+    // add the indentation
     node = _ui_tree_internal__node(row, GUI_NODE_TYPE__TEXT, "tree-spacer", "");
     if (node)
     {
         node->value = (float)(depth > 4 ? 32 : depth * 8);
     }
+
+    // add icon or symbol
     if (channel->icon >= 0)
     {
         _ui_tree_internal__icon(row, channel->icon, channel->name);
@@ -477,6 +571,8 @@ void desktop_ui_tree__channel(gui_node_t *row, const desktop_channel_t *channel,
     {
         _ui_tree_internal__node(row, GUI_NODE_TYPE__TEXT, "tree-channel-symbol", "");
     }
+
+    // add the channel name
     clib__string_format(name, sizeof(name), "%s%s%s", channel->name, channel->password ? " [locked]" : "", channel->temporary ? " (temp)" : "");
     _ui_tree_internal__node(row, GUI_NODE_TYPE__TEXT, "tree-name", name);
 }
@@ -490,10 +586,14 @@ static gui_node_t *_ui_tree_internal__hover(gui_node_t *node)
 {
     gui_node_t *child = NULL_POINTER;
     gui_node_t *found = NULL_POINTER;
+
+    // check the node
     if (!node)
     {
         return NULL;
     }
+
+    // find the member row
     if (node->state == GUI_NODE_STATE__HOVER || node->state == GUI_NODE_STATE__PRESSED)
     {
         found = node;
@@ -506,6 +606,8 @@ static gui_node_t *_ui_tree_internal__hover(gui_node_t *node)
             return found;
         }
     }
+
+    // search the children
     for (child = node->first_child; child; child = child->next_sibling)
     {
         found = _ui_tree_internal__hover(child);
@@ -529,14 +631,20 @@ boole desktop_ui_tree__tick(boole visible)
     gui_node_t *hovered = NULL_POINTER;
     const char *text = NULL_POINTER;
     boole changed = FALSE;
+
+    // limit the update rate
     if (!visible || now - g_tree_frame < 33)
     {
         return changed;
     }
+
+    // find the hovered row
     g_tree_frame = now;
     caption = scene__find_by_id("tree-caption");
     hovered = _ui_tree_internal__hover(scene__find_by_id("member-list"));
     text = hovered && hovered->text[0] ? hovered->text : "Right-click a channel or client for actions.";
+
+    // update the caption
     if (caption && g_tree_view->connected && (hovered || g_tree_caption))
     {
         changed |= clib__strcmp(caption->text, text) != 0;
@@ -552,8 +660,11 @@ boole desktop_ui_tree__tick(boole visible)
  */
 void desktop_ui_tree__shutdown(void)
 {
+    // release all textures
     _ui_tree_internal__release(g_tree_icons, DESKTOP_TREE_GROUPS);
     _ui_tree_internal__release(g_tree_flags, 26 * 26);
+
+    // clear the pointers
     g_tree_session = NULL;
     g_tree_view = NULL;
 }

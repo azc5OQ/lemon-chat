@@ -29,10 +29,13 @@ static void _client_msg_emojis_internal__process(cJSON *json_root, uint64 client
     char new_id[33] = { 0 };
     boole editing = (boole)(clib__strcmp(operation, "upload_server_emoji") == 0 || clib__strcmp(operation, "delete_server_emoji") == 0);
 
+    // check the client id
     if (client_id >= g_server_settings.max_client_count)
     {
         return;
     }
+
+    // lock the clients
     if (editing)
     {
         clib__write_lock(&g_clients_global_rwlock_guard);
@@ -41,6 +44,8 @@ static void _client_msg_emojis_internal__process(cJSON *json_root, uint64 client
     {
         clib__read_lock(&g_clients_global_rwlock_guard);
     }
+
+    // check the sender state
     client = &g_clients_array[client_id];
     if (base__is_current_client_request(client_id) == FALSE ||
         !client->is_existing == TRUE ||
@@ -50,6 +55,8 @@ static void _client_msg_emojis_internal__process(cJSON *json_root, uint64 client
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
     }
+
+    // check the edit permission
     if (editing && permissions__is_allowed(client, clib__strcmp(operation, "upload_server_emoji") == 0 ? PERMISSION_UPLOAD_EMOJIS : PERMISSION_DELETE_EMOJIS) == FALSE)
     {
         server_msg__administration__send_permission_denied_to_single_client(client, permissions__name(clib__strcmp(operation, "upload_server_emoji") == 0 ? PERMISSION_UPLOAD_EMOJIS : PERMISSION_DELETE_EMOJIS));
@@ -65,6 +72,7 @@ static void _client_msg_emojis_internal__process(cJSON *json_root, uint64 client
     }
     else if (clib__strcmp(operation, "delete_server_emoji") == 0)
     {
+        // delete the emoji
         if (emojis__remove(requested_id) != FALSE)
         {
             server_msg__emojis__send_deleted(requested_id);
@@ -76,6 +84,7 @@ static void _client_msg_emojis_internal__process(cJSON *json_root, uint64 client
     }
     else
     {
+        // add the new emoji
         error = emojis__add(cJSON_IsString(name) ? name->valuestring : NULL_POINTER, cJSON_IsString(base64) ? base64->valuestring : NULL_POINTER, new_id);
         if (error != NULL_POINTER)
         {
@@ -86,6 +95,8 @@ static void _client_msg_emojis_internal__process(cJSON *json_root, uint64 client
             server_msg__emojis__send_added(new_id, name->valuestring);
         }
     }
+
+    // unlock the clients
     clib__unlock(&g_clients_global_rwlock_guard);
 }
 

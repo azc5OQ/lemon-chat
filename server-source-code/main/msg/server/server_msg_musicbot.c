@@ -25,20 +25,29 @@ void server_msg__musicbot__add_keys(cJSON *object, client_t *receiver, client_t 
     uint64 i = 0;
     uint64 j = 0;
 
+    // check bot and keys
     if (bot->is_music_bot == FALSE || audio_keys == NULL_POINTER)
     {
         return;
     }
+
+    // add the encryption flag
     cJSON_AddNumberToObject(object, "music_bot_encryption", 1);
+
+    // check the receiver channel
     if (receiver->is_idle == TRUE || receiver->channel_id != bot->channel_id)
     {
         return;
     }
+
+    // create the key array
     keys = cJSON_AddArrayToObject(object, "music_bot_keys");
     if (keys == NULL_POINTER)
     {
         return;
     }
+
+    // add keys as hex
     for (i = 0; i < 4; i++)
     {
         for (j = 0; j < 32; j++)
@@ -65,6 +74,7 @@ void server_msg__musicbot__send_key(client_t *receiver, client_t *bot)
     cJSON *message = NULL_POINTER;
     char *plaintext = NULL_POINTER;
 
+    // build the key message
     root = server_msg__delivery__new_message("music_bot_key", &message);
     if (message != NULL_POINTER)
     {
@@ -73,11 +83,15 @@ void server_msg__musicbot__send_key(client_t *receiver, client_t *bot)
         server_msg__musicbot__add_keys(message, receiver, bot);
         plaintext = cJSON_PrintUnformatted(root);
     }
+
+    // send to the receiver
     if (plaintext != NULL_POINTER)
     {
         server_msg__delivery__send_text_to_client(receiver, plaintext);
         cJSON_free(plaintext);
     }
+
+    // free the message
     cJSON_Delete(root);
 }
 
@@ -95,13 +109,17 @@ void server_msg__musicbot__send_start_song_stream_message_to_clients_in_same_cha
     cJSON *message = NULL_POINTER;
     client_t *client = NULL_POINTER;
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // create song start message
     root = server_msg__delivery__new_message("start_song_stream", &message);
 
+    // add client and song
     cJSON_AddNumberToObject(message, "client_id", subject->client_id);
     cJSON_AddStringToObject(message, "song_name", subject->song_name);
 
+    // find the receivers
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
         client = &g_clients_array[i];
@@ -112,6 +130,7 @@ void server_msg__musicbot__send_start_song_stream_message_to_clients_in_same_cha
             continue;
         }
 
+        // skip unauthenticated clients
         if (client->is_authenticated == FALSE)
         {
             continue;
@@ -123,14 +142,17 @@ void server_msg__musicbot__send_start_song_stream_message_to_clients_in_same_cha
             continue;
         }
 
+        // skip music bots
         if (client->is_music_bot == TRUE)
         {
             continue;
         }
 
+        // send to this client
         server_msg__delivery__send_json_to_client(client, root);
     }
 
+    // free the message
     cJSON_Delete(root);
 }
 
@@ -149,10 +171,13 @@ void server_msg__musicbot__send_stop_song_stream_message_to_clients_in_same_chan
     cJSON *message = NULL_POINTER;
     client_t *client = NULL_POINTER;
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // create song stop message
     root = server_msg__delivery__new_message("stop_song_stream", &message);
 
+    // add client and counter
     cJSON_AddNumberToObject(message, "client_id", subject->client_id);
     if (subject->is_music_bot && subject->music_bot_client_extension.audio_keys != NULL_POINTER)
     {
@@ -160,6 +185,7 @@ void server_msg__musicbot__send_stop_song_stream_message_to_clients_in_same_chan
         cJSON_AddStringToObject(message, "discard_audio_through_counter", discard_counter);
     }
 
+    // find the receivers
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
         client = &g_clients_array[i];
@@ -170,11 +196,13 @@ void server_msg__musicbot__send_stop_song_stream_message_to_clients_in_same_chan
             continue;
         }
 
+        // skip unauthenticated clients
         if (client->is_authenticated == FALSE)
         {
             continue;
         }
 
+        // skip music bots
         if (client->is_music_bot == TRUE)
         {
             continue;
@@ -186,9 +214,11 @@ void server_msg__musicbot__send_stop_song_stream_message_to_clients_in_same_chan
             continue;
         }
 
+        // send to this client
         server_msg__delivery__send_json_to_client(client, root);
     }
 
+    // free the message
     cJSON_Delete(root);
 }
 
@@ -211,8 +241,10 @@ void server_msg__musicbot__send_song_list_to_single_client(client_t *receiver, c
     music_bot_single_song_data_t *single_song_in_loop = NULL_POINTER;
     uint64 loop_index = 0;
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // build song list message
     root = server_msg__delivery__new_message("music_bot_song_list", &message);
     cJSON_AddNumberToObject(message, "bot_id", (double)music_bot->client_id);
     cJSON_AddBoolToObject(message, "is_paused", atomic_load(&music_bot->music_bot_client_extension.is_playback_paused));
@@ -225,11 +257,13 @@ void server_msg__musicbot__send_song_list_to_single_client(client_t *receiver, c
 
         single_song_in_loop = &music_bot->music_bot_client_extension.songs[loop_index];
 
+        // skip empty slots
         if (single_song_in_loop->is_existing == FALSE)
         {
             continue;
         }
 
+        // add one song
         song = cJSON_CreateObject();
         cJSON_AddStringToObject(song, "name", single_song_in_loop->song_name);
         cJSON_AddNumberToObject(song, "id", loop_index);
@@ -237,8 +271,10 @@ void server_msg__musicbot__send_song_list_to_single_client(client_t *receiver, c
         util__json_add_owned_array(json_songs_array, song);
     }
 
+    // add the song array
     util__json_add_owned_object(message, "songs", json_songs_array);
 
+    // send to the receiver
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
 }

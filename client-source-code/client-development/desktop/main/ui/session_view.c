@@ -56,12 +56,17 @@ static void _session_view_internal__text(gui_node_t *parent, const char *text, c
  */
 void desktop_session_view__shutdown(void)
 {
+    // release the view copy
     desktop_session__view_release(&g_displayed);
+
+    // erase the stored data
     desktop_memory__erase(&g_displayed, sizeof(g_displayed));
     desktop_memory__erase(g_conversations, sizeof(g_conversations));
     desktop_memory__erase(g_receipts, sizeof(g_receipts));
     desktop_memory__erase(g_next_receipts, sizeof(g_next_receipts));
     desktop_memory__erase(g_channel_draft, sizeof(g_channel_draft));
+
+    // reset counts and selection
     g_receipt_count = 0;
     g_conversation_count = 0;
     g_selected = 0;
@@ -79,6 +84,7 @@ void desktop_session_view__shutdown(void)
  */
 void desktop_session_view__select_member(const desktop_client_t *client)
 {
+    // mark the client row
     if (client)
     {
         g_tree_selection = client->id;
@@ -95,6 +101,7 @@ void desktop_session_view__select_member(const desktop_client_t *client)
  */
 void desktop_session_view__select_channel(const desktop_channel_t *channel)
 {
+    // mark the channel row
     if (channel)
     {
         g_tree_selection = channel->id;
@@ -115,6 +122,8 @@ static int64 _session_view_internal__conversation(int64 peer, uint64 serial, con
 {
     int64 index = 0;
     int64 available = 16;
+
+    // find the conversation
     for (index = 0; index < g_conversation_count; index++)
     {
         if (g_conversations[index].peer == peer && g_conversations[index].serial == serial)
@@ -129,10 +138,14 @@ static int64 _session_view_internal__conversation(int64 peer, uint64 serial, con
             available = index;
         }
     }
+
+    // all slots are used
     if (g_conversation_count == 16 && available == 16)
     {
         return 0;
     }
+
+    // create the conversation
     index = available < 16 ? available : g_conversation_count++;
     clib__null_memory(&g_conversations[index], sizeof(g_conversations[index]));
     g_conversations[index].open = 1;
@@ -151,6 +164,8 @@ static int64 _session_view_internal__conversation(int64 peer, uint64 serial, con
 boole desktop_session_view__open(const desktop_client_t *client)
 {
     int64 tab = _session_view_internal__conversation(client->id, client->serial, client->name);
+
+    // select the conversation tab
     if (tab)
     {
         desktop_session_view__select(tab);
@@ -166,8 +181,11 @@ boole desktop_session_view__open(const desktop_client_t *client)
 void desktop_session_view__select(int64 tab)
 {
     gui_node_t *input = scene__find_by_id("message-input");
+
+    // check the tab index
     if (tab >= 0 && tab <= g_conversation_count && (!tab || g_conversations[tab - 1].open))
     {
+        // save and load draft
         if (input && tab != g_selected)
         {
             if (!clib__string_copy(g_selected ? g_conversations[g_selected - 1].draft : g_channel_draft, sizeof(g_channel_draft), input->text) || !scene__set_text(input, tab ? g_conversations[tab - 1].draft : g_channel_draft, clib__strlen(tab ? g_conversations[tab - 1].draft : g_channel_draft)))
@@ -175,6 +193,8 @@ void desktop_session_view__select(int64 tab)
                 return;
             }
         }
+
+        // select the tab
         g_selected = tab;
         g_changed = 1;
     }
@@ -204,8 +224,10 @@ boole desktop_session_view__close(int64 *peer, uint64 *serial)
  */
 boole desktop_session_view__close_tab(int64 tab, int64 *peer, uint64 *serial)
 {
+    // close an open tab
     if (tab > 0 && tab <= g_conversation_count && g_conversations[tab - 1].open)
     {
+        // select the channel tab
         if (tab == g_selected)
         {
             desktop_session_view__select(0);
@@ -214,6 +236,8 @@ boole desktop_session_view__close_tab(int64 tab, int64 *peer, uint64 *serial)
                 return FALSE;
             }
         }
+
+        // mark the tab closed
         g_conversations[tab - 1].open = FALSE;
         g_changed = TRUE;
         *peer = g_conversations[tab - 1].peer;
@@ -242,6 +266,8 @@ int64 desktop_session_view__peer(uint64 *serial)
 uint64 desktop_session_view__unread(const desktop_client_t *client)
 {
     int64 index = 0;
+
+    // find the stored count
     for (index = 0; index < g_receipt_count; index++)
     {
         if (g_receipts[index].peer == client->id && g_receipts[index].serial == client->serial)
@@ -249,6 +275,8 @@ uint64 desktop_session_view__unread(const desktop_client_t *client)
             return client->direct_received > g_receipts[index].count ? client->direct_received - g_receipts[index].count : 0;
         }
     }
+
+    // no count was stored
     return client->direct_received;
 }
 
@@ -279,6 +307,8 @@ static void _session_view_internal__tabs(const desktop_session_view_t *view)
     uint64 unread = 0;
     const char *name = "Channel";
     char label[128] = { 0 };
+
+    // find the channel name
     for (index = 0; index < view->channel_count; index++)
     {
         if (view->channels[index].id == view->channel)
@@ -286,9 +316,14 @@ static void _session_view_internal__tabs(const desktop_session_view_t *view)
             name = view->channels[index].name;
         }
     }
+
+    // remove the old tabs
     _session_view_internal__clear(parent);
+
+    // add every open tab
     for (index = 0; index <= g_conversation_count; index++)
     {
+        // skip closed tabs
         if (!index && !view->connected)
         {
             continue;
@@ -297,7 +332,11 @@ static void _session_view_internal__tabs(const desktop_session_view_t *view)
         {
             continue;
         }
+
+        // build the label
         clib__string_format(label, sizeof(label), "%s%s", index ? "@ " : "# ", index ? g_conversations[index - 1].name : name);
+
+        // count unread messages
         unread = 0;
         if (index && index != g_selected)
         {
@@ -310,21 +349,29 @@ static void _session_view_internal__tabs(const desktop_session_view_t *view)
                 }
             }
         }
+
+        // add count to label
         if (unread)
         {
             clib__string_format(label, sizeof(label), "@ %.80s (%llu%s)", g_conversations[index - 1].name, unread > 99 ? 99ULL : unread, unread > 99 ? "+" : "");
         }
+
+        // add the tab row
         tab = _session_view_internal__node(parent, GUI_NODE_TYPE__DIV, g_selected == index ? "row conversation-tab selected" : "row conversation-tab", "");
         if (tab)
         {
             tab->value = (float)index;
         }
+
+        // add the label button
         button = _session_view_internal__node(tab, GUI_NODE_TYPE__BUTTON, "tab-label", label);
         if (button)
         {
             button->user_data = (void *)(nuint)(index + 1);
             scene__set_on_click(button, "on_choose_conversation");
         }
+
+        // add the close button
         if (index)
         {
             button = _session_view_internal__node(tab, GUI_NODE_TYPE__BUTTON, "tab-close", "x");
@@ -335,6 +382,8 @@ static void _session_view_internal__tabs(const desktop_session_view_t *view)
             }
         }
     }
+
+    // store the selected index
     if (parent)
     {
         parent->value = (float)g_selected;
@@ -351,14 +400,20 @@ static void _session_view_internal__clear(gui_node_t *parent)
 {
     gui_node_t *child = NULL_POINTER;
     gui_node_t *next = NULL_POINTER;
+
+    // check the parent
     if (!parent)
     {
         return;
     }
+
+    // detach all children
     child = parent->first_child;
     parent->first_child = NULL;
     parent->last_child = NULL;
     parent->child_count = 0;
+
+    // free every child
     while (child)
     {
         next = child->next_sibling;
@@ -380,11 +435,17 @@ static void _session_view_internal__clear(gui_node_t *parent)
 static gui_node_t *_session_view_internal__node(gui_node_t *parent, gui_node_type_e type, const char *klass, const char *text)
 {
     gui_node_t *node = NULL_POINTER;
+
+    // check the parent
     if (!parent)
     {
         return NULL;
     }
+
+    // create the node
     node = scene__node_new(type);
+
+    // fill and add node
     if (node)
     {
         clib__string_copy(node->klass, sizeof(node->klass), klass);
@@ -420,27 +481,35 @@ static void _session_view_internal__tree(const desktop_session_view_t *view)
     int64 parent = -1;
     const char *klass = NULL_POINTER;
 
+    // remove the old tree
     desktop_ui_tree__begin(view);
     _session_view_internal__clear(container);
+
+    // not connected
     if (!view->connected)
     {
         return;
     }
+
+    // allocate the visited flags
     visited = calloc(view->channel_count > 0 ? (size_t)view->channel_count : 1, sizeof(*visited));
     if (!visited)
     {
         _session_view_internal__node(container, GUI_NODE_TYPE__TEXT, "muted", "Not enough memory to display the channels.");
         return;
     }
-    // Parent-first passes also handle out-of-order server lists without recursive traversal.
+    // parent-first passes also handle out-of-order server lists without recursive traversal
     for (pass = 0; pass < view->channel_count; pass++)
     {
         for (index = 0; index < view->channel_count; index++)
         {
+            // skip added channels
             if (visited[index])
             {
                 continue;
             }
+
+            // find the parent channel
             channel = &view->channels[index];
             parent = channel->parent;
             for (parent_index = 0; parent_index < view->channel_count; parent_index++)
@@ -450,10 +519,14 @@ static void _session_view_internal__tree(const desktop_session_view_t *view)
                     break;
                 }
             }
+
+            // add the parent first
             if (parent_index < view->channel_count && !visited[parent_index] && pass + 1 < view->channel_count)
             {
                 continue;
             }
+
+            // count the parent levels
             visited[index] = 1;
             depth = 0;
             while (parent >= 0 && parent != channel->id && depth < 8)
@@ -472,6 +545,8 @@ static void _session_view_internal__tree(const desktop_session_view_t *view)
                 depth++;
                 parent = view->channels[parent_index].parent;
             }
+
+            // add the channel row
             button = _session_view_internal__node(container, GUI_NODE_TYPE__DIV, channel->id == view->channel && !view->idle ? "channel-row selected" : "channel-row", "");
             desktop_ui_tree__channel(button, channel, depth);
             if (button)
@@ -481,17 +556,22 @@ static void _session_view_internal__tree(const desktop_session_view_t *view)
                 {
                     clib__string_append(button->klass, sizeof(button->klass), " marked");
                 }
-                // The owner resolves this index against the same GUI snapshot on click.
+                // the owner resolves this index against the same GUI snapshot on click
                 button->user_data = (void *)(nuint)(index + 1);
                 scene__set_on_click(button, "on_join_channel");
             }
+
+            // add the channel members
             for (member = 0; member < view->client_count; member++)
             {
+                // skip other clients
                 client = &view->clients[member];
                 if (client->channel != channel->id || client->idle)
                 {
                     continue;
                 }
+
+                // add the member row
                 klass = client->id == view->local_id ? (client->audio == 1 ? "member local speaking" : "member local") : (client->audio == 1 ? "member speaking" : "member");
                 row = _session_view_internal__node(container, GUI_NODE_TYPE__DIV, klass, "");
                 if (row)
@@ -503,22 +583,31 @@ static void _session_view_internal__tree(const desktop_session_view_t *view)
                     row->user_data = (void *)(nuint)(member + 1);
                     scene__set_on_click(row, "on_member");
                 }
+
+                // fill the member row
                 desktop_ui_tree__member(row, view, member, depth + 1);
             }
         }
     }
+
+    // add the idle clients
     for (member = 0; member < view->client_count; member++)
     {
+        // skip clients not idle
         client = &view->clients[member];
         if (!client->idle)
         {
             continue;
         }
+
+        // add the idle heading
         if (!idle_heading)
         {
             _session_view_internal__node(container, GUI_NODE_TYPE__TEXT, "section", "Idle");
             idle_heading = 1;
         }
+
+        // add the member row
         row = _session_view_internal__node(container, GUI_NODE_TYPE__DIV, client->id == view->local_id ? "member local" : "member", "");
         if (row)
         {
@@ -529,12 +618,18 @@ static void _session_view_internal__tree(const desktop_session_view_t *view)
             row->user_data = (void *)(nuint)(member + 1);
             scene__set_on_click(row, "on_member");
         }
+
+        // fill the member row
         desktop_ui_tree__member(row, view, member, 1);
     }
+
+    // no channels to show
     if (!view->channel_count)
     {
         _session_view_internal__node(container, GUI_NODE_TYPE__TEXT, "muted", "Connect to see channels and members.");
     }
+
+    // free the visited flags
     free(visited);
 }
 
@@ -554,18 +649,27 @@ static void _session_view_internal__messages(const desktop_session_view_t *view)
     char sender[160] = { 0 };
     uint64 serial = 0;
     int64 peer = desktop_session_view__peer(&serial);
+
+    // remove the old messages
     _session_view_internal__clear(container);
+
+    // add every message
     for (index = 0; index < view->chat_count; index++)
     {
+        // skip other conversations
         chat = &view->chats[index];
         if (peer >= 0 ? (chat->peer != peer || chat->peer_serial != serial) : (chat->peer >= 0 || chat->channel != view->channel))
         {
             continue;
         }
+
+        // add row and sender
         row = _session_view_internal__node(container, GUI_NODE_TYPE__DIV, "column chat-message", "");
         clib__string_format(sender, sizeof(sender), "%s%s", chat->sender, chat->edit_local_id ? " (saving...)" : chat->pending && !chat->attachment_id ? " (sending...)" : chat->edited ? " (edited)" : "");
         heading = _session_view_internal__node(row, GUI_NODE_TYPE__DIV, "row chat-message-heading", "");
         _session_view_internal__node(heading, GUI_NODE_TYPE__TEXT, "chat-sender", sender);
+
+        // add the edit button
         if (desktop_session__can_edit(view, chat))
         {
             edit = _session_view_internal__node(heading, GUI_NODE_TYPE__BUTTON, "chat-edit-button", "");
@@ -576,6 +680,8 @@ static void _session_view_internal__messages(const desktop_session_view_t *view)
                 scene__set_on_click(edit, "on_edit_message");
             }
         }
+
+        // add attachment or text
         if (chat->attachment_id)
         {
             desktop_ui_attachments__append(row, chat->attachment_id);
@@ -585,6 +691,8 @@ static void _session_view_internal__messages(const desktop_session_view_t *view)
             _session_view_internal__text(row, chat->text, &chat->format);
         }
     }
+
+    // show the empty notice
     if (container && !container->first_child)
     {
         row = _session_view_internal__node(container, GUI_NODE_TYPE__DIV, "column chat-empty", "");
@@ -609,21 +717,32 @@ void desktop_session_view__update(const desktop_session_view_t *view, boole forc
     gui_node_t *file = scene__find_by_id("file-button");
     boole online = 0;
     boole edit_state_changed = view->keys_ready != g_displayed.keys_ready || view->idle != g_displayed.idle || view->policy_private != g_displayed.policy_private || view->connection_serial != g_displayed.connection_serial || view->client_count != g_displayed.client_count;
+
+    // check for changed clients
     for (index = 0; !edit_state_changed && index < view->client_count; index++)
     {
         edit_state_changed = view->clients[index].id != g_displayed.clients[index].id || view->clients[index].serial != g_displayed.clients[index].serial || view->clients[index].music != g_displayed.clients[index].music;
     }
+
+    // reset for new connection
     if (!g_displayed.connected && view->connected)
     {
+        // clear the tree selection
         g_tree_selection = -1;
         g_tree_selection_serial = 0;
         g_tree_selection_member = FALSE;
+
+        // clear the conversations
         clib__null_memory(g_conversations, sizeof(g_conversations));
         g_conversation_count = 0;
         g_selected = 0;
         g_seen_chat = 0;
+
+        // clear the read counts
         clib__null_memory(g_receipts, sizeof(g_receipts));
         g_receipt_count = 0;
+
+        // clear the message drafts
         clib__null_memory(g_channel_draft, sizeof(g_channel_draft));
         if (input)
         {
@@ -631,6 +750,8 @@ void desktop_session_view__update(const desktop_session_view_t *view, boole forc
         }
         g_changed = 1;
     }
+
+    // add new conversation tabs
     for (index = 0; index < view->chat_count; index++)
     {
         if (view->chats[index].sequence > g_seen_chat)
@@ -642,6 +763,8 @@ void desktop_session_view__update(const desktop_session_view_t *view, boole forc
             }
         }
     }
+
+    // update the read counts
     clib__null_memory(g_next_receipts, sizeof(g_next_receipts));
     for (index = 0; index < view->client_count; index++)
     {
@@ -656,16 +779,22 @@ void desktop_session_view__update(const desktop_session_view_t *view, boole forc
     clib__memcpy(g_receipts, g_next_receipts, sizeof(g_receipts));
     clib__null_memory(g_next_receipts, sizeof(g_next_receipts));
     g_receipt_count = view->client_count;
+
+    // rebuild the channel tree
     force |= g_changed;
     if (force || view->connected != g_displayed.connected || view->tree_revision != g_displayed.tree_revision || view->policy_song_titles != g_displayed.policy_song_titles || view->channel != g_displayed.channel || view->local_id != g_displayed.local_id || view->client_count != g_displayed.client_count || view->channel_count != g_displayed.channel_count || clib__memcmp(view->clients, g_displayed.clients, sizeof(view->clients)) != 0 || (view->channel_count > 0 && clib__memcmp(view->channels, g_displayed.channels, view->channel_count * sizeof(*view->channels)) != 0))
     {
         _session_view_internal__tree(view);
     }
+
+    // rebuild messages and tabs
     if (force || edit_state_changed || view->connected != g_displayed.connected || view->channel != g_displayed.channel || view->chat_count != g_displayed.chat_count || view->attachments.revision != g_displayed.attachments.revision || clib__memcmp(view->chats, g_displayed.chats, sizeof(view->chats)) != 0)
     {
         _session_view_internal__messages(view);
         _session_view_internal__tabs(view);
     }
+
+    // check peer is online
     if (g_selected)
     {
         for (index = 0; index < view->client_count; index++)
@@ -673,10 +802,14 @@ void desktop_session_view__update(const desktop_session_view_t *view, boole forc
             online |= view->connected && view->clients[index].id == g_conversations[g_selected - 1].peer && view->clients[index].serial == g_conversations[g_selected - 1].serial;
         }
     }
+
+    // set the caption text
     if (caption)
     {
         scene__set_text(caption, g_selected ? (online ? "Private conversation" : "This client has disconnected.") : view->idle ? "You are idle. Choose Return to rejoin a channel." : view->keys_ready ? "Channel text chat" : "Waiting for a connection and channel keys", clib__strlen(g_selected ? (online ? "Private conversation" : "This client has disconnected.") : view->idle ? "You are idle. Choose Return to rejoin a channel." : view->keys_ready ? "Channel text chat" : "Waiting for a connection and channel keys"));
     }
+
+    // set the button states
     if (send)
     {
         send->state = view->connected && !view->idle && (g_selected ? online : view->keys_ready) ? GUI_NODE_STATE__DEFAULT : GUI_NODE_STATE__DISABLED;
@@ -689,6 +822,8 @@ void desktop_session_view__update(const desktop_session_view_t *view, boole forc
     {
         file->state = view->connected && !view->idle && view->policy_files && (g_selected ? online && view->policy_private : view->keys_ready) ? GUI_NODE_STATE__DEFAULT : GUI_NODE_STATE__DISABLED;
     }
+
+    // copy the shown view
     g_changed = !desktop_session__view_copy(&g_displayed, view);
     desktop_ui_chat__update();
 }

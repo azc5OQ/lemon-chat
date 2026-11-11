@@ -19,10 +19,13 @@ uint64 desktop_system__milliseconds(void)
 {
     struct timespec now = { 0 };
 
+    // read the clock
     if (clock_gettime(CLOCK_MONOTONIC, &now) != 0)
     {
         return 0;
     }
+
+    // convert to milliseconds
     return (uint64)now.tv_sec * 1000 + (uint64)now.tv_nsec / 1000000;
 }
 
@@ -35,12 +38,17 @@ void desktop_system__sleep(int64 milliseconds)
 {
     struct timespec delay = { 0 };
 
+    // no delay requested
     if (milliseconds <= 0)
     {
         return;
     }
+
+    // convert the delay
     delay.tv_sec = milliseconds / 1000;
     delay.tv_nsec = (long)(milliseconds % 1000) * 1000000;
+
+    // sleep the full delay
     while (nanosleep(&delay, &delay) != 0 && errno == EINTR)
     {
     }
@@ -62,15 +70,20 @@ boole desktop_system__asset_directory(void)
 #endif
 
 #ifdef __APPLE__
+    // read the program path
     if (_NSGetExecutablePath(path, &capacity) != 0)
     {
         return 0;
     }
+
+    // resolve symbolic links
     resolved = realpath(path, NULL);
     if (!resolved)
     {
         return 0;
     }
+
+    // copy the real path
     length = clib__string_copy(path, sizeof(path), resolved);
     desktop_memory__erase(resolved, clib__strlen(resolved) + 1);
     free(resolved);
@@ -80,6 +93,7 @@ boole desktop_system__asset_directory(void)
     }
     length = clib__strlen(path);
 #else
+    // read the program path
     received = readlink("/proc/self/exe", path, sizeof(path) - 1);
     if (received <= 0 || received >= sizeof(path) - 1)
     {
@@ -88,6 +102,8 @@ boole desktop_system__asset_directory(void)
     length = (uint64)received;
     path[length] = 0;
 #endif
+
+    // remove the file name
     while (length && path[length - 1] != '/')
     {
         length--;
@@ -97,6 +113,8 @@ boole desktop_system__asset_directory(void)
         return 0;
     }
     path[length] = 0;
+
+    // change the current folder
     return chdir(path) == 0;
 }
 
@@ -111,10 +129,14 @@ boole desktop_system__font_path(char *path, uint64 capacity, boole bold)
 {
     const char *candidate = NULL_POINTER;
 #ifdef __APPLE__
+    // choose the macOS font
     candidate = bold ? "/System/Library/Fonts/Supplemental/Arial Bold.ttf" : "/System/Library/Fonts/Supplemental/Arial.ttf";
 #else
+    // choose the DejaVu font
     candidate = bold ? "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf" : "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf";
 #endif
+
+    // check the font file
     clib__null_memory(path, capacity);
     return access(candidate, R_OK) == 0 && clib__string_copy(path, capacity, candidate);
 }

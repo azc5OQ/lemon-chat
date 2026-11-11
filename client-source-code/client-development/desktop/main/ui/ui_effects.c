@@ -21,20 +21,28 @@ void desktop_ui_effects__border(gui_node_t *node, float scale)
     gui_gradient_t *gradient = &node->resolved.border_gradient;
     int64 x = 0;
     int64 y = 0;
+
+    // check the border gradient
     if (!node->resolved.has_border_gradient || gradient->kind != GUI_GRADIENT_KIND__RADIAL || gradient->stop_count < 2 || scale <= 0)
     {
         return;
     }
+
+    // hide highlight without pointer
     if (!scene__pointer_position(&x, &y))
     {
         gradient->stops[0].color = gradient->stops[gradient->stop_count - 1].color;
         return;
     }
+
+    // move center to pointer
     gradient->center_x = ((float)x - node->bounds.x) / scale;
     gradient->center_y = ((float)y - node->bounds.y) / scale;
     gradient->center_x_px = TRUE;
     gradient->center_y_px = TRUE;
     gradient->circle = TRUE;
+
+    // set the default radius
     if (gradient->size != GUI_GRADIENT_SIZE__EXPLICIT)
     {
         gradient->size = GUI_GRADIENT_SIZE__EXPLICIT;
@@ -52,7 +60,11 @@ void desktop_ui_effects__border(gui_node_t *node, float scale)
 static void _ui_effects_internal__draw(gui_node_t *node, float scale)
 {
     int64 index = 0;
+
+    // update the border gradient
     desktop_ui_effects__border(node, scale);
+
+    // call the original drawing
     for (index = 0; index < 4; index++)
     {
         if (node->type == g_effect_types[index] && g_effect_original[index].emit_draws)
@@ -71,10 +83,14 @@ void desktop_ui_effects__register(void)
 {
     const widget_vtable_t *original = NULL_POINTER;
     int64 index = 0;
+
+    // register only once
     if (g_effect_registered)
     {
         return;
     }
+
+    // replace the draw functions
     for (index = 0; index < 4; index++)
     {
         original = widget_registry__get(g_effect_types[index]);

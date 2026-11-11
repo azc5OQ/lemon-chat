@@ -52,6 +52,7 @@ static boole _transport_internal__send(desktop_transport_t *transport, const cha
  */
 static void _transport_internal__status(desktop_transport_t *transport, desktop_transport_state_t state, const char *detail)
 {
+    // store state and detail
     EnterCriticalSection(&transport->lock);
     transport->status.state = state;
     clib__string_copy(transport->status.detail, sizeof(transport->status.detail), detail);
@@ -72,23 +73,29 @@ static void CALLBACK _transport_internal__callback(HINTERNET handle, DWORD_PTR c
     transport_operation_t *operation = (transport_operation_t *)context;
     WINHTTP_ASYNC_RESULT *result = information;
     (void)handle;
+
+    // check the operation
     if (!operation)
     {
         return;
     }
+
+    // choose by callback status
     if (status == WINHTTP_CALLBACK_STATUS_HANDLE_CLOSING)
     {
-        // Last callback: after this signal nothing touches operation again.
+        // last callback: after this signal nothing touches operation again
         SetEvent(operation->closed);
     }
     else if (status == WINHTTP_CALLBACK_STATUS_REQUEST_ERROR)
     {
+        // store the request error
         InterlockedCompareExchange(&operation->error, result && size >= sizeof(*result) ? (LONG)result->dwError : ERROR_INVALID_DATA, 0);
         SetEvent(operation->ready);
         SetEvent(operation->written);
     }
     else if (status == WINHTTP_CALLBACK_STATUS_SECURE_FAILURE && information && size == sizeof(DWORD))
     {
+        // store the certificate rejection
         if (*(const DWORD *)information & (WINHTTP_CALLBACK_STATUS_FLAG_CERT_REV_FAILED | WINHTTP_CALLBACK_STATUS_FLAG_INVALID_CERT | WINHTTP_CALLBACK_STATUS_FLAG_CERT_REVOKED | WINHTTP_CALLBACK_STATUS_FLAG_INVALID_CA | WINHTTP_CALLBACK_STATUS_FLAG_CERT_CN_INVALID | WINHTTP_CALLBACK_STATUS_FLAG_CERT_DATE_INVALID | WINHTTP_CALLBACK_STATUS_FLAG_CERT_WRONG_USAGE))
         {
             InterlockedExchange(&operation->certificate_rejected, 1);
@@ -96,6 +103,7 @@ static void CALLBACK _transport_internal__callback(HINTERNET handle, DWORD_PTR c
     }
     else if (status == WINHTTP_CALLBACK_STATUS_READ_COMPLETE)
     {
+        // store the read result
         if (information && size == sizeof(operation->received))
         {
             operation->received = *(WINHTTP_WEB_SOCKET_STATUS *)information;
@@ -123,6 +131,7 @@ static void CALLBACK _transport_internal__callback(HINTERNET handle, DWORD_PTR c
  */
 static boole _transport_internal__operation(transport_operation_t *operation)
 {
+    // create the three events
     operation->ready = CreateEventW(NULL, TRUE, FALSE, NULL);
     operation->written = CreateEventW(NULL, TRUE, FALSE, NULL);
     operation->closed = CreateEventW(NULL, TRUE, FALSE, NULL);
@@ -138,10 +147,14 @@ static boole _transport_internal__operation(transport_operation_t *operation)
 static boole _transport_internal__register(HINTERNET handle, transport_operation_t *operation)
 {
     DWORD_PTR context = (DWORD_PTR)operation;
+
+    // set the handle context
     if (!WinHttpSetOption(handle, WINHTTP_OPTION_CONTEXT_VALUE, &context, sizeof(context)))
     {
         return FALSE;
     }
+
+    // set the status callback
     operation->registered = WinHttpSetStatusCallback(handle, _transport_internal__callback, WINHTTP_CALLBACK_FLAG_ALL_COMPLETIONS | WINHTTP_CALLBACK_FLAG_HANDLES | WINHTTP_CALLBACK_FLAG_SECURE_FAILURE, 0) != WINHTTP_INVALID_STATUS_CALLBACK;
     return operation->registered;
 }
@@ -154,6 +167,7 @@ static boole _transport_internal__register(HINTERNET handle, transport_operation
  */
 static void _transport_internal__close(HINTERNET handle, transport_operation_t *operation)
 {
+    // close, wait for callback
     if (handle)
     {
         WinHttpCloseHandle(handle);
@@ -171,6 +185,7 @@ static void _transport_internal__close(HINTERNET handle, transport_operation_t *
  */
 static void _transport_internal__dispose(transport_operation_t *operation)
 {
+    // close the event handles
     if (operation->ready)
     {
         CloseHandle(operation->ready);
@@ -195,14 +210,20 @@ static DWORD _transport_internal__wait(desktop_transport_t *transport, transport
 {
     HANDLE events[2] = { transport->stop, operation->ready };
     DWORD result = WaitForMultipleObjects(2, events, FALSE, 5000);
+
+    // stop was requested
     if (result == WAIT_OBJECT_0)
     {
         return ERROR_OPERATION_ABORTED;
     }
+
+    // report timeout or error
     if (result != WAIT_OBJECT_0 + 1)
     {
         return result == WAIT_TIMEOUT ? ERROR_TIMEOUT : GetLastError();
     }
+
+    // read the operation error
     ResetEvent(operation->ready);
     return (DWORD)InterlockedCompareExchange(&operation->error, 0, 0);
 }
@@ -247,16 +268,21 @@ static DWORD WINAPI _transport_internal__worker(void *context)
     boole envelope = FALSE;
     WINHTTP_WEB_SOCKET_BUFFER_TYPE type = 0;
 
+    // create the operation events
     if (!_transport_internal__operation(&request_io) || !_transport_internal__operation(&socket_io))
     {
         error = ERROR_NOT_ENOUGH_MEMORY;
         goto label_finished;
     }
+
+    // convert host and path
     if (!MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, transport->endpoint.host, -1, host, 256) || !MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, transport->endpoint.path, -1, path, 2048))
     {
         error = ERROR_INVALID_PARAMETER;
         goto label_finished;
     }
+
+    // open the HTTP session
     loopback = clib__strcmp(transport->endpoint.host, "127.0.0.1") == 0 || clib__strcmp(transport->endpoint.host, "::1") == 0 || clib__strcmp(transport->endpoint.host, "localhost") == 0;
     session = WinHttpOpen(L"LemonChatDesktop/0.2", loopback ? WINHTTP_ACCESS_TYPE_NO_PROXY : WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, NULL, NULL, WINHTTP_FLAG_ASYNC);
     if (!session)
@@ -264,17 +290,23 @@ static DWORD WINAPI _transport_internal__worker(void *context)
         error = GetLastError();
         goto label_finished;
     }
+
+    // open connection and request
     WinHttpSetTimeouts(session, 5000, 5000, 5000, 5000);
     connection = WinHttpConnect(session, host, transport->endpoint.port, 0);
     if (connection)
     {
         request = WinHttpOpenRequest(connection, L"GET", path, NULL, NULL, NULL, transport->endpoint.secure ? WINHTTP_FLAG_SECURE : 0);
     }
+
+    // set the request options
     if (!request || !_transport_internal__register(request, &request_io) || !WinHttpSetOption(request, WINHTTP_OPTION_REDIRECT_POLICY, &redirect, sizeof(redirect)) || !WinHttpSetOption(request, WINHTTP_OPTION_UPGRADE_TO_WEB_SOCKET, NULL, 0))
     {
         error = GetLastError();
         goto label_finished;
     }
+
+    // send the request
     if (!WinHttpSendRequest(request, NULL, 0, NULL, 0, 0, (DWORD_PTR)&request_io))
     {
         error = GetLastError();
@@ -288,6 +320,8 @@ static DWORD WINAPI _transport_internal__worker(void *context)
     {
         goto label_finished;
     }
+
+    // receive the response
     if (!WinHttpReceiveResponse(request, NULL))
     {
         error = GetLastError();
@@ -301,37 +335,50 @@ static DWORD WINAPI _transport_internal__worker(void *context)
     {
         goto label_finished;
     }
+
+    // check the status code
     if (!WinHttpQueryHeaders(request, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER, NULL, &status, &status_size, NULL) || status != 101)
     {
         error = ERROR_WINHTTP_INVALID_SERVER_RESPONSE;
         goto label_finished;
     }
+
+    // upgrade to WebSocket
     socket = WinHttpWebSocketCompleteUpgrade(request, (DWORD_PTR)&socket_io);
     if (!socket)
     {
         error = GetLastError();
         goto label_finished;
     }
-    // The socket inherits the callback but has its own context and completion events.
+    // the socket inherits the callback but has its own context and completion events
     socket_io.registered = TRUE;
     _transport_internal__close(request, &request_io);
     request = NULL;
+
+    // allocate the message buffer
     message = calloc(1, DESKTOP_MESSAGE_LIMIT + 1);
     if (!message)
     {
         error = ERROR_NOT_ENOUGH_MEMORY;
         goto label_finished;
     }
+
+    // fill the event list
     events[0] = transport->stop;
     events[1] = socket_io.ready;
     events[2] = socket_io.written;
     events[3] = transport->queued;
+
+    // store the connected state
     _transport_internal__status(transport, DESKTOP_TRANSPORT_CONNECTED, "WebSocket connected");
+
+    // loop until stopped
     while (WaitForSingleObject(transport->stop, 0) != WAIT_OBJECT_0)
     {
-        // Keep one complete message until the session has room for it.
+        // keep one complete message until the session has room for it
         if (incoming_pending)
         {
+            // queue the received message
             EnterCriticalSection(&transport->lock);
             if (desktop_message_queue__has_space(&transport->incoming, used))
             {
@@ -347,10 +394,14 @@ static DWORD WINAPI _transport_internal__worker(void *context)
                 }
             }
             LeaveCriticalSection(&transport->lock);
+
+            // stop on allocation failure
             if (error)
             {
                 break;
             }
+
+            // clear the message buffer
             if (!incoming_pending)
             {
                 clib__null_memory(message, used);
@@ -358,6 +409,8 @@ static DWORD WINAPI _transport_internal__worker(void *context)
                 binary = FALSE;
             }
         }
+
+        // start a new receive
         if (!reading && !incoming_pending)
         {
             ResetEvent(socket_io.ready);
@@ -368,13 +421,18 @@ static DWORD WINAPI _transport_internal__worker(void *context)
                 break;
             }
         }
+
+        // start the next send
         if (!writing)
         {
+            // take next outgoing message
             EnterCriticalSection(&transport->lock);
             ResetEvent(transport->queued);
             desktop_message_queue__expire(&transport->outgoing, desktop_system__milliseconds());
             writing = desktop_message_queue__pop(&transport->outgoing, &outgoing);
             LeaveCriticalSection(&transport->lock);
+
+            // start the send
             if (writing)
             {
                 ResetEvent(socket_io.written);
@@ -386,35 +444,48 @@ static DWORD WINAPI _transport_internal__worker(void *context)
                 }
             }
         }
-        // Queue signals matter only when a new send can start.
+        // queue signals matter only when a new send can start
         wait = writing ? 3 : 4;
         result = WaitForMultipleObjects(wait, events, FALSE, 50);
+
+        // check error and stop
         error = (DWORD)InterlockedCompareExchange(&socket_io.error, 0, 0);
         if (error || result == WAIT_OBJECT_0)
         {
             break;
         }
+
+        // report a failed wait
         if (result == WAIT_FAILED)
         {
             error = GetLastError();
             break;
         }
+
+        // release the sent message
         if (writing && WaitForSingleObject(socket_io.written, 0) == WAIT_OBJECT_0)
         {
             ResetEvent(socket_io.written);
             writing = FALSE;
             desktop_message__release(&outgoing);
         }
+
+        // check the send deadline
         if (writing && desktop_system__milliseconds() >= send_deadline)
         {
             error = ERROR_TIMEOUT;
             break;
         }
+
+        // read the received data
         if (reading && WaitForSingleObject(socket_io.ready, 0) == WAIT_OBJECT_0)
         {
+            // read the buffer type
             reading = FALSE;
             ResetEvent(socket_io.ready);
             type = socket_io.received.eBufferType;
+
+            // read a close frame
             if (type == WINHTTP_WEB_SOCKET_CLOSE_BUFFER_TYPE)
             {
                 if (WinHttpWebSocketQueryCloseStatus(socket, &close_code, close_reason, sizeof(close_reason), &close_reason_size) == NO_ERROR)
@@ -425,13 +496,19 @@ static DWORD WINAPI _transport_internal__worker(void *context)
                 }
                 break;
             }
+
+            // check the message limit
             if (socket_io.received.dwBytesTransferred > DESKTOP_MESSAGE_LIMIT - used)
             {
                 error = ERROR_INSUFFICIENT_BUFFER;
                 break;
             }
+
+            // count the received bytes
             used += socket_io.received.dwBytesTransferred;
             binary |= type == WINHTTP_WEB_SOCKET_BINARY_FRAGMENT_BUFFER_TYPE || type == WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE;
+
+            // message is complete
             if (type == WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE || type == WINHTTP_WEB_SOCKET_BINARY_MESSAGE_BUFFER_TYPE)
             {
                 clib__null_memory(message_type, sizeof(message_type));
@@ -441,6 +518,7 @@ static DWORD WINAPI _transport_internal__worker(void *context)
         }
     }
 label_finished:
+    // close the handles
     _transport_internal__close(socket, &socket_io);
     _transport_internal__close(request, &request_io);
     if (connection)
@@ -451,7 +529,7 @@ label_finished:
     {
         WinHttpCloseHandle(session);
     }
-    // Closing callbacks have finished; no I/O can still reference these buffers.
+    // closing callbacks have finished; no I/O can still reference these buffers
     desktop_message__release(&outgoing);
     if (message)
     {
@@ -459,8 +537,12 @@ label_finished:
         desktop_memory__erase(message, DESKTOP_MESSAGE_LIMIT + 1);
         free(message);
     }
+
+    // close the event handles
     _transport_internal__dispose(&socket_io);
     _transport_internal__dispose(&request_io);
+
+    // store the final state
     if (WaitForSingleObject(transport->stop, 0) == WAIT_OBJECT_0 || !error)
     {
         _transport_internal__status(transport, DESKTOP_TRANSPORT_DISCONNECTED, "Disconnected");
@@ -473,6 +555,8 @@ label_finished:
         clib__string_format(detail, sizeof(detail), "Connection failed (Windows error %lu).", (unsigned long)error);
         _transport_internal__status(transport, DESKTOP_TRANSPORT_FAILED, detail);
     }
+
+    // clear the outgoing queue
     EnterCriticalSection(&transport->lock);
     desktop_message_queue__clear(&transport->outgoing);
     LeaveCriticalSection(&transport->lock);
@@ -486,10 +570,14 @@ label_finished:
 desktop_transport_t *desktop_transport__create(void)
 {
     desktop_transport_t *transport = calloc(1, sizeof(*transport));
+
+    // check the allocation
     if (!transport)
     {
         return NULL;
     }
+
+    // create lock and events
     InitializeCriticalSection(&transport->lock);
     transport->stop = CreateEventW(NULL, TRUE, FALSE, NULL);
     transport->queued = CreateEventW(NULL, TRUE, FALSE, NULL);
@@ -498,6 +586,8 @@ desktop_transport_t *desktop_transport__create(void)
         desktop_transport__destroy(transport);
         return NULL;
     }
+
+    // set the ready status
     _transport_internal__status(transport, DESKTOP_TRANSPORT_DISCONNECTED, "Ready to connect");
     return transport;
 }
@@ -523,16 +613,21 @@ void desktop_transport__disconnect(desktop_transport_t *transport)
  */
 void desktop_transport__destroy(desktop_transport_t *transport)
 {
+    // nothing to destroy
     if (!transport)
     {
         return;
     }
+
+    // stop the worker thread
     desktop_transport__disconnect(transport);
     if (transport->worker)
     {
         WaitForSingleObject(transport->worker, INFINITE);
         CloseHandle(transport->worker);
     }
+
+    // close the event handles
     if (transport->stop)
     {
         CloseHandle(transport->stop);
@@ -541,6 +636,8 @@ void desktop_transport__destroy(desktop_transport_t *transport)
     {
         CloseHandle(transport->queued);
     }
+
+    // free the transport
     desktop_message_queue__clear(&transport->incoming);
     desktop_message_queue__clear(&transport->outgoing);
     DeleteCriticalSection(&transport->lock);
@@ -557,10 +654,13 @@ void desktop_transport__destroy(desktop_transport_t *transport)
 /* Starts a worker; the GUI thread never performs a connection or receive. */
 boole desktop_transport__connect(desktop_transport_t *transport, const char *url)
 {
+    // check the transport
     if (!transport)
     {
         return FALSE;
     }
+
+    // check the old worker
     if (transport->worker)
     {
         if (WaitForSingleObject(transport->worker, 0) != WAIT_OBJECT_0)
@@ -570,11 +670,15 @@ boole desktop_transport__connect(desktop_transport_t *transport, const char *url
         CloseHandle(transport->worker);
         transport->worker = NULL;
     }
+
+    // check the address
     if (!desktop_endpoint__parse(url, &transport->endpoint))
     {
         _transport_internal__status(transport, DESKTOP_TRANSPORT_FAILED, "Enter a valid ws:// or wss:// address.");
         return FALSE;
     }
+
+    // reset the transport state
     ResetEvent(transport->stop);
     ResetEvent(transport->queued);
     EnterCriticalSection(&transport->lock);
@@ -582,6 +686,8 @@ boole desktop_transport__connect(desktop_transport_t *transport, const char *url
     desktop_message_queue__clear(&transport->outgoing);
     clib__null_memory(&transport->status, sizeof(transport->status));
     LeaveCriticalSection(&transport->lock);
+
+    // start the worker thread
     _transport_internal__status(transport, DESKTOP_TRANSPORT_CONNECTING, "Connecting...");
     transport->worker = CreateThread(NULL, 0, _transport_internal__worker, transport, 0, NULL);
     if (!transport->worker)
@@ -599,6 +705,7 @@ boole desktop_transport__connect(desktop_transport_t *transport, const char *url
  */
 void desktop_transport__status(desktop_transport_t *transport, desktop_transport_status_t *status)
 {
+    // copy the status
     EnterCriticalSection(&transport->lock);
     *status = transport->status;
     status->finished = !transport->worker || WaitForSingleObject(transport->worker, 0) == WAIT_OBJECT_0;
@@ -618,10 +725,14 @@ static boole _transport_internal__send(desktop_transport_t *transport, const cha
 {
     boole accepted = FALSE;
     uint64 now = desktop_system__milliseconds();
+
+    // check arguments
     if (!transport || (!bytes && size) || (!binary && !size) || size > DESKTOP_MESSAGE_LIMIT || (expires && now >= expires))
     {
         return FALSE;
     }
+
+    // queue when connected
     EnterCriticalSection(&transport->lock);
     if (transport->status.state == DESKTOP_TRANSPORT_CONNECTED && WaitForSingleObject(transport->stop, 0) != WAIT_OBJECT_0)
     {
@@ -681,6 +792,7 @@ boole desktop_transport__send_media(desktop_transport_t *transport, const ubyte 
  */
 void desktop_transport__discard_media(desktop_transport_t *transport)
 {
+    // discard unsent media
     EnterCriticalSection(&transport->lock);
     desktop_message_queue__expire(&transport->outgoing, 0);
     LeaveCriticalSection(&transport->lock);
@@ -695,6 +807,8 @@ void desktop_transport__discard_media(desktop_transport_t *transport)
 boole desktop_transport__receive(desktop_transport_t *transport, desktop_message_t *message)
 {
     boole received = FALSE;
+
+    // take the next message
     EnterCriticalSection(&transport->lock);
     received = desktop_message_queue__pop(&transport->incoming, message);
     LeaveCriticalSection(&transport->lock);

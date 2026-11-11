@@ -55,14 +55,17 @@ static boole _client_msg_connection_internal__try_apply_saved_username(uint64 cl
  */
 void client_msg__connection__process_connection_check(cJSON *json_root, uint64 sender_client_id)
 {
+    // lock the clients
     clib__write_lock(&g_clients_global_rwlock_guard);
 
+    // store time, send answer
     if (base__is_current_client_request(sender_client_id) == TRUE && g_clients_array[sender_client_id].is_authenticated == TRUE)
     {
         g_clients_array[sender_client_id].timestamp_last_maintain_connection_message_received = util__get_timestamp_ms();
         server_msg__connection__send_connection_check_response_to_single_client(&g_clients_array[sender_client_id]);
     }
 
+    // unlock the clients
     clib__unlock(&g_clients_global_rwlock_guard);
 }
 
@@ -89,10 +92,12 @@ static void _client_msg_connection_internal__get_public_key_and_verification_str
     // "message" object is fetched from json_root, again
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
 
+    // read the three fields
     public_key_json = cJSON_GetObjectItemCaseSensitive(json_message_object, "value");
     verification_string_json = cJSON_GetObjectItemCaseSensitive(json_message_object, "verification_string");
     dh_public_mix_json = cJSON_GetObjectItemCaseSensitive(json_message_object, "dh_public_mix");
 
+    // set the output pointers
     *out_verification_string = verification_string_json->valuestring;
     *out_public_key = public_key_json->valuestring;
     *out_dh_mix = dh_public_mix_json->valuestring;
@@ -128,6 +133,7 @@ static boole _client_msg_connection_internal__is_public_key_info_message_valid(c
         return FALSE;
     }
 
+    // message must be object
     if (cJSON_IsObject(json_message_object) == FALSE)
     {
         // message key exists but it does not store object in it, not valid
@@ -143,18 +149,21 @@ static boole _client_msg_connection_internal__is_public_key_info_message_valid(c
         return FALSE;
     }
 
+    // refuse a null type
     if (json_message_type->valuestring == NULL_POINTER)
     {
         DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client : ", client_id, " json_message_type->valuestring == NULL \n");
         return FALSE;
     }
 
+    // refuse an empty type
     if (clib__utf8_string_length(json_message_type->valuestring) == 0)
     {
         DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client : ", client_id, " clib__utf8_string_length(json_message_type->valuestring) \n");
         return FALSE;
     }
 
+    // check the type name
     if (clib__is_string_equal(json_message_type->valuestring, "public_key_info") == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client : ", client_id, "clib__is_string_equal(json_message_type->valuestring, \"public_key_info\") \n");
@@ -164,12 +173,14 @@ static boole _client_msg_connection_internal__is_public_key_info_message_valid(c
     // type is verified, continue validating received json
     json_message_value = cJSON_GetObjectItemCaseSensitive(json_message_object, "value");
 
+    // value must be string
     if (cJSON_IsString(json_message_value) == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client : ", client_id, " json_message_type != string \n");
         return FALSE;
     }
 
+    // refuse a null value
     if (json_message_value->valuestring == NULL_POINTER)
     {
         DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client : ", client_id, " json_message_value->valuestring == NULL \n");
@@ -198,12 +209,14 @@ static boole _client_msg_connection_internal__is_public_key_info_message_valid(c
         return FALSE;
     }
 
+    // refuse null verification string
     if (verification_string->valuestring == NULL_POINTER)
     {
         DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client : ", client_id, " verification_string->valuestring == NULL \n");
         return FALSE;
     }
 
+    // refuse empty verification string
     if (clib__utf8_string_length(verification_string->valuestring) == 0)
     {
         DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client : ", client_id, " clib__utf8_string_length(verification_string->valuestring) \n");
@@ -218,14 +231,15 @@ static boole _client_msg_connection_internal__is_public_key_info_message_valid(c
         return FALSE;
     }
 
+    // refuse null DH mix
     if (verification_string->valuestring == NULL_POINTER)
     {
         DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client : ", client_id, " dh_public_mix->valuestring == NULL \n");
         return FALSE;
     }
 
-    // A DH public value is a decimal number smaller than the known prime.
-    // Check its size and digits before parsing it as a large integer.
+    // a DH public value is a decimal number smaller than the known prime.
+    // check its size and digits before parsing it as a large integer
     {
         length = clib__strlen(verification_string->valuestring);
         maximum_length = sizeof(DH_MODULUS_STR) - 1;
@@ -262,6 +276,7 @@ static boole _client_msg_connection_internal__login_connection_is_valid(void *ar
     pending_login_t *pending = argument;
     boole status = FALSE;
 
+    // check the connection state
     clib__read_lock(&g_clients_global_rwlock_guard);
     status = ((((base__is_current_client_request(pending->client_id) == TRUE) && (pending->client_id < (uint64)g_server_settings.max_client_count)) && (g_clients_array[pending->client_id].is_existing == TRUE && g_clients_array[pending->client_id].p_ws_connection == pending->socket && g_clients_array[pending->client_id].is_authenticated == FALSE && g_clients_array[pending->client_id].is_public_key_challenge_sent == FALSE)) && (ws_get_state(pending->socket) == WS_STATE_OPEN)) && (base__is_server_ram_budget_reached() == FALSE);
     clib__unlock(&g_clients_global_rwlock_guard);
@@ -344,16 +359,18 @@ void client_msg__connection__process_public_key_info(cJSON *json_root, uint64 se
         goto _label_client_msg__process_public_key_info_end;
     }
 
+    // check the verification string
     _client_msg_connection_internal__get_public_key_and_verification_string_and_dh_public_mix(json_root, &public_key, &verification_string, &dh_received_public_mix_from_client);
     if (clib__is_string_equal(verification_string, "welcome") == FALSE)
     {
         goto _label_client_msg__process_public_key_info_end;
     }
 
-    // Remember that this connection is waiting before releasing the client lock.
-    // Its queue wait has a separate deadline from the time allowed for login.
+    // remember that this connection is waiting before releasing the client lock.
+    // its queue wait has a separate deadline from the time allowed for login
     clib__write_lock(&g_clients_global_rwlock_guard);
 
+    // check the client slot
     if (base__is_current_client_request(sender_client_id) == FALSE ||
         sender_client_id >= (uint64)g_server_settings.max_client_count ||
         g_clients_array[sender_client_id].is_existing == FALSE ||
@@ -364,6 +381,8 @@ void client_msg__connection__process_public_key_info(cJSON *json_root, uint64 se
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
     }
+
+    // read the crypto version
     crypto_version = auth_handshake__prepare(&g_clients_array[sender_client_id], message);
     if (crypto_version == 2)
     {
@@ -381,23 +400,28 @@ void client_msg__connection__process_public_key_info(cJSON *json_root, uint64 se
         memcpy(crypto_nonce, g_clients_array[sender_client_id].crypto_policy_nonce, sizeof(crypto_nonce));
         exchange_count = crypto_policy.exchanges;
     }
+
+    // check last action time
     if (started_ms < g_clients_array[sender_client_id].timestamp_last_action + TIMESTAMP_LAST_ACTION_COOLDOWN_MS)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
     }
+
+    // set the waiting flag
     g_clients_array[sender_client_id].timestamp_last_action = started_ms;
     g_clients_array[sender_client_id].is_waiting_for_login_slot = TRUE;
     clib__unlock(&g_clients_global_rwlock_guard);
 
-    // Waiting readers sleep without holding the client lock. Their connection
-    // is checked again while waiting, after admission, and before storing keys.
+    // waiting readers sleep without holding the client lock. their connection
+    // is checked again while waiting, after admission, and before storing keys
     has_login_slot = login_admission__acquire(_client_msg_connection_internal__login_connection_is_valid, &pending, 60000);
     if (has_login_slot == FALSE)
     {
         goto _label_client_msg__process_public_key_info_end;
     }
 
+    // check the slot again
     clib__write_lock(&g_clients_global_rwlock_guard);
     if (base__is_current_client_request(sender_client_id) == FALSE ||
         g_clients_array[sender_client_id].is_existing == FALSE ||
@@ -410,22 +434,27 @@ void client_msg__connection__process_public_key_info(cJSON *json_root, uint64 se
         clib__unlock(&g_clients_global_rwlock_guard);
         goto _label_client_msg__process_public_key_info_end;
     }
+
+    // store time, read settings
     g_clients_array[sender_client_id].is_waiting_for_login_slot = FALSE;
     g_clients_array[sender_client_id].timestamp_connected = util__get_timestamp_ms();
     minimum_rsa_key_bits = (uint64)g_server_settings.minimum_rsa_key_bits;
     is_minimum_rsa_key_bits_announced = g_server_settings.is_minimum_rsa_key_bits_announced;
     clib__unlock(&g_clients_global_rwlock_guard);
 
+    // store the start time
     crypto_started_ms = util__get_timestamp_ms();
 
-    // Parsing and checking the RSA key can be expensive too. Do that after
+    // parsing and checking the RSA key can be expensive too. do that after
     // admission, without stopping other clients from using the client lock.
-    // A modulus one bit below the requested size is still accepted.
+    // a modulus one bit below the requested size is still accepted
     {
+        // read the key size
         client_key_bits = auth_rsa__get_public_key_bit_length(public_key);
         is_too_weak = (client_key_bits < minimum_rsa_key_bits - 1) ? TRUE : FALSE;
         is_unusable = (client_key_bits == 0 || client_key_bits > 8192) ? TRUE : FALSE;
 
+        // refuse weak or unusable
         if (is_too_weak == TRUE || is_unusable == TRUE)
         {
             DBG_AUTHENTICATION log_info("[auth] client %llu: public key is %llu bits, minimum is %llu, dropping", sender_client_id, client_key_bits, minimum_rsa_key_bits);
@@ -452,16 +481,16 @@ void client_msg__connection__process_public_key_info(cJSON *json_root, uint64 se
     // ──────────────────────────────────────────────────────────────────
     // STEP 3: Diffie-Hellman key exchange, without a lock
     //
-    // Both client and server know:
+    // both client and server know:
     // p = dh_known_modulus_str  (shared prime, defined at top of file)
     // g = 2                    (generator)
     //
-    // Client sent:   A = g^a mod p   (dh_received_public_mix_from_client)
-    // Server picks:  b              (random secret exponent)
-    // Server computes:
+    // client sent:   A = g^a mod p   (dh_received_public_mix_from_client)
+    // server picks:  b              (random secret exponent)
+    // server computes:
     // shared_secret = A^b mod p   (same value as g^(a*b) mod p)
     // B = g^b mod p               (sent back to client)
-    // Client will compute:
+    // client will compute:
     // shared_secret = B^a mod p   (same value as g^(a*b) mod p)
     // ──────────────────────────────────────────────────────────────────
     mp_status = mp_init_multi(&bignum_modulus, &bignum_server_exponent, &bignum_client_public_mix, &bignum_shared_secret, &bignum_generator, &bignum_server_public_mix, &bignum_modulus_minus_one, (mp_int *)NULL_POINTER);
@@ -480,12 +509,15 @@ void client_msg__connection__process_public_key_info(cJSON *json_root, uint64 se
         goto _label_client_msg__process_public_key_info_end;
     }
 
+    // create the string buffers
     shared_secret_string = (char *)memorymanager__allocate(SHARED_SECRET_LENGTH, MEMALLOC_DHPROCESS);
     dh_public_mix_from_server_string_for_client = (char *)memorymanager__allocate(SHARED_SECRET_LENGTH, MEMALLOC_DHPROCESS);
     if (shared_secret_string == NULL_POINTER || dh_public_mix_from_server_string_for_client == NULL_POINTER)
     {
         goto _label_client_msg__process_public_key_info_end;
     }
+
+    // start reply and transcript
     if (crypto_version == 1)
     {
         crypto_reply = cJSON_CreateObject();
@@ -495,8 +527,11 @@ void client_msg__connection__process_public_key_info(cJSON *json_root, uint64 se
             goto _label_client_msg__process_public_key_info_end;
         }
     }
+
+    // run each key exchange
     for (exchange = 0; exchange < exchange_count; exchange++)
     {
+        // read the client mix
         if (crypto_version == 1)
         {
             dh_received_public_mix_from_client = cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(message, "dh_public_mixes"), (int)exchange)->valuestring;
@@ -505,12 +540,14 @@ void client_msg__connection__process_public_key_info(cJSON *json_root, uint64 se
         // 3b. generate the server's secret exponent (DH_EXPONENT_BITS random bits, sized to the modulus)
         // first bit forced to 1 to guarantee the full length, the rest from a cryptographically secure
         // RNG. rand() must never be used here: it is a predictable PRNG seeded from the clock, so an
-        // exponent built from it could be reconstructed by an attacker, breaking the key exchange.
+        // exponent built from it could be reconstructed by an attacker, breaking the key exchange
         if (util__fill_secure_random_bytes(exponent_random_bytes, sizeof(exponent_random_bytes)) == FALSE)
         {
             DBG_AUTHENTICATION log_info("[auth] client %llu: failed to generate DH exponent randomness", sender_client_id);
             goto _label_client_msg__process_public_key_info_end;
         }
+
+        // build the exponent bits
         clib__null_memory(exponent_bits, sizeof(exponent_bits));
         exponent_bits[0] = '1';
         for (i = 1; i < DH_EXPONENT_BITS; i++)
@@ -518,6 +555,8 @@ void client_msg__connection__process_public_key_info(cJSON *json_root, uint64 se
             exponent_bits[i] = (((exponent_random_bytes[i / 8] >> (7 - (i % 8))) & 1) == 0) ? '0' : '1';
         }
         exponent_bits[DH_EXPONENT_BITS] = '\0';
+
+        // convert bits to number
         mp_status = mp_read_radix(&bignum_server_exponent, exponent_bits, 2);
         if (mp_status != MP_OKAY)
         {
@@ -534,15 +573,17 @@ void client_msg__connection__process_public_key_info(cJSON *json_root, uint64 se
             goto _label_client_msg__process_public_key_info_end;
         }
 
-        // 3c-validate: reject a degenerate client public mix before exponentiating. A in {0, 1, p-1} (or outside
+        // 3c-validate: reject a degenerate client public mix before exponentiating. a in {0, 1, p-1} (or outside
         // [2, p-2]) forces a known / tiny shared secret; for a safe prime the only dangerous small-order elements
-        // are 1 and p-1, so requiring 2 <= A <= p-2 is sufficient.
+        // are 1 and p-1, so requiring 2 <= A <= p-2 is sufficient
         mp_status = mp_sub_d(&bignum_modulus, 1uL, &bignum_modulus_minus_one);
         if (mp_status != MP_OKAY)
         {
             DBG_AUTHENTICATION log_info("[auth] client %llu: failed to compute p-1 for DH validation", sender_client_id);
             goto _label_client_msg__process_public_key_info_end;
         }
+
+        // check the mix range
         if (mp_cmp_d(&bignum_client_public_mix, 1uL) != MP_GT || mp_cmp(&bignum_client_public_mix, &bignum_modulus_minus_one) != MP_LT)
         {
             DBG_AUTHENTICATION log_info("[auth] client %llu: rejected degenerate DH public mix (not in [2, p-2])", sender_client_id);
@@ -556,6 +597,8 @@ void client_msg__connection__process_public_key_info(cJSON *json_root, uint64 se
             DBG_AUTHENTICATION log_info("[auth] client %llu: mp_exptmod failed for shared secret", sender_client_id);
             goto _label_client_msg__process_public_key_info_end;
         }
+
+        // convert secret to string
         clib__null_memory(shared_secret_string, SHARED_SECRET_LENGTH);
         mp_status = mp_to_radix(&bignum_shared_secret, shared_secret_string, SHARED_SECRET_LENGTH, &mp_written, 10);
         if (mp_status != MP_OKAY)
@@ -572,6 +615,8 @@ void client_msg__connection__process_public_key_info(cJSON *json_root, uint64 se
             DBG_AUTHENTICATION log_info("[auth] client %llu: mp_exptmod failed for server public mix", sender_client_id);
             goto _label_client_msg__process_public_key_info_end;
         }
+
+        // convert mix to string
         mp_status = mp_to_radix(&bignum_server_public_mix, dh_public_mix_from_server_string_for_client, SHARED_SECRET_LENGTH, &mp_written, 10);
         if (mp_status != MP_OKAY)
         {
@@ -579,6 +624,8 @@ void client_msg__connection__process_public_key_info(cJSON *json_root, uint64 se
             goto _label_client_msg__process_public_key_info_end;
         }
         DBG_AUTHENTICATION log_info("[auth] client %llu: server public mix computed", sender_client_id);
+
+        // add mix to reply
         if (crypto_version == 1)
         {
             mix = cJSON_CreateString(dh_public_mix_from_server_string_for_client);
@@ -587,12 +634,16 @@ void client_msg__connection__process_public_key_info(cJSON *json_root, uint64 se
                 cJSON_Delete(mix);
                 goto _label_client_msg__process_public_key_info_end;
             }
+
+            // update secret and transcript
             if (!keys_session__mix(crypto_secret, (ubyte *)shared_secret_string, strlen(shared_secret_string)) || !keys_session__mix(crypto_transcript, (ubyte *)dh_received_public_mix_from_client, strlen(dh_received_public_mix_from_client)) || !keys_session__mix(crypto_transcript, (ubyte *)dh_public_mix_from_server_string_for_client, strlen(dh_public_mix_from_server_string_for_client)))
             {
                 goto _label_client_msg__process_public_key_info_end;
             }
         }
     }
+
+    // create the session keys
     if (crypto_version == 1 && !auth_handshake__finish(&crypto_policy, crypto_secret, crypto_transcript, &negotiated_session, crypto_reply))
     {
         goto _label_client_msg__process_public_key_info_end;
@@ -609,6 +660,8 @@ void client_msg__connection__process_public_key_info(cJSON *json_root, uint64 se
         goto _label_client_msg__process_public_key_info_end;
     }
     DBG_AUTHENTICATION log_info("[auth] client %llu: generated %d-byte challenge", sender_client_id, CHALLENGE_STRING_SIZE);
+
+    // encrypt the challenge
     challenge_value_for_client = auth_rsa__encrypt_string_with_public_key(public_key, (ubyte *)challenge_string, (uint64)clib__utf8_string_length(challenge_string));
     if (challenge_value_for_client == NULL_POINTER || challenge_value_for_client[0] == 0)
     {
@@ -634,6 +687,8 @@ void client_msg__connection__process_public_key_info(cJSON *json_root, uint64 se
         clib__unlock(&g_clients_global_rwlock_guard);
         goto _label_client_msg__process_public_key_info_end;
     }
+
+    // store key and secret
     clib__string_copy(g_clients_array[sender_client_id].public_key, sizeof(g_clients_array[sender_client_id].public_key), public_key);
     clib__null_memory(g_clients_array[sender_client_id].dh_shared_secret, SHARED_SECRET_LENGTH);
     if (crypto_version == 0)
@@ -646,16 +701,18 @@ void client_msg__connection__process_public_key_info(cJSON *json_root, uint64 se
     }
     g_clients_array[sender_client_id].is_dh_shared_secret_agreed_upon = TRUE;
 
-    // Make the keys that this connection will use for metadata, audio and video.
-    // Also choose a random starting packet number for media sent to this client.
-    // If this connection later takes over the client's earlier session, those
-    // keys and the packet number must move into that session together.
+    // make the keys that this connection will use for metadata, audio and video.
+    // also choose a random starting packet number for media sent to this client.
+    // if this connection later takes over the client's earlier session, those
+    // keys and the packet number must move into that session together
     if ((crypto_version == 0 && !crypto_metadata__derive_session_keys(shared_secret_string, &g_clients_array[sender_client_id].session_keys)) || !util__fill_secure_random_bytes((ubyte *)&media_send_counter, sizeof(media_send_counter)))
     {
         crypto_metadata__clear_session_keys(&g_clients_array[sender_client_id].session_keys);
         clib__unlock(&g_clients_global_rwlock_guard);
         goto _label_client_msg__process_public_key_info_end;
     }
+
+    // store the media counter
     atomic_init(&g_clients_array[sender_client_id].media_send_counter, media_send_counter);
     DBG_AUTHENTICATION log_info("[auth] client %llu: shared secret computed and stored", sender_client_id);
 
@@ -668,6 +725,7 @@ void client_msg__connection__process_public_key_info(cJSON *json_root, uint64 se
     DBG_AUTHENTICATION log_info("[auth] client %llu: challenge stored, waiting for response", sender_client_id);
 
 _label_client_msg__process_public_key_info_end:
+    // clear the secret data
     ciphers__clear(crypto_secret, sizeof(crypto_secret));
     ciphers__clear(crypto_transcript, sizeof(crypto_transcript));
     crypto_metadata__clear_session_keys(&negotiated_session);
@@ -675,11 +733,15 @@ _label_client_msg__process_public_key_info_end:
     clib__null_memory(exponent_bits, sizeof(exponent_bits));
     clib__null_memory(exponent_random_bytes, sizeof(exponent_random_bytes));
     clib__null_memory(&media_send_counter, sizeof(media_send_counter));
+
+    // log the exchange time
     if (crypto_finished_ms == 0)
     {
         crypto_finished_ms = util__get_timestamp_ms();
     }
     DBG_CONNECTION_PROGRESS log_info("[connection] key exchange client=%llu ready=%d total_ms=%llu crypto_ms=%llu", (uint64)sender_client_id, (int)!is_failed, (uint64)(util__get_timestamp_ms() - started_ms), (uint64)(crypto_started_ms == 0 ? 0 : crypto_finished_ms - crypto_started_ms));
+
+    // close a failed connection
     clib__write_lock(&g_clients_global_rwlock_guard);
     if (base__is_current_client_request(sender_client_id) == TRUE &&
         sender_client_id < (uint64)g_server_settings.max_client_count &&
@@ -693,6 +755,8 @@ _label_client_msg__process_public_key_info_end:
         }
     }
     clib__unlock(&g_clients_global_rwlock_guard);
+
+    // free the buffers
     if (shared_secret_string != NULL_POINTER)
     {
         clib__null_memory(shared_secret_string, SHARED_SECRET_LENGTH);
@@ -710,12 +774,16 @@ _label_client_msg__process_public_key_info_end:
     {
         memorymanager__free((nuint)challenge_value_for_client);
     }
+
+    // clear the DH bignums
     if (is_bignums_initialized == TRUE)
     {
         clib__null_memory(bignum_server_exponent.dp, (int64)bignum_server_exponent.alloc * sizeof(mp_digit));
         clib__null_memory(bignum_shared_secret.dp, (int64)bignum_shared_secret.alloc * sizeof(mp_digit));
         mp_clear_multi(&bignum_modulus, &bignum_server_exponent, &bignum_client_public_mix, &bignum_shared_secret, &bignum_generator, &bignum_server_public_mix, &bignum_modulus_minus_one, (mp_int *)NULL_POINTER);
     }
+
+    // release the login slot
     if (has_login_slot == TRUE)
     {
         login_admission__release();
@@ -738,6 +806,7 @@ static boole _client_msg_connection_internal__is_public_key_challenge_response_v
     cJSON *json_message_value = NULL_POINTER;
     cJSON *json_message_object = NULL_POINTER;
 
+    // check the message object
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
     if (json_message_object == 0)
     {
@@ -746,6 +815,7 @@ static boole _client_msg_connection_internal__is_public_key_challenge_response_v
         return FALSE;
     }
 
+    // value must be string
     json_message_value = cJSON_GetObjectItemCaseSensitive(json_message_object, "value");
 
     if (cJSON_IsString(json_message_value) == FALSE)
@@ -754,6 +824,7 @@ static boole _client_msg_connection_internal__is_public_key_challenge_response_v
         return FALSE;
     }
 
+    // refuse a null value
     if (json_message_value->valuestring == NULL_POINTER)
     {
         DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client : ", client_id, " json_message_value->valuestring == NULL \n");
@@ -781,8 +852,10 @@ static char *_client_msg_connection_internal__get_challenge_string(cJSON *json_r
     // "message" object is fetched from json_root, again
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
 
+    // find the value field
     challenge_string = cJSON_GetObjectItemCaseSensitive(json_message_object, "value");
 
+    // return its string
     result = challenge_string->valuestring;
 
     return result;
@@ -802,23 +875,28 @@ static boole _client_msg_connection_internal__is_username_free_at_login(cstring 
 {
     uint64 i = 0;
 
+    // compare with every client
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
+        // skip unauthenticated clients
         if (g_clients_array[i].is_existing == FALSE || g_clients_array[i].is_authenticated == FALSE)
         {
             continue;
         }
 
+        // skip the client itself
         if (i == client_index)
         {
             continue;
         }
 
+        // skip same public key
         if (g_clients_array[client_index].public_key[0] != 0 && clib__is_string_equal(g_clients_array[i].public_key, g_clients_array[client_index].public_key) == TRUE)
         {
             continue;
         }
 
+        // name is in use
         if (clib__is_string_equal(g_clients_array[i].username, candidate_username) == TRUE)
         {
             return FALSE;
@@ -846,18 +924,21 @@ static boole _client_msg_connection_internal__try_apply_chosen_username(cJSON *j
     int64 chosen_length = 0;
     uint64 i = 0;
 
+    // check the message object
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
     if (json_message_object == 0)
     {
         return FALSE;
     }
 
+    // check the username field
     json_chosen_username = cJSON_GetObjectItemCaseSensitive(json_message_object, "chosen_username");
     if (cJSON_IsString(json_chosen_username) == FALSE || json_chosen_username->valuestring == NULL_POINTER)
     {
         return FALSE;
     }
 
+    // check the name length
     chosen_length = clib__utf8_string_length_check_max_length(json_chosen_username->valuestring, 50);
     if (chosen_length <= 0)
     {
@@ -868,10 +949,12 @@ static boole _client_msg_connection_internal__try_apply_chosen_username(cJSON *j
     // it costs a digit instead of the whole wish
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
+        // build the candidate name
         clib__null_memory(candidate_username, USERNAME_MAX_LENGTH);
         clib__null_memory(suffix_buffer, sizeof(suffix_buffer));
         clib__string_copy_n(candidate_username, sizeof(candidate_username), json_chosen_username->valuestring, chosen_length);
 
+        // add the number suffix
         if (i > 0)
         {
             clib__string_format(suffix_buffer, sizeof(suffix_buffer), "%llu", (uint64)(i + 1));
@@ -888,6 +971,7 @@ static boole _client_msg_connection_internal__try_apply_chosen_username(cJSON *j
             }
         }
 
+        // use a free name
         if (_client_msg_connection_internal__is_username_free_at_login(candidate_username, client_index) == TRUE)
         {
             clib__null_memory(g_clients_array[client_index].username, USERNAME_MAX_LENGTH);
@@ -897,6 +981,7 @@ static boole _client_msg_connection_internal__try_apply_chosen_username(cJSON *j
         }
     }
 
+    // no free name found
     DBG_AUTHENTICATION log_info("%s %s %s", "chosen username ", json_chosen_username->valuestring, " and its numbered variants are all taken - falling back to an assigned name \n");
     return FALSE;
 }
@@ -927,7 +1012,7 @@ static void _client_msg_connection_internal__write_username_letters(uint64 numbe
         number /= 26;
     }
 
-    // Write in order.
+    // write in order
     for (i = 0; i < length && i + 1 < out_letters_size; i++)
     {
         out_letters[i] = reversed[length - 1 - i];
@@ -956,7 +1041,7 @@ static boole _client_msg_connection_internal__try_apply_saved_username(uint64 cl
     char letters[16] = { 0 };
     uint64 i = 0;
 
-    // No saved username.
+    // no saved username
     if (g_server_settings.is_identity_storage_enabled == FALSE || identity_store__read_identity_username(client->public_key, saved_username, sizeof(saved_username)) == FALSE)
     {
         return FALSE;
@@ -965,7 +1050,7 @@ static boole _client_msg_connection_internal__try_apply_saved_username(uint64 cl
     // the saved name first, then the same name with a, b, c, ... added
     for (i = 0; i <= g_server_settings.max_client_count; i++)
     {
-        // Build the candidate.
+        // build the candidate
         clib__null_memory(candidate_username, sizeof(candidate_username));
         clib__string_copy(candidate_username, sizeof(candidate_username), saved_username);
         if (i > 0)
@@ -979,7 +1064,7 @@ static boole _client_msg_connection_internal__try_apply_saved_username(uint64 cl
             }
         }
 
-        // Use a free name.
+        // use a free name
         if (_client_msg_connection_internal__is_username_free_at_login(candidate_username, client_index) == TRUE)
         {
             clib__null_memory(client->username, USERNAME_MAX_LENGTH);
@@ -1032,8 +1117,10 @@ void client_msg__connection__process_public_key_challenge_response(cJSON *json_r
         return;
     }
 
+    // lock the clients
     clib__write_lock(&g_clients_global_rwlock_guard);
 
+    // check the client slot
     if (base__is_current_client_request(sender_client_id) == FALSE)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
@@ -1056,10 +1143,12 @@ void client_msg__connection__process_public_key_challenge_response(cJSON *json_r
     // compare the key
     received_challenge_string = _client_msg_connection_internal__get_challenge_string(json_root);
 
+    // challenge answer is correct
     if (clib__is_string_equal(g_clients_array[sender_client_id].challenge_string, received_challenge_string) == TRUE)
     {
         DBG_AUTHENTICATION log_info("%s %llu %s", "client_msg__connection__process_public_key_challenge_response challenge response string match : client index ", sender_client_id, " \n");
 
+        // mark client as authenticated
         current_client->channel_id = 0;
         current_client->has_pending_maintainer_reset_vote = FALSE; // fresh session - no vote can be pending
         current_client->is_admin = FALSE;
@@ -1077,6 +1166,7 @@ void client_msg__connection__process_public_key_challenge_response(cJSON *json_r
             goto _label_client_msg__process_public_key_challenge_response_end;
         }
 
+        // load the country code
         if (g_server_settings.is_display_country_flags_active == TRUE)
         {
             ip_tools_load_iso_country_code(current_client->ip_address, current_client->country_iso_code);
@@ -1087,11 +1177,13 @@ void client_msg__connection__process_public_key_challenge_response(cJSON *json_r
         // resolves the country itself when the flags feature (above) has not already done it
         if (g_server_settings.is_country_blocking_active == TRUE)
         {
+            // load a missing code
             if (current_client->country_iso_code[0] == 0)
             {
                 ip_tools_load_iso_country_code(current_client->ip_address, current_client->country_iso_code);
             }
 
+            // refuse a blocked country
             if (server_admin__is_country_blocked(current_client->country_iso_code) == TRUE)
             {
                 // an abrupt close with no explanation, by design - exactly what a wrong key gets
@@ -1108,11 +1200,13 @@ void client_msg__connection__process_public_key_challenge_response(cJSON *json_r
         json_fast_reconnect = cJSON_GetObjectItemCaseSensitive(json_message_object, "fast_reconnect");
         is_fast_reconnect = (boole)(cJSON_IsBool(json_fast_reconnect) && cJSON_IsTrue(json_fast_reconnect));
 
+        // resume the open session
         if (is_fast_reconnect == TRUE && g_server_settings.is_fast_reconnect_allowed == TRUE)
         {
             adopted_index = client_session__adopt_socket_into_existing_session(sender_client_id, current_client->public_key);
         }
 
+        // use the resumed session
         if (adopted_index >= 0)
         {
             // from here on the handler works on the adopted session; the new socket's own entry is gone
@@ -1153,7 +1247,7 @@ void client_msg__connection__process_public_key_challenge_response(cJSON *json_r
                 }
             }
 
-            // Use the requested name when it is available, then the name saved with the identity.
+            // use the requested name when it is available, then the name saved with the identity
             if (_client_msg_connection_internal__try_apply_chosen_username(json_root, sender_client_id) == FALSE && _client_msg_connection_internal__try_apply_saved_username(sender_client_id) == FALSE)
             {
                 if (client_session__assign_username_for_newly_joined_client(sender_client_id, g_server_settings.default_client_name) == FALSE)
@@ -1170,6 +1264,7 @@ void client_msg__connection__process_public_key_challenge_response(cJSON *json_r
         clib__read_lock(&g_groups_global_rwlock_guard);
         clib__read_lock(&g_icons_global_rwlock_guard);
 
+        // finish the login
         if (base__is_client_valid(current_client->client_id) == TRUE)
         {
             // a resumed session already carries its groups, avatar and stored key: nothing to restore
@@ -1203,13 +1298,17 @@ void client_msg__connection__process_public_key_challenge_response(cJSON *json_r
                 }
             }
 
+            // update groups and rights
             permissions__refresh_guest_membership(current_client);
             channel_groups__refresh_locked(current_client);
+
+            // check the reserved slots
             if (!is_resumed_session &&
                 (g_server_settings.is_permission_system_enabled) != FALSE &&
                 g_server_settings.reserved_slots > 0 &&
                 !permissions__is_allowed_in_groups(current_client, PERMISSION_USE_RESERVED_SLOTS))
             {
+                // count connected clients
                 for (slot = 0; slot < g_server_settings.max_client_count; slot++)
                 {
                     if (g_clients_array[slot].is_existing && g_clients_array[slot].is_authenticated)
@@ -1217,6 +1316,8 @@ void client_msg__connection__process_public_key_challenge_response(cJSON *json_r
                         connected_count++;
                     }
                 }
+
+                // only reserved slots remain
                 if (connected_count > g_server_settings.max_client_count - g_server_settings.reserved_slots)
                 {
                     server_msg__administration__send_access_denied_to_single_client(current_client, "Only reserved slots are available.");
@@ -1227,9 +1328,12 @@ void client_msg__connection__process_public_key_challenge_response(cJSON *json_r
                     goto _label_client_msg__process_public_key_challenge_response_end;
                 }
             }
+
+            // update the identity store
             identity_store__sync_client_identity_in_store(current_client);
             identity_store__update_offline_public_key(current_client);
 
+            // log join or reconnect
             if (is_resumed_session == TRUE)
             {
                 // announced before the lists, so the client applies them as a refresh, not a first build
@@ -1238,10 +1342,11 @@ void client_msg__connection__process_public_key_challenge_response(cJSON *json_r
             }
             else
             {
-                // The join is complete and the username has been checked for duplicates.
+                // the join is complete and the username has been checked for duplicates
                 server_logs__client_joined(current_client);
             }
 
+            // send status and lists
             server_msg__connection__send_authentication_status_to_single_client(current_client);
             server_msg__channel__send_list_to_single_client(current_client);
             server_msg__administration__send_admin_status_to_single_client(current_client);
@@ -1249,6 +1354,8 @@ void client_msg__connection__process_public_key_challenge_response(cJSON *json_r
 
             // later changes of what this client may see are compared with the rights used for these lists
             channel__remember_sent_view(current_client);
+
+            // send icons, groups, emojis
             server_msg__administration__send_icon_list_to_single_client(current_client);
             server_msg__administration__send_group_list_to_single_client(current_client);
             server_msg__audio__send_active_microphone_usage_for_current_channel_to_single_client(current_client, current_client->channel_id);
@@ -1273,32 +1380,37 @@ void client_msg__connection__process_public_key_challenge_response(cJSON *json_r
                 server_msg__chat__send_queued_offline_messages_to_single_client(current_client);
             }
 
-            // A new login starts in root; the first person there becomes its maintainer.
+            // a new login starts in root; the first person there becomes its maintainer
             if (is_resumed_session == FALSE)
             {
                 channel__welcome_client(current_client);
             }
             else if (current_client->is_idle == FALSE)
             {
-                // The refreshed lists do not contain the maintainer id. Announce it again,
-                // and ask the maintainer for fresh keys in case this client missed a set.
+                // the refreshed lists do not contain the maintainer id. announce it again,
+                // and ask the maintainer for fresh keys in case this client missed a set
                 resumed_channel = &g_channel_array[current_client->channel_id];
                 server_msg__channel__send_maintainer_id_to_clients_in_same_channel(resumed_channel, resumed_channel->maintainer_id);
             }
 
+            // unlock icons, groups, channels
             clib__unlock(&g_icons_global_rwlock_guard);
             clib__unlock(&g_groups_global_rwlock_guard);
             clib__unlock(&g_channels_global_rwlock_guard);
+
+            // send the server info
             server_msg__server_settings__send_info_to_single_client(current_client, FALSE, (boole)(g_server_settings.server_banner != NULL_POINTER));
         }
     }
     else
     {
+        // wrong answer, close connection
         DBG_AUTHENTICATION log_info("%s", " challenge string not equal \n");
         server_logs__join_refused("challenge response mismatch", current_client->ip_address);
         client_session__close_websocket_connection(sender_client_id, FALSE);
     }
 
 _label_client_msg__process_public_key_challenge_response_end:
+    // unlock the clients
     clib__unlock(&g_clients_global_rwlock_guard);
 }

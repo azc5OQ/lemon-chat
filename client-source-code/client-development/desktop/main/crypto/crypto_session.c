@@ -51,11 +51,16 @@ static atomic_flag g_identity_lock = ATOMIC_FLAG_INIT;
  */
 boole crypto_session__media_keys(desktop_crypto_t *crypto, desktop_media_keys_t *keys)
 {
+    // clear the keys
     clib__null_memory(keys, sizeof(*keys));
+
+    // check the session
     if (!crypto || !crypto->session_ready)
     {
         return 0;
     }
+
+    // copy the keys
     clib__memcpy(keys->encryption, crypto->session_keys, 32);
     clib__memcpy(keys->authentication, crypto->session_keys + 32, 32);
     clib__memcpy(keys->server, crypto->server_keys, sizeof(keys->server));
@@ -102,10 +107,13 @@ static boole _crypto_session_internal__base64(char *output, uint64 output_capaci
 {
     size_t written = 0;
 
+    // check the output
     if (!output || !output_capacity)
     {
         return 0;
     }
+
+    // encode the bytes
     output[0] = 0;
     return mbedtls_base64_encode((ubyte *)output, output_capacity, &written, bytes, length) == 0;
 }
@@ -119,15 +127,20 @@ desktop_crypto_t *crypto_session__create(void)
     desktop_crypto_t *crypto = calloc(1, sizeof(*crypto));
     const ubyte personalization[] = "lemon-chat-desktop";
 
+    // check the allocation
     if (!crypto)
     {
         return NULL;
     }
+
+    // prepare the contexts
     mbedtls_entropy_init(&crypto->entropy);
     mbedtls_ctr_drbg_init(&crypto->random);
     mbedtls_rsa_init(&crypto->rsa);
     mbedtls_mpi_init(&crypto->modulus);
     mbedtls_mpi_init(&crypto->exponent);
+
+    // seed random generator
     if (mbedtls_ctr_drbg_seed(&crypto->random, mbedtls_entropy_func, &crypto->entropy, personalization, sizeof(personalization) - 1) != 0)
     {
         crypto_session__destroy(crypto);
@@ -144,6 +157,8 @@ desktop_crypto_t *crypto_session__create(void)
 desktop_crypto_t *crypto_session__copy_identity(const desktop_crypto_t *source)
 {
     desktop_crypto_t *copy = source ? crypto_session__create() : NULL;
+
+    // copy RSA key
     if (copy && mbedtls_rsa_copy(&copy->rsa, &source->rsa) != 0)
     {
         crypto_session__destroy(copy);
@@ -159,6 +174,7 @@ desktop_crypto_t *crypto_session__copy_identity(const desktop_crypto_t *source)
  */
 void crypto_session__destroy(desktop_crypto_t *crypto)
 {
+    // free crypto state
     if (crypto)
     {
         mbedtls_rsa_free(&crypto->rsa);
@@ -168,8 +184,12 @@ void crypto_session__destroy(desktop_crypto_t *crypto)
         {
             mbedtls_mpi_free(&crypto->exponents[index]);
         }
+
+        // free random generator
         mbedtls_ctr_drbg_free(&crypto->random);
         mbedtls_entropy_free(&crypto->entropy);
+
+        // clear the memory
         mbedtls_platform_zeroize(crypto, sizeof(*crypto));
         free(crypto);
     }
@@ -189,12 +209,17 @@ boole crypto_session__new_identity(char *identity, uint64 identity_capacity)
     uint64 index = 0;
     boole complete = 0;
 
+    // check buffer size
     if (!identity || identity_capacity < sizeof(bytes) * 2 + 1)
     {
         return 0;
     }
+
+    // create crypto state
     identity[0] = 0;
     crypto = crypto_session__create();
+
+    // write random hex digits
     if (crypto && mbedtls_ctr_drbg_random(&crypto->random, bytes, sizeof(bytes)) == 0)
     {
         for (index = 0; index < sizeof(bytes); index++)
@@ -205,6 +230,8 @@ boole crypto_session__new_identity(char *identity, uint64 identity_capacity)
         identity[sizeof(bytes) * 2] = 0;
         complete = 1;
     }
+
+    // clear random bytes
     mbedtls_platform_zeroize(bytes, sizeof(bytes));
     crypto_session__destroy(crypto);
     return complete;
@@ -230,43 +257,64 @@ boole crypto_session__identity(desktop_crypto_t *crypto, const char *identity, i
     uint64 size = 0;
     boole complete = 0;
 
+    // check arguments
     if (!crypto || !identity || !identity[0] || bits < 2048 || bits > 8192 || bits % 256)
     {
         return 0;
     }
+
+    // hash the identity
     if (mbedtls_sha256((const ubyte *)identity, clib__strlen(identity), digest, 0) != 0)
     {
         return 0;
     }
+
+    // prepare big numbers
     for (index = 0; index < 5; index++)
     {
         mbedtls_mpi_init(&values[index]);
     }
+
+    // wait for the lock
     while (atomic_flag_test_and_set_explicit(&g_identity_lock, memory_order_acquire))
     {
         desktop_system__sleep(1);
     }
+
+    // write hex seed
     seed = rsa_keygen__get_seed_buffer();
     for (index = 0; index < sizeof(digest); index++)
     {
         seed[index * 2] = hex[digest[index] >> 4];
         seed[index * 2 + 1] = hex[digest[index] & 15];
     }
+
+    // generate RSA key
     complete = rsa_keygen__generate(bits, 64) == 1;
+
+    // read key numbers
     for (index = 0; index < 5 && complete; index++)
     {
         complete = mbedtls_mpi_read_string(&values[index], 16, (const char *)rsa_keygen__get_result((int)index)) == 0;
     }
+
+    // clear state and unlock
     rsa_keygen__clear_sensitive();
     atomic_flag_clear_explicit(&g_identity_lock, memory_order_release);
-    // Generator order is N, E, D, P, Q; the import API takes N, P, Q, D, E.
+    // generator order is N, E, D, P, Q; the import API takes N, P, Q, D, E
     complete = complete && mbedtls_rsa_import(&crypto->rsa, &values[0], &values[3], &values[4], &values[2], &values[1]) == 0 && mbedtls_rsa_complete(&crypto->rsa) == 0 && mbedtls_rsa_check_privkey(&crypto->rsa) == 0 && mbedtls_rsa_set_padding(&crypto->rsa, MBEDTLS_RSA_PKCS_V15, MBEDTLS_MD_NONE) == 0;
+
+    // encode public key
     size = mbedtls_mpi_size(&values[0]);
     complete = complete && size <= sizeof(modulus) && mbedtls_mpi_write_binary(&values[0], modulus, size) == 0 && _crypto_session_internal__base64(public_key, public_key_capacity, modulus, size);
+
+    // free big numbers
     for (index = 0; index < 5; index++)
     {
         mbedtls_mpi_free(&values[index]);
     }
+
+    // clear the buffers
     mbedtls_platform_zeroize(digest, sizeof(digest));
     mbedtls_platform_zeroize(modulus, sizeof(modulus));
     return complete;
@@ -291,10 +339,14 @@ boole crypto_session__server_keys(desktop_crypto_t *crypto, const char *keys)
     uint64 text_length;
     boole valid;
 
+    // clear stored keys
     crypto->server_key_count = 0;
     mbedtls_platform_zeroize(crypto->server_keys, sizeof(crypto->server_keys));
+
+    // read every key row
     while (*cursor)
     {
+        // find row end
         start = cursor;
         while (*cursor && *cursor != '\n')
         {
@@ -305,6 +357,8 @@ boole crypto_session__server_keys(desktop_crypto_t *crypto, const char *keys)
         {
             length--;
         }
+
+        // read cipher and password
         entry = length && start[0] == '{' ? cJSON_ParseWithLength(start, length) : NULL;
         password = cJSON_GetObjectItemCaseSensitive(entry, "password");
         type = cJSON_GetObjectItemCaseSensitive(entry, "type");
@@ -317,14 +371,20 @@ boole crypto_session__server_keys(desktop_crypto_t *crypto, const char *keys)
             text = cJSON_GetStringValue(password);
             text_length = text == NULL ? 0 : clib__strlen(text);
         }
+
+        // hash password into key
         valid = length && crypto->server_key_count < DESKTOP_SERVER_KEY_LIMIT && cipher && text && mbedtls_sha256((const ubyte *)text, text_length, crypto->server_keys[crypto->server_key_count], 0) == 0;
         crypto_session__free_json(entry);
         if (!valid)
         {
             return 0;
         }
+
+        // store cipher type
         crypto->server_types[crypto->server_key_count] = cipher;
         crypto->server_key_count++;
+
+        // skip line break
         if (*cursor)
         {
             cursor++;
@@ -348,15 +408,24 @@ boole crypto_session__begin_dh(desktop_crypto_t *crypto, char *public_mix, uint6
     size_t written = 0;
     boole complete = 0;
 
+    // prepare big numbers
     mbedtls_mpi_init(&base);
     mbedtls_mpi_init(&mix);
     crypto->session_ready = 0;
+
+    // create private exponent
     complete = mbedtls_ctr_drbg_random(&crypto->random, bytes, sizeof(bytes)) == 0;
     bytes[0] |= 128;
+
+    // calculate public mix
     complete = complete && mbedtls_mpi_read_string(&crypto->modulus, 10, DH_MODULUS_STR) == 0 && mbedtls_mpi_read_binary(&crypto->exponent, bytes, sizeof(bytes)) == 0 && mbedtls_mpi_lset(&base, 2) == 0 && mbedtls_mpi_exp_mod(&mix, &base, &crypto->exponent, &crypto->modulus, NULL) == 0 && mbedtls_mpi_write_string(&mix, 10, public_mix, public_mix_capacity, &written) == 0;
+
+    // free big numbers
     mbedtls_mpi_free(&base);
     mbedtls_mpi_free(&mix);
     mbedtls_platform_zeroize(bytes, sizeof(bytes));
+
+    // store public mix
     if (complete)
     {
         clib__string_copy(crypto->first_mix, sizeof(crypto->first_mix), public_mix);
@@ -377,16 +446,21 @@ boole crypto_session__finish_dh(desktop_crypto_t *crypto, const char *public_mix
     mbedtls_mpi mix = { 0 };
     mbedtls_mpi maximum = { 0 };
     mbedtls_mpi shared = { 0 };
-    // Mbed TLS reserves bits / 2 + overhead even for a shorter decimal result.
+    // Mbed TLS reserves bits / 2 + overhead even for a shorter decimal result
     char decimal[DESKTOP_DH_TEXT_CAPACITY] = { 0 };
     size_t written = 0;
     boole complete = 0;
 
+    // prepare big numbers
     mbedtls_mpi_init(&mix);
     mbedtls_mpi_init(&maximum);
     mbedtls_mpi_init(&shared);
+
+    // calculate session keys
     complete = public_mix && clib__strlen(public_mix) < sizeof(decimal) && mbedtls_mpi_read_string(&mix, 10, public_mix) == 0 && mbedtls_mpi_sub_int(&maximum, &crypto->modulus, 1) == 0 && mbedtls_mpi_cmp_int(&mix, 1) > 0 && mbedtls_mpi_cmp_mpi(&mix, &maximum) < 0 && mbedtls_mpi_exp_mod(&shared, &mix, &crypto->exponent, &crypto->modulus, NULL) == 0 && mbedtls_mpi_write_string(&shared, 10, decimal, sizeof(decimal), &written) == 0 && mbedtls_hkdf(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), salt, sizeof(salt) - 1, (const ubyte *)decimal, written - 1, info, sizeof(info) - 1, crypto->session_keys, sizeof(crypto->session_keys)) == 0;
     crypto->session_ready = complete;
+
+    // free big numbers
     mbedtls_mpi_free(&mix);
     mbedtls_mpi_free(&maximum);
     mbedtls_mpi_free(&shared);
@@ -410,16 +484,23 @@ boole crypto_session__challenge(desktop_crypto_t *crypto, const char *encoded, c
     size_t written = 0;
     boole complete = 0;
 
+    // check arguments
     if (!encoded || !plaintext || plaintext_capacity < 2)
     {
         return 0;
     }
+
+    // decrypt the challenge
     clib__null_memory(plaintext, plaintext_capacity);
     complete = mbedtls_base64_decode(ciphertext, sizeof(ciphertext), &length, (const ubyte *)encoded, clib__strlen(encoded)) == 0 && length == mbedtls_rsa_get_len(&crypto->rsa) && mbedtls_rsa_pkcs1_decrypt(&crypto->rsa, mbedtls_ctr_drbg_random, &crypto->random, &written, ciphertext, (ubyte *)plaintext, plaintext_capacity - 1) == 0 && written > 0 && !clib__memchr(plaintext, 0, written);
+
+    // clear output on failure
     if (!complete)
     {
         mbedtls_platform_zeroize(plaintext, plaintext_capacity);
     }
+
+    // clear the ciphertext
     mbedtls_platform_zeroize(ciphertext, sizeof(ciphertext));
     return complete;
 }
@@ -436,8 +517,11 @@ static void _crypto_session_internal__layer(const ubyte key[32], const ubyte iv[
 {
     struct AES_ctx aes = { 0 };
 
+    // apply the cipher
     AES_init_ctx_iv(&aes, key, iv);
     AES_CTR_xcrypt_buffer(&aes, bytes, length);
+
+    // clear cipher state
     mbedtls_platform_zeroize(&aes, sizeof(aes));
 }
 
@@ -454,8 +538,11 @@ static boole _crypto_session_internal__mac(desktop_crypto_t *crypto, const char 
     mbedtls_md_context_t context = { 0 };
     boole complete = 0;
 
+    // calculate the HMAC
     mbedtls_md_init(&context);
     complete = mbedtls_md_setup(&context, mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), 1) == 0 && mbedtls_md_hmac_starts(&context, crypto->negotiated.count ? (receiving ? crypto->negotiated.server_mac : crypto->negotiated.client_mac) : crypto->session_keys + 32, 32) == 0 && mbedtls_md_hmac_update(&context, (const ubyte *)iv, clib__strlen(iv)) == 0 && mbedtls_md_hmac_update(&context, (const ubyte *)data, clib__strlen(data)) == 0 && mbedtls_md_hmac_finish(&context, output) == 0;
+
+    // free hash context
     mbedtls_md_free(&context);
     return complete;
 }
@@ -482,10 +569,13 @@ char *crypto_session__encrypt(desktop_crypto_t *crypto, const char *plaintext)
     uint64 index = 0;
     boole complete = 0;
 
+    // check message size
     if (capacity > DESKTOP_MESSAGE_LIMIT - 128)
     {
         return NULL;
     }
+
+    // create buffers and IV
     bytes = calloc(1, padded);
     encoded = calloc(1, capacity);
     root = cJSON_CreateObject();
@@ -493,7 +583,11 @@ char *crypto_session__encrypt(desktop_crypto_t *crypto, const char *plaintext)
     {
         goto label_finished;
     }
+
+    // copy the plaintext
     clib__memcpy(bytes, plaintext, length);
+
+    // encrypt with session keys
     if (crypto->session_ready)
     {
         if (crypto->negotiated.count)
@@ -508,6 +602,8 @@ char *crypto_session__encrypt(desktop_crypto_t *crypto, const char *plaintext)
             _crypto_session_internal__layer(crypto->session_keys, iv, bytes, padded);
         }
     }
+
+    // encrypt with server keys
     for (index = 0; index < crypto->server_key_count; index++)
     {
         if (!ciphers__crypt(crypto->server_types[index], crypto->server_keys[index], iv, bytes, padded))
@@ -515,16 +611,23 @@ char *crypto_session__encrypt(desktop_crypto_t *crypto, const char *plaintext)
             goto label_finished;
         }
     }
+
+    // build JSON object
     complete = _crypto_session_internal__base64(encoded_iv, sizeof(encoded_iv), iv, sizeof(iv)) && _crypto_session_internal__base64(encoded, capacity, bytes, padded) && cJSON_AddStringToObject(root, "iv", encoded_iv) && cJSON_AddStringToObject(root, "data", encoded);
+
+    // add HMAC tag
     if (complete && crypto->session_ready)
     {
         complete = _crypto_session_internal__mac(crypto, encoded_iv, encoded, checksum, FALSE) && _crypto_session_internal__base64(encoded_tag, sizeof(encoded_tag), checksum, sizeof(checksum)) && cJSON_AddStringToObject(root, "tag", encoded_tag);
     }
+
+    // convert JSON to text
     if (complete)
     {
         result = cJSON_PrintUnformatted(root);
     }
 label_finished:
+    // free the buffers
     if (bytes)
     {
         mbedtls_platform_zeroize(bytes, padded);
@@ -563,15 +666,20 @@ char *crypto_session__decrypt(desktop_crypto_t *crypto, const char *envelope, ui
     uint64 capacity = 0;
     boole complete = 0;
 
+    // check arguments
     if (!envelope || !length || length > DESKTOP_MESSAGE_LIMIT)
     {
         return NULL;
     }
+
+    // read the JSON
     root = desktop_protocol__parse_json(envelope, length, DESKTOP_MESSAGE_LIMIT, CJSON_NESTING_LIMIT);
     if (!root)
     {
         goto label_finished;
     }
+
+    // read the IV
     iv_value = cJSON_GetObjectItemCaseSensitive(root, "iv");
     data_value = cJSON_GetObjectItemCaseSensitive(root, "data");
     tag_value = cJSON_GetObjectItemCaseSensitive(root, "tag");
@@ -579,10 +687,14 @@ char *crypto_session__decrypt(desktop_crypto_t *crypto, const char *envelope, ui
     {
         goto label_finished;
     }
+
+    // check HMAC tag
     if (crypto->session_ready && (!cJSON_IsString(tag_value) || mbedtls_base64_decode(received_tag, sizeof(received_tag), &tag_length, (const ubyte *)tag_value->valuestring, clib__strlen(tag_value->valuestring)) != 0 || tag_length != sizeof(received_tag) || !_crypto_session_internal__mac(crypto, iv_value->valuestring, data_value->valuestring, checksum, TRUE) || mbedtls_ct_memcmp(checksum, received_tag, sizeof(checksum)) != 0))
     {
         goto label_finished;
     }
+
+    // create data buffer
     capacity = clib__strlen(data_value->valuestring) + 1;
     bytes = cJSON_malloc(capacity);
     if (!bytes)
@@ -590,10 +702,14 @@ char *crypto_session__decrypt(desktop_crypto_t *crypto, const char *envelope, ui
         goto label_finished;
     }
     clib__null_memory(bytes, capacity);
+
+    // decode base64 data
     if (mbedtls_base64_decode((ubyte *)bytes, capacity - 1, &data_length, (const ubyte *)data_value->valuestring, capacity - 1) != 0 || !data_length)
     {
         goto label_finished;
     }
+
+    // decrypt with session keys
     if (crypto->session_ready)
     {
         if (crypto->negotiated.count)
@@ -608,6 +724,8 @@ char *crypto_session__decrypt(desktop_crypto_t *crypto, const char *envelope, ui
             _crypto_session_internal__layer(crypto->session_keys, iv, (ubyte *)bytes, data_length);
         }
     }
+
+    // decrypt with server keys
     for (index = crypto->server_key_count; index > 0; index--)
     {
         if (!ciphers__crypt(crypto->server_types[index - 1], crypto->server_keys[index - 1], iv, (ubyte *)bytes, data_length))
@@ -615,7 +733,7 @@ char *crypto_session__decrypt(desktop_crypto_t *crypto, const char *envelope, ui
             goto label_finished;
         }
     }
-    // Zero padding terminates the JSON; reject hidden nonzero data after it.
+    // zero padding terminates the JSON; reject hidden nonzero data after it
     index = clib__strlen(bytes);
     while (index < data_length && !bytes[index])
     {
@@ -623,7 +741,10 @@ char *crypto_session__decrypt(desktop_crypto_t *crypto, const char *envelope, ui
     }
     complete = index == data_length;
 label_finished:
+    // free the JSON
     crypto_session__free_json(root);
+
+    // free bytes on failure
     if (!complete && bytes)
     {
         mbedtls_platform_zeroize(bytes, capacity);
@@ -640,6 +761,7 @@ label_finished:
  */
 void crypto_session__free_text(char *text)
 {
+    // clear and free text
     if (text)
     {
         mbedtls_platform_zeroize(text, clib__strlen(text) + 1);
@@ -655,18 +777,27 @@ void crypto_session__free_text(char *text)
 void crypto_session__free_json(cJSON *json)
 {
     cJSON *next = NULL_POINTER;
+
+    // free every node
     while (json)
     {
+        // store next node
         next = json->next;
+
+        // free child and value
         if (!(json->type & cJSON_IsReference))
         {
             crypto_session__free_json(json->child);
             crypto_session__free_text(json->valuestring);
         }
+
+        // free member name
         if (!(json->type & cJSON_StringIsConst))
         {
             crypto_session__free_text(json->string);
         }
+
+        // clear and free node
         mbedtls_platform_zeroize(json, sizeof(*json));
         cJSON_free(json);
         json = next;
@@ -701,8 +832,10 @@ char *crypto_session__keys_json(const desktop_content_keys_t *keys)
     uint64 byte = 0;
     boole complete = root != NULL;
 
+    // add four entries
     for (index = 0; index < 4 && complete; index++)
     {
+        // create the entry
         entry = cJSON_CreateObject();
         if (!entry)
         {
@@ -710,22 +843,32 @@ char *crypto_session__keys_json(const desktop_content_keys_t *keys)
             break;
         }
         cJSON_AddItemToArray(root, entry);
+
+        // create two arrays
         key = cJSON_AddArrayToObject(entry, "key_bytes");
         iv = cJSON_AddArrayToObject(entry, "iv_bytes");
         complete = key && iv;
+
+        // add key bytes
         for (byte = 0; byte < 32 && complete; byte++)
         {
             complete = cJSON_AddItemToArray(key, cJSON_CreateNumber(keys->keys[index][byte]));
         }
+
+        // add IV bytes
         for (byte = 0; byte < 16 && complete; byte++)
         {
             complete = cJSON_AddItemToArray(iv, cJSON_CreateNumber(keys->ivs[index][byte]));
         }
     }
+
+    // convert JSON to text
     if (complete)
     {
         result = cJSON_PrintUnformatted(root);
     }
+
+    // free the JSON
     crypto_session__free_json(root);
     return result;
 }
@@ -749,18 +892,27 @@ boole crypto_session__read_keys(const char *json, desktop_content_keys_t *keys)
     boole complete = 0;
     ubyte *output = NULL_POINTER;
 
+    // clear the keys
     clib__null_memory(keys, sizeof(*keys));
+
+    // read JSON array
     root = json ? desktop_protocol__parse_json(json, clib__strlen(json), DESKTOP_MESSAGE_LIMIT, CJSON_NESTING_LIMIT) : NULL;
     complete = cJSON_IsArray(root) && cJSON_GetArraySize(root) == 4;
+
+    // read four entries
     for (index = 0; index < 4 && complete; index++)
     {
+        // read key and IV
         entry = cJSON_GetArrayItem(root, index);
         for (part = 0; part < 2 && complete; part++)
         {
+            // choose byte array
             array = cJSON_GetObjectItemCaseSensitive(entry, part ? "iv_bytes" : "key_bytes");
             count = part ? 16 : 32;
             output = part ? keys->ivs[index] : keys->keys[index];
             complete = cJSON_IsArray(array) && cJSON_GetArraySize(array) == count;
+
+            // check and copy bytes
             for (byte = 0; byte < count && complete; byte++)
             {
                 value = cJSON_GetArrayItem(array, byte);
@@ -772,7 +924,11 @@ boole crypto_session__read_keys(const char *json, desktop_content_keys_t *keys)
             }
         }
     }
+
+    // free the JSON
     crypto_session__free_json(root);
+
+    // clear keys on failure
     if (!complete)
     {
         mbedtls_platform_zeroize(keys, sizeof(*keys));
@@ -797,14 +953,19 @@ static boole _crypto_session_internal__flat_envelope(const char *text, uint64 le
     boole quoted = FALSE;
     boole escaped = FALSE;
 
+    // check arguments
     if (!text || !length || text[0] != '{' || length > 40ULL * 1024 * 1024 || !maximum_members)
     {
         return FALSE;
     }
+
+    // check every character
     for (index = 0; index < length; index++)
     {
+        // count JSON parts
         if (quoted)
         {
+            // find string end
             if (escaped)
             {
                 if (length - index >= 5 && clib__strncmp(text + index, "u0000", 5) == 0)
@@ -824,6 +985,7 @@ static boole _crypto_session_internal__flat_envelope(const char *text, uint64 le
         }
         else if (text[index] == '"')
         {
+            // count new string
             quoted = TRUE;
             strings++;
         }
@@ -837,6 +999,7 @@ static boole _crypto_session_internal__flat_envelope(const char *text, uint64 le
         }
         else if (text[index] == '[' || text[index] == ']')
         {
+            // refuse arrays
             return FALSE;
         }
         else if (text[index] == ':')
@@ -847,11 +1010,15 @@ static boole _crypto_session_internal__flat_envelope(const char *text, uint64 le
         {
             separators++;
         }
+
+        // check the limits
         if (depth < 0 || depth > 1 || strings > maximum_members * 2 || members > maximum_members || separators >= maximum_members)
         {
             return FALSE;
         }
     }
+
+    // check quotes and braces
     return !quoted && !depth;
 }
 
@@ -869,17 +1036,25 @@ static boole _crypto_session_internal__content_envelope(const char *text, uint64
     const cJSON *iv_value = NULL_POINTER;
     const cJSON *data_value = NULL_POINTER;
     size_t written = 0;
+
+    // check for flat JSON
     if (!_crypto_session_internal__flat_envelope(text, length, 2))
     {
         return FALSE;
     }
+
+    // read the JSON
     *root = desktop_protocol__parse_json(text, length, 40ULL * 1024 * 1024, 1);
     iv_value = cJSON_GetObjectItemCaseSensitive(*root, "iv");
     data_value = cJSON_GetObjectItemCaseSensitive(*root, "data");
+
+    // check fields and IV
     if (!cJSON_IsObject(*root) || cJSON_GetArraySize(*root) != 2 || !cJSON_IsString(iv_value) || !cJSON_IsString(data_value) || !data_value->valuestring[0] || clib__strlen(iv_value->valuestring) != 24 || mbedtls_base64_decode(iv, 16, &written, (const ubyte *)iv_value->valuestring, 24) != 0 || written != 16)
     {
         return FALSE;
     }
+
+    // return the ciphertext
     *encoded = data_value->valuestring;
     return TRUE;
 }
@@ -911,10 +1086,13 @@ static char *_crypto_session_internal__content(desktop_crypto_t *crypto, const d
     uint64 index = 0;
     uint64 byte = 0;
 
+    // check text length
     if (length > DESKTOP_MESSAGE_LIMIT / 2)
     {
         return NULL;
     }
+
+    // create byte buffer
     size = encrypt ? (length < 1024 ? 1024 : length) : length;
     bytes_capacity = size + 1;
     bytes = cJSON_malloc(bytes_capacity);
@@ -923,16 +1101,22 @@ static char *_crypto_session_internal__content(desktop_crypto_t *crypto, const d
         return NULL;
     }
     clib__null_memory(bytes, size + 1);
+
+    // fill byte buffer
     if (encrypt)
     {
+        // create random IV
         if (mbedtls_ctr_drbg_random(&crypto->random, iv, sizeof(iv)) != 0)
         {
             goto label_finished;
         }
+
+        // copy the plaintext
         clib__memcpy(bytes, text, length);
     }
     else
     {
+        // read IV and data
         if (text[0] == '{')
         {
             if (!_crypto_session_internal__content_envelope(text, length, &root, iv, &encoded_data))
@@ -940,12 +1124,16 @@ static char *_crypto_session_internal__content(desktop_crypto_t *crypto, const d
                 goto label_finished;
             }
         }
+
+        // decode base64 data
         if (mbedtls_base64_decode((ubyte *)bytes, size, &written, (const ubyte *)encoded_data, clib__strlen(encoded_data)) != 0 || !written)
         {
             goto label_finished;
         }
         size = written;
     }
+
+    // apply four keys
     for (index = 0; index < 4; index++)
     {
         for (byte = 0; byte < sizeof(counter); byte++)
@@ -954,15 +1142,19 @@ static char *_crypto_session_internal__content(desktop_crypto_t *crypto, const d
         }
         _crypto_session_internal__layer(keys->keys[index], counter, (ubyte *)bytes, size);
     }
+
+    // build plaintext result
     if (!encrypt)
     {
-        // Wrong keys generally leave nonzero bytes after the first terminator.
+        // wrong keys generally leave nonzero bytes after the first terminator
         index = clib__strlen(bytes);
         plaintext_length = index;
         while (index < size && !bytes[index])
         {
             index++;
         }
+
+        // copy the plaintext
         if (index == size)
         {
             result = cJSON_malloc(plaintext_length + 1);
@@ -974,6 +1166,8 @@ static char *_crypto_session_internal__content(desktop_crypto_t *crypto, const d
         }
         goto label_finished;
     }
+
+    // build JSON text
     root = cJSON_CreateObject();
     capacity = (size + 2) / 3 * 4 + 1;
     encoded = calloc(1, capacity);
@@ -982,6 +1176,7 @@ static char *_crypto_session_internal__content(desktop_crypto_t *crypto, const d
         result = cJSON_PrintUnformatted(root);
     }
 label_finished:
+    // free the buffers
     crypto_session__free_json(root);
     if (bytes)
     {
@@ -993,6 +1188,8 @@ label_finished:
         mbedtls_platform_zeroize(encoded, capacity);
     }
     free(encoded);
+
+    // clear counter and IV
     mbedtls_platform_zeroize(counter, sizeof(counter));
     mbedtls_platform_zeroize(iv, sizeof(iv));
     mbedtls_platform_zeroize(iv_text, sizeof(iv_text));
@@ -1028,12 +1225,18 @@ static boole _crypto_session_internal__attachment_derive(const desktop_content_k
     const char label[] = "lemon-attachment-v2";
     uint64 i = 0;
     int status = 0;
+
+    // join keys and IVs
     for (i = 0; i < 4; i++)
     {
         clib__memcpy(material + i * 48, keys->keys[i], 32);
         clib__memcpy(material + i * 48 + 32, keys->ivs[i], 16);
     }
+
+    // calculate attachment keys
     status = mbedtls_hkdf(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), iv, 16, material, sizeof(material), (const ubyte *)label, sizeof(label) - 1, derived, 160);
+
+    // clear joined keys
     mbedtls_platform_zeroize(material, sizeof(material));
     return status == 0;
 }
@@ -1043,8 +1246,12 @@ static boole _crypto_session_internal__attachment_tag(const ubyte derived[160], 
     const char label[] = "lemon-attachment-v2";
     mbedtls_md_context_t context;
     boole result = FALSE;
+
+    // calculate HMAC tag
     mbedtls_md_init(&context);
     result = mbedtls_md_setup(&context, mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), 1) == 0 && mbedtls_md_hmac_starts(&context, derived + 128, 32) == 0 && mbedtls_md_hmac_update(&context, (const ubyte *)label, sizeof(label) - 1) == 0 && mbedtls_md_hmac_update(&context, iv, 16) == 0 && mbedtls_md_hmac_update(&context, data, size) == 0 && mbedtls_md_hmac_finish(&context, tag) == 0;
+
+    // free hash context
     mbedtls_md_free(&context);
     return result;
 }
@@ -1088,20 +1295,28 @@ static char *_crypto_session_internal__attachment(desktop_crypto_t *crypto, cons
     char *result = NULL_POINTER;
     char *encoded = NULL_POINTER;
     char iv_text[25] = { 0 };
+
+    // check arguments
     if (!keys || !length || length > limit || padding > 4096)
     {
         return NULL;
     }
+
+    // read JSON form
     if (!encrypt && text[0] == '{')
     {
+        // check for flat JSON
         if (!_crypto_session_internal__flat_envelope(text, length, 4))
         {
             goto label_finished;
         }
+
+        // read the JSON
         root = desktop_protocol__parse_json(text, length, limit, 1);
         version = cJSON_GetObjectItemCaseSensitive(root, "v");
         if (version != NULL)
         {
+            // read version 2 fields
             nonce = cJSON_GetObjectItemCaseSensitive(root, "iv");
             data = cJSON_GetObjectItemCaseSensitive(root, "data");
             code = cJSON_GetObjectItemCaseSensitive(root, "tag");
@@ -1114,6 +1329,7 @@ static char *_crypto_session_internal__attachment(desktop_crypto_t *crypto, cons
         }
         else
         {
+            // read IV and data
             crypto_session__free_json(root);
             root = NULL;
             if (!_crypto_session_internal__content_envelope(text, length, &root, iv, &encoded_data))
@@ -1121,12 +1337,18 @@ static char *_crypto_session_internal__attachment(desktop_crypto_t *crypto, cons
                 goto label_finished;
             }
         }
+
+        // store data length
         length = clib__strlen(encoded_data);
     }
+
+    // refuse content without tag
     if (!encrypt && require_authentication && !version2)
     {
         goto label_finished;
     }
+
+    // create byte buffer
     size = encrypt ? (length < padding ? padding : length) : length / 4 * 3 + 3;
     bytes_capacity = size + 1;
     bytes = cJSON_malloc(bytes_capacity);
@@ -1135,6 +1357,8 @@ static char *_crypto_session_internal__attachment(desktop_crypto_t *crypto, cons
         goto label_finished;
     }
     clib__null_memory(bytes, size + 1);
+
+    // fill byte buffer
     if (encrypt)
     {
         if (!crypto_session__random(crypto, iv, sizeof(iv)))
@@ -1151,6 +1375,8 @@ static char *_crypto_session_internal__attachment(desktop_crypto_t *crypto, cons
     {
         size = written;
     }
+
+    // calculate keys, check tag
     if (version2)
     {
         if (!_crypto_session_internal__attachment_derive(keys, iv, derived))
@@ -1162,6 +1388,8 @@ static char *_crypto_session_internal__attachment(desktop_crypto_t *crypto, cons
             goto label_finished;
         }
     }
+
+    // apply four keys
     for (index = 0; index < 4; index++)
     {
         for (byte = 0; byte < sizeof(counter); byte++)
@@ -1170,21 +1398,29 @@ static char *_crypto_session_internal__attachment(desktop_crypto_t *crypto, cons
         }
         _crypto_session_internal__layer(version2 ? derived + index * 32 : keys->keys[index], counter, bytes, size);
     }
+
+    // build output text
     if (encrypt)
     {
+        // check encoded size
         capacity = (size + 2) / 3 * 4 + 1;
         if (capacity > limit + 1)
         {
             goto label_finished;
         }
+
+        // build JSON object
         root = cJSON_CreateObject();
         encoded = calloc(1, capacity);
         if (root && encoded && _crypto_session_internal__base64(encoded, capacity, bytes, size) && _crypto_session_internal__base64(iv_text, sizeof(iv_text), iv, sizeof(iv)) && cJSON_AddStringToObject(root, "iv", iv_text) && cJSON_AddStringToObject(root, "data", encoded))
         {
+            // add version and tag
             if (version2 && (!_crypto_session_internal__attachment_tag(derived, iv, bytes, size, tag) || !_crypto_session_internal__base64(tag_text, sizeof(tag_text), tag, sizeof(tag)) || !cJSON_AddNumberToObject(root, "v", 2) || !cJSON_AddStringToObject(root, "tag", tag_text)))
             {
                 goto label_finished;
             }
+
+            // convert JSON to text
             result = cJSON_PrintUnformatted(root);
             if (result && (uint64)clib__strlen(result) > limit)
             {
@@ -1195,12 +1431,15 @@ static char *_crypto_session_internal__attachment(desktop_crypto_t *crypto, cons
     }
     else
     {
+        // check zero padding
         index = clib__strlen((char *)bytes);
         plaintext_length = index;
         while (index < size && !bytes[index])
         {
             index++;
         }
+
+        // copy the plaintext
         if (index == size)
         {
             result = cJSON_malloc(plaintext_length + 1);
@@ -1212,9 +1451,12 @@ static char *_crypto_session_internal__attachment(desktop_crypto_t *crypto, cons
         }
     }
 label_finished:
+    // clear keys and tags
     mbedtls_platform_zeroize(derived, sizeof(derived));
     mbedtls_platform_zeroize(tag, sizeof(tag));
     mbedtls_platform_zeroize(expected_tag, sizeof(expected_tag));
+
+    // free the buffers
     crypto_session__free_json(root);
     if (bytes)
     {
@@ -1226,6 +1468,8 @@ label_finished:
         mbedtls_platform_zeroize(encoded, capacity);
         free(encoded);
     }
+
+    // clear counter and IV
     mbedtls_platform_zeroize(iv_text, sizeof(iv_text));
     mbedtls_platform_zeroize(counter, sizeof(counter));
     mbedtls_platform_zeroize(iv, sizeof(iv));
@@ -1293,12 +1537,17 @@ static boole _crypto_session_internal__channel_derive(const desktop_content_keys
     uint64 index = 0;
     boole result = FALSE;
 
+    // join keys and IVs
     for (index = 0; index < 4; index++)
     {
         clib__memcpy(material + index * 48, keys->keys[index], 32);
         clib__memcpy(material + index * 48 + 32, keys->ivs[index], 16);
     }
+
+    // calculate derived key
     result = mbedtls_hkdf(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), salt, sizeof(salt), material, sizeof(material), label, sizeof(label) - 1, derived, 32) == 0;
+
+    // clear joined keys
     mbedtls_platform_zeroize(material, sizeof(material));
     return result;
 }
@@ -1332,21 +1581,28 @@ char *crypto_session__channel_seal(const desktop_content_keys_t *keys, const cha
     uint64 offset = 17;
     size_t written = 0;
 
+    // check arguments
     if (!keys || !content)
     {
         return NULL;
     }
+
+    // count content length
     while (length <= limit && content[length])
     {
         length++;
     }
+
+    // check for flat JSON
     if (!_crypto_session_internal__flat_envelope(content, length, 4))
     {
         return NULL;
     }
+
+    // prepare AES context
     mbedtls_aes_init(&aes);
 
-    // Read internal content
+    // read internal content
     body = desktop_protocol__parse_json(content, length, limit, 1);
     version = cJSON_GetObjectItemCaseSensitive(body, "v");
     nonce = cJSON_GetObjectItemCaseSensitive(body, "iv");
@@ -1356,6 +1612,8 @@ char *crypto_session__channel_seal(const desktop_content_keys_t *keys, const cha
     {
         goto label_finished;
     }
+
+    // check version and tag
     if (version)
     {
         if (!cJSON_IsNumber(version) || version->valuedouble != 2 || cJSON_GetArraySize(body) != 4 || !cJSON_IsString(file_tag) || clib__strlen(file_tag->valuestring) != 44)
@@ -1368,6 +1626,8 @@ char *crypto_session__channel_seal(const desktop_content_keys_t *keys, const cha
     {
         goto label_finished;
     }
+
+    // decode data into packet
     data_length = clib__strlen(data->valuestring);
     packet_capacity = offset + data_length / 4 * 3 + 3;
     packet = calloc(1, packet_capacity);
@@ -1375,6 +1635,8 @@ char *crypto_session__channel_seal(const desktop_content_keys_t *keys, const cha
     {
         goto label_finished;
     }
+
+    // write flag and tag
     packet_length = offset + written;
     packet[0] = version ? 1 : 0;
     if (version && (mbedtls_base64_decode(packet + 17, 32, &written, (const ubyte *)file_tag->valuestring, 44) != 0 || written != 32))
@@ -1382,18 +1644,20 @@ char *crypto_session__channel_seal(const desktop_content_keys_t *keys, const cha
         goto label_finished;
     }
 
-    // Encrypt only the IV block
+    // encrypt only the IV block
     if (!_crypto_session_internal__channel_derive(keys, derived) || mbedtls_aes_setkey_enc(&aes, derived, 256) != 0 || mbedtls_aes_crypt_ecb(&aes, MBEDTLS_AES_ENCRYPT, iv, packet + 1) != 0)
     {
         goto label_finished;
     }
 
-    // Serialize the packet
+    // serialize the packet
     encoded_capacity = (packet_length + 2) / 3 * 4 + 1;
     if (encoded_capacity > limit)
     {
         goto label_finished;
     }
+
+    // build JSON text
     encoded = calloc(1, encoded_capacity);
     envelope = cJSON_CreateObject();
     if (encoded && envelope && _crypto_session_internal__base64(encoded, encoded_capacity, packet, packet_length) && cJSON_AddStringToObject(envelope, "message_value", encoded))
@@ -1407,6 +1671,7 @@ char *crypto_session__channel_seal(const desktop_content_keys_t *keys, const cha
     }
 
 label_finished:
+    // free the buffers
     crypto_session__free_json(body);
     crypto_session__free_json(envelope);
     if (packet)
@@ -1419,6 +1684,8 @@ label_finished:
         mbedtls_platform_zeroize(encoded, encoded_capacity);
         free(encoded);
     }
+
+    // clear key and IV
     mbedtls_aes_free(&aes);
     mbedtls_platform_zeroize(derived, sizeof(derived));
     mbedtls_platform_zeroize(iv, sizeof(iv));
@@ -1453,27 +1720,36 @@ char *crypto_session__channel_open(const desktop_content_keys_t *keys, const cha
     uint64 offset = 0;
     size_t written = 0;
 
+    // check arguments
     if (!keys || !text)
     {
         return NULL;
     }
+
+    // count text length
     while (length <= limit && text[length])
     {
         length++;
     }
+
+    // check for flat JSON
     if (!_crypto_session_internal__flat_envelope(text, length, 1))
     {
         return NULL;
     }
+
+    // prepare AES context
     mbedtls_aes_init(&aes);
 
-    // Validate public fields
+    // validate public fields
     envelope = desktop_protocol__parse_json(text, length, limit, 1);
     value = cJSON_GetObjectItemCaseSensitive(envelope, "message_value");
     if (!cJSON_IsObject(envelope) || cJSON_GetArraySize(envelope) != 1 || !cJSON_IsString(value) || !value->valuestring[0])
     {
         goto label_finished;
     }
+
+    // decode the packet
     data_length = clib__strlen(value->valuestring);
     packet_capacity = data_length / 4 * 3 + 3;
     packet = calloc(1, packet_capacity);
@@ -1482,6 +1758,8 @@ char *crypto_session__channel_open(const desktop_content_keys_t *keys, const cha
         goto label_finished;
     }
     packet_length = written;
+
+    // check type and length
     if (packet[0] > 1)
     {
         goto label_finished;
@@ -1492,13 +1770,13 @@ char *crypto_session__channel_open(const desktop_content_keys_t *keys, const cha
         goto label_finished;
     }
 
-    // Recover the random IV
+    // recover the random IV
     if (!_crypto_session_internal__channel_derive(keys, derived) || mbedtls_aes_setkey_dec(&aes, derived, 256) != 0 || mbedtls_aes_crypt_ecb(&aes, MBEDTLS_AES_DECRYPT, packet + 1, iv) != 0)
     {
         goto label_finished;
     }
 
-    // Restore the internal envelope
+    // restore the internal envelope
     encoded_capacity = (packet_length - offset + 2) / 3 * 4 + 1;
     encoded = calloc(1, encoded_capacity);
     body = cJSON_CreateObject();
@@ -1506,10 +1784,14 @@ char *crypto_session__channel_open(const desktop_content_keys_t *keys, const cha
     {
         goto label_finished;
     }
+
+    // add version and tag
     if (packet[0] && (!_crypto_session_internal__base64(file_tag_text, sizeof(file_tag_text), packet + 17, 32) || !cJSON_AddNumberToObject(body, "v", 2) || !cJSON_AddStringToObject(body, "tag", file_tag_text)))
     {
         goto label_finished;
     }
+
+    // convert JSON to text
     result = cJSON_PrintUnformatted(body);
     if (result && (uint64)clib__strlen(result) > limit)
     {
@@ -1518,6 +1800,7 @@ char *crypto_session__channel_open(const desktop_content_keys_t *keys, const cha
     }
 
 label_finished:
+    // free the buffers
     crypto_session__free_json(envelope);
     crypto_session__free_json(body);
     if (packet)
@@ -1530,6 +1813,8 @@ label_finished:
         mbedtls_platform_zeroize(encoded, encoded_capacity);
         free(encoded);
     }
+
+    // clear key, IV, tag
     mbedtls_aes_free(&aes);
     mbedtls_platform_zeroize(derived, sizeof(derived));
     mbedtls_platform_zeroize(iv, sizeof(iv));
@@ -1552,12 +1837,17 @@ static boole _crypto_session_internal__direct_file_derive(const desktop_content_
     uint64 index = 0;
     boole result = FALSE;
 
+    // join keys and IVs
     for (index = 0; index < 4; index++)
     {
         clib__memcpy(material + index * 48, keys->keys[index], 32);
         clib__memcpy(material + index * 48 + 32, keys->ivs[index], 16);
     }
+
+    // calculate file keys
     result = mbedtls_hkdf(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), salt, sizeof(salt), material, sizeof(material), label, sizeof(label) - 1, derived, 160) == 0;
+
+    // clear joined keys
     mbedtls_platform_zeroize(material, sizeof(material));
     return result;
 }
@@ -1576,8 +1866,11 @@ static boole _crypto_session_internal__direct_file_tag(const ubyte derived[160],
     mbedtls_md_context_t context = { 0 };
     boole result = FALSE;
 
+    // calculate HMAC tag
     mbedtls_md_init(&context);
     result = mbedtls_md_setup(&context, mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), 1) == 0 && mbedtls_md_hmac_starts(&context, derived + 128, 32) == 0 && mbedtls_md_hmac_update(&context, label, sizeof(label) - 1) == 0 && mbedtls_md_hmac_update(&context, data, length) == 0 && mbedtls_md_hmac_finish(&context, tag) == 0;
+
+    // free hash context
     mbedtls_md_free(&context);
     return result;
 }
@@ -1613,26 +1906,34 @@ static char *_crypto_session_internal__direct_content(const desktop_content_keys
     uint64 index = 0;
     size_t written = 0;
 
+    // check arguments
     if (!keys || !text || padding > 4096)
     {
         return NULL;
     }
+
+    // count text length
     while (length <= limit && text[length])
     {
         length++;
     }
+
+    // check text length
     if (!length || length > limit)
     {
         return NULL;
     }
 
-    // Read the exact direct shape
+    // read the exact direct shape
     if (!encrypt)
     {
+        // check for flat JSON
         if (!_crypto_session_internal__flat_envelope(text, length, authenticated ? 2 : 1))
         {
             goto label_finished;
         }
+
+        // read and check fields
         body = desktop_protocol__parse_json(text, length, limit, 1);
         data = cJSON_GetObjectItemCaseSensitive(body, "data");
         code = cJSON_GetObjectItemCaseSensitive(body, "tag");
@@ -1640,13 +1941,19 @@ static char *_crypto_session_internal__direct_content(const desktop_content_keys
         {
             goto label_finished;
         }
+
+        // decode the tag
         if (authenticated && (!cJSON_IsString(code) || clib__strlen(code->valuestring) != 44 || mbedtls_base64_decode(tag, sizeof(tag), &written, (const ubyte *)code->valuestring, 44) != 0 || written != 32))
         {
             goto label_finished;
         }
+
+        // store data and length
         encoded_data = data->valuestring;
         length = clib__strlen(encoded_data);
     }
+
+    // create byte buffer
     size = encrypt ? (length < padding ? padding : length) : length / 4 * 3 + 3;
     bytes_capacity = size + 1;
     bytes = cJSON_malloc(bytes_capacity);
@@ -1655,6 +1962,8 @@ static char *_crypto_session_internal__direct_content(const desktop_content_keys
         goto label_finished;
     }
     clib__null_memory(bytes, bytes_capacity);
+
+    // fill byte buffer
     if (encrypt)
     {
         clib__memcpy(bytes, text, length);
@@ -1668,7 +1977,7 @@ static char *_crypto_session_internal__direct_content(const desktop_content_keys
         size = written;
     }
 
-    // Check files before decryption
+    // check files before decryption
     if (authenticated)
     {
         if (!_crypto_session_internal__direct_file_derive(keys, derived))
@@ -1681,28 +1990,37 @@ static char *_crypto_session_internal__direct_content(const desktop_content_keys
         }
     }
 
-    // Use the four original IVs
+    // use the four original IVs
     for (index = 0; index < 4; index++)
     {
         _crypto_session_internal__layer(authenticated ? derived + index * 32 : keys->keys[index], keys->ivs[index], bytes, size);
     }
+
+    // build output text
     if (encrypt)
     {
+        // check encoded size
         encoded_capacity = (size + 2) / 3 * 4 + 1;
         if (encoded_capacity > limit)
         {
             goto label_finished;
         }
+
+        // build JSON object
         body = cJSON_CreateObject();
         encoded = calloc(1, encoded_capacity);
         if (!body || !encoded || !_crypto_session_internal__base64(encoded, encoded_capacity, bytes, size) || !cJSON_AddStringToObject(body, "data", encoded))
         {
             goto label_finished;
         }
+
+        // add HMAC tag
         if (authenticated && (!_crypto_session_internal__direct_file_tag(derived, bytes, size, tag) || !_crypto_session_internal__base64(tag_text, sizeof(tag_text), tag, sizeof(tag)) || !cJSON_AddStringToObject(body, "tag", tag_text)))
         {
             goto label_finished;
         }
+
+        // convert JSON to text
         result = cJSON_PrintUnformatted(body);
         if (result && (uint64)clib__strlen(result) > limit)
         {
@@ -1712,12 +2030,15 @@ static char *_crypto_session_internal__direct_content(const desktop_content_keys
     }
     else
     {
+        // check zero padding
         plaintext_length = clib__strlen((char *)bytes);
         index = plaintext_length;
         while (index < size && !bytes[index])
         {
             index++;
         }
+
+        // copy the plaintext
         if (index == size)
         {
             result = cJSON_malloc(plaintext_length + 1);
@@ -1730,6 +2051,7 @@ static char *_crypto_session_internal__direct_content(const desktop_content_keys
     }
 
 label_finished:
+    // free the buffers
     crypto_session__free_json(body);
     if (bytes)
     {
@@ -1741,6 +2063,8 @@ label_finished:
         mbedtls_platform_zeroize(encoded, encoded_capacity);
         free(encoded);
     }
+
+    // clear keys and tags
     mbedtls_platform_zeroize(derived, sizeof(derived));
     mbedtls_platform_zeroize(tag, sizeof(tag));
     mbedtls_platform_zeroize(expected, sizeof(expected));
@@ -1800,10 +2124,13 @@ char *crypto_session__direct_seal(desktop_crypto_t *crypto, const char *public_k
     size_t written = 0;
     uint64 length = content ? clib__strlen(content) : 0;
 
+    // check arguments
     if (!crypto || !public_key || !keys || !length || length > limit || !_crypto_session_internal__flat_envelope(content, length, 2))
     {
         return NULL;
     }
+
+    // read data field
     body = desktop_protocol__parse_json(content, length, limit, 1);
     data = cJSON_GetObjectItemCaseSensitive(body, "data");
     tag = cJSON_GetObjectItemCaseSensitive(body, "tag");
@@ -1813,13 +2140,16 @@ char *crypto_session__direct_seal(desktop_crypto_t *crypto, const char *public_k
     }
     value = data->valuestring;
 
-    // Preserve file authentication
+    // preserve file authentication
     if (tag)
     {
+        // check and decode tag
         if (cJSON_GetArraySize(body) != 2 || !cJSON_IsString(tag) || clib__strlen(tag->valuestring) != 44 || mbedtls_base64_decode(decoded_tag, sizeof(decoded_tag), &written, (const ubyte *)tag->valuestring, 44) != 0 || written != 32)
         {
             goto label_finished;
         }
+
+        // build file JSON
         file_body = cJSON_CreateObject();
         if (!file_body || !cJSON_AddStringToObject(file_body, "data", value) || !cJSON_AddStringToObject(file_body, "tag", tag->valuestring))
         {
@@ -1833,7 +2163,7 @@ char *crypto_session__direct_seal(desktop_crypto_t *crypto, const char *public_k
         goto label_finished;
     }
 
-    // Encrypt the four key pairs
+    // encrypt the four key pairs
     keys_json = crypto_session__keys_json(keys);
     protected_keys = cJSON_CreateObject();
     if (!value || !keys_json || !protected_keys || !cJSON_AddRawToObject(protected_keys, "keys", keys_json))
@@ -1842,6 +2172,8 @@ char *crypto_session__direct_seal(desktop_crypto_t *crypto, const char *public_k
     }
     protected_json = cJSON_PrintUnformatted(protected_keys);
     encrypted_keys = protected_json ? crypto_session__hybrid_encrypt(crypto, public_key, protected_json) : NULL;
+
+    // build JSON text
     envelope = cJSON_CreateObject();
     if (envelope && encrypted_keys && cJSON_AddStringToObject(envelope, "message_keys", encrypted_keys) && cJSON_AddStringToObject(envelope, "message_value", value))
     {
@@ -1854,6 +2186,7 @@ char *crypto_session__direct_seal(desktop_crypto_t *crypto, const char *public_k
     }
 
 label_finished:
+    // free JSON and texts
     crypto_session__free_json(body);
     crypto_session__free_json(protected_keys);
     crypto_session__free_json(file_body);
@@ -1890,27 +2223,36 @@ char *crypto_session__direct_open(desktop_crypto_t *crypto, const struct cJSON *
     size_t written = 0;
     uint64 length = 0;
 
+    // check arguments
     if (!keys)
     {
         return NULL;
     }
+
+    // clear the keys
     clib__null_memory(keys, sizeof(*keys));
+
+    // check JSON fields
     if (!crypto || !cJSON_IsObject(envelope) || !cJSON_IsString(encrypted_keys) || clib__strlen(encrypted_keys->valuestring) > 16384 || !cJSON_IsString(value) || !value->valuestring[0] || cJSON_GetArraySize(envelope) != 2)
     {
         return NULL;
     }
+
+    // check value length
     length = clib__strlen(value->valuestring);
     if (length > limit)
     {
         return NULL;
     }
 
-    // Recover recipient-only data
+    // recover recipient-only data
     protected_json = crypto_session__hybrid_decrypt(crypto, encrypted_keys->valuestring);
     if (!protected_json)
     {
         goto label_finished;
     }
+
+    // read decrypted keys
     protected_keys = desktop_protocol__parse_json(protected_json, clib__strlen(protected_json), 16384, 4);
     if (!cJSON_IsObject(protected_keys) || cJSON_GetArraySize(protected_keys) != 1)
     {
@@ -1922,12 +2264,14 @@ char *crypto_session__direct_open(desktop_crypto_t *crypto, const struct cJSON *
         goto label_finished;
     }
 
-    // Restore the internal content shape
+    // restore the internal content shape
     body = cJSON_CreateObject();
     if (!body)
     {
         goto label_finished;
     }
+
+    // copy data and tag
     if (value->valuestring[0] == '{')
     {
         if (!_crypto_session_internal__flat_envelope(value->valuestring, length, 2))
@@ -1946,15 +2290,20 @@ char *crypto_session__direct_open(desktop_crypto_t *crypto, const struct cJSON *
     {
         goto label_finished;
     }
+
+    // convert JSON to text
     result = cJSON_PrintUnformatted(body);
 
 label_finished:
+    // free JSON and texts
     crypto_session__free_json(protected_keys);
     crypto_session__free_json(file_body);
     crypto_session__free_json(body);
     crypto_session__free_text(protected_json);
     crypto_session__free_text(keys_json);
     mbedtls_platform_zeroize(decoded_tag, sizeof(decoded_tag));
+
+    // clear keys on failure
     if (!result)
     {
         mbedtls_platform_zeroize(keys, sizeof(*keys));
@@ -1992,15 +2341,18 @@ char *crypto_session__hybrid_encrypt(desktop_crypto_t *crypto, const char *publi
     uint64 capacity = 0;
     uint64 index = 0;
 
+    // prepare the contexts
     mbedtls_rsa_init(&rsa);
     mbedtls_aes_init(&aes);
     mbedtls_mpi_init(&modulus);
     mbedtls_mpi_init(&exponent);
+
+    // prepare both keys
     if (!length || length > 16384 || mbedtls_base64_decode(raw_modulus, sizeof(raw_modulus), &modulus_length, (const ubyte *)public_key, clib__strlen(public_key)) != 0 || modulus_length < 256 || mbedtls_mpi_read_binary(&modulus, raw_modulus, modulus_length) != 0 || mbedtls_mpi_lset(&exponent, 3) != 0 || mbedtls_rsa_import(&rsa, &modulus, NULL, NULL, NULL, &exponent) != 0 || mbedtls_rsa_complete(&rsa) != 0 || mbedtls_rsa_check_pubkey(&rsa) != 0 || mbedtls_rsa_set_padding(&rsa, MBEDTLS_RSA_PKCS_V15, MBEDTLS_MD_NONE) != 0 || mbedtls_ctr_drbg_random(&crypto->random, key, sizeof(key)) != 0 || mbedtls_ctr_drbg_random(&crypto->random, iv, sizeof(iv)) != 0)
     {
         goto label_finished;
     }
-    // cryptico encodes each binary key byte as a Unicode character before RSA padding.
+    // cryptico encodes each binary key byte as a Unicode character before RSA padding
     for (index = 0; index < sizeof(key); index++)
     {
         if (key[index] >= 128)
@@ -2013,18 +2365,24 @@ char *crypto_session__hybrid_encrypt(desktop_crypto_t *crypto, const char *publi
             utf8_key[key_length++] = key[index];
         }
     }
+
+    // create buffers, encrypt key
     body = calloc(1, padded + 16);
     body_text = calloc(1, body_capacity);
     if (!body || !body_text || mbedtls_rsa_pkcs1_encrypt(&rsa, mbedtls_ctr_drbg_random, &crypto->random, key_length, utf8_key, encrypted_key) != 0)
     {
         goto label_finished;
     }
+
+    // encrypt and encode text
     clib__memcpy(body, iv, sizeof(iv));
     clib__memcpy(body + 16, text, length);
     if (mbedtls_aes_setkey_enc(&aes, key, 256) != 0 || mbedtls_aes_crypt_cbc(&aes, MBEDTLS_AES_ENCRYPT, padded, iv, body + 16, body + 16) != 0 || !_crypto_session_internal__base64(key_text, sizeof(key_text), encrypted_key, modulus_length) || !_crypto_session_internal__base64(body_text, body_capacity, body, padded + 16))
     {
         goto label_finished;
     }
+
+    // join key and body
     capacity = clib__strlen(key_text) + clib__strlen(body_text) + 2;
     result = cJSON_malloc(capacity);
     if (result)
@@ -2033,12 +2391,17 @@ char *crypto_session__hybrid_encrypt(desktop_crypto_t *crypto, const char *publi
         clib__string_format(result, capacity, "%s?%s", key_text, body_text);
     }
 label_finished:
+    // free the contexts
     mbedtls_rsa_free(&rsa);
     mbedtls_aes_free(&aes);
     mbedtls_mpi_free(&modulus);
     mbedtls_mpi_free(&exponent);
+
+    // clear AES key
     mbedtls_platform_zeroize(key, sizeof(key));
     mbedtls_platform_zeroize(utf8_key, sizeof(utf8_key));
+
+    // clear and free body
     if (body)
     {
         mbedtls_platform_zeroize(body, padded + 16);
@@ -2049,6 +2412,8 @@ label_finished:
         mbedtls_platform_zeroize(body_text, body_capacity);
     }
     free(body_text);
+
+    // clear local buffers
     mbedtls_platform_zeroize(raw_modulus, sizeof(raw_modulus));
     mbedtls_platform_zeroize(iv, sizeof(iv));
     mbedtls_platform_zeroize(encrypted_key, sizeof(encrypted_key));
@@ -2081,23 +2446,29 @@ char *crypto_session__hybrid_decrypt(desktop_crypto_t *crypto, const char *text)
     uint64 index = 0;
     int64 value = 0;
 
+    // decode encrypted key
     mbedtls_aes_init(&aes);
     if (!separator || clib__strlen(text) > 32768 || rsa_length > sizeof(ciphertext) || mbedtls_base64_decode(ciphertext, sizeof(ciphertext), &length, (const ubyte *)text, (uint64)(separator - text)) != 0 || !length || length > rsa_length)
     {
         goto label_finished;
     }
-    // The browser's bigint encoder omits leading zero ciphertext bytes.
+    // the browser's bigint encoder omits leading zero ciphertext bytes
     if (length < rsa_length)
     {
         clib__memmove(ciphertext + rsa_length - length, ciphertext, length);
         clib__null_memory(ciphertext, rsa_length - length);
     }
+
+    // decrypt key text
     if (mbedtls_rsa_pkcs1_decrypt(&crypto->rsa, mbedtls_ctr_drbg_random, &crypto->random, &decoded_length, ciphertext, utf8_key, sizeof(utf8_key)) != 0)
     {
         goto label_finished;
     }
+
+    // convert UTF-8 to bytes
     for (index = 0; index < decoded_length; index++)
     {
+        // read one character
         value = utf8_key[index];
         if (value >= 128)
         {
@@ -2107,28 +2478,36 @@ char *crypto_session__hybrid_decrypt(desktop_crypto_t *crypto, const char *text)
             }
             value = ((value & 3) << 6) | (utf8_key[++index] & 63);
         }
+
+        // store key byte
         if (key_length == sizeof(key))
         {
             goto label_finished;
         }
         key[key_length++] = (ubyte)value;
     }
+
+    // check key size
     if (key_length != sizeof(key))
     {
         goto label_finished;
     }
+
+    // decode the body
     capacity = clib__strlen(separator + 1) + 1;
     body = calloc(1, capacity);
     if (!body || mbedtls_base64_decode(body, capacity - 1, &body_length, (const ubyte *)(separator + 1), capacity - 1) != 0 || body_length < 32 || body_length % 16)
     {
         goto label_finished;
     }
+
+    // decrypt the body
     clib__memcpy(iv, body, sizeof(iv));
     if (mbedtls_aes_setkey_dec(&aes, key, 256) != 0 || mbedtls_aes_crypt_cbc(&aes, MBEDTLS_AES_DECRYPT, body_length - 16, iv, body + 16, body + 16) != 0)
     {
         goto label_finished;
     }
-    // Reject hidden nonzero bytes after a terminator before returning an exact-size string.
+    // reject hidden nonzero bytes after a terminator before returning an exact-size string
     length = 0;
     while (length < body_length - 16 && body[16 + length])
     {
@@ -2141,6 +2520,8 @@ char *crypto_session__hybrid_decrypt(desktop_crypto_t *crypto, const char *text)
             goto label_finished;
         }
     }
+
+    // copy the plaintext
     result = cJSON_malloc(length + 1);
     if (result)
     {
@@ -2148,6 +2529,7 @@ char *crypto_session__hybrid_decrypt(desktop_crypto_t *crypto, const char *text)
         clib__memcpy(result, body + 16, length);
     }
 label_finished:
+    // clear the buffers
     mbedtls_aes_free(&aes);
     mbedtls_platform_zeroize(key, sizeof(key));
     mbedtls_platform_zeroize(utf8_key, sizeof(utf8_key));
@@ -2174,26 +2556,37 @@ cJSON *crypto_session__negotiate(desktop_crypto_t *crypto, const cJSON *policy, 
     cJSON *request = NULL_POINTER;
     cJSON *mixes = NULL_POINTER;
     cJSON *mix = NULL_POINTER;
+
+    // check the policy
     if (crypto->policy.exchanges || !cJSON_IsNumber(version) || version->valuedouble != 2 || !cJSON_IsNumber(exchanges) || exchanges->valuedouble != exchanges->valueint || exchanges->valueint < 1 || exchanges->valueint > LEMON_MAX_DH_EXCHANGES || !cJSON_IsNumber(layers) || layers->valuedouble != layers->valueint || layers->valueint < 1 || layers->valueint > LEMON_MAX_SESSION_LAYERS || !cJSON_IsBool(random) || !ciphers__type(cipher) || !crypto_media__hex(nonce, nonce_bytes, sizeof(nonce_bytes)))
     {
         return NULL;
     }
+
+    // store the policy
     crypto->policy.exchanges = exchanges->valueint;
     crypto->policy.layers = layers->valueint;
     crypto->policy.cipher = ciphers__type(cipher);
     crypto->policy.random_layer = cJSON_IsTrue(random);
+
+    // start transcript hash
     if (!keys_session__begin_transcript(crypto->transcript, &crypto->policy, nonce, public_key))
     {
         return NULL;
     }
+
+    // build the request
     request = cJSON_CreateObject();
     mixes = cJSON_AddArrayToObject(request, "dh_public_mixes");
     if (!mixes || !cJSON_AddStringToObject(request, "type", "public_key_info") || !cJSON_AddStringToObject(request, "value", public_key) || !cJSON_AddStringToObject(request, "verification_string", "welcome") || !cJSON_AddNumberToObject(request, "crypto_version", 2) || !cJSON_AddStringToObject(request, "crypto_nonce", nonce))
     {
         goto failed;
     }
+
+    // add every public mix
     for (unsigned int index = 0; index < crypto->policy.exchanges; index++)
     {
+        // create public mix
         if (index == 0)
         {
             clib__string_copy(crypto->mixes[index], sizeof(crypto->mixes[index]), crypto->first_mix);
@@ -2202,6 +2595,8 @@ cJSON *crypto_session__negotiate(desktop_crypto_t *crypto, const cJSON *policy, 
         {
             goto failed;
         }
+
+        // store exponent and mix
         mix = cJSON_CreateString(crypto->mixes[index]);
         if (mbedtls_mpi_copy(&crypto->exponents[index], &crypto->exponent) != 0 || !mix || !cJSON_AddItemToArray(mixes, mix))
         {
@@ -2209,12 +2604,15 @@ cJSON *crypto_session__negotiate(desktop_crypto_t *crypto, const cJSON *policy, 
             goto failed;
         }
     }
+
+    // add first mix
     if (!cJSON_AddStringToObject(request, "dh_public_mix", crypto->mixes[0]))
     {
         goto failed;
     }
     return request;
 failed:
+    // free the request
     crypto_session__free_json(request);
     return NULL;
 }
@@ -2236,17 +2634,26 @@ boole crypto_session__finish_negotiation(desktop_crypto_t *crypto, const cJSON *
     const cJSON *probe = cJSON_GetObjectItemCaseSensitive(reply, "random_probe");
     int random_type = 0;
     boole success = FALSE;
+
+    // finish without policy
     if (!crypto->policy.exchanges)
     {
         return !reply && crypto_session__finish_dh(crypto, first);
     }
+
+    // copy transcript hash
     clib__memcpy(transcript, crypto->transcript, sizeof(transcript));
+
+    // check reply fields
     if (!cJSON_IsNumber(version) || version->valuedouble != 2 || !cJSON_IsArray(mixes) || cJSON_GetArraySize(mixes) != (int)crypto->policy.exchanges || !first || !cJSON_IsString(cJSON_GetArrayItem(mixes, 0)) || clib__strcmp(first, cJSON_GetArrayItem(mixes, 0)->valuestring) != 0 || mbedtls_mpi_sub_int(&maximum, &crypto->modulus, 1) != 0)
     {
         goto done;
     }
+
+    // read every public mix
     for (unsigned int index = 0; index < crypto->policy.exchanges; index++)
     {
+        // check mix text
         const char *text = cJSON_GetStringValue(cJSON_GetArrayItem(mixes, index));
         if (!text || !text[0] || clib__strlen(text) >= sizeof(decimal))
         {
@@ -2259,20 +2666,28 @@ boole crypto_session__finish_negotiation(desktop_crypto_t *crypto, const cJSON *
                 goto done;
             }
         }
+
+        // calculate and hash secret
         if (mbedtls_mpi_read_string(&mix, 10, text) != 0 || mbedtls_mpi_cmp_int(&mix, 1) <= 0 || mbedtls_mpi_cmp_mpi(&mix, &maximum) >= 0 || mbedtls_mpi_exp_mod(&shared, &mix, &crypto->exponents[index], &crypto->modulus, NULL) != 0 || mbedtls_mpi_write_string(&shared, 10, decimal, sizeof(decimal), &written) != 0 || !keys_session__mix(secret, (ubyte *)decimal, clib__strlen(decimal)) || !keys_session__mix(transcript, (ubyte *)crypto->mixes[index], clib__strlen(crypto->mixes[index])) || !keys_session__mix(transcript, (ubyte *)text, clib__strlen(text)))
         {
             goto done;
         }
     }
+
+    // find random cipher
     if (crypto->policy.random_layer)
     {
         static const int candidates[] = { LEMON_AES256, LEMON_CHACHA20, LEMON_CAMELLIA256, LEMON_TWOFISH256, LEMON_SERPENT256, LEMON_TRIVIUM80 };
         ubyte iv[16], encrypted[32], plaintext[32];
         unsigned int matches = 0;
+
+        // read probe fields
         if (!crypto_media__hex(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(probe, "iv")), iv, 16) || !crypto_media__hex(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(probe, "data")), encrypted, 32) || !crypto_media__hex(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(probe, "tag")), received, 32))
         {
             goto done;
         }
+
+        // try every cipher
         for (unsigned int index = 0; index < sizeof(candidates) / sizeof(candidates[0]); index++)
         {
             clib__memcpy(plaintext, encrypted, 32);
@@ -2282,6 +2697,8 @@ boole crypto_session__finish_negotiation(desktop_crypto_t *crypto, const cJSON *
                 matches++;
             }
         }
+
+        // require one match
         ciphers__clear(plaintext, sizeof(plaintext));
         if (matches != 1)
         {
@@ -2292,13 +2709,18 @@ boole crypto_session__finish_negotiation(desktop_crypto_t *crypto, const cJSON *
     {
         goto done;
     }
+
+    // calculate keys, check proof
     success = keys_session__derive(secret, transcript, crypto->policy.cipher, crypto->policy.layers, random_type, &crypto->negotiated) && crypto_media__hex(cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(reply, "finished")), received, 32) && ciphers__hmac(crypto->negotiated.server_mac, transcript, 32, expected) && mbedtls_ct_memcmp(expected, received, 32) == 0;
+
+    // store session keys
     if (success)
     {
         clib__memcpy(crypto->session_keys, crypto->negotiated.client_to_server[0].bytes, 32);
         clib__memcpy(crypto->session_keys + 32, crypto->negotiated.client_mac, 32);
     }
 done:
+    // free big numbers
     mbedtls_mpi_free(&mix);
     mbedtls_mpi_free(&maximum);
     mbedtls_mpi_free(&shared);
@@ -2307,8 +2729,12 @@ done:
     {
         mbedtls_mpi_free(&crypto->exponents[index]);
     }
+
+    // clear the secrets
     ciphers__clear(secret, sizeof(secret));
     ciphers__clear(decimal, sizeof(decimal));
+
+    // set session state
     crypto->session_ready = success;
     if (!success)
     {

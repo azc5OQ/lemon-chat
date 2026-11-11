@@ -27,10 +27,13 @@ void server_msg__channel__read_key_policy(desktop_session_t *session, const cJSO
     boole changed = FALSE;
     boole authentication = clib__strcmp(type, "authentication_status") == 0;
 
+    // check the message type
     if (!authentication && clib__strcmp(type, "server_policy") != 0)
     {
         return;
     }
+
+    // use the default values
     if (authentication)
     {
         session->key_reuse_enabled = TRUE;
@@ -40,7 +43,7 @@ void server_msg__channel__read_key_policy(desktop_session_t *session, const cJSO
         session->key_reuse_leave_min_clients = 100;
     }
 
-    // Apply valid announced values.
+    // apply valid announced values
     for (index = 0; index < 3; index++)
     {
         value = cJSON_GetObjectItemCaseSensitive(message, flags[index]);
@@ -50,6 +53,8 @@ void server_msg__channel__read_key_policy(desktop_session_t *session, const cJSO
         }
         changed |= previous_flags[index] != *values[index];
     }
+
+    // read the client thresholds
     for (index = 0; index < 2; index++)
     {
         number = server_msg__read_number(message, limits[index]);
@@ -60,7 +65,7 @@ void server_msg__channel__read_key_policy(desktop_session_t *session, const cJSO
         changed |= previous_limits[index] != *thresholds[index];
     }
 
-    // Apply changed rules to keys already in use.
+    // apply changed rules to keys already in use
     if (changed)
     {
         client_msg__channel__refresh_keys(session);
@@ -93,19 +98,26 @@ void server_msg__dispatch(desktop_session_t *session, const cJSON *message)
     boole valid = 1;
     boole client_list = clib__strcmp(type, "client_list") == 0;
 
+    // copy the previous client
     if (had_client)
     {
         previous = session->model.clients[slot];
     }
+
+    // call the receive functions
     server_msg__sounds__receive(session, message);
     desktop_voice__message(session, message);
     server_msg__actions__receive(session, message);
     server_msg__attachments__receive(session, message);
 
+    // choose by message type
     if (clib__strcmp(type, "client_list") == 0 || clib__strcmp(type, "channel_list") == 0)
     {
+        // read the list array
         items = cJSON_GetObjectItemCaseSensitive(message, client_list ? "clients" : "channels");
         valid = cJSON_IsArray(items);
+
+        // clear the stored list
         if (client_list)
         {
             session->model.client_count = 0;
@@ -114,10 +126,14 @@ void server_msg__dispatch(desktop_session_t *session, const cJSON *message)
         {
             session->model.channel_count = 0;
         }
+
+        // read every item
         cJSON_ArrayForEach(item, items)
         {
             valid = valid && (client_list ? server_msg__connection__read_client(session, item) : server_msg__channel__read_channel(session, item));
         }
+
+        // request new keys
         if (client_list && session->maintainer >= 0)
         {
             client_msg__channel__refresh_keys(session);
@@ -129,6 +145,7 @@ void server_msg__dispatch(desktop_session_t *session, const cJSON *message)
     }
     else if (clib__strcmp(type, "client_connect") == 0)
     {
+        // add the connected client
         valid = server_msg__connection__read_client(session, message);
         slot = desktop_session__client(session, id);
         if (valid && slot >= 0)
@@ -138,11 +155,14 @@ void server_msg__dispatch(desktop_session_t *session, const cJSON *message)
     }
     else if (clib__strcmp(type, "client_disconnect") == 0 && slot >= 0)
     {
+        // remove the client
         session->model.client_count--;
         session->model.clients[slot] = session->model.clients[session->model.client_count];
         clib__memcpy(session->client_keys[slot], session->client_keys[session->model.client_count], sizeof(session->client_keys[slot]));
         clib__null_memory(&session->model.clients[session->model.client_count], sizeof(session->model.clients[0]));
         clib__null_memory(session->client_keys[session->model.client_count], sizeof(session->client_keys[0]));
+
+        // apply the member change
         if (id == session->model.local_id)
         {
             desktop_session__keys_reset(session);
@@ -154,11 +174,14 @@ void server_msg__dispatch(desktop_session_t *session, const cJSON *message)
     }
     else if (clib__strcmp(type, "channel_join") == 0 && slot >= 0)
     {
+        // store the new channel
         session->model.clients[slot].channel = channel;
         session->model.clients[slot].access_known = 0;
         session->model.clients[slot].access = 0;
         audio = server_msg__read_number(message, "audio_state");
         session->model.clients[slot].audio = audio >= 1 && audio <= 4 ? (int)audio : 3;
+
+        // apply the member change
         if (id == session->model.local_id)
         {
             session->model.channel = channel;
@@ -171,6 +194,7 @@ void server_msg__dispatch(desktop_session_t *session, const cJSON *message)
     }
     else if (clib__strcmp(type, "client_rename") == 0 && slot >= 0)
     {
+        // copy the new name
         valid = clib__string_copy(session->model.clients[slot].name, sizeof(session->model.clients[slot].name), server_msg__read_string(message, "new_username"));
         if (valid && id == session->model.local_id)
         {
@@ -179,11 +203,13 @@ void server_msg__dispatch(desktop_session_t *session, const cJSON *message)
     }
     else if (clib__strcmp(type, "audio_state_of_single_client") == 0 && slot >= 0)
     {
+        // store the audio state
         audio = server_msg__read_number(message, "value");
         session->model.clients[slot].audio = audio >= 1 && audio <= 4 ? (int)audio : 3;
     }
     else if (clib__strcmp(type, "current_channel_active_microphone_usage") == 0)
     {
+        // read the audio states
         items = cJSON_GetObjectItemCaseSensitive(message, "clients");
         cJSON_ArrayForEach(item, items)
         {
@@ -197,6 +223,7 @@ void server_msg__dispatch(desktop_session_t *session, const cJSON *message)
     }
     else if ((clib__strcmp(type, "client_going_to_idle_mode") == 0 || clib__strcmp(type, "client_coming_back_from_idle_mode") == 0) && slot >= 0)
     {
+        // store the idle state
         session->model.clients[slot].idle = clib__strcmp(type, "client_going_to_idle_mode") == 0;
         session->model.clients[slot].access_known = 0;
         session->model.clients[slot].access = 0;
@@ -204,6 +231,8 @@ void server_msg__dispatch(desktop_session_t *session, const cJSON *message)
         {
             session->model.clients[slot].channel = channel;
         }
+
+        // apply the member change
         if (id == session->model.local_id)
         {
             session->model.idle = session->model.clients[slot].idle;
@@ -218,6 +247,7 @@ void server_msg__dispatch(desktop_session_t *session, const cJSON *message)
     }
     else if (clib__strcmp(type, "channel_create") == 0)
     {
+        // add the created channel
         valid = server_msg__channel__read_channel(session, message);
         if (valid && server_msg__read_number(message, "channel_creator_id") == session->model.local_id)
         {
@@ -229,6 +259,7 @@ void server_msg__dispatch(desktop_session_t *session, const cJSON *message)
     }
     else if (clib__strcmp(type, "channel_delete") == 0)
     {
+        // remove the deleted channel
         slot = desktop_session__channel(session, channel);
         if (slot >= 0)
         {
@@ -245,6 +276,7 @@ void server_msg__dispatch(desktop_session_t *session, const cJSON *message)
     }
     else if (clib__strcmp(type, "channel_edit") == 0)
     {
+        // update the edited channel
         valid = server_msg__channel__read_channel(session, message);
         if (valid && server_msg__read_number(message, "channel_editor_id") == session->model.local_id)
         {
@@ -256,13 +288,18 @@ void server_msg__dispatch(desktop_session_t *session, const cJSON *message)
     }
     else if (clib__strcmp(type, "channel_maintainer_id") == 0 && channel == session->model.channel)
     {
+        // read the new maintainer
         maintainer = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(message, "has_maintainer")) ? server_msg__read_number(message, "maintainer_id") : -1;
         generation = server_msg__read_number(message, "maintainer_generation");
         slot = desktop_session__client(session, maintainer);
+
+        // check the maintainer client
         if (generation < 0 || (maintainer >= 0 && (slot < 0 || session->model.clients[slot].channel != channel || session->model.clients[slot].idle || session->model.clients[slot].music)))
         {
             return;
         }
+
+        // store the maintainer
         session->maintainer = maintainer;
         session->generation = generation;
         client_msg__channel__refresh_keys(session);
@@ -273,15 +310,20 @@ void server_msg__dispatch(desktop_session_t *session, const cJSON *message)
     }
     else if (clib__strcmp(type, "channel_chat_message") == 0 && channel == session->model.channel && session->model.keys_ready)
     {
+        // skip ignored senders
         index = desktop_session__client(session, server_msg__read_number(message, "sender_id"));
         if (index >= 0 && session->model.clients[index].ignored)
         {
             return;
         }
+
+        // decrypt with current keys
         encrypted_body = crypto_session__channel_open(&session->keys, server_msg__read_string(message, "value"));
         plaintext = encrypted_body ? crypto_session__content_decrypt(&session->keys, encrypted_body) : NULL;
         crypto_session__free_text(encrypted_body);
         encrypted_body = NULL;
+
+        // try the previous keys
         if (!plaintext && session->have_previous)
         {
             encrypted_body = crypto_session__channel_open(&session->previous_keys, server_msg__read_string(message, "value"));
@@ -289,10 +331,14 @@ void server_msg__dispatch(desktop_session_t *session, const cJSON *message)
             crypto_session__free_text(encrypted_body);
             encrypted_body = NULL;
         }
+
+        // add the chat message
         if (plaintext)
         {
             server_msg__chat__receive_text(session, channel, -1, server_msg__read_string(message, "sender_username"), plaintext, index, server_msg__read_number(message, "server_chat_message_id"));
         }
+
+        // free the plain text
         crypto_session__free_text(plaintext);
     }
     else if (clib__strcmp(type, "server_chat_message_id_for_local_message_id") == 0)
@@ -301,16 +347,18 @@ void server_msg__dispatch(desktop_session_t *session, const cJSON *message)
     }
     else if (clib__strcmp(type, "chat_message_edit") == 0)
     {
-        // Legacy outer edits are not content-encrypted and must never alter retained text.
+        // legacy outer edits are not content-encrypted and must never alter retained text
         return;
     }
     else if (clib__strcmp(type, "error") == 0 || clib__strcmp(type, "permission_denied") == 0)
     {
+        // report the server error
         session->model.action_error_sequence++;
         desktop_session__detail(session, server_msg__read_string(message, "value")[0] ? server_msg__read_string(message, "value") : "The server rejected the action.", 0);
     }
     else if (clib__strcmp(type, "access_denied") == 0)
     {
+        // report the refusal
         session->model.action_error_sequence++;
         if (server_msg__read_string(message, "permission")[0])
         {
@@ -327,7 +375,11 @@ void server_msg__dispatch(desktop_session_t *session, const cJSON *message)
     {
         desktop_session__detail(session, "That channel is full.", 0);
     }
+
+    // update the tree data
     server_msg__tree__receive(session, message);
+
+    // report invalid state
     if (!valid)
     {
         desktop_session__detail(session, "Server state exceeds the native client's limits or contains invalid fields.", 1);

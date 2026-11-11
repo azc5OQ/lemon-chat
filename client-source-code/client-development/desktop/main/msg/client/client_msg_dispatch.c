@@ -17,6 +17,7 @@ void client_msg__dispatch_command(desktop_session_t *session)
     boole available = 0;
     int64 slot = -1;
 
+    // take the next command
     desktop_mutex__lock(session->mutex);
     if (session->command_count)
     {
@@ -27,10 +28,14 @@ void client_msg__dispatch_command(desktop_session_t *session)
         available = 1;
     }
     desktop_mutex__unlock(session->mutex);
+
+    // nothing to do
     if (!available)
     {
         return;
     }
+
+    // execute the command
     if (command.attach)
     {
         client_msg__attachments__send(session, &command.attachment_request);
@@ -61,6 +66,7 @@ void client_msg__dispatch_command(desktop_session_t *session)
     }
     else if (command.mute)
     {
+        // store the local mute
         slot = desktop_session__client(session, command.peer);
         if (slot >= 0 && session->model.clients[slot].serial == command.peer_serial)
         {
@@ -72,5 +78,7 @@ void client_msg__dispatch_command(desktop_session_t *session)
     {
         client_msg__chat__send_channel_message(session, command.channel, command.text, &command.format);
     }
+
+    // erase the command copy
     mbedtls_platform_zeroize(&command, sizeof(command));
 }

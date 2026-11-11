@@ -46,10 +46,13 @@ static void _transport_internal__initialize(void)
     boole ws = 0;
     boole wss = 0;
 
+    // initialize libcurl
     if (curl_global_init(CURL_GLOBAL_DEFAULT) != CURLE_OK)
     {
         return;
     }
+
+    // search for WebSocket protocols
     information = curl_version_info(CURLVERSION_NOW);
     if (information && information->protocols)
     {
@@ -59,6 +62,8 @@ static void _transport_internal__initialize(void)
             wss |= clib__strcmp(*protocol, "wss") == 0;
         }
     }
+
+    // store the result
     g_curl_ready = ws && wss;
 }
 
@@ -71,6 +76,7 @@ static void _transport_internal__initialize(void)
  */
 static void _transport_internal__status(desktop_transport_t *transport, desktop_transport_state_t state, const char *detail)
 {
+    // store state and detail
     pthread_mutex_lock(&transport->lock);
     transport->status.state = state;
     clib__string_copy(transport->status.detail, sizeof(transport->status.detail), detail);
@@ -86,6 +92,7 @@ static boole _transport_internal__stopping(desktop_transport_t *transport)
 {
     boole stopping = 0;
 
+    // read the stop flag
     pthread_mutex_lock(&transport->lock);
     stopping = transport->stopping;
     pthread_mutex_unlock(&transport->lock);
@@ -103,10 +110,13 @@ static boole _transport_internal__stopping(desktop_transport_t *transport)
  */
 static int _transport_internal__progress(void *context, curl_off_t total_down, curl_off_t down, curl_off_t total_up, curl_off_t up)
 {
+    // mark unused arguments
     (void)total_down;
     (void)down;
     (void)total_up;
     (void)up;
+
+    // return the stop flag
     return _transport_internal__stopping(context);
 }
 
@@ -143,6 +153,7 @@ static void *_transport_internal__worker(void *context)
     boole outgoing_ready = 0;
     boole incoming_pending = FALSE;
 
+    // allocate connection and buffer
     connection = curl_easy_init();
     message = calloc(1, DESKTOP_MESSAGE_LIMIT + 1);
     if (!connection || !message)
@@ -150,7 +161,7 @@ static void *_transport_internal__worker(void *context)
         result = CURLE_OUT_OF_MEMORY;
         goto label_finished;
     }
-    // TLS verification remains enabled. Only HTTP/1 WebSocket upgrades over TCP are used.
+    // TLS verification remains enabled. only HTTP/1 WebSocket upgrades over TCP are used
     curl_easy_setopt(connection, CURLOPT_URL, transport->url);
     curl_easy_setopt(connection, CURLOPT_PROTOCOLS_STR, "ws,wss");
     curl_easy_setopt(connection, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
@@ -163,24 +174,34 @@ static void *_transport_internal__worker(void *context)
     curl_easy_setopt(connection, CURLOPT_NOPROGRESS, 0L);
     curl_easy_setopt(connection, CURLOPT_XFERINFOFUNCTION, _transport_internal__progress);
     curl_easy_setopt(connection, CURLOPT_XFERINFODATA, transport);
+
+    // open the connection
     result = curl_easy_perform(connection);
     if (result != CURLE_OK || _transport_internal__stopping(transport))
     {
         goto label_finished;
     }
+
+    // read the socket
     result = curl_easy_getinfo(connection, CURLINFO_ACTIVESOCKET, &socket);
     if (result != CURLE_OK || socket == CURL_SOCKET_BAD)
     {
         result = CURLE_COULDNT_CONNECT;
         goto label_finished;
     }
+
+    // store the connected state
     _transport_internal__status(transport, DESKTOP_TRANSPORT_CONNECTED, "WebSocket connected");
+
+    // loop until stopped
     while (!_transport_internal__stopping(transport))
     {
+        // reset the progress flag
         progress = 0;
-        // Pause further reads while the session drains its bounded queue.
+        // pause further reads while the session drains its bounded queue
         if (incoming_pending)
         {
+            // queue the received message
             pthread_mutex_lock(&transport->lock);
             if (desktop_message_queue__has_space(&transport->incoming, used))
             {
@@ -197,10 +218,14 @@ static void *_transport_internal__worker(void *context)
                 }
             }
             pthread_mutex_unlock(&transport->lock);
+
+            // stop on allocation failure
             if (result == CURLE_OUT_OF_MEMORY)
             {
                 break;
             }
+
+            // clear the message buffer
             if (!incoming_pending)
             {
                 clib__null_memory(message, used);
@@ -208,6 +233,8 @@ static void *_transport_internal__worker(void *context)
                 binary = FALSE;
             }
         }
+
+        // take next outgoing message
         if (!outgoing_ready)
         {
             pthread_mutex_lock(&transport->lock);
@@ -217,16 +244,23 @@ static void *_transport_internal__worker(void *context)
             outgoing_used = 0;
             send_deadline = desktop_system__milliseconds() + 5000;
         }
+
+        // send the outgoing message
         if (outgoing_ready)
         {
+            // send the remaining bytes
             sent = 0;
             result = curl_ws_send(connection, outgoing.data + outgoing_used, outgoing.size - outgoing_used, &sent, 0, outgoing.binary ? CURLWS_BINARY : CURLWS_TEXT);
             if (result != CURLE_OK && result != CURLE_AGAIN)
             {
                 break;
             }
+
+            // count the sent bytes
             outgoing_used += sent;
             progress |= sent != 0;
+
+            // check completion and deadline
             if (result == CURLE_OK && outgoing_used == outgoing.size)
             {
                 desktop_message__release(&outgoing);
@@ -239,6 +273,8 @@ static void *_transport_internal__worker(void *context)
                 break;
             }
         }
+
+        // receive the next chunk
         clib__null_memory(chunk, sizeof(chunk));
         received = 0;
         frame = NULL;
@@ -248,41 +284,56 @@ static void *_transport_internal__worker(void *context)
             result = received_result;
             break;
         }
+
+        // read the received frame
         if (received_result == CURLE_OK && frame)
         {
             progress = 1;
+
+            // read a close frame
             if (frame->flags & CURLWS_CLOSE)
             {
-                // curl can return a control frame in several receive chunks.
+                // curl can return a control frame in several receive chunks
                 if (frame->offset < 2 && received > 0)
                 {
                     close_bytes = received < 2 - (size_t)frame->offset ? received : 2 - (size_t)frame->offset;
                     clib__memcpy(close_payload + frame->offset, chunk, close_bytes);
                 }
+
+                // wait for remaining bytes
                 if (frame->bytesleft > 0)
                 {
                     continue;
                 }
+
+                // store the close code
                 if (frame->offset + received >= 2)
                 {
                     pthread_mutex_lock(&transport->lock);
                     transport->status.close_code = ((unsigned int)close_payload[0] << 8) | close_payload[1];
                     pthread_mutex_unlock(&transport->lock);
                 }
+
+                // stop after the close
                 result = CURLE_OK;
                 break;
             }
-            // Control frames can occur between data fragments; they never enter message storage.
+            // control frames can occur between data fragments; they never enter message storage
             if (frame->flags & (CURLWS_TEXT | CURLWS_BINARY))
             {
+                // check the message limit
                 if (received > DESKTOP_MESSAGE_LIMIT - used)
                 {
                     result = CURLE_FILESIZE_EXCEEDED;
                     break;
                 }
+
+                // append the chunk
                 clib__memcpy(message + used, chunk, received);
                 used += received;
                 binary |= (frame->flags & CURLWS_BINARY) != 0;
+
+                // message is complete
                 if (frame->bytesleft == 0 && !(frame->flags & CURLWS_CONT))
                 {
                     clib__null_memory(message_type, sizeof(message_type));
@@ -291,7 +342,11 @@ static void *_transport_internal__worker(void *context)
                 }
             }
         }
+
+        // clear the result
         result = CURLE_OK;
+
+        // wait for socket activity
         if (!progress)
         {
             clib__null_memory(&poll_socket, sizeof(poll_socket));
@@ -301,13 +356,18 @@ static void *_transport_internal__worker(void *context)
         }
     }
 label_finished:
+    // close the connection
     if (connection)
     {
         curl_easy_cleanup(connection);
     }
+
+    // free the buffers
     desktop_memory__erase(message, DESKTOP_MESSAGE_LIMIT + 1);
     free(message);
     desktop_message__release(&outgoing);
+
+    // store the final state
     stopped = _transport_internal__stopping(transport);
     if (stopped || result == CURLE_OK)
     {
@@ -321,6 +381,8 @@ label_finished:
         clib__string_format(detail, sizeof(detail), "Connection failed: %s", curl_easy_strerror(result));
         _transport_internal__status(transport, DESKTOP_TRANSPORT_FAILED, detail);
     }
+
+    // set the finished flag
     pthread_mutex_lock(&transport->lock);
     desktop_message_queue__clear(&transport->outgoing);
     transport->finished = 1;
@@ -336,18 +398,25 @@ desktop_transport_t *desktop_transport__create(void)
 {
     desktop_transport_t *transport = NULL_POINTER;
 
+    // initialize libcurl once
     pthread_once(&g_curl_once, _transport_internal__initialize);
+
+    // allocate the transport
     transport = calloc(1, sizeof(*transport));
     if (!transport)
     {
         return NULL;
     }
+
+    // create the lock
     if (pthread_mutex_init(&transport->lock, NULL) != 0)
     {
         desktop_memory__erase(transport, sizeof(*transport));
         free(transport);
         return NULL;
     }
+
+    // set the ready status
     _transport_internal__status(transport, DESKTOP_TRANSPORT_DISCONNECTED, "Ready to connect");
     return transport;
 }
@@ -360,10 +429,13 @@ desktop_transport_t *desktop_transport__create(void)
 /* Requests cancellation without waiting. Destroy joins before releasing storage. */
 void desktop_transport__disconnect(desktop_transport_t *transport)
 {
+    // nothing to disconnect
     if (!transport)
     {
         return;
     }
+
+    // set the stop flag
     pthread_mutex_lock(&transport->lock);
     transport->stopping = 1;
     pthread_mutex_unlock(&transport->lock);
@@ -376,15 +448,20 @@ void desktop_transport__disconnect(desktop_transport_t *transport)
  */
 void desktop_transport__destroy(desktop_transport_t *transport)
 {
+    // nothing to destroy
     if (!transport)
     {
         return;
     }
+
+    // stop the worker thread
     desktop_transport__disconnect(transport);
     if (transport->started)
     {
         pthread_join(transport->worker, NULL);
     }
+
+    // free the transport
     pthread_mutex_destroy(&transport->lock);
     desktop_message_queue__clear(&transport->incoming);
     desktop_message_queue__clear(&transport->outgoing);
@@ -404,10 +481,13 @@ boole desktop_transport__connect(desktop_transport_t *transport, const char *url
     desktop_endpoint_t endpoint = { 0 };
     boole busy = 0;
 
+    // check the transport
     if (!transport)
     {
         return 0;
     }
+
+    // refuse while worker runs
     pthread_mutex_lock(&transport->lock);
     busy = transport->started && !transport->finished;
     pthread_mutex_unlock(&transport->lock);
@@ -415,21 +495,29 @@ boole desktop_transport__connect(desktop_transport_t *transport, const char *url
     {
         return 0;
     }
+
+    // wait for finished worker
     if (transport->started)
     {
         pthread_join(transport->worker, NULL);
         transport->started = 0;
     }
+
+    // check libcurl support
     if (!g_curl_ready)
     {
         _transport_internal__status(transport, DESKTOP_TRANSPORT_FAILED, "Install a libcurl build with ws and wss support.");
         return 0;
     }
+
+    // check the address
     if (!desktop_endpoint__parse(url, &endpoint) || !clib__string_copy(transport->url, sizeof(transport->url), url))
     {
         _transport_internal__status(transport, DESKTOP_TRANSPORT_FAILED, "Enter a ws:// or wss:// address with a valid host and port.");
         return 0;
     }
+
+    // reset the transport state
     pthread_mutex_lock(&transport->lock);
     transport->stopping = 0;
     desktop_message_queue__clear(&transport->incoming);
@@ -437,6 +525,8 @@ boole desktop_transport__connect(desktop_transport_t *transport, const char *url
     transport->finished = 0;
     clib__null_memory(&transport->status, sizeof(transport->status));
     pthread_mutex_unlock(&transport->lock);
+
+    // start the worker thread
     _transport_internal__status(transport, DESKTOP_TRANSPORT_CONNECTING, "Connecting...");
     if (pthread_create(&transport->worker, NULL, _transport_internal__worker, transport) != 0)
     {
@@ -455,6 +545,7 @@ boole desktop_transport__connect(desktop_transport_t *transport, const char *url
  */
 void desktop_transport__status(desktop_transport_t *transport, desktop_transport_status_t *status)
 {
+    // copy the status
     pthread_mutex_lock(&transport->lock);
     *status = transport->status;
     status->finished = !transport->started || transport->finished;
@@ -500,10 +591,13 @@ static boole _transport_internal__send(desktop_transport_t *transport, const cha
     boole accepted = 0;
     uint64 now = desktop_system__milliseconds();
 
+    // check arguments
     if (!transport || (!bytes && size) || (!binary && !size) || size > DESKTOP_MESSAGE_LIMIT || (expires && now >= expires))
     {
         return 0;
     }
+
+    // queue when connected
     pthread_mutex_lock(&transport->lock);
     if (!transport->stopping && transport->status.state == DESKTOP_TRANSPORT_CONNECTED)
     {
@@ -534,6 +628,7 @@ boole desktop_transport__send_media(desktop_transport_t *transport, const ubyte 
  */
 void desktop_transport__discard_media(desktop_transport_t *transport)
 {
+    // discard unsent media
     pthread_mutex_lock(&transport->lock);
     desktop_message_queue__expire(&transport->outgoing, 0);
     pthread_mutex_unlock(&transport->lock);
@@ -549,6 +644,7 @@ boole desktop_transport__receive(desktop_transport_t *transport, desktop_message
 {
     boole received = 0;
 
+    // take the next message
     pthread_mutex_lock(&transport->lock);
     received = desktop_message_queue__pop(&transport->incoming, message);
     pthread_mutex_unlock(&transport->lock);

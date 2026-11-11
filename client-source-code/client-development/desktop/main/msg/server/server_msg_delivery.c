@@ -26,6 +26,8 @@ const char *server_msg__read_string(const cJSON *object, const char *key)
 int64 server_msg__read_number(const cJSON *object, const char *key)
 {
     const cJSON *value = cJSON_GetObjectItemCaseSensitive(object, key);
+
+    // check the number value
     if (!cJSON_IsNumber(value) || !(value->valuedouble >= 0 && value->valuedouble <= 9007199254740991.0) || value->valuedouble != (double)(int64)value->valuedouble)
     {
         return -1;

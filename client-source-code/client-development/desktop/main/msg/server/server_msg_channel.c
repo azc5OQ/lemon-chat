@@ -20,9 +20,12 @@ boole server_msg__channel__read_channel(desktop_session_t *session, const cJSON 
     boole editing = clib__strcmp(server_msg__read_string(data, "type"), "channel_edit") == 0;
     const char *names[4] = { "required_talk_power", "required_message_power", "required_picture_power", "required_stream_power" };
 
+    // find the existing channel
     channel.id = server_msg__read_number(data, "channel_id");
     channel.icon = -1;
     slot = desktop_session__channel(session, channel.id);
+
+    // choose the starting values
     if (editing && slot >= 0)
     {
         channel = session->model.channels[slot];
@@ -31,18 +34,24 @@ boole server_msg__channel__read_channel(desktop_session_t *session, const cJSON 
     {
         channel.parent = server_msg__read_number(data, "parent_channel_id");
     }
+
+    // read the channel flags
     channel.password = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(data, "is_using_password"));
     channel.audio = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(data, "is_audio_enabled"));
     channel.video = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(data, "is_video_stream_enabled"));
     channel.icon = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(data, "has_channel_icon")) ? server_msg__read_number(data, "channel_icon_id") : -1;
     channel.temporary = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(data, "is_temp_channel"));
     channel.limited = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(data, "is_client_limit_active"));
+
+    // read the client limit
     value = server_msg__read_number(data, "max_client_count");
     if (value > 2147483647)
     {
         return 0;
     }
     channel.capacity = value < 0 ? 0 : (int)value;
+
+    // read the power values
     for (index = 0; index < 4; index++)
     {
         value = server_msg__read_number(data, names[index]);
@@ -52,10 +61,14 @@ boole server_msg__channel__read_channel(desktop_session_t *session, const cJSON 
         }
         channel.powers[index] = value < 0 ? 0 : (int)value;
     }
+
+    // copy name and description
     if (channel.id < 0 || !clib__string_copy(channel.name, sizeof(channel.name), server_msg__read_string(data, editing ? "channel_name" : "name")) || !clib__string_copy(channel.description, sizeof(channel.description), server_msg__read_string(data, editing ? "channel_description" : "description")) || (slot < 0 && !desktop_session__reserve_channels(&session->model, session->model.channel_count + 1)))
     {
         return 0;
     }
+
+    // store the channel record
     if (slot < 0)
     {
         slot = (int)session->model.channel_count++;

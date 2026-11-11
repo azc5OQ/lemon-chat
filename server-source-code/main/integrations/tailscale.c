@@ -59,6 +59,7 @@ static uint64 _tailscale_internal__milliseconds(void);
 static boole _tailscale_internal__find_executable(char *path, uint64 capacity)
 {
 #if defined(__ANDROID__)
+    // not available on Android
     (void)path;
     (void)capacity;
     return FALSE;
@@ -73,6 +74,7 @@ static boole _tailscale_internal__find_executable(char *path, uint64 capacity)
     uint64 index = 0;
     const char *directories[] = { "ProgramFiles", "ProgramW6432", "ProgramFiles(x86)" };
 
+    // search Program Files folders
     for (index = 0; index < sizeof(directories) / sizeof(directories[0]); index++)
     {
         length = GetEnvironmentVariableA(directories[index], program_files, sizeof(program_files));
@@ -87,6 +89,8 @@ static boole _tailscale_internal__find_executable(char *path, uint64 capacity)
         }
     }
 #endif
+
+    // search the PATH
     return util__find_executable("tailscale", path, capacity);
 #endif
 }
@@ -118,38 +122,52 @@ static boole _tailscale_internal__append_argument(char *command, uint64 capacity
     const char *cursor = argument;
     char current = 0;
 
+    // check the buffer space
     if (position + 4 >= capacity)
     {
         return FALSE;
     }
+
+    // add space and quote
     if (position != 0)
     {
         command[position++] = ' ';
     }
     command[position++] = '"';
+
+    // copy and escape characters
     for (;;)
     {
+        // count the backslashes
         slashes = 0;
         while (*cursor == '\\')
         {
             slashes++;
             cursor++;
         }
+
+        // choose the backslash count
         current = *cursor;
         count = (current == '"' || current == 0) ? slashes * 2 : slashes;
         if (position + count + 3 >= capacity)
         {
             return FALSE;
         }
+
+        // write the backslashes
         while (count > 0)
         {
             command[position++] = '\\';
             count--;
         }
+
+        // stop at the end
         if (current == 0)
         {
             break;
         }
+
+        // copy the character
         if (current == '"')
         {
             command[position++] = '\\';
@@ -157,6 +175,8 @@ static boole _tailscale_internal__append_argument(char *command, uint64 capacity
         command[position++] = current;
         cursor++;
     }
+
+    // add the closing quote
     command[position++] = '"';
     command[position] = 0;
     return TRUE;
@@ -185,6 +205,7 @@ static uint64 _tailscale_internal__milliseconds(void)
 static int64 _tailscale_internal__run(const char *const *arguments, char *output, uint64 capacity)
 {
 #if defined(__ANDROID__)
+    // not available on Android
     (void)arguments;
     (void)capacity;
     output[0] = 0;
@@ -203,17 +224,17 @@ static int64 _tailscale_internal__run(const char *const *arguments, char *output
     HANDLE read_pipe = NULL_POINTER;
     HANDLE write_pipe = NULL_POINTER;
     HANDLE input = INVALID_HANDLE_VALUE;
-    DWORD available = 0; // PeekNamedPipe writes a DWORD.
-    DWORD received = 0; // ReadFile writes a DWORD.
-    DWORD exit_code = 0; // GetExitCodeProcess writes a DWORD.
+    DWORD available = 0; // PeekNamedPipe writes a DWORD
+    DWORD received = 0; // ReadFile writes a DWORD
+    DWORD exit_code = 0; // GetExitCodeProcess writes a DWORD
     uint64 started = 0;
     boole running = FALSE;
 #else
     char *argv[16] = { 0 };
-    int descriptors[2] = { -1, -1 }; // pipe writes native descriptors.
-    int status = 0; // waitpid writes an int.
+    int descriptors[2] = { -1, -1 }; // pipe writes native descriptors
+    int status = 0; // waitpid writes an int
     int64 spawn_result = 0;
-    int flags = 0; // fcntl expects an int mask.
+    int flags = 0; // fcntl expects an int mask
     int64 received = 0;
     pid_t process = 0;
     pid_t waited = 0;
@@ -225,6 +246,7 @@ static int64 _tailscale_internal__run(const char *const *arguments, char *output
     char overflow = 0;
 #endif
 
+    // find the Tailscale program
     output[0] = 0;
     success = _tailscale_internal__find_executable(executable, sizeof(executable));
     if (!success)
@@ -232,10 +254,13 @@ static int64 _tailscale_internal__run(const char *const *arguments, char *output
         return -1;
     }
 #if defined(_WIN32) || defined(WIN32)
+    // clear the structures
     clib__memset(command, 0, sizeof(command));
     clib__memset(&security, 0, sizeof(security));
     clib__memset(&startup, 0, sizeof(startup));
     clib__memset(&process, 0, sizeof(process));
+
+    // build the command line
     success = _tailscale_internal__append_argument(command, sizeof(command), executable);
     if (!success)
     {
@@ -249,51 +274,71 @@ static int64 _tailscale_internal__run(const char *const *arguments, char *output
             return -1;
         }
     }
+
+    // create the output pipe
     security.nLength = sizeof(security);
     security.bInheritHandle = TRUE;
     if (!CreatePipe(&read_pipe, &write_pipe, &security, 0))
     {
         return -1;
     }
+
+    // disable read end inheritance
     if (!SetHandleInformation(read_pipe, HANDLE_FLAG_INHERIT, 0))
     {
         goto cleanup;
     }
+
+    // open NUL as input
     input = CreateFileA("NUL", GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, &security, OPEN_EXISTING, 0, NULL_POINTER);
     if (input == INVALID_HANDLE_VALUE)
     {
         goto cleanup;
     }
+
+    // set the standard handles
     startup.cb = sizeof(startup);
     startup.dwFlags = STARTF_USESTDHANDLES;
     startup.hStdInput = input;
     startup.hStdOutput = write_pipe;
     startup.hStdError = write_pipe;
+
+    // start the process
     if (!CreateProcessA(executable, command, NULL_POINTER, NULL_POINTER, TRUE, CREATE_NO_WINDOW, NULL_POINTER, NULL_POINTER, &startup, &process))
     {
         goto cleanup;
     }
     running = TRUE;
+
+    // close the unused handles
     CloseHandle(write_pipe);
     write_pipe = NULL_POINTER;
     CloseHandle(input);
     input = INVALID_HANDLE_VALUE;
+
+    // read output until end
     started = GetTickCount64();
     for (;;)
     {
+        // stop after the timeout
         if (GetTickCount64() - started >= LEMON_TAILSCALE_TIMEOUT_MS)
         {
             result = -2;
             break;
         }
+
+        // read available output
         available = 0;
         if (PeekNamedPipe(read_pipe, NULL_POINTER, 0, NULL_POINTER, &available, NULL_POINTER) && available > 0)
         {
+            // refuse too much output
             if (used + 1 >= capacity)
             {
                 result = -3;
                 break;
             }
+
+            // read what fits
             if (available > capacity - used - 1)
             {
                 available = (DWORD)(capacity - used - 1);
@@ -306,10 +351,14 @@ static int64 _tailscale_internal__run(const char *const *arguments, char *output
             output[used] = 0;
             continue;
         }
+
+        // stop after process end
         if (running == FALSE)
         {
             break;
         }
+
+        // read the exit code
         if (WaitForSingleObject(process.hProcess, 0) == WAIT_OBJECT_0)
         {
             if (GetExitCodeProcess(process.hProcess, &exit_code))
@@ -319,14 +368,19 @@ static int64 _tailscale_internal__run(const char *const *arguments, char *output
             running = FALSE;
             continue;
         }
+
+        // wait ten milliseconds
         Sleep(10);
     }
 cleanup:
+    // stop a running process
     if (running == TRUE)
     {
         TerminateProcess(process.hProcess, 1);
         WaitForSingleObject(process.hProcess, 1000);
     }
+
+    // close all handles
     if (process.hThread != NULL_POINTER)
     {
         CloseHandle(process.hThread);
@@ -348,6 +402,7 @@ cleanup:
         CloseHandle(write_pipe);
     }
 #else
+    // build the argument list
     argv[0] = (char *)executable;
     for (index = 0; arguments[index] != NULL_POINTER; index++)
     {
@@ -358,10 +413,14 @@ cleanup:
         argv[index + 1] = (char *)arguments[index];
     }
     argv[index + 1] = NULL_POINTER;
+
+    // create the output pipe
     if (pipe(descriptors) != 0)
     {
         return -1;
     }
+
+    // set read end nonblocking
     flags = fcntl(descriptors[0], F_GETFL, 0);
     if (flags < 0 || fcntl(descriptors[0], F_SETFL, flags | O_NONBLOCK) != 0)
     {
@@ -369,12 +428,16 @@ cleanup:
         close(descriptors[1]);
         return -1;
     }
+
+    // create the file actions
     if (posix_spawn_file_actions_init(&actions) != 0)
     {
         close(descriptors[0]);
         close(descriptors[1]);
         return -1;
     }
+
+    // redirect input and output
     if (posix_spawn_file_actions_addopen(&actions, STDIN_FILENO, "/dev/null", O_RDONLY, 0) != 0 || posix_spawn_file_actions_adddup2(&actions, descriptors[1], STDOUT_FILENO) != 0 || posix_spawn_file_actions_adddup2(&actions, descriptors[1], STDERR_FILENO) != 0 || posix_spawn_file_actions_addclose(&actions, descriptors[0]) != 0 || posix_spawn_file_actions_addclose(&actions, descriptors[1]) != 0)
     {
         posix_spawn_file_actions_destroy(&actions);
@@ -382,6 +445,8 @@ cleanup:
         close(descriptors[1]);
         return -1;
     }
+
+    // prepare the process attributes
     if (posix_spawnattr_init(&attributes) != 0)
     {
         posix_spawn_file_actions_destroy(&actions);
@@ -389,6 +454,8 @@ cleanup:
         close(descriptors[1]);
         return -1;
     }
+
+    // set own process group
     if (posix_spawnattr_setflags(&attributes, POSIX_SPAWN_SETPGROUP) != 0 || posix_spawnattr_setpgroup(&attributes, 0) != 0)
     {
         posix_spawn_file_actions_destroy(&actions);
@@ -397,6 +464,8 @@ cleanup:
         close(descriptors[1]);
         return -1;
     }
+
+    // start the process
     spawn_result = posix_spawn(&process, executable, &actions, &attributes, argv, environ);
     posix_spawn_file_actions_destroy(&actions);
     posix_spawnattr_destroy(&attributes);
@@ -406,14 +475,19 @@ cleanup:
         close(descriptors[0]);
         return -1;
     }
+
+    // read output until end
     started = _tailscale_internal__milliseconds();
     for (;;)
     {
+        // stop after the timeout
         if (_tailscale_internal__milliseconds() - started >= LEMON_TAILSCALE_TIMEOUT_MS)
         {
             result = -2;
             break;
         }
+
+        // read from the pipe
         if (used + 1 >= capacity)
         {
             received = read(descriptors[0], &overflow, 1);
@@ -427,16 +501,22 @@ cleanup:
         {
             received = read(descriptors[0], output + used, capacity - used - 1);
         }
+
+        // count the read bytes
         if (received > 0)
         {
             used += (uint64)received;
             output[used] = 0;
             continue;
         }
+
+        // stop on read error
         if (received < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)
         {
             break;
         }
+
+        // check the process end
         if (finished == FALSE)
         {
             waited = waitpid(process, &status, WNOHANG);
@@ -449,23 +529,33 @@ cleanup:
                 break;
             }
         }
+
+        // read the exit code
         if (finished == TRUE && received == 0)
         {
             result = WIFEXITED(status) ? WEXITSTATUS(status) : -1;
             break;
         }
+
+        // wait ten milliseconds
         nanosleep(&pause, NULL_POINTER);
     }
+
+    // stop the process group
     if (result < 0)
     {
         kill(-process, SIGKILL);
     }
+
+    // wait for the process
     if (finished == FALSE)
     {
         while (waitpid(process, &status, 0) < 0 && errno == EINTR)
         {
         }
     }
+
+    // close the read end
     close(descriptors[0]);
 #endif
     return result;
@@ -483,6 +573,7 @@ static void _tailscale_internal__print_error(cstring operation, int64 result, cs
     uint64 index = 0;
     ubyte current = 0;
 
+    // print the failure reason
     printf("%s Tailscale %s failed", g_mark_warn, operation);
     if (result == -2)
     {
@@ -493,10 +584,14 @@ static void _tailscale_internal__print_error(cstring operation, int64 result, cs
         printf(" because its output exceeded %d bytes", LEMON_TAILSCALE_OUTPUT_LIMIT);
     }
     printf(". Direct WS remains available.\n");
+
+    // print the install hint
     if (result == -1)
     {
         printf("    Install and start Tailscale, then sign in.\n");
     }
+
+    // print the program output
     if (output[0] != '{' && output[0] != 0)
     {
         printf("    ");
@@ -529,20 +624,28 @@ static cJSON *_tailscale_internal__read_json(const char *const *arguments, cstri
     cJSON *document = NULL_POINTER;
     int64 result = -1;
 
+    // allocate the output buffer
     output = malloc(LEMON_TAILSCALE_OUTPUT_LIMIT + 1);
     if (output == NULL_POINTER)
     {
         return NULL_POINTER;
     }
+
+    // run the Tailscale command
     result = _tailscale_internal__run(arguments, output, LEMON_TAILSCALE_OUTPUT_LIMIT + 1);
     if (result == 0)
     {
+        // read the JSON
         document = cJSON_Parse(output);
+
+        // replace null with object
         if (allow_empty == TRUE && cJSON_IsNull(document))
         {
             cJSON_Delete(document);
             document = cJSON_CreateObject();
         }
+
+        // refuse other JSON types
         if (!cJSON_IsObject(document))
         {
             cJSON_Delete(document);
@@ -554,6 +657,8 @@ static cJSON *_tailscale_internal__read_json(const char *const *arguments, cstri
     {
         _tailscale_internal__print_error(operation, result, output);
     }
+
+    // free the output buffer
     free(output);
     return document;
 }
@@ -573,29 +678,39 @@ static boole _tailscale_internal__read_hostname(cJSON *status)
     uint64 label = 0;
     ubyte current = 0;
 
+    // check Tailscale is running
     if (!cJSON_IsString(state) || clib__strcmp(state->valuestring, "Running") != 0)
     {
         printf("%s Start Tailscale and sign in before restarting Lemon Chat. Direct WS remains available.\n", g_mark_warn);
         return FALSE;
     }
+
+    // check the DNS name
     if (!cJSON_IsString(name))
     {
         return FALSE;
     }
+
+    // skip the final dot
     length = clib__strlen(name->valuestring);
     if (length > 0 && name->valuestring[length - 1] == '.')
     {
         length--;
     }
+
+    // check the length
     if (length <= 7 || length >= sizeof(g_tailscale_hostname))
     {
         return FALSE;
     }
+
+    // check and copy characters
     for (index = 0; index < length; index++)
     {
         current = (ubyte)name->valuestring[index];
         if (current == '.')
         {
+            // check the label end
             if (label == 0 || name->valuestring[index - 1] == '-')
             {
                 return FALSE;
@@ -604,6 +719,7 @@ static boole _tailscale_internal__read_hostname(cJSON *status)
         }
         else
         {
+            // check the label character
             if (!((current >= 'a' && current <= 'z') || (current >= 'A' && current <= 'Z') || (current >= '0' && current <= '9') || (current == '-' && label != 0)))
             {
                 return FALSE;
@@ -614,9 +730,15 @@ static boole _tailscale_internal__read_hostname(cJSON *status)
                 return FALSE;
             }
         }
+
+        // copy in lower case
         g_tailscale_hostname[index] = (char)clib__tolower(current);
     }
+
+    // end the string
     g_tailscale_hostname[length] = 0;
+
+    // check the domain ending
     if (label == 0 || g_tailscale_hostname[length - 1] == '-' || clib__strcmp(g_tailscale_hostname + length - 7, ".ts.net") != 0)
     {
         g_tailscale_hostname[0] = 0;
@@ -645,29 +767,41 @@ static boole _tailscale_internal__has_foreground_port(cJSON *status, int64 publi
     uint64 suffix_length = 0;
     boole has_foreground_port = FALSE;
 
+    // no foreground configuration
     if (foreground == NULL_POINTER)
     {
         return FALSE;
     }
+
+    // check type and depth
     if (!cJSON_IsObject(foreground) || depth >= 8)
     {
         return TRUE;
     }
+
+    // build the port texts
     clib__string_format(port, sizeof(port), "%lld", public_port);
     clib__string_format(suffix, sizeof(suffix), ":%lld", public_port);
     suffix_length = clib__strlen(suffix);
+
+    // check every foreground entry
     cJSON_ArrayForEach(child, foreground)
     {
+        // check the entry type
         if (!cJSON_IsObject(child))
         {
             return TRUE;
         }
+
+        // find port in TCP
         tcp = cJSON_GetObjectItemCaseSensitive(child, "TCP");
         web = cJSON_GetObjectItemCaseSensitive(child, "Web");
         if ((tcp != NULL_POINTER && !cJSON_IsObject(tcp)) || (web != NULL_POINTER && !cJSON_IsObject(web)) || cJSON_GetObjectItemCaseSensitive(tcp, port) != NULL_POINTER)
         {
             return TRUE;
         }
+
+        // find port in Web
         cJSON_ArrayForEach(entry, web)
         {
             if (entry->string == NULL_POINTER)
@@ -680,6 +814,8 @@ static boole _tailscale_internal__has_foreground_port(cJSON *status, int64 publi
                 return TRUE;
             }
         }
+
+        // check nested configurations
         has_foreground_port = _tailscale_internal__has_foreground_port(child, public_port, depth + 1);
         if (has_foreground_port)
         {
@@ -716,30 +852,40 @@ static int64 _tailscale_internal__check_route(cJSON *status, int64 public_port, 
     boole root_matches = FALSE;
     boole has_foreground_port = FALSE;
 
+    // build port and endpoint
     clib__string_format(port, sizeof(port), "%lld", public_port);
     clib__string_format(endpoint, sizeof(endpoint), "%s:%lld", g_tailscale_hostname, public_port);
     clib__string_format(suffix, sizeof(suffix), ":%lld", public_port);
     suffix_length = clib__strlen(suffix);
+
+    // check the foreground port
     has_foreground_port = _tailscale_internal__has_foreground_port(status, public_port, 0);
     if (has_foreground_port)
     {
         return -1;
     }
+
+    // check the map types
     if ((tcp_map != NULL_POINTER && !cJSON_IsObject(tcp_map)) || (web_map != NULL_POINTER && !cJSON_IsObject(web_map)) || (public_map != NULL_POINTER && !cJSON_IsObject(public_map)))
     {
         return -1;
     }
+
+    // check old host routes
     cJSON_ArrayForEach(item, web_map)
     {
+        // refuse a missing name
         if (item->string == NULL_POINTER)
         {
             return -1;
         }
+
+        // compare the port suffix
         name_length = clib__strlen(item->string);
         if (name_length >= suffix_length && clib__strcmp(item->string + name_length - suffix_length, suffix) == 0 && clib__strcmp(item->string, endpoint) != 0)
         {
-            // A renamed computer can leave its old public Lemon Chat route behind.
-            // Only accept a single root proxy to this same backend; never publish private paths.
+            // a renamed computer can leave its old public Lemon Chat route behind.
+            // only accept a single root proxy to this same backend; never publish private paths
             handlers = cJSON_GetObjectItemCaseSensitive(item, "Handlers");
             root = cJSON_GetObjectItemCaseSensitive(handlers, "/");
             proxy = cJSON_GetObjectItemCaseSensitive(root, "Proxy");
@@ -750,18 +896,26 @@ static int64 _tailscale_internal__check_route(cJSON *status, int64 public_port, 
             }
         }
     }
+
+    // find the port entries
     tcp = cJSON_GetObjectItemCaseSensitive(tcp_map, port);
     web = cJSON_GetObjectItemCaseSensitive(web_map, endpoint);
     handlers = cJSON_GetObjectItemCaseSensitive(web, "Handlers");
     public = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(public_map, endpoint));
+
+    // check the TCP entry
     if (tcp != NULL_POINTER && (!cJSON_IsObject(tcp) || !cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(tcp, "HTTPS")) || cJSON_GetObjectItemCaseSensitive(tcp, "TCPForward") != NULL_POINTER))
     {
         return -1;
     }
+
+    // check the Web entry
     if (web != NULL_POINTER && (!cJSON_IsObject(web) || !cJSON_IsObject(handlers)))
     {
         return -1;
     }
+
+    // check the handler paths
     cJSON_ArrayForEach(item, handlers)
     {
         if (item->string == NULL_POINTER)
@@ -773,6 +927,8 @@ static int64 _tailscale_internal__check_route(cJSON *status, int64 public_port, 
             return -1;
         }
     }
+
+    // check the root proxy
     root = cJSON_GetObjectItemCaseSensitive(handlers, "/");
     proxy = cJSON_GetObjectItemCaseSensitive(root, "Proxy");
     if (root != NULL_POINTER)
@@ -783,6 +939,8 @@ static int64 _tailscale_internal__check_route(cJSON *status, int64 public_port, 
         }
         root_matches = TRUE;
     }
+
+    // zero means ready
     return (tcp != NULL_POINTER && root_matches == TRUE && public == TRUE) ? 0 : 1;
 }
 
@@ -799,17 +957,24 @@ static boole _tailscale_internal__set_route(int64 public_port, cstring target)
     char *output = NULL_POINTER;
     int64 result = -1;
 
+    // build the port argument
     clib__string_format(port_argument, sizeof(port_argument), "--https=%lld", public_port);
+
+    // allocate the output buffer
     output = malloc(LEMON_TAILSCALE_OUTPUT_LIMIT + 1);
     if (output == NULL_POINTER)
     {
         return FALSE;
     }
+
+    // run the Funnel command
     result = _tailscale_internal__run(arguments, output, LEMON_TAILSCALE_OUTPUT_LIMIT + 1);
     if (result != 0)
     {
         _tailscale_internal__print_error("Funnel setup", result, output);
     }
+
+    // free the output buffer
     free(output);
     return result == 0;
 }
@@ -829,26 +994,36 @@ boole tailscale__configure(void)
     int64 chat_state = -1;
     boole success = FALSE;
 
+    // reset the state
     g_tailscale_ready = FALSE;
     g_tailscale_hostname[0] = 0;
+
+    // funnel is not enabled
     if (g_server_settings.is_tailscale_funnel_enabled == FALSE)
     {
         return FALSE;
     }
 #if defined(__ANDROID__)
+    // not available on Android
     printf("%s Automatic Funnel setup requires the Tailscale command line program, which is not available in the Android app. Direct WS remains available.\n", g_mark_warn);
     return FALSE;
 #endif
+
+    // check the ports
     if (g_server_settings.http_port < 1 || g_server_settings.http_port > 65535 || g_server_settings.websocket_port < 1 || g_server_settings.websocket_port > 65535 || (g_server_settings.wss_port != 8443 && g_server_settings.wss_port != 10000))
     {
         printf("%s Funnel needs a valid HTTP backend port and public WSS port 8443 or 10000. Check server_settings.json.\n", g_mark_warn);
         return FALSE;
     }
+
+    // read the Tailscale status
     status = _tailscale_internal__read_json(status_arguments, "status", FALSE);
     if (status == NULL_POINTER)
     {
         return FALSE;
     }
+
+    // read the host name
     success = _tailscale_internal__read_hostname(status);
     if (!success)
     {
@@ -857,40 +1032,58 @@ boole tailscale__configure(void)
         return FALSE;
     }
     cJSON_Delete(status);
+
+    // read the Funnel status
     status = _tailscale_internal__read_json(funnel_arguments, "Funnel status", TRUE);
     if (status == NULL_POINTER)
     {
         return FALSE;
     }
+
+    // build the local targets
     clib__string_format(page_target, sizeof(page_target), "http://127.0.0.1:%lld", g_server_settings.http_port);
     clib__string_format(chat_target, sizeof(chat_target), "http://127.0.0.1:%lld", g_server_settings.websocket_port);
+
+    // check both routes
     page_state = _tailscale_internal__check_route(status, 443, page_target);
     chat_state = _tailscale_internal__check_route(status, g_server_settings.wss_port, chat_target);
     cJSON_Delete(status);
+
+    // report a conflict
     if (page_state < 0 || chat_state < 0)
     {
         printf("%s Funnel port %lld already has a conflicting service or private paths. Check tailscale funnel status and tailscale serve status. No routes were changed.\n", g_mark_warn, page_state < 0 ? (int64)443 : g_server_settings.wss_port);
         return FALSE;
     }
+
+    // report the route update
     if (page_state > 0 || chat_state > 0)
     {
         printf("%s Updating Lemon Chat Funnel routes for %s. Existing matching public routes are kept.\n", g_mark_info, g_tailscale_hostname);
     }
+
+    // set the page route
     if (page_state > 0 && !_tailscale_internal__set_route(443, page_target))
     {
         return FALSE;
     }
+
+    // set the chat route
     if (chat_state > 0 && !_tailscale_internal__set_route(g_server_settings.wss_port, chat_target))
     {
         printf("%s The page route is configured but the chat route failed. Check tailscale funnel status.\n", g_mark_warn);
         return FALSE;
     }
+
+    // check both routes again
     status = _tailscale_internal__read_json(funnel_arguments, "Funnel verification", TRUE);
     if (status != NULL_POINTER)
     {
         g_tailscale_ready = _tailscale_internal__check_route(status, 443, page_target) == 0 && _tailscale_internal__check_route(status, g_server_settings.wss_port, chat_target) == 0;
         cJSON_Delete(status);
     }
+
+    // report the failure
     if (g_tailscale_ready == FALSE)
     {
         printf("%s Funnel routes could not be verified. Direct WS remains available.\n", g_mark_warn);

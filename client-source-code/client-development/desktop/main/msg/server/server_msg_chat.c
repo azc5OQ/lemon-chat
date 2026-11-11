@@ -22,14 +22,20 @@ static void _server_chat_internal__edit(desktop_session_t *session, int64 channe
 void server_msg__chat__append(desktop_session_t *session, int64 channel, const char *sender, const char *text, uint64 local_id)
 {
     desktop_chat_t *chat = NULL_POINTER;
+
+    // remove the oldest message
     if (session->model.chat_count == DESKTOP_SESSION_HISTORY)
     {
         clib__memmove(session->model.chats, session->model.chats + 1, sizeof(session->model.chats[0]) * (DESKTOP_SESSION_HISTORY - 1));
         session->model.chat_count--;
     }
+
+    // clear the next entry
     chat = &session->model.chats[session->model.chat_count++];
     clib__null_memory(chat, sizeof(*chat));
     desktop_chat_format__default(&chat->format);
+
+    // set the message fields
     chat->sequence = ++session->next_chat_sequence;
     chat->connection_serial = session->model.connection_serial;
     chat->server_id = -1;
@@ -38,10 +44,14 @@ void server_msg__chat__append(desktop_session_t *session, int64 channel, const c
     chat->peer = -1;
     chat->local_id = local_id;
     chat->pending = local_id != 0;
+
+    // play the receive sound
     if (!local_id)
     {
         desktop_voice__sound(session->voice, DESKTOP_SOUND_MESSAGE_RECEIVED);
     }
+
+    // copy sender and text
     clib__string_copy(chat->sender, sizeof(chat->sender), sender);
     if (!clib__string_copy(chat->text, sizeof(chat->text), text))
     {
@@ -62,11 +72,17 @@ void server_msg__chat__append_direct(desktop_session_t *session, int64 slot, con
     desktop_chat_t *chat = NULL_POINTER;
     int64 local = desktop_session__client(session, session->model.local_id);
     desktop_client_t *peer = &session->model.clients[slot];
+
+    // count the received message
     if (!local_id && peer->direct_received < 0xffffffffffffffffULL)
     {
         peer->direct_received++;
     }
+
+    // add the chat message
     server_msg__chat__append(session, -1, local_id ? (local >= 0 ? session->model.clients[local].name : "You") : peer->name, text, local_id);
+
+    // set the peer fields
     chat = &session->model.chats[session->model.chat_count - 1];
     chat->peer = peer->id;
     chat->peer_serial = peer->serial;
@@ -91,14 +107,19 @@ void server_msg__chat__receive_text(desktop_session_t *session, int64 channel, i
     const char *text = cJSON_IsString(value) ? value->valuestring : payload;
     const char *id = server_msg__read_string(wrapper, "reaction_id");
     desktop_chat_t *chat = NULL_POINTER;
+
+    // apply a message edit
     if (clib__strcmp(server_msg__read_string(wrapper, "type"), "chat_message_edit") == 0)
     {
         _server_chat_internal__edit(session, channel, slot, author_slot, server_id, wrapper);
         crypto_session__free_json(wrapper);
         return;
     }
+
+    // add the received text
     if (text && text[0] && (slot < 0 || !session->model.clients[slot].ignored))
     {
+        // choose direct or channel
         if (slot >= 0)
         {
             server_msg__chat__append_direct(session, slot, text, 0);
@@ -107,20 +128,28 @@ void server_msg__chat__receive_text(desktop_session_t *session, int64 channel, i
         {
             server_msg__chat__append(session, channel, sender, text, 0);
         }
+
+        // store format and sequence
         chat = &session->model.chats[session->model.chat_count - 1];
         desktop_chat_format__read(&chat->format, wrapper);
         chat->server_id = server_id;
         chat->latest_edit_sequence = server_id;
+
+        // copy a valid ID
         if (desktop_chat__valid_id(id))
         {
             clib__string_copy(chat->reaction_id, sizeof(chat->reaction_id), id);
         }
+
+        // store the author identity
         if (author_slot >= 0 && author_slot < session->model.client_count)
         {
             chat->author_serial = session->model.clients[author_slot].serial;
             clib__string_copy(chat->author_public_key, sizeof(chat->author_public_key), session->client_keys[author_slot]);
         }
     }
+
+    // free the wrapper
     crypto_session__free_json(wrapper);
 }
 
@@ -143,15 +172,21 @@ static void _server_chat_internal__edit(desktop_session_t *session, int64 channe
     desktop_chat_t *target = NULL_POINTER;
     desktop_chat_t *chat = NULL_POINTER;
     int64 index = 0;
+
+    // check the edit fields
     if (author_slot < 0 || author_slot >= session->model.client_count || server_id < 0 || !desktop_chat__valid_id(id) || !desktop_chat__valid_text(replacement) || !author[0] || clib__strcmp(author, session->client_keys[author_slot]) != 0)
     {
         return;
     }
+
+    // check the sender
     sender = &session->model.clients[author_slot];
     if (sender->ignored || sender->id == session->model.local_id || (peer_slot >= 0 && peer_slot != author_slot))
     {
         return;
     }
+
+    // find the edited message
     for (index = 0; index < session->model.chat_count; index++)
     {
         chat = &session->model.chats[index];
@@ -161,11 +196,13 @@ static void _server_chat_internal__edit(desktop_session_t *session, int64 channe
         }
         if (target)
         {
-            // A repeated original ID must not make the edit target ambiguous.
+            // a repeated original ID must not make the edit target ambiguous
             return;
         }
         target = chat;
     }
+
+    // store the newer text
     if (target && server_id > target->latest_edit_sequence && server_id > target->server_id)
     {
         clib__null_memory(target->text, sizeof(target->text));
@@ -187,17 +224,24 @@ void server_msg__chat__acknowledge(desktop_session_t *session, const cJSON *mess
     int64 server_id = server_msg__read_number(message, "server_chat_message_id");
     int64 index = 0;
     desktop_chat_t *chat = NULL_POINTER;
+
+    // check both IDs
     if (id <= 0 || server_id < 0)
     {
         return;
     }
+
+    // check every chat message
     for (index = 0; index < session->model.chat_count; index++)
     {
+        // skip other connections
         chat = &session->model.chats[index];
         if (chat->connection_serial != session->model.connection_serial)
         {
             continue;
         }
+
+        // confirm message or edit
         if (chat->local_id == (uint64)id && chat->pending)
         {
             chat->pending = FALSE;
@@ -228,23 +272,30 @@ void server_msg__chat__process_direct(desktop_session_t *session, const cJSON *m
     desktop_content_keys_t channel_keys = { 0 };
     boole complete = 0;
 
-    // The purpose named by the sender decides how the content is read: channel keys or conversation.
+    // the purpose named by the sender decides how the content is read: channel keys or conversation
     const char *purpose = server_msg__read_string(message, "purpose");
     int64 sender = server_msg__read_number(message, "sender_id");
     int64 slot = desktop_session__client(session, sender);
 
+    // check the sender
     if (slot < 0 || sender == session->model.local_id || session->model.clients[slot].music)
     {
         return;
     }
+
+    // decrypt the direct keys
     envelope = desktop_protocol__parse_json(server_msg__read_string(message, "value"), clib__strlen(server_msg__read_string(message, "value")), DESKTOP_MESSAGE_LIMIT, CJSON_NESTING_LIMIT);
     encrypted_body = crypto_session__direct_open(session->crypto, envelope, &direct_keys);
+
+    // decrypt and check body
     if (encrypted_body)
     {
         plaintext = crypto_session__direct_content_decrypt(&direct_keys, encrypted_body, FALSE);
         body = plaintext ? desktop_protocol__parse_json(plaintext, clib__strlen(plaintext), DESKTOP_MESSAGE_LIMIT, CJSON_NESTING_LIMIT) : NULL;
         complete = clib__strcmp(purpose, "channel_keys") == 0 && sender == session->maintainer && session->maintainer >= 0 && clib__strcmp(server_msg__read_string(body, "type"), "channel_keys_from_maintainer") == 0 && server_msg__read_number(body, "channel_id") == session->model.channel && server_msg__read_number(body, "maintainer_generation") == session->generation && crypto_session__read_keys(server_msg__read_string(body, "value"), &channel_keys);
     }
+
+    // store the channel keys
     if (complete)
     {
         if (session->model.keys_ready)
@@ -256,19 +307,27 @@ void server_msg__chat__process_direct(desktop_session_t *session, const cJSON *m
         session->model.keys_ready = 1;
         desktop_session__detail(session, "Connected. Channel keys are ready.", 0);
     }
+
+    // report a closed conversation
     if (clib__strcmp(purpose, "conversation") == 0 && clib__strcmp(server_msg__read_string(body, "type"), "direct_chat_closed") == 0)
     {
         // the other side closed the window of the conversation with this client
         desktop_session__detail(session, "The other user closed the private conversation.", 0);
     }
+
+    // add the private message
     if (clib__strcmp(purpose, "conversation") == 0 && clib__strcmp(server_msg__read_string(body, "type"), "direct_chat_message") == 0)
     {
         server_msg__chat__receive_text(session, -1, slot, session->model.clients[slot].name, server_msg__read_string(body, "value"), slot, server_msg__read_number(message, "server_chat_message_id"));
     }
+
+    // free the buffers
     crypto_session__free_json(body);
     crypto_session__free_json(envelope);
     crypto_session__free_text(encrypted_body);
     crypto_session__free_text(plaintext);
+
+    // erase the keys
     mbedtls_platform_zeroize(&direct_keys, sizeof(direct_keys));
     mbedtls_platform_zeroize(&channel_keys, sizeof(channel_keys));
 }

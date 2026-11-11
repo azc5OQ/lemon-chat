@@ -64,6 +64,7 @@ static void _login_admission_internal__wake_next(void)
  */
 static void _login_admission_internal__remove_waiter(login_waiter_t *waiter)
 {
+    // remove from the list
     if (waiter->previous != NULL)
     {
         waiter->previous->next = waiter->next;
@@ -80,6 +81,8 @@ static void _login_admission_internal__remove_waiter(login_waiter_t *waiter)
     {
         g_last_waiter = waiter->previous;
     }
+
+    // wake the next thread
     _login_admission_internal__wake_next();
 }
 
@@ -92,6 +95,7 @@ static void _login_admission_internal__remove_waiter(login_waiter_t *waiter)
  */
 void login_admission__set_limit(uint64 limit)
 {
+    // keep limit in range
     if (limit < 1)
     {
         limit = 1;
@@ -101,6 +105,7 @@ void login_admission__set_limit(uint64 limit)
         limit = 64;
     }
 
+    // store the limit
     pthread_mutex_lock(&g_login_mutex);
     g_login_limit = limit;
     _login_admission_internal__wake_next();
@@ -129,14 +134,15 @@ boole login_admission__acquire(boole (*connection_is_valid)(void *), void *conne
     int64 wait_status = 0;
     boole valid = FALSE;
 
+    // check arguments
     if (connection_is_valid == NULL || timeout_ms == 0 || pthread_cond_init(&waiter.ready, NULL) != 0)
     {
         return FALSE;
     }
 
-    // Each waiting reader keeps its own small queue entry on its stack. There
+    // each waiting reader keeps its own small queue entry on its stack. there
     // cannot be more entries than existing connection threads, and finishing a
-    // login wakes only the next waiter instead of waking hundreds of threads.
+    // login wakes only the next waiter instead of waking hundreds of threads
     pthread_mutex_lock(&g_login_mutex);
     waiter.previous = g_last_waiter;
     waiter.next = NULL;
@@ -150,19 +156,23 @@ boole login_admission__acquire(boole (*connection_is_valid)(void *), void *conne
     }
     g_last_waiter = &waiter;
 
+    // wait for a slot
     for (;;)
     {
-        // The connection check may need the server's client lock. Never hold
-        // this mutex while asking for it: saving settings uses the other order.
+        // the connection check may need the server's client lock. never hold
+        // this mutex while asking for it: saving settings uses the other order
         pthread_mutex_unlock(&g_login_mutex);
         valid = connection_is_valid(connection);
         pthread_mutex_lock(&g_login_mutex);
 
+        // check connection and timeout
         elapsed_ms = _login_admission_internal__now_ms() - started_ms;
         if (valid == FALSE || elapsed_ms >= timeout_ms)
         {
             break;
         }
+
+        // take a free slot
         if (g_first_waiter == &waiter && g_active_logins < g_login_limit)
         {
             g_active_logins++;
@@ -170,13 +180,15 @@ boole login_admission__acquire(boole (*connection_is_valid)(void *), void *conne
             break;
         }
 
-        // A disconnected connection is noticed within a second even if every
-        // login slot is busy. Elapsed time avoids overflowing a large timeout.
+        // a disconnected connection is noticed within a second even if every
+        // login slot is busy. elapsed time avoids overflowing a large timeout
         wait_ms = timeout_ms - elapsed_ms;
         if (wait_ms > 1000)
         {
             wait_ms = 1000;
         }
+
+        // calculate the wake time
         clock_gettime(CLOCK_REALTIME, &wake_time);
         wake_time.tv_sec += (time_t)(wait_ms / 1000);
         wake_time.tv_nsec += (long)(wait_ms % 1000) * 1000000L;
@@ -185,6 +197,8 @@ boole login_admission__acquire(boole (*connection_is_valid)(void *), void *conne
             wake_time.tv_sec++;
             wake_time.tv_nsec -= 1000000000L;
         }
+
+        // wait for a signal
         wait_status = pthread_cond_timedwait(&waiter.ready, &g_login_mutex, &wake_time);
         if (wait_status != 0 && wait_status != ETIMEDOUT)
         {
@@ -192,6 +206,7 @@ boole login_admission__acquire(boole (*connection_is_valid)(void *), void *conne
         }
     }
 
+    // remove the waiter
     _login_admission_internal__remove_waiter(&waiter);
     pthread_mutex_unlock(&g_login_mutex);
     pthread_cond_destroy(&waiter.ready);
@@ -207,6 +222,7 @@ boole login_admission__acquire(boole (*connection_is_valid)(void *), void *conne
  */
 void login_admission__release(void)
 {
+    // free the login slot
     pthread_mutex_lock(&g_login_mutex);
     if (g_active_logins != 0)
     {

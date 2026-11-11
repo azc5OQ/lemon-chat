@@ -41,11 +41,15 @@ static void _ui_images_internal__layout(gui_node_t *node, float x, float y, floa
     float maximum_w = 0;
     float maximum_h = 0;
     desktop_image_texture_t *image = NULL_POINTER;
+
+    // call the original layout
     if (clib__strcmp(node->klass, "chat-picture") != 0 || index < 0 || index >= DESKTOP_ATTACHMENT_COUNT)
     {
         g_image_original.layout(node, x, y, width, height, scale);
         return;
     }
+
+    // compute the size limits
     image = &g_images[index];
     maximum_w = (float)g_image_preferences->image_width * scale * (float)g_image_preferences->scale_percent / 100;
     maximum_h = (float)g_image_preferences->image_height * scale * (float)g_image_preferences->scale_percent / 100;
@@ -53,7 +57,11 @@ static void _ui_images_internal__layout(gui_node_t *node, float x, float y, floa
     {
         maximum_w = clib__fminf(maximum_w, width);
     }
+
+    // compute the scale ratio
     ratio = image->width > 0 && image->height > 0 ? clib__fminf(scale * (float)g_image_preferences->scale_percent / 100, clib__fminf(maximum_w / (float)image->width, maximum_h / (float)image->height)) : 0;
+
+    // set the node bounds
     node->bounds.x = x;
     node->bounds.y = y;
     node->bounds.w = (float)image->width * ratio;
@@ -72,11 +80,15 @@ static void _ui_images_internal__draw(gui_node_t *node, float scale)
 {
     int64 index = (int64)(nuint)node->user_data - 1;
     gui_color_t tint = { 1, 1, 1, 1 };
+
+    // call the original drawing
     if (clib__strcmp(node->klass, "chat-picture") != 0)
     {
         g_image_original.emit_draws(node, scale);
         return;
     }
+
+    // draw the texture
     if (index >= 0 && index < DESKTOP_ATTACHMENT_COUNT && g_images[index].texture)
     {
         renderer__submit_image(node->bounds, g_images[index].texture, tint);
@@ -92,8 +104,12 @@ static void _ui_images_internal__draw(gui_node_t *node, float scale)
 void desktop_ui_images__initialize(desktop_attachments_t *attachments, desktop_chat_preferences_t *preferences)
 {
     const widget_vtable_t *original = widget_registry__get(GUI_NODE_TYPE__TEXT);
+
+    // store the arguments
     g_image_attachments = attachments;
     g_image_preferences = preferences;
+
+    // replace layout and drawing
     if (original && original != &g_image_widget)
     {
         g_image_original = *original;
@@ -118,6 +134,8 @@ void desktop_ui_images__append(gui_node_t *parent, const desktop_attachment_t *a
     int64 index = 0;
     int64 free_slot = -1;
     uint64 total = 0;
+
+    // search the texture slots
     for (index = 0; index < DESKTOP_ATTACHMENT_COUNT; index++)
     {
         total += g_images[index].bytes;
@@ -130,16 +148,24 @@ void desktop_ui_images__append(gui_node_t *parent, const desktop_attachment_t *a
             image = &g_images[index];
         }
     }
+
+    // create a missing texture
     if (!image && free_slot >= 0 && total + (uint64)attachment->image_width * (uint64)attachment->image_height * 4 <= 32ULL * 1024 * 1024)
     {
+        // read the picture pixels
         image = &g_images[free_slot];
         pixels = desktop_attachments__image(g_image_attachments, attachment->id, &image->width, &image->height);
         if (pixels)
         {
+            // create the texture
             image->bytes = (uint64)image->width * (uint64)image->height * 4;
             image->texture = renderer__create_texture_rgba(pixels, (int)image->width, (int)image->height);
+
+            // free the pixels
             mbedtls_platform_zeroize(pixels, image->bytes);
             free(pixels);
+
+            // keep or clear slot
             if (image->texture)
             {
                 image->id = attachment->id;
@@ -150,6 +176,8 @@ void desktop_ui_images__append(gui_node_t *parent, const desktop_attachment_t *a
             }
         }
     }
+
+    // add the picture node
     if (image && image->texture && parent)
     {
         node = scene__node_new(GUI_NODE_TYPE__TEXT);
@@ -172,6 +200,8 @@ void desktop_ui_images__refresh(const desktop_attachments_view_t *view)
     int64 index = 0;
     int64 item = 0;
     boole retained = FALSE;
+
+    // destroy unused textures
     for (index = 0; index < DESKTOP_ATTACHMENT_COUNT; index++)
     {
         retained = FALSE;
@@ -194,6 +224,8 @@ void desktop_ui_images__refresh(const desktop_attachments_view_t *view)
 void desktop_ui_images__shutdown(void)
 {
     int64 index = 0;
+
+    // destroy the textures
     for (index = 0; index < DESKTOP_ATTACHMENT_COUNT; index++)
     {
         if (g_images[index].texture)
@@ -201,6 +233,8 @@ void desktop_ui_images__shutdown(void)
             renderer__destroy_texture(g_images[index].texture);
         }
     }
+
+    // clear the stored state
     mbedtls_platform_zeroize(g_images, sizeof(g_images));
     g_image_attachments = NULL;
     g_image_preferences = NULL;

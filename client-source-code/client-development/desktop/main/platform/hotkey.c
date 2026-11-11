@@ -34,6 +34,8 @@ int64 desktop_hotkey__key(int64 index)
 int64 desktop_hotkey__index(int64 key)
 {
     int64 index = 0;
+
+    // find the key
     for (index = 0; index < desktop_hotkey__count(); index++)
     {
         if (g_keys[index].key == key)

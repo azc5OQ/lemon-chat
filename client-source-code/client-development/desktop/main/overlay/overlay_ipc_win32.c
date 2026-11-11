@@ -26,21 +26,30 @@ desktop_overlay_ipc_t *desktop_overlay_ipc__open(uint game_pid, boole writer)
     char name[96] = { 0 };
     desktop_overlay_ipc_t *ipc = NULL_POINTER;
 
+    // allocate the handle
     clib__null_memory(&name, sizeof(name));
     ipc = calloc(1, sizeof(*ipc));
     if (!ipc)
     {
         return NULL;
     }
+
+    // open the mutex
     ipc->writer = writer;
     clib__string_format(name, sizeof(name), "Local\\LemonChat.Overlay.%u.Lock", game_pid);
     ipc->mutex = writer ? CreateMutexA(NULL, FALSE, name) : OpenMutexA(SYNCHRONIZE | MUTEX_MODIFY_STATE, FALSE, name);
+
+    // open the shared memory
     clib__string_format(name, sizeof(name), "Local\\LemonChat.Overlay.%u.Data", game_pid);
     ipc->mapping = writer ? CreateFileMappingA(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE, 0, sizeof(*ipc->view), name) : OpenFileMappingA(FILE_MAP_READ, FALSE, name);
+
+    // map the shared memory
     if (ipc->mapping && ipc->mutex)
     {
         ipc->view = MapViewOfFile(ipc->mapping, writer ? FILE_MAP_WRITE : FILE_MAP_READ, 0, 0, sizeof(*ipc->view));
     }
+
+    // close on failure
     if (!ipc->view)
     {
         desktop_overlay_ipc__close(ipc);
@@ -58,22 +67,31 @@ desktop_overlay_ipc_t *desktop_overlay_ipc__open(uint game_pid, boole writer)
  */
 void desktop_overlay_ipc__close(desktop_overlay_ipc_t *ipc)
 {
+    // nothing to close
     if (!ipc)
     {
         return;
     }
+
+    // unmap the shared memory
     if (ipc->view)
     {
         UnmapViewOfFile(ipc->view);
     }
+
+    // close the shared memory
     if (ipc->mapping)
     {
         CloseHandle(ipc->mapping);
     }
+
+    // close the mutex
     if (ipc->mutex)
     {
         CloseHandle(ipc->mutex);
     }
+
+    // free the handle
     desktop_memory__erase(ipc, sizeof(*ipc));
     free(ipc);
 }
@@ -92,15 +110,20 @@ boole desktop_overlay_ipc__write(desktop_overlay_ipc_t *ipc, const desktop_overl
     boole permitted = 0;
     HANDLE owner = NULL;
 
+    // check arguments
     if (!ipc || !ipc->writer || !desktop_overlay_data__valid(snapshot))
     {
         return 0;
     }
+
+    // lock the mutex
     wait = WaitForSingleObject(ipc->mutex, 10);
     if (wait != WAIT_OBJECT_0 && wait != WAIT_ABANDONED)
     {
         return 0;
     }
+
+    // check the owner process
     permitted = 1;
     if (desktop_overlay_data__valid(ipc->view) && ipc->view->owner_pid && ipc->view->owner_pid != GetCurrentProcessId())
     {
@@ -115,12 +138,16 @@ boole desktop_overlay_ipc__write(desktop_overlay_ipc_t *ipc, const desktop_overl
             permitted = GetLastError() == ERROR_INVALID_PARAMETER;
         }
     }
+
+    // copy the snapshot
     if (permitted)
     {
         clib__memcpy(ipc->view, snapshot, sizeof(*snapshot));
         ipc->view->owner_pid = GetCurrentProcessId();
         ipc->view->heartbeat_ms = GetTickCount64();
     }
+
+    // unlock the mutex
     ReleaseMutex(ipc->mutex);
     return permitted;
 }
@@ -138,20 +165,27 @@ boole desktop_overlay_ipc__read(desktop_overlay_ipc_t *ipc, desktop_overlay_snap
     DWORD wait = 0;
     boole valid = 0;
 
+    // check arguments
     if (!ipc || !snapshot)
     {
         return 0;
     }
+
+    // lock the mutex
     wait = WaitForSingleObject(ipc->mutex, 0);
     if (wait != WAIT_OBJECT_0 && wait != WAIT_ABANDONED)
     {
         return 0;
     }
+
+    // copy the valid snapshot
     valid = desktop_overlay_data__valid(ipc->view);
     if (valid)
     {
         clib__memcpy(snapshot, ipc->view, sizeof(*snapshot));
     }
+
+    // unlock the mutex
     ReleaseMutex(ipc->mutex);
     return valid;
 }

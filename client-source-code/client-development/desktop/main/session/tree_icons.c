@@ -72,11 +72,15 @@ static void *_tree_icons_internal__allocate(uint64 capacity)
 {
     int64 index = 0;
     void *pointer = NULL_POINTER;
+
+    // check the size limit
     if (!capacity || capacity > 8 * 1024 * 1024 - g_svg_bytes)
     {
         _tree_icons_internal__abort();
         return NULL;
     }
+
+    // find an empty slot
     for (index = 0; index < 2048; index++)
     {
         if (!g_svg_allocations[index].pointer)
@@ -92,6 +96,8 @@ static void *_tree_icons_internal__allocate(uint64 capacity)
             break;
         }
     }
+
+    // stop the decoder
     _tree_icons_internal__abort();
     return NULL;
 }
@@ -104,10 +110,14 @@ static void *_tree_icons_internal__allocate(uint64 capacity)
 static void _tree_icons_internal__release(void *pointer)
 {
     int64 index = 0;
+
+    // nothing to free
     if (!pointer)
     {
         return;
     }
+
+    // free the tracked memory
     for (index = 0; index < 2048; index++)
     {
         if (g_svg_allocations[index].pointer == pointer)
@@ -131,10 +141,14 @@ static void *_tree_icons_internal__resize(void *pointer, uint64 capacity)
 {
     int64 index = 0;
     void *replacement = NULL_POINTER;
+
+    // no old allocation
     if (!pointer)
     {
         return _tree_icons_internal__allocate(capacity);
     }
+
+    // copy to new allocation
     for (index = 0; index < 2048; index++)
     {
         if (g_svg_allocations[index].pointer == pointer)
@@ -148,6 +162,8 @@ static void *_tree_icons_internal__resize(void *pointer, uint64 capacity)
             return replacement;
         }
     }
+
+    // refuse unknown pointer
     _tree_icons_internal__abort();
     return NULL;
 }
@@ -168,32 +184,48 @@ static boole _tree_icons_internal__svg(char *source, ubyte *pixels)
     int64 points = 0;
     float scale = 0;
     boole valid = FALSE;
+
+    // mark decoder as active
     g_svg_failed = FALSE;
     g_svg_active = TRUE;
+
+    // save the abort point
     if (setjmp(g_svg_abort) != 0)
     {
         valid = FALSE;
         goto label_finished;
     }
+
+    // read the SVG text
     svg = nsvgParse(source, "px", 96);
     if (!svg || !(svg->width >= 1 && svg->width <= 4096 && svg->height >= 1 && svg->height <= 4096) || g_svg_failed)
     {
         goto label_finished;
     }
+
+    // calculate the scale
     scale = 32.0f / clib__fmaxf(svg->width, svg->height);
+
+    // check every shape
     for (shape = svg->shapes; shape; shape = shape->next)
     {
+        // check the stroke width
         if (!(shape->strokeWidth >= 0 && shape->strokeWidth <= 4096))
         {
             goto label_finished;
         }
+
+        // check every path
         for (path = shape->paths; path; path = path->next)
         {
+            // limit the point count
             if (path->npts < 0 || path->npts > 8192 || points + path->npts > 16384)
             {
                 goto label_finished;
             }
             points += path->npts;
+
+            // check the coordinate range
             for (index = 0; index < (int64)path->npts * 2; index++)
             {
                 if (!(path->pts[index] * scale >= -65536 && path->pts[index] * scale <= 65536))
@@ -203,6 +235,8 @@ static boole _tree_icons_internal__svg(char *source, ubyte *pixels)
             }
         }
     }
+
+    // draw the icon pixels
     raster = nsvgCreateRasterizer();
     if (raster && !g_svg_failed)
     {
@@ -210,12 +244,15 @@ static boole _tree_icons_internal__svg(char *source, ubyte *pixels)
         valid = !g_svg_failed;
     }
 label_finished:
+    // mark decoder as finished
     g_svg_active = FALSE;
-    // Every decoder allocation is in this ledger, including incomplete objects after an abort.
+    // every decoder allocation is in this ledger, including incomplete objects after an abort
     for (index = 0; index < 2048; index++)
     {
         _tree_icons_internal__release(g_svg_allocations[index].pointer);
     }
+
+    // erase unfinished pixels
     if (!valid)
     {
         desktop_memory__erase(pixels, 4096);
@@ -243,36 +280,50 @@ boole desktop_tree_icons__decode(const char *data, ubyte *pixels, uint64 capacit
     int64 x = 0;
     int64 y = 0;
     boole valid = FALSE;
+
+    // check arguments
     if (!pixels || capacity < 4096 || !data)
     {
         return FALSE;
     }
+
+    // clear the pixels
     clib__null_memory(pixels, capacity);
+
+    // check length and prefix
     length = clib__strlen(data);
     if (length >= 90000 || clib__strncmp(data, "data:image/", 11) != 0)
     {
         return FALSE;
     }
+
+    // find the base64 text
     payload = clib__strstr(data, ";base64,");
     if (!payload || payload - data > 40)
     {
         return FALSE;
     }
     payload += 8;
+
+    // decode the base64 text
     bytes = calloc(1, 65537);
     if (!bytes || mbedtls_base64_decode(bytes, 65536, &decoded_size, (const ubyte *)payload, length - (uint64)(payload - data)) != 0 || !decoded_size)
     {
         goto label_finished;
     }
+
+    // choose the image decoder
     if (clib__strncmp(data, "data:image/svg+xml;base64,", 26) == 0)
     {
         valid = !clib__memchr(bytes, 0, decoded_size) && _tree_icons_internal__svg((char *)bytes, pixels);
     }
     else
     {
+        // decode the bitmap image
         image = desktop_attachment_image__decode_bounded(bytes, decoded_size, &width, &height, 256, 32);
         if (image)
         {
+            // center the image
             x = (32 - width) / 2;
             y = (32 - height) / 2;
             for (row = 0; row < height; row++)
@@ -283,6 +334,7 @@ boole desktop_tree_icons__decode(const char *data, ubyte *pixels, uint64 capacit
         }
     }
 label_finished:
+    // erase and free buffers
     desktop_memory__erase(image, (uint64)width * (uint64)height * 4);
     free(image);
     desktop_memory__erase(bytes, 65537);
@@ -304,13 +356,21 @@ boole desktop_tree_icons__flag(const char *country, ubyte *pixels, uint64 capaci
     char *text = NULL_POINTER;
     uint64 size = 0;
     boole valid = FALSE;
+
+    // check arguments
     if (!pixels || capacity < 4096 || !country || clib__strlen(country) != 2 || country[0] < 'a' || country[0] > 'z' || country[1] < 'a' || country[1] > 'z')
     {
         return FALSE;
     }
+
+    // clear the pixels
     clib__null_memory(pixels, capacity);
+
+    // read the flag file
     clib__string_format(path, sizeof(path), "assets/flags/%s.svg", country);
     bytes = desktop_attachment_file__read(path, 65536, &size);
+
+    // draw the flag SVG
     if (bytes && size && !clib__memchr(bytes, 0, size))
     {
         text = calloc(1, size + 1);
@@ -320,6 +380,8 @@ boole desktop_tree_icons__flag(const char *country, ubyte *pixels, uint64 capaci
             valid = _tree_icons_internal__svg(text, pixels);
         }
     }
+
+    // erase and free buffers
     desktop_memory__erase(text, size + 1);
     free(text);
     desktop_memory__erase(bytes, size);

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # Writes page options (server address, keys, default themes, start page buttons) into a copy of a built client.html.
 import argparse
+import ctypes
 import json
 import os
 import re
@@ -14,6 +15,10 @@ THEME_BUTTON = re.compile(rb"<button\b[^>]*\bclass\s*=\s*[\"']choose-theme-item[
 THEME_NAME = re.compile(rb"\bdata-name\s*=\s*[\"']([^\"']+)[\"']", re.IGNORECASE)
 THEME_FOR_PHONE = re.compile(rb"\bdata-mobile\s*=\s*[\"']true[\"']", re.IGNORECASE)
 SERVER_ADDRESS = re.compile(r"^[A-Za-z0-9.\-:\[\]]{1,255}$")
+
+# the marks in front of every printed line, the same as the server's setup script uses (main.c)
+MARKS = {"info": "[*]", "ok": "[+]", "off": "[-]", "warn": "[!]", "ask": "[?]"}
+MARK_COLORS = {"info": "1;36", "ok": "1;32", "off": "1;31", "warn": "1;33", "ask": "1;36"}
 
 
 class ConfigureError(Exception):
@@ -78,44 +83,355 @@ def read_options(arguments):
     return parser.parse_args(arguments)
 
 
-def ask_yes(question):
-    """Asks a yes or no question; an empty answer means no."""
-    return input(question + " [y/N]: ").strip().lower() in ("y", "yes")
+def enable_mark_colors():
+    """
+    @brief colours the marks when the output is a console that understands colour codes
+
+    @return None
+    """
+    # only on a console
+    if not sys.stdout.isatty():
+        return
+
+    # switch colour codes on
+    if os.name == "nt":
+        handle = ctypes.windll.kernel32.GetStdHandle(-11)
+        mode = ctypes.c_uint32()
+        if not ctypes.windll.kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
+            return
+        if not ctypes.windll.kernel32.SetConsoleMode(handle, mode.value | 0x0004):
+            return
+
+    # colour each mark
+    for name in MARKS:
+        MARKS[name] = "\033[" + MARK_COLORS[name] + "m" + MARKS[name] + "\033[0m"
 
 
-def read_typed_port(text):
-    """Reads a port typed as an answer; a wrong one is reported in one line like every other problem."""
-    try:
-        return read_port(text)
-    except argparse.ArgumentTypeError as error:
-        raise ConfigureError(str(error))
+def say(mark, text):
+    """
+    @brief prints one line with a mark in front of it
+
+    @param str mark -> "info", "ok", "off", "warn" or "ask"
+    @param str text -> the text of the line
+
+    @return None
+    """
+    print(MARKS[mark] + " " + text)
+
+
+def ask_text(question, default_text="", is_trimmed=True):
+    """
+    @brief asks for one line of text
+
+    @param str question -> the question, without the colon
+    @param str default_text -> shown in brackets and used for an empty answer
+    @param bool is_trimmed -> False keeps spaces at both ends, for passwords
+
+    @return str -> the answer, or the default
+    """
+    # show the default
+    hint = " [" + default_text + "]" if default_text else ""
+
+    # read the answer
+    answer = input(MARKS["ask"] + " " + question + hint + ": ")
+    if is_trimmed:
+        answer = answer.strip()
+    return answer or default_text
+
+
+def ask_yes_no(question, note, default_answer):
+    """
+    @brief asks one yes or no question until the answer is y, n or empty
+
+    @param str question -> the question, without the (y/n) hint
+    @param list note -> lines printed under the question the first time, or None
+    @param bool default_answer -> what an empty answer means
+
+    @return bool -> True for yes
+    """
+    hint = "(Y/n): " if default_answer else "(y/N): "
+    is_note_printed = False
+    while True:
+        # question with note
+        if note and not is_note_printed:
+            answer = input(MARKS["ask"] + " " + question + "\n" + "".join("    " + line + "\n" for line in note) + "    " + hint)
+            is_note_printed = True
+        else:
+            answer = input(MARKS["ask"] + " " + question + " " + hint)
+        answer = answer.strip().lower()
+
+        # empty means default
+        if answer == "":
+            return default_answer
+
+        # yes or no
+        if answer in ("y", "yes"):
+            return True
+        if answer in ("n", "no"):
+            return False
+
+        # ask again
+        say("warn", "Enter y or n, or press Enter to use the default.")
+
+
+def ask_port(question):
+    """
+    @brief asks for a port until the answer is a whole number from 1 to 65535
+
+    @param str question -> the question, without the colon
+
+    @return int -> the port
+    """
+    while True:
+        # read the answer
+        answer = ask_text(question)
+
+        # check the number
+        try:
+            return read_port(answer)
+        except argparse.ArgumentTypeError:
+            say("warn", "Enter a whole number from 1 to 65535.")
+
+
+def ask_files(settings):
+    """
+    @brief asks which page to configure and which file to write
+
+    @param object settings -> receives input and output
+
+    @return bytes -> the content of the page to configure
+    """
+    page = b""
+    default_input = settings.input
+
+    # page to configure
+    while True:
+        settings.input = ask_text("Page to configure", default_input)
+        if not os.path.isfile(settings.input):
+            say("warn", "That file does not exist. Build the client first (build.bat or sh build.sh) or enter another path.")
+            continue
+        with open(settings.input, "rb") as file:
+            page = file.read()
+        if CONFIG_SCRIPT.search(page):
+            break
+        say("warn", "That file is not a built client.html.")
+
+    # file to write
+    default_output = os.path.join(os.path.dirname(os.path.abspath(settings.input)), "client-configured.html")
+    while True:
+        settings.output = ask_text("File to write", default_output)
+        if os.path.normcase(os.path.abspath(settings.output)) != os.path.normcase(os.path.abspath(settings.input)):
+            break
+        say("warn", "The file to write must differ from the page to configure.")
+    return page
+
+
+def ask_passwords(settings):
+    """
+    @brief asks for the server's connection passwords, one at a time, each with its cipher
+
+    @param object settings -> receives keys
+
+    @return None
+    """
+    print()
+    say("info", "Connection passwords")
+    say("info", "Enter the server's connection passwords. Everybody who gets the file can read them.")
+    while True:
+        # next password
+        number = len(settings.keys) + 1
+        password = ask_text("Password " + str(number) + " (Enter for no more passwords)", "", False)
+        if password == "":
+            break
+
+        # repeated password
+        if any(key["password"] == password for key in settings.keys):
+            say("warn", "This password is already in the list.")
+            if not ask_yes_no("Add it again?", None, False):
+                continue
+
+        # cipher of the password
+        while True:
+            cipher = ask_text("Cipher: " + ", ".join(CIPHERS), CIPHERS[0])
+            if cipher in CIPHERS:
+                break
+            say("warn", "Choose one of the listed cipher names.")
+
+        # add to list
+        settings.keys.append({"type": cipher, "password": password})
+        say("ok", "Password " + str(number) + " added (" + cipher + ").")
+
+    # no password given
+    if not settings.keys:
+        say("info", "No connection password is written into the page.")
+
+
+def ask_server(settings):
+    """
+    @brief asks whether a server address is written into the page, and for its details
+
+    @param object settings -> receives host, port, is_secure_websocket_used and keys
+
+    @return None
+    """
+    print()
+    say("info", "Server")
+
+    # address wanted or not
+    if not ask_yes_no("Write a server address into the page?", ["The page then connects without showing the connect window."], False):
+        say("info", "No server address is written. The page shows the connect window.")
+        return
+
+    # server address
+    while True:
+        settings.host = ask_text("Server address (domain name or IP address)")
+        if SERVER_ADDRESS.match(settings.host):
+            break
+        say("warn", "Use letters, digits, dots, hyphens, colons and square brackets only.")
+
+    # kind of connection
+    settings.is_secure_websocket_used = ask_yes_no("Use a secure connection (wss)?", ["Needed when the server accepts only secure connections."], False)
+
+    # port
+    settings.port = ask_port("Port of the secure connection" if settings.is_secure_websocket_used else "Port")
+    say("ok", "Server: " + settings.host + ", port " + str(settings.port) + (", secure connection (wss)" if settings.is_secure_websocket_used else ""))
+
+    # passwords
+    ask_passwords(settings)
+
+
+def ask_theme(themes, device, is_for_phone_wanted):
+    """
+    @brief shows the themes of the page with numbers and asks for the default theme of one kind of device
+
+    @param list themes -> (name, is_for_phone) for every theme of the page
+    @param str device -> "a computer" or "a phone", used in the texts
+    @param bool is_for_phone_wanted -> True lists only the themes made for a phone
+
+    @return str -> the chosen theme name, or "" to keep the page's default
+    """
+    names = [name for name, is_for_phone in themes if is_for_phone or not is_for_phone_wanted]
+
+    # no theme to choose
+    if not names:
+        say("info", "No themes for " + device + " found in this page. Keeping the page's default.")
+        return ""
+
+    # numbered list
+    say("info", "Themes available on " + device + ":")
+    for index, name in enumerate(names):
+        print("      " + str(index + 1) + ") " + name)
+    while True:
+        # read the answer
+        answer = ask_text("Default theme on " + device + ", number or name (Enter to keep the page's default)")
+        if answer == "":
+            return ""
+
+        # number to name
+        if answer.isdigit() and 1 <= int(answer) <= len(names):
+            answer = names[int(answer) - 1]
+
+        # accept listed name
+        if answer in names:
+            say("ok", "Default theme on " + device + ": " + answer)
+            return answer
+
+        # ask again
+        say("warn", "Enter a number from 1 to " + str(len(names)) + ", a listed name, or press Enter.")
+
+
+def ask_start_page(settings):
+    """
+    @brief asks for the buttons of the start page and whether the identity is kept in the browser
+
+    @param object settings -> receives is_connect_button_shown, is_import_identity_button_shown and is_identity_kept
+
+    @return None
+    """
+    print()
+    say("info", "Start page")
+
+    # connect button
+    settings.is_connect_button_shown = ask_yes_no("Show a Connect button before the page connects?",
+        ["A browser plays no sound on a page until the user has clicked on it.", "With the button every user clicks once, so voices and sound effects are heard."], False)
+
+    # import identity button
+    if settings.is_connect_button_shown:
+        settings.is_import_identity_button_shown = ask_yes_no("Show an Import identity button under it?", None, False)
+
+    # identity in browser
+    settings.is_identity_kept = ask_yes_no("Keep each user's identity in the browser?", ["The same identity is then used on the next visit."], False)
+
+
+def print_summary(settings):
+    """
+    @brief prints every chosen value before the file is written
+
+    @param object settings -> the answers
+
+    @return None
+    """
+    rows = []
+
+    # files
+    rows.append(("page", settings.input))
+    rows.append(("file to write", settings.output))
+
+    # server and passwords
+    if settings.host:
+        rows.append(("server", settings.host + ", port " + str(settings.port) + (", secure connection (wss)" if settings.is_secure_websocket_used else "")))
+        rows.append(("passwords", str(len(settings.keys)) + (" (" + ", ".join(key["type"] for key in settings.keys) + ")" if settings.keys else "")))
+    else:
+        rows.append(("server", "none, the page shows the connect window"))
+
+    # themes
+    rows.append(("theme, computer", settings.theme or "the page's default"))
+    rows.append(("theme, phone", settings.mobile_theme or "the page's default"))
+
+    # start page and identity
+    rows.append(("start page", "Connect button: " + ("yes" if settings.is_connect_button_shown else "no")
+        + ", Import identity button: " + ("yes" if settings.is_import_identity_button_shown else "no")))
+    rows.append(("identity", "kept in the browser" if settings.is_identity_kept else "not kept in the browser"))
+
+    # print the rows
+    print()
+    say("info", "Summary")
+    for label, value in rows:
+        print("      " + label.ljust(17) + value)
 
 
 def ask(settings):
-    """Asks for every value on the terminal. An empty answer keeps the default shown in brackets."""
-    answer = input("Built client.html to read [" + settings.input + "]: ").strip()
-    settings.input = answer or settings.input
-    answer = input("File to write [client-configured.html next to it]: ").strip()
-    settings.output = answer or None
-    if ask_yes("Write the server connection details into the page, so it connects without the connect window?"):
-        settings.host = input("Server address (domain name or IP address): ").strip()
-        settings.port = read_typed_port(input("WebSocket port: ").strip())
-        settings.is_secure_websocket_used = ask_yes("Does the server accept only secure connections (wss)?")
-        answer = input("Port for secure connections, if it differs (empty for none): ").strip()
-        settings.wss_port = read_typed_port(answer) if answer else 0
-        print("Connection passwords are readable by everybody who gets the file. Enter them one per line as password or cipher:password; an empty line ends the list.")
-        answer = input("Connection password: ")
-        while answer != "":
-            settings.keys.append(read_key(answer))
-            answer = input("Connection password: ")
-    if os.path.isfile(settings.input):
-        with open(settings.input, "rb") as file:
-            print("Themes in this page: " + ", ".join(theme_label(theme) for theme in read_themes(file.read())))
-    settings.theme = input("Default theme on a desktop (empty for the page's own): ").strip()
-    settings.mobile_theme = input("Default theme on a phone (empty for the page's own): ").strip()
-    settings.is_connect_button_shown = ask_yes("Show a connect button before the page connects (needed for sound without another click)?")
-    settings.is_import_identity_button_shown = settings.is_connect_button_shown and ask_yes("Show an import identity button under it?")
-    settings.is_identity_kept = ask_yes("Keep each user's identity in the browser, so the same identity is used on the next visit?")
+    """
+    @brief asks for every value on the terminal, in the style of the server's setup script
+
+    @param object settings -> receives the answers
+
+    @return bool -> True when the file is to be written
+    """
+    # what this is
+    say("info", "Lemon Chat page builder")
+    say("info", "It writes a server address, passwords, default themes and the start page buttons into a copy of client.html.")
+    print()
+
+    # files
+    page = ask_files(settings)
+
+    # server
+    ask_server(settings)
+
+    # themes
+    print()
+    themes = read_themes(page)
+    settings.theme = ask_theme(themes, "a computer", False)
+    print()
+    settings.mobile_theme = ask_theme(themes, "a phone", True)
+
+    # start page
+    ask_start_page(settings)
+
+    # confirm
+    print_summary(settings)
+    return ask_yes_no("Write the file?", None, True)
 
 
 def build_config(settings, themes):
@@ -182,44 +498,57 @@ def write_atomic(path, content):
 
 def main(arguments):
     settings = read_options(arguments)
+    enable_mark_colors()
+
+    # no options: ask
     if not arguments:
         if not sys.stdin.isatty():
             raise ConfigureError("No options given and no terminal to ask on. See --help.")
-        ask(settings)
+        if not ask(settings):
+            say("off", "Nothing was written.")
+            return
+
+    # read the page
     if not os.path.isfile(settings.input):
         raise ConfigureError("Cannot find " + settings.input + ". Build the client first (build.bat or sh build.sh) or pass --input.")
     with open(settings.input, "rb") as file:
         page = file.read()
     themes = read_themes(page)
+
+    # only list themes
     if settings.is_theme_list_wanted:
         for theme in themes:
             print(theme_label(theme))
         return
+
+    # write the file
     output = os.path.abspath(settings.output or os.path.join(os.path.dirname(settings.input), "client-configured.html"))
     if os.path.normcase(output) == os.path.normcase(os.path.abspath(settings.input)):
         raise ConfigureError("The output file must differ from the input file.")
     config = build_config(settings, themes)
     write_atomic(output, configure(page, config))
-    print("Wrote " + output)
+
+    # say what was written
+    say("ok", "Wrote " + output)
     if "host" in config:
-        print("The page connects to " + config["host"] + ":" + str(config["port"]) + (" with wss" if config.get("is_secure_websocket_used") else "")
-              + " and contains " + str(len(config["keys"])) + " connection password(s).")
+        say("info", "The page connects to " + config["host"] + ":" + str(config["port"]) + (" with wss" if config.get("is_secure_websocket_used") else "")
+            + " and contains " + str(len(config["keys"])) + " connection password(s).")
     else:
-        print("The page contains no server address: it shows the connect window.")
-    print("Start page: connect button " + ("shown" if config["is_connect_button_shown"] else "not shown")
-          + ", import identity button " + ("shown" if config["is_import_identity_button_shown"] else "not shown") + ".")
+        say("info", "The page contains no server address: it shows the connect window.")
+    say("info", "Start page: connect button " + ("shown" if config["is_connect_button_shown"] else "not shown")
+        + ", import identity button " + ("shown" if config["is_import_identity_button_shown"] else "not shown") + ".")
 
 
 if __name__ == "__main__":
     try:
         main(sys.argv[1:])
     except ConfigureError as error:
-        print("Could not configure the client: " + str(error), file=sys.stderr)
+        print(MARKS["warn"] + " Could not configure the client: " + str(error), file=sys.stderr)
         sys.exit(1)
     except EOFError:
         # the input ended while a question waited for its answer, for example when the input is a file
-        print("\nCould not configure the client: the input ended before every question was answered. See --help.", file=sys.stderr)
+        print("\n" + MARKS["warn"] + " Could not configure the client: the input ended before every question was answered. See --help.", file=sys.stderr)
         sys.exit(1)
     except KeyboardInterrupt:
-        print("\nStopped.", file=sys.stderr)
+        print("\n" + MARKS["off"] + " Stopped. Nothing was written.", file=sys.stderr)
         sys.exit(1)

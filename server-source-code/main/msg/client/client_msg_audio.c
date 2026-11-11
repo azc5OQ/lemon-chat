@@ -28,8 +28,10 @@ static boole _client_msg_audio_internal__is_json_sdp_answer_format_valid(cJSON *
     cJSON *json_sdp_message_type = NULL_POINTER;
     cJSON *json_message_object = NULL_POINTER;
 
+    // read the message field
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
 
+    // check the value object
     json_value_object = cJSON_GetObjectItemCaseSensitive(json_message_object, "value");
     if (cJSON_IsObject(json_value_object) == FALSE)
     {
@@ -37,6 +39,7 @@ static boole _client_msg_audio_internal__is_json_sdp_answer_format_valid(cJSON *
         return FALSE;
     }
 
+    // check the type field
     json_sdp_message_type = cJSON_GetObjectItemCaseSensitive(json_value_object, "type");
     if (cJSON_IsString(json_sdp_message_type) == FALSE)
     {
@@ -44,18 +47,21 @@ static boole _client_msg_audio_internal__is_json_sdp_answer_format_valid(cJSON *
         return FALSE;
     }
 
+    // refuse a null type
     if (json_sdp_message_type->valuestring == NULL_POINTER)
     {
         DBG_AUDIO_WEBRTC log_info("%s %llu %s", "client : ", client_id, " json_sdp_message_type->valuestring == NULL \n");
         return FALSE;
     }
 
+    // refuse an empty type
     if (clib__utf8_string_length(json_sdp_message_type->valuestring) == 0)
     {
         DBG_AUDIO_WEBRTC log_info("%s %llu %s", "client : ", client_id, " clib__utf8_string_length(json_sdp_message_type->valuestring) \n");
         return FALSE;
     }
 
+    // check the SDP field
     json_sdp_message_value = cJSON_GetObjectItemCaseSensitive(json_value_object, "sdp");
     if (cJSON_IsString(json_sdp_message_value) == FALSE)
     {
@@ -63,18 +69,21 @@ static boole _client_msg_audio_internal__is_json_sdp_answer_format_valid(cJSON *
         return FALSE;
     }
 
+    // refuse a null SDP
     if (json_sdp_message_value->valuestring == NULL_POINTER)
     {
         DBG_AUDIO_WEBRTC log_info("%s %llu %s", "client : ", client_id, " json_sdp_message_value->valuestring == NULL \n");
         return FALSE;
     }
 
+    // refuse an empty SDP
     if (clib__utf8_string_length(json_sdp_message_value->valuestring) == 0)
     {
         DBG_AUDIO_WEBRTC log_info("%s %llu %s", "client : ", client_id, " clib__utf8_string_length(json_sdp_message_value->valuestring) \n");
         return FALSE;
     }
 
+    // store the checked object
     *checked_value = json_value_object;
     return TRUE;
 }
@@ -92,15 +101,17 @@ void client_msg__audio__process_sdp_answer(cJSON *json_root, uint64 sender_clien
 {
     cJSON *json_message_value = NULL_POINTER;
 
+    // log the request
     DBG_AUDIO_WEBRTC log_info("%s", "client_msg__audio__process_sdp_answer");
 
+    // check the answer format
     if (_client_msg_audio_internal__is_json_sdp_answer_format_valid(json_root, sender_client_id, &json_message_value) == FALSE)
     {
         DBG_AUDIO_WEBRTC log_info("%s", "client_msg__audio__process_sdp_answer client_msg__is_json_sdp_answer_format_valid == FALSE \n");
         return;
     }
 
-    // Keep the exact object validated above; differently cased keys cannot replace it.
+    // keep the exact object validated above; differently cased keys cannot replace it
     clib__read_lock(&g_clients_global_rwlock_guard);
     if (base__is_current_client_request(sender_client_id) == FALSE)
     {
@@ -108,6 +119,7 @@ void client_msg__audio__process_sdp_answer(cJSON *json_root, uint64 sender_clien
         return;
     }
 
+    // set the remote description
     if (g_clients_array[sender_client_id].is_authenticated == TRUE)
     {
         DBG_AUDIO_WEBRTC log_info("%s", "client_msg__audio__process_sdp_answer got here");
@@ -115,6 +127,7 @@ void client_msg__audio__process_sdp_answer(cJSON *json_root, uint64 sender_clien
         audio_webrtc__set_remote_description(&g_clients_array[sender_client_id], cJSON_GetObjectItemCaseSensitive(json_message_value, "sdp")->valuestring, cJSON_GetObjectItemCaseSensitive(json_message_value, "type")->valuestring);
     }
 
+    // unlock the clients
     clib__unlock(&g_clients_global_rwlock_guard);
 }
 
@@ -134,8 +147,10 @@ static boole _client_msg_audio_internal__is_ice_candidate_format_valid(cJSON *js
     cJSON *json_sdpMLineIndex = NULL_POINTER;
     cJSON *json_message_object = NULL_POINTER;
 
+    // read the message field
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
 
+    // check the value object
     json_value_object = cJSON_GetObjectItemCaseSensitive(json_message_object, "value");
     if (cJSON_IsObject(json_value_object) == FALSE)
     {
@@ -143,6 +158,7 @@ static boole _client_msg_audio_internal__is_ice_candidate_format_valid(cJSON *js
         return FALSE;
     }
 
+    // check the candidate field
     json_candidate = cJSON_GetObjectItemCaseSensitive(json_value_object, "candidate");
     if (cJSON_IsString(json_candidate) == FALSE)
     {
@@ -150,6 +166,7 @@ static boole _client_msg_audio_internal__is_ice_candidate_format_valid(cJSON *js
         return FALSE;
     }
 
+    // refuse a null candidate
     if (json_candidate->valuestring == NULL_POINTER)
     {
         DBG_AUDIO_WEBRTC log_info("%s %llu %s", "client : ", client_id, " json_candidate->valuestring == NULL \n");
@@ -168,6 +185,7 @@ static boole _client_msg_audio_internal__is_ice_candidate_format_valid(cJSON *js
         return FALSE;
     }
 
+    // refuse a null sdpMid
     if (json_sdpMid->valuestring == NULL_POINTER)
     {
         DBG_AUDIO_WEBRTC log_info("%s %llu %s", "client : ", client_id, " json_sdpMid->valuestring == NULL \n");
@@ -188,6 +206,7 @@ static boole _client_msg_audio_internal__is_ice_candidate_format_valid(cJSON *js
         return FALSE;
     }
 
+    // store the checked object
     *checked_value = json_value_object;
     return TRUE;
 }
@@ -205,15 +224,17 @@ void client_msg__audio__process_ice_candidate(cJSON *json_root, uint64 sender_cl
 {
     cJSON *json_message_value = NULL_POINTER;
 
+    // log the request
     DBG_AUDIO_WEBRTC log_info("%s", "client_msg__audio__process_ice_candidate");
 
+    // check the candidate format
     if (_client_msg_audio_internal__is_ice_candidate_format_valid(json_root, sender_client_id, &json_message_value) == FALSE)
     {
         DBG_AUDIO_WEBRTC log_info("%s", "client_msg__audio__process_ice_candidate client_msg__is_ice_candidate_format_valid == FALSE \n");
         return;
     }
 
-    // Keep the exact object validated above; differently cased keys cannot replace it.
+    // keep the exact object validated above; differently cased keys cannot replace it
     clib__read_lock(&g_clients_global_rwlock_guard);
     if (base__is_current_client_request(sender_client_id) == FALSE)
     {
@@ -221,6 +242,7 @@ void client_msg__audio__process_ice_candidate(cJSON *json_root, uint64 sender_cl
         return;
     }
 
+    // add the remote candidate
     if (g_clients_array[sender_client_id].is_authenticated == TRUE)
     {
         DBG_AUDIO_WEBRTC log_info("%s", "client_msg__audio__process_ice_candidate got here");
@@ -228,6 +250,7 @@ void client_msg__audio__process_ice_candidate(cJSON *json_root, uint64 sender_cl
         audio_webrtc__add_remote_candidate(&g_clients_array[sender_client_id], cJSON_GetObjectItemCaseSensitive(json_message_value, "candidate")->valuestring);
     }
 
+    // unlock the clients
     clib__unlock(&g_clients_global_rwlock_guard);
 }
 
@@ -243,8 +266,10 @@ static boole _client_msg_audio_internal__is_json_process_microphone_usage_valid(
     cJSON *json_value = NULL_POINTER;
     cJSON *json_message_object = NULL_POINTER;
 
+    // read the message field
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
 
+    // value must be number
     json_value = cJSON_GetObjectItemCaseSensitive(json_message_object, "value");
     if (cJSON_IsNumber(json_value) == FALSE)
     {
@@ -252,6 +277,7 @@ static boole _client_msg_audio_internal__is_json_process_microphone_usage_valid(
         return FALSE;
     }
 
+    // check the usage range
     if (json_value->valueint < 1 || json_value->valueint > 3 || json_value->valuedouble != (double)json_value->valueint)
     {
         DBG_AUDIO_WEBRTC log_info("%s", "_client_msg_audio_internal__is_json_process_microphone_usage_valid json_value->valueint < 1 || json_value->valueint > 3 \n");
@@ -280,6 +306,7 @@ void client_msg__audio__process_microphone_usage(cJSON *json_root, uint64 sender
     client_t *client = NULL_POINTER;
     boole is_served = FALSE;
 
+    // check the usage value
     status = _client_msg_audio_internal__is_json_process_microphone_usage_valid(json_root);
     if (status == FALSE)
     {
@@ -287,6 +314,7 @@ void client_msg__audio__process_microphone_usage(cJSON *json_root, uint64 sender
         return;
     }
 
+    // lock the clients
     clib__write_lock(&g_clients_global_rwlock_guard);
     if (base__is_current_client_request(sender_client_id) == FALSE)
     {
@@ -294,13 +322,16 @@ void client_msg__audio__process_microphone_usage(cJSON *json_root, uint64 sender
         return;
     }
 
+    // find the client
     client = &g_clients_array[sender_client_id];
 
+    // client must be authenticated
     if (client->is_authenticated == FALSE)
     {
         goto label_client_msg__process_microphone_usage_end;
     }
 
+    // read the microphone usage
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
     json_value = cJSON_GetObjectItemCaseSensitive(json_message_object, "value");
 
@@ -314,10 +345,12 @@ void client_msg__audio__process_microphone_usage(cJSON *json_root, uint64 sender
     is_served = status0;
     clib__unlock(&g_webrtc_peers_rwlock_guard);
 
+    // change the audio state
     if (is_served == TRUE)
     {
         if (received_microphone_usage == MICROPHONE_USAGE__KEEP_PUSH_TO_TALK_READY_BUT_DONT_SEND_AUDIO)
         {
+            // stop sending, keep ready
             if (client->audio_state != AUDIO_STATE__PUSH_TO_TALK_ENABLED)
             {
                 client->audio_state = AUDIO_STATE__PUSH_TO_TALK_ENABLED;
@@ -327,22 +360,26 @@ void client_msg__audio__process_microphone_usage(cJSON *json_root, uint64 sender
         }
         else if (received_microphone_usage == MICROPHONE_USAGE__DISABLE_PUSH_TO_TALK)
         {
+            // change to listening only
             if (client->audio_state != AUDIO_STATE__PUSH_TO_TALK_DISABLED_BUT_CAN_RECEIVE_AUDIO_FROM_OTHERS)
             {
                 client->audio_state = AUDIO_STATE__PUSH_TO_TALK_DISABLED_BUT_CAN_RECEIVE_AUDIO_FROM_OTHERS;
 
+                // stop the song stream
                 if (client->is_streaming_song == TRUE)
                 {
                     client->is_streaming_song = FALSE;
                     server_msg__musicbot__send_stop_song_stream_message_to_clients_in_same_channel(client);
                 }
 
+                // stop audio, send state
                 audio_webrtc__set_is_client_sending_audio(client->client_id, FALSE);
                 server_msg__audio__send_state_of_client_to_all_clients(client, client->audio_state);
             }
         }
         else if (received_microphone_usage == MICROPHONE_USAGE__ACTIVATE_PUSH_TO_TALK_AND_SEND_AUDIO)
         {
+            // check the talk power
             clib__read_lock(&g_channels_global_rwlock_guard);
             status = client->channel_id < g_server_settings.max_channel_count && permissions__can_use_channel(client, &g_channel_array[client->channel_id], PERMISSION_TALK_POWER);
             clib__unlock(&g_channels_global_rwlock_guard);
@@ -351,6 +388,8 @@ void client_msg__audio__process_microphone_usage(cJSON *json_root, uint64 sender
                 server_msg__administration__send_permission_denied_to_single_client(client, permissions__power_name(PERMISSION_TALK_POWER));
                 goto label_client_msg__process_microphone_usage_end;
             }
+
+            // start sending audio
             if (client->audio_state != MICROPHONE_USAGE__ACTIVATE_PUSH_TO_TALK_AND_SEND_AUDIO)
             {
                 client->audio_state = MICROPHONE_USAGE__ACTIVATE_PUSH_TO_TALK_AND_SEND_AUDIO;
@@ -361,6 +400,7 @@ void client_msg__audio__process_microphone_usage(cJSON *json_root, uint64 sender
     }
 
 label_client_msg__process_microphone_usage_end:
+    // unlock the clients
     clib__unlock(&g_clients_global_rwlock_guard);
 }
 
@@ -380,13 +420,18 @@ void client_msg__audio__process_create_new_webrtc_datachannel_connection(cJSON *
     uint64 cooldown_seconds = 0;
     boole initialize = FALSE;
 
+    // JSON is not used
     (void)json_root;
+
+    // lock the clients
     clib__write_lock(&g_clients_global_rwlock_guard);
     if (base__is_current_client_request(sender_client_id) == FALSE)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
     }
+
+    // check client and settings
     client = &g_clients_array[sender_client_id];
     if (client->is_authenticated == FALSE || client->is_existing == FALSE || (g_server_settings.is_voice_chat_active == FALSE && g_server_settings.is_music_bot_audio_active == FALSE && g_server_settings.is_video_streaming_active == FALSE))
     {
@@ -394,6 +439,7 @@ void client_msg__audio__process_create_new_webrtc_datachannel_connection(cJSON *
         return;
     }
 
+    // check attempts and cooldown
     timestamp_now = util__get_timestamp_ms();
     clib__write_lock(&g_webrtc_peers_rwlock_guard);
     peer = &g_webrtc_peers_array[sender_client_id];
@@ -418,14 +464,19 @@ void client_msg__audio__process_create_new_webrtc_datachannel_connection(cJSON *
     }
     clib__unlock(&g_webrtc_peers_rwlock_guard);
 
+    // send the cooldown time
     if (cooldown_seconds != 0)
     {
         server_msg__audio__send_datachannel_cooldown_to_single_client(client, cooldown_seconds);
     }
+
+    // start the datachannel connection
     if (initialize == TRUE)
     {
-        // Initialization takes the peers lock itself, after the snapshot above.
+        // initialization takes the peers lock itself, after the snapshot above
         audio_webrtc__initialize_datachannel_connection(client);
     }
+
+    // unlock the clients
     clib__unlock(&g_clients_global_rwlock_guard);
 }

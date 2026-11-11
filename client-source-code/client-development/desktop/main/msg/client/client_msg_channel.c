@@ -41,6 +41,7 @@ static int64 _client_msg_channel_internal__member_count(desktop_session_t *sessi
     int64 index = 0;
     desktop_client_t *client = NULL_POINTER;
 
+    // count active channel members
     for (index = 0; index < session->model.client_count; index++)
     {
         client = &session->model.clients[index];
@@ -76,6 +77,7 @@ static void _client_msg_channel_internal__remove_recipient(desktop_session_t *se
 {
     int64 index = 0;
 
+    // remove matching recipients
     while (index < session->key_recipient_count)
     {
         if (session->key_recipients[index].id == id)
@@ -100,10 +102,13 @@ static void _client_msg_channel_internal__queue_recipient(desktop_session_t *ses
 {
     int64 index = 0;
 
+    // only active channel members
     if (client->id == session->model.local_id || client->channel != session->model.channel || client->idle || client->music)
     {
         return;
     }
+
+    // update an existing entry
     for (index = 0; index < session->key_recipient_count; index++)
     {
         if (session->key_recipients[index].id == client->id)
@@ -112,6 +117,8 @@ static void _client_msg_channel_internal__queue_recipient(desktop_session_t *ses
             return;
         }
     }
+
+    // add the recipient
     if (session->key_recipient_count < DESKTOP_SESSION_CLIENTS)
     {
         session->key_recipients[session->key_recipient_count].id = client->id;
@@ -127,11 +134,14 @@ static void _client_msg_channel_internal__queue_recipient(desktop_session_t *ses
  */
 void client_msg__channel__refresh_keys(desktop_session_t *session)
 {
+    // keep the previous keys
     if (session->model.keys_ready)
     {
         session->previous_keys = session->keys;
         session->have_previous = TRUE;
     }
+
+    // reset the key state
     session->model.keys_ready = FALSE;
     session->key_recipient_count = 0;
     session->rotate = session->model.connected && !session->model.idle && session->maintainer >= 0 && session->maintainer == session->model.local_id;
@@ -152,24 +162,34 @@ void client_msg__channel__member_changed(desktop_session_t *session, const deskt
     boole identity_changed = previous && current && previous->serial != current->serial;
     int64 id = current ? current->id : (previous ? previous->id : -1);
 
+    // skip unrelated changes
     if (id < 0 || id == session->model.local_id || (!was_member && !is_member))
     {
         return;
     }
+
+    // apply the departure rules
     if (was_member && (!is_member || identity_changed))
     {
+        // remove from the queue
         _client_msg_channel_internal__remove_recipient(session, id);
+
+        // the maintainer left
         if (id == session->maintainer)
         {
             session->maintainer = -1;
             client_msg__channel__refresh_keys(session);
             return;
         }
+
+        // refresh unless reuse allowed
         if (identity_changed || !_client_msg_channel_internal__may_reuse(session, FALSE))
         {
             client_msg__channel__refresh_keys(session);
         }
     }
+
+    // apply the join rules
     if (is_member && (!was_member || identity_changed))
     {
         if (identity_changed || !session->model.keys_ready || !_client_msg_channel_internal__may_reuse(session, TRUE))
@@ -203,42 +223,61 @@ boole client_msg__channel__distribute_keys(desktop_session_t *session)
     int64 index = 0;
     desktop_channel_key_recipient_t recipient = { 0 };
 
+    // check the maintainer role
     if (!session->model.connected || session->model.idle || session->maintainer != session->model.local_id || session->maintainer < 0)
     {
         session->rotate = FALSE;
         session->key_recipient_count = 0;
         return 1;
     }
+
+    // rotate the channel keys
     if (session->rotate)
     {
+        // keep the previous keys
         if (session->model.keys_ready)
         {
             session->previous_keys = session->keys;
             session->have_previous = TRUE;
         }
+
+        // create new content keys
         if (!crypto_session__content_keys(session->crypto, &session->keys))
         {
             return 0;
         }
+
+        // mark the keys ready
         session->model.keys_ready = 1;
         session->rotate = 0;
         session->key_recipient_count = 0;
+
+        // queue all recipients
         for (index = 0; index < session->model.client_count; index++)
         {
             _client_msg_channel_internal__queue_recipient(session, &session->model.clients[index]);
         }
+
+        // show the status text
         desktop_session__detail(session, "Connected. Channel keys are ready.", 0);
     }
+
+    // find the next recipient
     while (session->model.keys_ready && session->key_recipient_count > 0)
     {
+        // take the first recipient
         recipient = session->key_recipients[0];
         session->key_recipient_count--;
         clib__memmove(session->key_recipients, session->key_recipients + 1, session->key_recipient_count * sizeof(session->key_recipients[0]));
+
+        // find the client slot
         slot = desktop_session__client(session, recipient.id);
         if (slot < 0)
         {
             continue;
         }
+
+        // check the client state
         client = &session->model.clients[slot];
         if (client->serial == recipient.serial && client->channel == session->model.channel && client->id != session->model.local_id && !client->idle && !client->music && session->client_keys[slot][0])
         {
@@ -246,31 +285,47 @@ boole client_msg__channel__distribute_keys(desktop_session_t *session)
         }
         client = NULL;
     }
+
+    // nothing to send
     if (!client)
     {
         return 1;
     }
+
+    // build the keys body
     keys_json = crypto_session__keys_json(&session->keys);
     complete = crypto_session__content_keys(session->crypto, &direct_keys);
     body = client_msg__delivery__new_message("channel_keys_from_maintainer");
     complete = complete && keys_json && body && cJSON_AddNumberToObject(body, "channel_id", (double)session->model.channel) && cJSON_AddNumberToObject(body, "maintainer_generation", (double)session->generation) && cJSON_AddStringToObject(body, "value", keys_json);
     body_json = complete ? cJSON_PrintUnformatted(body) : NULL;
+
+    // encrypt the body
     if (body_json)
     {
         encrypted_body = crypto_session__direct_content_encrypt(&direct_keys, body_json, 1024, FALSE);
     }
+
+    // build the envelope
     if (encrypted_body)
     {
         envelope_json = crypto_session__direct_seal(session->crypto, session->client_keys[slot], &direct_keys, encrypted_body);
     }
+
+    // build the direct message
     message = client_msg__delivery__new_message("direct_chat_message");
     complete = envelope_json && message && cJSON_AddStringToObject(message, "purpose", "channel_keys") && cJSON_AddStringToObject(message, "value", envelope_json) && cJSON_AddNullToObject(message, "receiver_type") && cJSON_AddNumberToObject(message, "receiver_id", (double)client->id) && cJSON_AddNumberToObject(message, "local_message_id", (double)++session->next_local_id);
+
+    // send the message
     complete = client_msg__delivery__send(session, message, complete);
+
+    // free the buffers
     crypto_session__free_json(body);
     crypto_session__free_text(keys_json);
     crypto_session__free_text(body_json);
     crypto_session__free_text(encrypted_body);
     crypto_session__free_text(envelope_json);
+
+    // erase the direct keys
     mbedtls_platform_zeroize(&direct_keys, sizeof(direct_keys));
     return complete;
 }

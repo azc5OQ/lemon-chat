@@ -15,11 +15,15 @@ static gui_color_t _ui_chat_format_internal__color(const char *text)
     unsigned int value = 0;
     int64 index = 0;
     gui_color_t color = { 0, 0, 0, 1 };
+
+    // read the hex digits
     for (index = 1; index < 7; index++)
     {
         ubyte digit = (ubyte)clib__tolower(text[index]);
         value = (value << 4) | (digit <= '9' ? digit - '0' : digit - 'a' + 10);
     }
+
+    // store red green blue
     color.r = ((value >> 16) & 255) / 255.0f;
     color.g = ((value >> 8) & 255) / 255.0f;
     color.b = (value & 255) / 255.0f;
@@ -31,18 +35,26 @@ void desktop_ui_chat_format__message(gui_node_t *node, const desktop_chat_format
 {
     desktop_chat_format_t fallback;
     boole browser_default = FALSE;
+
+    // check the node
     if (!node)
     {
         return;
     }
+
+    // use the default format
     if (!desktop_chat_format__valid(format))
     {
         desktop_chat_format__default(&fallback);
         format = &fallback;
     }
+
+    // set font and size
     scene__set_font_override(node, desktop_ui_fonts__family(format->font), (float)format->size * (g_format_settings ? (float)g_format_settings->chat.scale_percent / 100 : 1));
-    // Older browser messages spell the default as white, which is invisible on Classic's white chat background.
+    // older browser messages spell the default as white, which is invisible on Classic's white chat background
     browser_default = format->size == 12 && clib__strcmp(format->font, "custom-font-usage-default") == 0 && (clib__strcmp(format->color, "#ffffff") == 0 || clib__strcmp(format->color, "#FFFFFF") == 0);
+
+    // set the text color
     if (format->color[0] && !browser_default)
     {
         scene__set_font_color_override(node, _ui_chat_format_internal__color(format->color));
@@ -59,15 +71,23 @@ static void _ui_chat_format_internal__choices(void)
     gui_node_t *child = NULL_POINTER;
     gui_node_t *next = NULL_POINTER;
     int64 index = 0;
+
+    // check list and settings
     if (!select || !g_format_settings)
     {
         return;
     }
+
+    // close the open list
     scene__select_open(select, FALSE);
+
+    // remove the old options
     child = select->first_child;
     select->first_child = NULL;
     select->last_child = NULL;
     select->child_count = 0;
+
+    // free the old options
     while (child)
     {
         next = child->next_sibling;
@@ -76,6 +96,8 @@ static void _ui_chat_format_internal__choices(void)
         scene__node_free(child);
         child = next;
     }
+
+    // add the font options
     select->value = 0;
     for (index = -1; index < desktop_ui_fonts__count(); index++)
     {
@@ -87,6 +109,8 @@ static void _ui_chat_format_internal__choices(void)
         }
         scene__set_text(child, label, clib__strlen(label));
         scene__add_child(select, child);
+
+        // select the saved font
         if (clib__strcmp(g_format_settings->chat_format.font, desktop_ui_fonts__token(index)) == 0)
         {
             select->value = (float)(index + 1);
@@ -102,11 +126,17 @@ static void _ui_chat_format_internal__preview(void)
     gui_node_t *swatch = scene__find_by_id("chat-color-button");
     gui_node_t *hex = scene__find_by_id("chat-color-hex");
     char text[20];
+
+    // check the settings
     if (!g_format_settings)
     {
         return;
     }
+
+    // format the message field
     desktop_ui_chat_format__message(input, &g_format_settings->chat_format);
+
+    // show the font size
     if (slider)
     {
         slider->value = (float)g_format_settings->chat_format.size;
@@ -116,6 +146,8 @@ static void _ui_chat_format_internal__preview(void)
         clib__string_format(text, sizeof(text), "%lld px", g_format_settings->chat_format.size);
         scene__set_text(label, text, clib__strlen(text));
     }
+
+    // set the button color
     if (swatch)
     {
         if (g_format_settings->chat_format.color[0])
@@ -127,6 +159,8 @@ static void _ui_chat_format_internal__preview(void)
             scene__clear_font_color_override(swatch);
         }
     }
+
+    // show the hex value
     if (hex && scene__focus() != hex)
     {
         const char *value = g_format_settings->chat_format.color[0] ? g_format_settings->chat_format.color : "";
@@ -136,8 +170,11 @@ static void _ui_chat_format_internal__preview(void)
 
 static void _ui_chat_format_internal__changed(void)
 {
+    // apply the new format
     desktop_session__set_chat_format(g_format_session, &g_format_settings->chat_format);
     _ui_chat_format_internal__preview();
+
+    // set the save time
     g_format_save_at = desktop_system__milliseconds() + 500;
     g_format_changed = TRUE;
 }
@@ -160,10 +197,14 @@ static void _ui_chat_format_internal__close_color(gui_event_t *event)
 {
     gui_node_t *panel = scene__find_by_id("chat-color-panel");
     (void)event;
+
+    // hide the color panel
     if (panel)
     {
         clib__string_copy(panel->klass, sizeof(panel->klass), "column panel hidden");
     }
+
+    // focus the message field
     scene__set_focus(scene__find_by_id("message-input"));
 }
 
@@ -173,10 +214,13 @@ static void _ui_chat_format_internal__controls(void)
     gui_node_t *controls = scene__find_by_id("chat-format-controls");
     gui_node_t *toggle = scene__find_by_id("chat-format-toggle");
 
+    // show or hide controls
     if (controls)
     {
         clib__string_copy(controls->klass, sizeof(controls->klass), g_format_controls_visible ? "row" : "row hidden");
     }
+
+    // update the toggle button
     if (toggle)
     {
         toggle->value = g_format_controls_visible ? 1 : 0;
@@ -187,13 +231,19 @@ static void _ui_chat_format_internal__controls(void)
 static void _ui_chat_format_internal__toggle(gui_event_t *event)
 {
     (void)event;
+
+    // switch the visibility
     g_format_controls_visible = !g_format_controls_visible;
     _ui_chat_format_internal__controls();
+
+    // close list and panel
     if (!g_format_controls_visible)
     {
         scene__select_open(scene__find_by_id("chat-font"), FALSE);
         _ui_chat_format_internal__close_color(NULL);
     }
+
+    // set the changed flag
     g_format_changed = TRUE;
 }
 
@@ -207,16 +257,24 @@ static void _ui_chat_format_internal__open_color(gui_event_t *event)
     float minimum;
     float difference;
     (void)event;
+
+    // check the controls
     if (!panel || !picker || !input)
     {
         return;
     }
+
+    // read the current color
     color = g_format_settings->chat_format.color[0] ? _ui_chat_format_internal__color(g_format_settings->chat_format.color) : input->resolved.font_color;
+
+    // find minimum and maximum
     maximum = color.r > color.g ? color.r : color.g;
     maximum = maximum > color.b ? maximum : color.b;
     minimum = color.r < color.g ? color.r : color.g;
     minimum = minimum < color.b ? minimum : color.b;
     difference = maximum - minimum;
+
+    // compute the hue
     picker->value = 0;
     if (difference > 0)
     {
@@ -227,8 +285,12 @@ static void _ui_chat_format_internal__open_color(gui_event_t *event)
             picker->value += 1;
         }
     }
+
+    // set saturation and value
     picker->value_min = maximum > 0 ? difference / maximum : 0;
     picker->value_max = maximum;
+
+    // show the color panel
     clib__string_copy(panel->klass, sizeof(panel->klass), "column panel");
     desktop_ui_layout__raise(panel);
     _ui_chat_format_internal__preview();
@@ -246,6 +308,8 @@ static void _ui_chat_format_internal__hex(gui_event_t *event)
     desktop_chat_format_t candidate = g_format_settings->chat_format;
     gui_node_t *input = scene__find_by_id("chat-color-hex");
     (void)event;
+
+    // store a valid color
     if (input && clib__string_copy(candidate.color, sizeof(candidate.color), input->text) && desktop_chat_format__valid(&candidate))
     {
         g_format_settings->chat_format = candidate;
@@ -257,6 +321,8 @@ static void _ui_chat_format_internal__hex(gui_event_t *event)
 static void _ui_chat_format_internal__reset(gui_event_t *event)
 {
     (void)event;
+
+    // set the default format
     desktop_chat_format__default(&g_format_settings->chat_format);
     desktop_ui_chat_format__apply();
     _ui_chat_format_internal__changed();
@@ -264,9 +330,12 @@ static void _ui_chat_format_internal__reset(gui_event_t *event)
 
 void desktop_ui_chat_format__initialize(desktop_session_t *session, desktop_settings_t *settings)
 {
+    // store the arguments
     g_format_session = session;
     g_format_settings = settings;
     g_format_controls_visible = FALSE;
+
+    // register the handlers
     scene__register_handler("on_chat_font", _ui_chat_format_internal__font);
     scene__register_handler("on_chat_font_size", _ui_chat_format_internal__size);
     scene__register_handler("on_chat_color_open", _ui_chat_format_internal__open_color);
@@ -279,19 +348,28 @@ void desktop_ui_chat_format__initialize(desktop_session_t *session, desktop_sett
 
 void desktop_ui_chat_format__apply(void)
 {
+    // check the settings
     if (!g_format_settings)
     {
         return;
     }
+
+    // use the default format
     if (!desktop_chat_format__valid(&g_format_settings->chat_format))
     {
         desktop_chat_format__default(&g_format_settings->chat_format);
     }
+
+    // replace a missing font
     if (clib__strcmp(g_format_settings->chat_format.font, "custom-font-usage-default") != 0 && !desktop_ui_fonts__family(g_format_settings->chat_format.font)[0])
     {
         clib__string_copy(g_format_settings->chat_format.font, sizeof(g_format_settings->chat_format.font), "custom-font-usage-default");
     }
+
+    // apply the format
     desktop_session__set_chat_format(g_format_session, &g_format_settings->chat_format);
+
+    // update the controls
     _ui_chat_format_internal__controls();
     _ui_chat_format_internal__choices();
     _ui_chat_format_internal__preview();
@@ -300,15 +378,20 @@ void desktop_ui_chat_format__apply(void)
 
 void desktop_ui_chat_format__open_fonts(void)
 {
+    // show the format controls
     g_format_controls_visible = TRUE;
     desktop_ui_fonts__scan(TRUE);
     desktop_ui_chat_format__apply();
+
+    // open the font list
     scene__select_open(scene__find_by_id("chat-font"), TRUE);
 }
 
 boole desktop_ui_chat_format__tick(void)
 {
     boole changed = desktop_ui_fonts__scan(FALSE);
+
+    // update after font scan
     if (changed)
     {
         if (clib__strcmp(g_format_settings->chat_format.font, "custom-font-usage-default") != 0 && !desktop_ui_fonts__family(g_format_settings->chat_format.font)[0])
@@ -318,8 +401,12 @@ boole desktop_ui_chat_format__tick(void)
         }
         desktop_ui_chat_format__apply();
     }
+
+    // read the changed flag
     changed |= g_format_changed;
     g_format_changed = FALSE;
+
+    // save after the delay
     if (g_format_save_at && desktop_system__milliseconds() >= g_format_save_at)
     {
         if (!desktop_settings__save(g_format_settings))

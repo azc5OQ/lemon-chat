@@ -44,11 +44,17 @@ static boole _sounds_internal__decode(sound_clip_t *clip, const ubyte *bytes, si
     ma_decoder_config config = ma_decoder_config_init(ma_format_f32, 1, 48000);
     ma_uint64 read = 0;
     boole valid = FALSE;
+
+    // open the decoder
     if (ma_decoder_init_memory(bytes, size, &config, &decoder) != MA_SUCCESS)
     {
         return FALSE;
     }
+
+    // check the clip length
     valid = ma_decoder_get_length_in_pcm_frames(&decoder, &clip->frames) == MA_SUCCESS && clip->frames > 0 && clip->frames <= 48000 * 30;
+
+    // read the PCM frames
     if (valid)
     {
         clip->pcm = ma_malloc((size_t)clip->frames * sizeof(float), NULL);
@@ -59,6 +65,8 @@ static boole _sounds_internal__decode(sound_clip_t *clip, const ubyte *bytes, si
         valid = clip->pcm && read > 0;
         clip->frames = read;
     }
+
+    // close the decoder
     ma_decoder_uninit(&decoder);
     return valid;
 }
@@ -80,15 +88,21 @@ boole desktop_sounds__reload(desktop_sounds_t *sounds)
     size_t encoded_size = 0;
     int index = 0;
     boole valid = FALSE;
+
+    // check the file
     if (!file)
     {
         return FALSE;
     }
+
+    // read the file size
     if (fseek(file, 0, SEEK_END) != 0 || (length = ftell(file)) <= 0 || length > 16 * 1024 * 1024 || fseek(file, 0, SEEK_SET) != 0)
     {
         fclose(file);
         return FALSE;
     }
+
+    // read the whole file
     source = calloc((size_t)length + 1, 1);
     if (!source || fread(source, 1, (size_t)length, file) != (size_t)length)
     {
@@ -97,15 +111,22 @@ boole desktop_sounds__reload(desktop_sounds_t *sounds)
         return FALSE;
     }
     fclose(file);
+
+    // skip an unchanged file
     if (sounds->source && clib__strcmp(source, sounds->source) == 0)
     {
         free(source);
         return sounds->source_valid;
     }
+
+    // read the JSON
     root = cJSON_Parse(source);
     valid = cJSON_IsObject(root);
+
+    // decode every sound
     for (index = 0; valid && index < DESKTOP_SOUND_COUNT; index++)
     {
+        // read the sound entry
         failed_entry = g_sound_names[index];
         value = cJSON_GetObjectItemCaseSensitive(root, g_sound_names[index]);
         valid = cJSON_IsString(value);
@@ -113,6 +134,8 @@ boole desktop_sounds__reload(desktop_sounds_t *sounds)
         {
             continue;
         }
+
+        // skip the data prefix
         base64 = value->valuestring;
         if (clib__strncmp(base64, "data:", 5) == 0)
         {
@@ -124,25 +147,38 @@ boole desktop_sounds__reload(desktop_sounds_t *sounds)
             }
             base64 += 8;
         }
+
+        // decode the Base64 text
         encoded_size = clib__strlen(base64);
         size = encoded_size / 4 * 3 + 3;
         bytes = malloc(size);
         valid = bytes && mbedtls_base64_decode(bytes, size, &size, (const ubyte *)base64, encoded_size) == 0;
+
+        // decode the audio
         if (valid)
         {
             valid = _sounds_internal__decode(&clips[index], bytes, size);
         }
+
+        // free the bytes
         free(bytes);
         bytes = NULL;
     }
+
+    // free the JSON
     cJSON_Delete(root);
+
+    // store or free clips
     if (valid)
     {
+        // replace the clips
         desktop_mutex__lock(sounds->mutex);
         clib__memcpy(previous, sounds->clips, sizeof(previous));
         clib__memcpy(sounds->clips, clips, sizeof(clips));
         clib__null_memory(sounds->playing, sizeof(sounds->playing));
         desktop_mutex__unlock(sounds->mutex);
+
+        // free the old clips
         for (index = 0; index < DESKTOP_SOUND_COUNT; index++)
         {
             ma_free(previous[index].pcm, NULL);
@@ -150,13 +186,14 @@ boole desktop_sounds__reload(desktop_sounds_t *sounds)
     }
     else
     {
+        // free the new clips
         for (index = 0; index < DESKTOP_SOUND_COUNT; index++)
         {
             ma_free(clips[index].pcm, NULL);
         }
         fprintf(stderr, "Could not reload %s: invalid JSON, Base64 or audio; previous sounds remain active (entry %s).\n", sounds->path, failed_entry);
     }
-    // Remember even a rejected edit, so it reports once until the file changes again.
+    // remember even a rejected edit, so it reports once until the file changes again
     free(sounds->source);
     sounds->source = source;
     sounds->source_valid = valid;
@@ -168,8 +205,11 @@ static void _sounds_internal__watch(void *context)
     desktop_sounds_t *sounds = context;
     uint64 next = 0;
     boole stop = FALSE;
+
+    // loop until stopped
     for (;;)
     {
+        // read the stop flag
         desktop_mutex__lock(sounds->mutex);
         stop = sounds->stop;
         desktop_mutex__unlock(sounds->mutex);
@@ -177,11 +217,15 @@ static void _sounds_internal__watch(void *context)
         {
             return;
         }
+
+        // reload every second
         if (desktop_system__milliseconds() >= next)
         {
             desktop_sounds__reload(sounds);
             next = desktop_system__milliseconds() + 1000;
         }
+
+        // wait before next check
         desktop_system__sleep(100);
     }
 }
@@ -190,10 +234,14 @@ static void _sounds_internal__watch(void *context)
 desktop_sounds_t *desktop_sounds__create(const char *path, boole watch)
 {
     desktop_sounds_t *sounds = calloc(1, sizeof(*sounds));
+
+    // check the allocation
     if (!sounds)
     {
         return NULL;
     }
+
+    // allocate mutex and path
     sounds->mutex = desktop_mutex__create();
     sounds->path = calloc(clib__strlen(path) + 1, 1);
     if (!sounds->mutex || !sounds->path)
@@ -201,11 +249,17 @@ desktop_sounds_t *desktop_sounds__create(const char *path, boole watch)
         desktop_sounds__destroy(sounds);
         return NULL;
     }
+
+    // copy the path
     clib__string_copy(sounds->path, clib__strlen(path) + 1, path);
+
+    // load the sounds
     if (!desktop_sounds__reload(sounds) && !sounds->source)
     {
         fprintf(stderr, "Notification sound file is unavailable: %s\n", path);
     }
+
+    // start the watcher thread
     if (watch)
     {
         sounds->watcher = desktop_thread__start(_sounds_internal__watch, sounds);
@@ -220,21 +274,31 @@ desktop_sounds_t *desktop_sounds__create(const char *path, boole watch)
 void desktop_sounds__destroy(desktop_sounds_t *sounds)
 {
     int index = 0;
+
+    // nothing to destroy
     if (!sounds)
     {
         return;
     }
+
+    // set the stop flag
     if (sounds->mutex)
     {
         desktop_mutex__lock(sounds->mutex);
         sounds->stop = TRUE;
         desktop_mutex__unlock(sounds->mutex);
     }
+
+    // wait for the watcher
     desktop_thread__join(sounds->watcher);
+
+    // free the clips
     for (index = 0; index < DESKTOP_SOUND_COUNT; index++)
     {
         ma_free(sounds->clips[index].pcm, NULL);
     }
+
+    // free the other memory
     desktop_mutex__destroy(sounds->mutex);
     free(sounds->path);
     free(sounds->source);
@@ -244,10 +308,14 @@ void desktop_sounds__destroy(desktop_sounds_t *sounds)
 boole desktop_sounds__play(desktop_sounds_t *sounds, desktop_sound_t id)
 {
     int index = 0;
+
+    // check arguments
     if (!sounds || id < 0 || id >= DESKTOP_SOUND_COUNT)
     {
         return FALSE;
     }
+
+    // find an inactive playback
     desktop_mutex__lock(sounds->mutex);
     for (index = 0; index < SOUND_PLAYBACKS && sounds->clips[id].frames; index++)
     {
@@ -267,10 +335,14 @@ boole desktop_sounds__play(desktop_sounds_t *sounds, desktop_sound_t id)
 void desktop_sounds__stop(desktop_sounds_t *sounds, desktop_sound_t id)
 {
     int index = 0;
+
+    // nothing to stop
     if (!sounds)
     {
         return;
     }
+
+    // stop matching playbacks
     desktop_mutex__lock(sounds->mutex);
     for (index = 0; index < SOUND_PLAYBACKS; index++)
     {
@@ -284,6 +356,7 @@ void desktop_sounds__stop(desktop_sounds_t *sounds, desktop_sound_t id)
 
 void desktop_sounds__clear(desktop_sounds_t *sounds)
 {
+    // clear all playbacks
     if (sounds)
     {
         desktop_mutex__lock(sounds->mutex);
@@ -301,17 +374,24 @@ void desktop_sounds__mix(desktop_sounds_t *sounds, float *stereo, uint64 frames,
     float gain = (float)volume / 100.0f;
     sound_playback_t *playback = NULL_POINTER;
     sound_clip_t *clip = NULL_POINTER;
+
+    // try to lock
     if (!sounds || !desktop_mutex__try_lock(sounds->mutex))
     {
         return;
     }
+
+    // add active playbacks
     for (index = 0; index < SOUND_PLAYBACKS; index++)
     {
+        // skip inactive playbacks
         playback = &sounds->playing[index];
         if (!playback->active)
         {
             continue;
         }
+
+        // add the clip samples
         clip = &sounds->clips[playback->id];
         for (frame = 0; frame < frames && playback->position < clip->frames; frame++)
         {
@@ -319,8 +399,12 @@ void desktop_sounds__mix(desktop_sounds_t *sounds, float *stereo, uint64 frames,
             stereo[frame * 2] += value;
             stereo[frame * 2 + 1] += value;
         }
+
+        // stop at clip end
         playback->active = playback->position < clip->frames;
     }
+
+    // limit the sample range
     for (frame = 0; frame < frames * 2; frame++)
     {
         if (stereo[frame] > 1.0f)

@@ -24,15 +24,19 @@ void server_msg__video__send_state_to_clients_in_same_channel(uint64 channel_id,
     cJSON *message = NULL_POINTER;
     client_t *streamer = NULL_POINTER;
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // create stream state message
     root = server_msg__delivery__new_message("video_stream_state", &message);
 
+    // add channel, streamer, state
     cJSON_AddNumberToObject(message, "channel_id", (double)channel_id);
     cJSON_AddNumberToObject(message, "streamer_client_id", (double)streamer_client_id);
     cJSON_AddBoolToObject(message, "is_active", is_active);
     cJSON_AddStringToObject(message, "reason", reason);
 
+    // add the stream details
     if (is_active == TRUE && streamer_client_id < g_server_settings.max_client_count)
     {
         streamer = &g_clients_array[streamer_client_id];
@@ -44,8 +48,10 @@ void server_msg__video__send_state_to_clients_in_same_channel(uint64 channel_id,
         cJSON_AddBoolToObject(message, "is_sound_included", streamer->is_video_stream_sound_included);
     }
 
+    // send to channel members
     server_msg__delivery__send_json_to_channel(root, channel_id, NULL_POINTER);
 
+    // free the message
     cJSON_Delete(root);
 }
 
@@ -66,10 +72,13 @@ void server_msg__video__send_offer_to_single_client(client_t *receiver, client_t
     client_t *member = NULL_POINTER;
     uint64 i = 0;
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // create stream offer message
     root = server_msg__delivery__new_message("video_stream_offer", &message);
 
+    // add the stream details
     cJSON_AddNumberToObject(message, "streamer_client_id", (double)streamer->client_id);
     cJSON_AddStringToObject(message, "source", streamer->video_stream_source);
     cJSON_AddStringToObject(message, "codec", streamer->video_stream_codec);
@@ -90,6 +99,7 @@ void server_msg__video__send_offer_to_single_client(client_t *receiver, client_t
         }
     }
 
+    // send to the receiver
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
 }
@@ -107,13 +117,17 @@ void server_msg__video__send_viewer_request_to_single_client(client_t *receiver,
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // create viewer request message
     root = server_msg__delivery__new_message("video_stream_viewer_request", &message);
 
+    // add id and username
     cJSON_AddNumberToObject(message, "client_id", (double)newcomer->client_id);
     cJSON_AddStringToObject(message, "username", newcomer->username);
 
+    // send to the streamer
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
 }
@@ -135,13 +149,17 @@ void server_msg__video__send_viewer_state_to_single_client(client_t *receiver, u
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // create viewer state message
     root = server_msg__delivery__new_message("video_stream_viewer_state", &message);
 
+    // add viewer and state
     cJSON_AddNumberToObject(message, "client_id", (double)viewer_client_id);
     cJSON_AddBoolToObject(message, "is_watching", is_watching);
 
+    // send to the receiver
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
 }
@@ -158,10 +176,13 @@ void server_msg__video__send_keyframe_request_to_single_client(client_t *receive
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // create keyframe request message
     root = server_msg__delivery__new_message("video_stream_keyframe_request", &message);
 
+    // send to the streamer
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
 }
@@ -180,12 +201,16 @@ void server_msg__video__send_refused_to_single_client(client_t *receiver, cstrin
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // create stream refused message
     root = server_msg__delivery__new_message("video_stream_refused", &message);
 
+    // add the reason
     cJSON_AddStringToObject(message, "reason", reason);
 
+    // send to the receiver
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
 }

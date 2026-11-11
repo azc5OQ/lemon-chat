@@ -28,6 +28,8 @@ static void _ui_bookmarks_internal__use(gui_event_t *event);
 static void _ui_bookmarks_internal__text(const char *id, const char *text)
 {
     gui_node_t *node = scene__find_by_id((char *)id);
+
+    // set the new text
     if (node)
     {
         scene__set_text(node, text, clib__strlen(text));
@@ -43,6 +45,8 @@ static void _ui_bookmarks_internal__text(const char *id, const char *text)
 static void _ui_bookmarks_internal__panel(const char *id, boole visible)
 {
     gui_node_t *node = scene__find_by_id((char *)id);
+
+    // change the visibility
     if (node)
     {
         clib__string_copy(node->klass, sizeof(node->klass), visible ? "column panel" : "column panel hidden");
@@ -52,6 +56,7 @@ static void _ui_bookmarks_internal__panel(const char *id, boole visible)
         }
     }
 #ifdef _WIN32
+    // request a redraw
     platform_win32__request_render();
 #endif
 }
@@ -66,14 +71,20 @@ static void _ui_bookmarks_internal__list(void)
     gui_node_t *node = NULL_POINTER;
     gui_node_t *next = NULL_POINTER;
     int64 index = 0;
+
+    // check the bookmark list
     if (!parent)
     {
         return;
     }
+
+    // remove the old rows
     node = parent->first_child;
     parent->first_child = NULL;
     parent->last_child = NULL;
     parent->child_count = 0;
+
+    // free the old rows
     while (node)
     {
         next = node->next_sibling;
@@ -82,6 +93,8 @@ static void _ui_bookmarks_internal__list(void)
         scene__node_free(node);
         node = next;
     }
+
+    // create the bookmark rows
     for (index = 0; index < g_bookmarks_settings->bookmark_count; index++)
     {
         node = scene__node_new(GUI_NODE_TYPE__BUTTON);
@@ -94,12 +107,15 @@ static void _ui_bookmarks_internal__list(void)
             scene__add_child(parent, node);
         }
     }
+
+    // update the remove button
     node = scene__find_by_id("bookmark-remove");
     if (node)
     {
         node->state = g_bookmarks_selected < 0 ? GUI_NODE_STATE__DISABLED : GUI_NODE_STATE__DEFAULT;
     }
 #ifdef _WIN32
+    // request a redraw
     platform_win32__request_render();
 #endif
 }
@@ -112,14 +128,20 @@ static void _ui_bookmarks_internal__list(void)
 static void _ui_bookmarks_internal__choose(gui_event_t *event)
 {
     int64 index = event && event->sender ? (nint)event->sender->user_data - 1 : -1;
+
+    // check the row index
     if (index < 0 || index >= g_bookmarks_settings->bookmark_count)
     {
         return;
     }
+
+    // show the selected bookmark
     g_bookmarks_selected = index;
     _ui_bookmarks_internal__text("bookmark-name", g_bookmarks_settings->bookmarks[index].name);
     _ui_bookmarks_internal__text("bookmark-address", g_bookmarks_settings->bookmarks[index].address);
     _ui_bookmarks_internal__text("bookmark-result", "Changes apply when saved.");
+
+    // rebuild the bookmark list
     _ui_bookmarks_internal__list();
 }
 
@@ -132,14 +154,20 @@ static void _ui_bookmarks_internal__add(gui_event_t *event)
 {
     char address[1024] = { 0 };
     (void)event;
+
+    // read the current address
     if (!desktop_ui_connection__address(address, sizeof(address)))
     {
         clib__string_copy(address, sizeof(address), g_bookmarks_settings->address);
     }
+
+    // show a new bookmark
     g_bookmarks_selected = -1;
     _ui_bookmarks_internal__text("bookmark-name", "");
     _ui_bookmarks_internal__text("bookmark-address", address);
     _ui_bookmarks_internal__text("bookmark-result", "Enter a name and choose Save changes.");
+
+    // rebuild the bookmark list
     _ui_bookmarks_internal__list();
 }
 
@@ -178,11 +206,15 @@ static void _ui_bookmarks_internal__save(gui_event_t *event)
     gui_node_t *address = scene__find_by_id("bookmark-address");
     int64 index = g_bookmarks_selected;
     (void)event;
+
+    // check name and address
     if (!name || !address || !clib__string_copy(bookmark.name, sizeof(bookmark.name), name->text) || !clib__string_copy(bookmark.address, sizeof(bookmark.address), address->text) || !desktop_settings__valid_bookmark(&bookmark))
     {
         _ui_bookmarks_internal__text("bookmark-result", "Use a name up to 63 bytes and a valid ws:// or wss:// address.");
         goto label_finished;
     }
+
+    // choose a new slot
     if (index < 0)
     {
         if (settings.bookmark_count >= DESKTOP_BOOKMARK_LIMIT)
@@ -192,17 +224,24 @@ static void _ui_bookmarks_internal__save(gui_event_t *event)
         }
         index = settings.bookmark_count++;
     }
+
+    // store the bookmark
     settings.bookmarks[index] = bookmark;
+
+    // save the settings
     if (!desktop_settings__save(&settings))
     {
         _ui_bookmarks_internal__text("bookmark-result", "Could not save bookmarks. Your saved entries are unchanged.");
         goto label_finished;
     }
+
+    // use the saved settings
     *g_bookmarks_settings = settings;
     g_bookmarks_selected = index;
     _ui_bookmarks_internal__list();
     _ui_bookmarks_internal__text("bookmark-result", "Bookmark saved.");
 label_finished:
+    // clear the settings copy
     clib__null_memory(&settings, sizeof(settings));
 }
 
@@ -216,25 +255,34 @@ static void _ui_bookmarks_internal__remove(gui_event_t *event)
     desktop_settings_t settings = *g_bookmarks_settings;
     int64 index = g_bookmarks_selected;
     (void)event;
+
+    // check the selection
     if (index < 0 || index >= settings.bookmark_count)
     {
         goto label_finished;
     }
+
+    // move the later bookmarks
     for (; index + 1 < settings.bookmark_count; index++)
     {
         settings.bookmarks[index] = settings.bookmarks[index + 1];
     }
     settings.bookmark_count--;
     clib__null_memory(&settings.bookmarks[settings.bookmark_count], sizeof(desktop_bookmark_t));
+
+    // save the settings
     if (!desktop_settings__save(&settings))
     {
         _ui_bookmarks_internal__text("bookmark-result", "Could not save the removal. Your bookmark is unchanged.");
         goto label_finished;
     }
+
+    // use the saved settings
     *g_bookmarks_settings = settings;
     _ui_bookmarks_internal__add(NULL);
     _ui_bookmarks_internal__text("bookmark-result", "Bookmark removed.");
 label_finished:
+    // clear the settings copy
     clib__null_memory(&settings, sizeof(settings));
 }
 
@@ -252,22 +300,32 @@ static void _ui_bookmarks_internal__use(gui_event_t *event)
     desktop_endpoint_t selected = { 0 };
     boole different = FALSE;
     (void)event;
+
+    // check the address
     clib__string_copy(bookmark.name, sizeof(bookmark.name), "Connection");
     if (!address || !clib__string_copy(bookmark.address, sizeof(bookmark.address), address->text) || !desktop_settings__valid_bookmark(&bookmark))
     {
         _ui_bookmarks_internal__text("bookmark-result", "Enter a valid ws:// or wss:// address.");
         return;
     }
+
+    // compare host and port
     different = !desktop_ui_connection__address(current, sizeof(current)) || !desktop_endpoint__parse(current, &previous) || !desktop_endpoint__parse(bookmark.address, &selected) || previous.port != selected.port || clib__strcmp(previous.host, selected.host) != 0;
+
+    // load the address
     if (!desktop_ui_connection__load_address(bookmark.address))
     {
         _ui_bookmarks_internal__text("bookmark-result", "Could not load this address. Check its hostname and port.");
         return;
     }
+
+    // clear the old keys
     if (different)
     {
         desktop_ui_connection__clear_keys();
     }
+
+    // show the connection panel
     _ui_bookmarks_internal__text("login-result", "Address selected. Enter server encryption keys if needed, then choose Connect.");
     _ui_bookmarks_internal__panel("bookmarks-panel", FALSE);
     _ui_bookmarks_internal__panel("connection-panel", TRUE);
@@ -280,7 +338,10 @@ static void _ui_bookmarks_internal__use(gui_event_t *event)
  */
 void desktop_ui_bookmarks__initialize(desktop_settings_t *settings)
 {
+    // store the settings
     g_bookmarks_settings = settings;
+
+    // register the handlers
     scene__register_handler("on_show_bookmarks", _ui_bookmarks_internal__show);
     scene__register_handler("on_close_bookmarks", _ui_bookmarks_internal__close);
     scene__register_handler("on_bookmark_choose", _ui_bookmarks_internal__choose);

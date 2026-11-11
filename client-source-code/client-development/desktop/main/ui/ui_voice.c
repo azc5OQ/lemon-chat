@@ -33,6 +33,8 @@ static float _ui_voice_internal__line(float x, float y, float ax, float ay, floa
     float dy = by - ay;
     float length = dx * dx + dy * dy;
     float along = length > 0 ? clib__fmaxf(0, clib__fminf(1, ((x - ax) * dx + (y - ay) * dy) / length)) : 0;
+
+    // compute the distance
     dx = x - ax - along * dx;
     dy = y - ay - along * dy;
     return clib__sqrtf(dx * dx + dy * dy) - width * 0.5f;
@@ -67,6 +69,7 @@ static float _ui_voice_internal__glyph(float x, float y, int64 state)
 {
     float distance = 32;
 
+    // measure lines by state
     if (state == 3)
     {
         distance = _ui_voice_internal__line(x, y, 3.1f, 5.9f, 5.9f, 3.1f, 1.2f);
@@ -82,6 +85,7 @@ static float _ui_voice_internal__glyph(float x, float y, int64 state)
     }
     else if (state == 6)
     {
+        // measure the channel symbol
         distance = _ui_voice_internal__line(x, y, -1.7f, -4.6f, -2.6f, 2.4f, 1.25f);
         distance = clib__fminf(distance, _ui_voice_internal__line(x, y, 2.2f, -4.6f, 1.3f, 2.4f, 1.25f));
         distance = clib__fminf(distance, _ui_voice_internal__line(x, y, -4.2f, -2.3f, 4.2f, -2.3f, 1.25f));
@@ -111,24 +115,35 @@ static boole _ui_voice_internal__texture(int64 state)
     float alpha = 0;
     float surface = 0;
     float badge = 0;
+
+    // use prepared textures
     if (g_voice_prepared[state])
     {
         return g_voice_textures[state][0] && g_voice_textures[state][1];
     }
+
+    // mark as prepared
     g_voice_prepared[state] = TRUE;
+
+    // compute every pixel
     for (y = 0; y < 64; y++)
     {
         for (x = 0; x < 64; x++)
         {
+            // measure the circle distance
             px = ((float)x + 0.5f) * (24.0f / 64) - 12;
             py = ((float)y + 0.5f) * (24.0f / 64) - 12;
             distance = clib__sqrtf(px * px + py * py) - 9.6f;
+
+            // measure the channel shape
             if (state == 6)
             {
                 distance = _ui_voice_internal__box(px, py + 1.2f, 9.5f, 7.1f, 3);
                 edge = clib__fmaxf(clib__fmaxf(-5.8f - px, px + 0.8f), clib__fmaxf(3.3f - py, py + 0.76f * px - 4.1f));
                 distance = clib__fminf(distance, edge);
             }
+
+            // compute the pixel values
             alpha = clib__fmaxf(0, clib__fminf(1, 0.5f - distance * (64.0f / 24)));
             edge = clib__fmaxf(0, clib__fminf(1, -distance - 0.25f));
             shade = 0.62f + edge * (0.24f - py * 0.018f);
@@ -136,13 +151,13 @@ static boole _ui_voice_internal__texture(int64 state)
             highlight = clib__fmaxf(0, clib__fminf(1, (-py - 1.5f) / 8)) * 0.27f * edge;
             if (state < 6)
             {
-                // Shade the sphere
+                // shade the sphere
                 surface = clib__sqrtf(clib__fmaxf(0, 1 - (px * px + py * py) / (9.6f * 9.6f)));
                 shade = clib__fmaxf(0.32f, clib__fminf(1, 0.38f + surface * 0.56f - px * 0.012f - py * 0.018f));
                 highlight = clib__fmaxf(0, 1 - ((px + 3.1f) * (px + 3.1f) / 24 + (py + 3.8f) * (py + 3.8f) / 13));
                 highlight = highlight * highlight * 0.72f * edge;
 
-                // Separate the badge
+                // separate the badge
                 if (state >= 3)
                 {
                     badge = clib__sqrtf((px - 4.5f) * (px - 4.5f) + (py - 4.5f) * (py - 4.5f)) - 3.2f;
@@ -151,17 +166,23 @@ static boole _ui_voice_internal__texture(int64 state)
                     highlight *= 1 - badge;
                 }
             }
+
+            // reduce the inside alpha
             if (state == 0)
             {
                 alpha *= 1 - edge * 0.84f;
                 highlight *= 0.4f;
             }
+
+            // apply glyph to alpha
             if (state == 6)
             {
                 alpha *= clib__fmaxf(glyph, 1 - edge * 0.83f);
                 glyph = 0;
                 highlight *= 0.5f;
             }
+
+            // store the two pixels
             offset = (y * 64 + x) * 4;
             pixels[0][offset] = pixels[0][offset + 1] = pixels[0][offset + 2] = (ubyte)(clib__fminf(1, shade) * 255 + 0.5f);
             pixels[0][offset + 3] = (ubyte)(alpha * 255 + 0.5f);
@@ -169,6 +190,8 @@ static boole _ui_voice_internal__texture(int64 state)
             pixels[1][offset + 3] = (ubyte)(clib__fmaxf(glyph, highlight) * alpha * 255 + 0.5f);
         }
     }
+
+    // create the textures
     g_voice_textures[state][0] = renderer__create_texture_rgba(pixels[0], 64, 64);
     g_voice_textures[state][1] = renderer__create_texture_rgba(pixels[1], 64, 64);
     clib__null_memory(pixels, sizeof(pixels));
@@ -185,13 +208,19 @@ static void _ui_voice_internal__paint(gui_node_t *node, int64 state)
 {
     gui_rect_t rect = { 0 };
     gui_color_t detail = { 1, 1, 1, node->resolved.font_color.a };
+
+    // compute the square area
     rect.w = rect.h = clib__fminf(node->bounds.w, node->bounds.h);
     rect.x = node->bounds.x + (node->bounds.w - rect.w) * 0.5f;
     rect.y = node->bounds.y + (node->bounds.h - rect.h) * 0.5f;
+
+    // nothing to draw
     if (rect.w <= 0)
     {
         return;
     }
+
+    // draw both textures
     if (_ui_voice_internal__texture(state))
     {
         renderer__submit_image(rect, g_voice_textures[state][0], node->resolved.font_color);
@@ -206,6 +235,7 @@ static void _ui_voice_internal__paint(gui_node_t *node, int64 state)
  */
 void desktop_ui_voice__draw_channel(gui_node_t *node)
 {
+    // draw image or symbol
     if (node)
     {
         if (node->resolved.has_background_image)
@@ -226,6 +256,8 @@ void desktop_ui_voice__draw_channel(gui_node_t *node)
 static void _ui_voice_internal__draw(gui_node_t *node, float scale)
 {
     int64 state = (int64)node->value;
+
+    // call the original drawing
     if (clib__strncmp(node->klass, "voice-icon", 10) != 0)
     {
         if (g_voice_original.emit_draws)
@@ -234,6 +266,8 @@ static void _ui_voice_internal__draw(gui_node_t *node, float scale)
         }
         return;
     }
+
+    // draw image or icon
     if (node->resolved.has_background_image)
     {
         scene__emit_default_bg(node, scale);
@@ -252,6 +286,8 @@ void desktop_ui_voice__shutdown(void)
 {
     int64 index = 0;
     int64 layer = 0;
+
+    // destroy the textures
     for (index = 0; index < 7; index++)
     {
         for (layer = 0; layer < 2; layer++)
@@ -273,10 +309,14 @@ void desktop_ui_voice__shutdown(void)
 void desktop_ui_voice__register(void)
 {
     const widget_vtable_t *original = widget_registry__get(GUI_NODE_TYPE__TEXT);
+
+    // check the original widget
     if (!original || original == &g_voice_widget)
     {
         return;
     }
+
+    // replace the draw function
     g_voice_original = *original;
     g_voice_widget = *original;
     g_voice_widget.emit_draws = _ui_voice_internal__draw;
@@ -294,15 +334,21 @@ void desktop_ui_voice__append(gui_node_t *parent, int64 audio, boole muted)
 {
     gui_node_t *icon = NULL_POINTER;
     const char *klass = muted ? "voice-icon-muted" : audio == 1 ? "voice-icon-active" : audio >= 3 ? "voice-icon-disabled" : "voice-icon";
+
+    // check the parent
     if (!parent)
     {
         return;
     }
+
+    // create the icon node
     icon = scene__node_new(GUI_NODE_TYPE__TEXT);
     if (!icon)
     {
         return;
     }
+
+    // set state and class
     icon->value = muted ? 5 : audio >= 1 && audio <= 4 ? (float)audio : 0;
     clib__string_format(icon->klass, sizeof(icon->klass), "%s voice-state-%lld", klass, (int64)icon->value);
     scene__add_child(parent, icon);

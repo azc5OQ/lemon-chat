@@ -79,14 +79,19 @@ static uint64 _audio_websocket_internal__read_u32(const ubyte *bytes)
  */
 static boole _audio_websocket_internal__authentication_code(mbedtls_md_context_t *context, const ubyte *data, uint64 size, ubyte *out_code)
 {
+    // reset the HMAC state
     if (mbedtls_md_hmac_reset(context) != 0)
     {
         return FALSE;
     }
+
+    // add the data
     if (mbedtls_md_hmac_update(context, data, size) != 0)
     {
         return FALSE;
     }
+
+    // write the result code
     return mbedtls_md_hmac_finish(context, out_code) == 0;
 }
 
@@ -104,6 +109,7 @@ static boole _audio_websocket_internal__is_equal(const ubyte *left, const ubyte 
     ubyte difference = 0;
     uint64 i = 0;
 
+    // compare every byte
     for (i = 0; i < size; i++)
     {
         difference |= left[i] ^ right[i];
@@ -148,6 +154,8 @@ static boole _audio_websocket_internal__issue_session(client_t *client)
 
     // a new session replaces the old one: the old socket, when there is one, is closed
     audio_websocket__disconnect(client);
+
+    // create the new session
     session = calloc(1, sizeof(*session));
     if (session == NULL_POINTER)
     {
@@ -175,6 +183,8 @@ static boole _audio_websocket_internal__issue_session(client_t *client)
     {
         clib__string_format(ticket_hex + i * 2, 3, "%02x", session->ticket[i]);
     }
+
+    // build the message
     root = cJSON_CreateObject();
     message = cJSON_AddObjectToObject(root, "message");
     if (message != NULL_POINTER)
@@ -185,6 +195,8 @@ static boole _audio_websocket_internal__issue_session(client_t *client)
         cJSON_AddStringToObject(message, "ticket", ticket_hex);
         plaintext = cJSON_PrintUnformatted(root);
     }
+
+    // queue the message
     if (plaintext != NULL_POINTER)
     {
         is_issued = server_msg__delivery__queue_text_to_client(client, plaintext);
@@ -197,6 +209,8 @@ static boole _audio_websocket_internal__issue_session(client_t *client)
         mbedtls_platform_zeroize(plaintext, clib__strlen(plaintext));
         cJSON_free(plaintext);
     }
+
+    // free JSON, clear key
     cJSON_Delete(root);
     mbedtls_platform_zeroize(key_hex, sizeof(key_hex));
     return is_issued;
@@ -222,19 +236,19 @@ static uint64 _audio_websocket_internal__attach(ws_cli_conn_t *socket, const uby
     client_t *client = NULL_POINTER;
     uint64 id = 0;
 
-    // Require the complete proof packet before reading its fields.
+    // require the complete proof packet before reading its fields
     if (size != 53)
     {
         return UINT64_MAX;
     }
 
-    // Accept the session proof packet type only.
+    // accept the session proof packet type only
     if (data[0] != 1)
     {
         return UINT64_MAX;
     }
 
-    // Read the client ID and check it before indexing the clients array.
+    // read the client ID and check it before indexing the clients array
     id = _audio_websocket_internal__read_u32(data + 1);
     if (id >= g_server_settings.max_client_count)
     {
@@ -250,25 +264,25 @@ static uint64 _audio_websocket_internal__attach(ws_cli_conn_t *socket, const uby
         goto rejected;
     }
 
-    // Reject expired tickets and sessions already attached to another socket.
+    // reject expired tickets and sessions already attached to another socket
     if (session->socket != NULL_POINTER || now > session->expires_at)
     {
         goto rejected;
     }
 
-    // Require the ticket issued to this client.
+    // require the ticket issued to this client
     if (_audio_websocket_internal__is_equal(session->ticket, data + 5, 16) == FALSE)
     {
         goto rejected;
     }
 
-    // Calculate the expected authentication code for the packet.
+    // calculate the expected authentication code for the packet
     if (_audio_websocket_internal__authentication_code(&session->receive_mac, data, 21, code) == FALSE)
     {
         goto rejected;
     }
 
-    // Reject a proof whose authentication code does not match.
+    // reject a proof whose authentication code does not match
     if (_audio_websocket_internal__is_equal(code, data + 21, 32) == FALSE)
     {
         goto rejected;
@@ -283,7 +297,7 @@ static uint64 _audio_websocket_internal__attach(ws_cli_conn_t *socket, const uby
         return UINT64_MAX;
     }
 
-    // Attach the verified socket and queue the acknowledgement.
+    // attach the verified socket and queue the acknowledgement
     session->socket = socket;
     ws_media_bind(socket, id);
     client->is_audio_websocket_authenticated = TRUE;
@@ -295,6 +309,7 @@ static uint64 _audio_websocket_internal__attach(ws_cli_conn_t *socket, const uby
     return id;
 
 rejected:
+    // log the refusal
     DBG_AUDIO_WEBSOCKET log_info("%s %s %llu %s", "audio", "proof frame for client", id, "refused: no session, wrong ticket or code, expired, idle, or already attached");
     return UINT64_MAX;
 }
@@ -318,6 +333,8 @@ static boole _audio_websocket_internal__is_frame_allowed(audio_websocket_session
         session->rate_window = now;
         session->rate_count = 0;
     }
+
+    // count the frame
     return ++session->rate_count <= limit_per_second;
 }
 
@@ -328,10 +345,13 @@ static boole _audio_websocket_internal__is_frame_allowed(audio_websocket_session
  */
 static boole _audio_websocket_internal__is_served(void)
 {
+    // check the websocket setting
     if (g_server_settings.is_audio_over_websocket_allowed == FALSE)
     {
         return FALSE;
     }
+
+    // check voice and music
     return g_server_settings.is_voice_chat_active == TRUE || g_server_settings.is_music_bot_audio_active == TRUE;
 }
 
@@ -349,10 +369,13 @@ static boole _audio_websocket_internal__is_served(void)
  */
 boole audio_websocket__send(client_t *client, const ubyte *data, uint64 size, boole is_music)
 {
+    // refuse wrong size
     if (size < MEDIA_FRAME_OVERHEAD || size > WS_AUDIO_FRAME_MAX)
     {
         return FALSE;
     }
+
+    // check session and socket
     if (client->audio_websocket == NULL_POINTER)
     {
         return FALSE;
@@ -361,6 +384,8 @@ boole audio_websocket__send(client_t *client, const ubyte *data, uint64 size, bo
     {
         return FALSE;
     }
+
+    // queue the packet
     return ws_media_queue_frame(client->audio_websocket->socket, data, size, is_music == TRUE ? WS_MEDIA_KIND_MUSIC : WS_MEDIA_KIND_VOICE) == 0;
 }
 
@@ -378,6 +403,7 @@ boole audio_websocket__owns_socket(client_t *client, ws_cli_conn_t *socket)
 {
     boole status = FALSE;
 
+    // compare the socket
     if (client->audio_websocket != NULL_POINTER)
     {
         status = client->audio_websocket->socket == socket;
@@ -402,6 +428,7 @@ void audio_websocket__request(client_t *client)
     boole status3 = FALSE;
     boole status4 = FALSE;
 
+    // check server and client
     status0 = _audio_websocket_internal__is_served() == FALSE;
     if (status0 == FALSE)
     {
@@ -410,11 +437,15 @@ void audio_websocket__request(client_t *client)
         status3 = client->is_music_bot == TRUE;
         status4 = client->is_idle == TRUE;
     }
+
+    // refuse the request
     if (status0 == TRUE || status1 == TRUE || status2 == TRUE || status3 == TRUE || status4 == TRUE)
     {
         DBG_AUDIO_WEBSOCKET log_info("%s %llu %s", "session request of client", client->client_id, "refused: websocket audio is not served, or the client is not authenticated, a music bot, or idle");
         return;
     }
+
+    // create the session
     _audio_websocket_internal__issue_session(client);
 }
 
@@ -429,9 +460,12 @@ void audio_websocket__onopen(ws_cli_conn_t *socket)
 {
     boole status = FALSE;
 
+    // read the audio settings
     clib__read_lock(&g_clients_global_rwlock_guard);
     status = _audio_websocket_internal__is_served();
     clib__unlock(&g_clients_global_rwlock_guard);
+
+    // close when not allowed
     if (status == FALSE)
     {
         DBG_AUDIO_WEBSOCKET log_info("%s", "an /audio socket opened while websocket audio is not served; closed");
@@ -462,16 +496,21 @@ void audio_websocket__onmessage(ws_cli_conn_t *socket, ubyte *data, uint64 size,
     boole relay = FALSE;
     uint64 now = util__get_timestamp_ms();
 
+    // check type and size
     if (type != WS_FR_OP_BIN || size > WS_AUDIO_FRAME_MAX)
     {
         DBG_AUDIO_WEBSOCKET log_info("%s %llu %s", "audio frame of", size, "bytes refused: not binary or too large; socket closed");
         ws_abort_client(socket);
         return;
     }
+
+    // check the first frame
     if (id == UINT64_MAX)
     {
         clib__write_lock(&g_clients_global_rwlock_guard);
         id = _audio_websocket_internal__attach(socket, data, size, now);
+
+        // the socket is attached
         if (id != UINT64_MAX)
         {
             valid = TRUE;
@@ -485,7 +524,11 @@ void audio_websocket__onmessage(ws_cli_conn_t *socket, ubyte *data, uint64 size,
                 server_msg__audio__send_state_of_client_to_all_clients(client, client->audio_state);
             }
         }
+
+        // unlock the clients
         clib__unlock(&g_clients_global_rwlock_guard);
+
+        // close a refused socket
         if (valid == FALSE)
         {
             ws_abort_client(socket);
@@ -493,33 +536,47 @@ void audio_websocket__onmessage(ws_cli_conn_t *socket, ubyte *data, uint64 size,
         return;
     }
 
+    // lock the clients
     clib__read_lock(&g_clients_global_rwlock_guard);
+
+    // check id and size
     if (id >= g_server_settings.max_client_count || size == 1)
     {
         goto done;
     }
+
+    // check client and session
     client = &g_clients_array[id];
     session = client->audio_websocket;
     if (client->is_existing == FALSE || client->is_authenticated == FALSE || client->is_idle == TRUE || session == NULL_POINTER)
     {
         goto done;
     }
+
+    // compare the socket
     if (session->socket != socket)
     {
         goto done;
     }
+
+    // check the frame rate
     if (_audio_websocket_internal__is_frame_allowed(session, now, AUDIO_WEBSOCKET_MAX_FRAMES_PER_SECOND) == FALSE)
     {
         DBG_AUDIO_WEBSOCKET log_info("%s %llu %s", "client", id, "sent more than 250 audio frames within a second; socket closed");
         goto done;
     }
+
+    // accept the frame
     valid = TRUE;
     if (size > 0)
     {
         relay = TRUE;
     }
 done:
+    // unlock the clients
     clib__unlock(&g_clients_global_rwlock_guard);
+
+    // close socket or relay
     if (valid == FALSE)
     {
         ws_abort_client(socket);
@@ -545,8 +602,11 @@ void audio_websocket__onclose(ws_cli_conn_t *socket)
     uint64 id = ws_media_client_id(socket);
     client_t *client = NULL_POINTER;
 
+    // lock clients and peers
     clib__write_lock(&g_clients_global_rwlock_guard);
     clib__read_lock(&g_webrtc_peers_rwlock_guard);
+
+    // end the audio session
     if (id < g_server_settings.max_client_count)
     {
         client = &g_clients_array[id];
@@ -554,6 +614,8 @@ void audio_websocket__onclose(ws_cli_conn_t *socket)
         {
             DBG_AUDIO_WEBSOCKET log_info("%s %llu %s", "audio websocket of client", id, "closed");
             audio_websocket__disconnect(client);
+
+            // send the disabled state
             if (g_server_settings.is_audio_over_webrtc_allowed == FALSE || audio_webrtc__is_connected(id) == FALSE)
             {
                 client->audio_state = AUDIO_STATE__AUDIO_COMPLETELY_DISABLED;
@@ -561,6 +623,8 @@ void audio_websocket__onclose(ws_cli_conn_t *socket)
             }
         }
     }
+
+    // unlock peers and clients
     clib__unlock(&g_webrtc_peers_rwlock_guard);
     clib__unlock(&g_clients_global_rwlock_guard);
 }
@@ -579,12 +643,17 @@ void audio_websocket__disconnect(client_t *client)
     audio_websocket_session_t **slot = &client->audio_websocket;
     audio_websocket_session_t *session = *slot;
 
+    // remove session from client
     *slot = NULL_POINTER;
     client->is_audio_websocket_authenticated = FALSE;
+
+    // nothing to free
     if (session == NULL_POINTER)
     {
         return;
     }
+
+    // close the socket
     if (session->socket != NULL_POINTER)
     {
         ws_abort_client(session->socket);
@@ -609,10 +678,13 @@ void audio_websocket__clear_queue(client_t *client)
 {
     boole status = FALSE;
 
+    // check the socket
     if (client->audio_websocket != NULL_POINTER)
     {
         status = client->audio_websocket->socket != NULL_POINTER;
     }
+
+    // clear the queue
     if (status == TRUE)
     {
         ws_media_clear_queue(client->audio_websocket->socket);

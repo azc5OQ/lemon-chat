@@ -12,10 +12,14 @@ void server_msg__sounds__receive(desktop_session_t *session, const cJSON *messag
     int64 group = server_msg__read_number(message, "group_id");
     desktop_client_t *client = slot >= 0 ? &session->model.clients[slot] : NULL;
     desktop_sound_t sound = DESKTOP_SOUND_COUNT;
+
+    // skip when not connected
     if (!session->model.connected)
     {
         return;
     }
+
+    // choose the sound
     if (clib__strcmp(type, "client_connect") == 0 && !client && channel == session->model.channel)
     {
         sound = DESKTOP_SOUND_USER_ENTERED_YOUR_CHANNEL;
@@ -26,6 +30,7 @@ void server_msg__sounds__receive(desktop_session_t *session, const cJSON *messag
     }
     else if (clib__strcmp(type, "channel_join") == 0 && client && channel != client->channel && clib__strcmp(reason, "visibility") != 0)
     {
+        // compare with own channel
         if (id == session->model.local_id)
         {
             sound = DESKTOP_SOUND_CHANNEL_SWITCHED;
@@ -41,10 +46,12 @@ void server_msg__sounds__receive(desktop_session_t *session, const cJSON *messag
     }
     else if (clib__strcmp(type, "client_going_to_idle_mode") == 0 && client && !client->idle && id != session->model.local_id && client->channel == session->model.channel)
     {
+        // use the leave sound
         sound = DESKTOP_SOUND_USER_LEFT_YOUR_CHANNEL;
     }
     else if (clib__strcmp(type, "client_coming_back_from_idle_mode") == 0 && client && client->idle && id != session->model.local_id && channel == session->model.channel)
     {
+        // use the join sound
         sound = DESKTOP_SOUND_USER_JOINED_YOUR_CHANNEL;
         desktop_voice__stop_sound(session->voice, DESKTOP_SOUND_CALL);
     }
@@ -84,6 +91,8 @@ void server_msg__sounds__receive(desktop_session_t *session, const cJSON *messag
     {
         sound = DESKTOP_SOUND_ERROR;
     }
+
+    // play the sound
     if (sound != DESKTOP_SOUND_COUNT)
     {
         desktop_voice__sound(session->voice, sound);

@@ -31,6 +31,7 @@ void server_msg__administration__send_client_info_to_single_client(client_t *rec
     uint64 connected_seconds = 0;
     uint64 last_action_seconds_ago = 0;
 
+    // count elapsed seconds
     now_ms = util__get_timestamp_ms();
     if (now_ms >= subject->timestamp_connected)
     {
@@ -41,17 +42,23 @@ void server_msg__administration__send_client_info_to_single_client(client_t *rec
         last_action_seconds_ago = (now_ms - subject->timestamp_last_action) / 1000;
     }
 
+    // create client info message
     root = server_msg__delivery__new_message("client_info", &message);
 
+    // add the two ids
     cJSON_AddNumberToObject(message, "client_id", (double)subject->client_id);
     if (cJSON_IsNumber(request_id) && request_id->valuedouble >= 0 && request_id->valuedouble <= 2147483647.0)
     {
         cJSON_AddNumberToObject(message, "request_id", request_id->valuedouble);
     }
+
+    // add allowed connection time
     if (permissions__is_allowed(receiver, PERMISSION_VIEW_CLIENT_CONNECTION_TIME) == TRUE)
     {
         cJSON_AddNumberToObject(message, "connected_seconds", (double)connected_seconds);
     }
+
+    // add allowed client details
     if (permissions__is_allowed(receiver, PERMISSION_VIEW_CLIENT_DETAILS) == TRUE)
     {
         cJSON_AddNumberToObject(message, "last_action_seconds_ago", (double)last_action_seconds_ago);
@@ -63,6 +70,7 @@ void server_msg__administration__send_client_info_to_single_client(client_t *rec
         cJSON_AddStringToObject(message, "identity", &subject->public_key[0]);
     }
 
+    // send to the receiver
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
 }
@@ -85,13 +93,16 @@ void server_msg__administration__send_icon_list_to_single_client(client_t *recei
     cJSON *json_icons_array = NULL_POINTER;
     uint64 x = 0;
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // permission system is off
     if (g_server_settings.is_permission_system_enabled == FALSE)
     {
         return;
     }
 
+    // create icon list message
     root = server_msg__delivery__new_message("icon_list", &message);
     json_icons_array = cJSON_CreateArray();
 
@@ -100,19 +111,23 @@ void server_msg__administration__send_icon_list_to_single_client(client_t *recei
     {
         single_client = NULL_POINTER;
 
+        // skip empty slots
         if (g_icons_array[x].is_existing == FALSE)
         {
             continue;
         }
 
+        // add one icon
         single_client = cJSON_CreateObject();
         cJSON_AddNumberToObject(single_client, "icon_id", (double)g_icons_array[x].id);
         cJSON_AddStringToObject(single_client, "base64_icon", (g_icons_array[x].base64 != NULL_POINTER) ? g_icons_array[x].base64 : "");
         util__json_add_owned_array(json_icons_array, single_client);
     }
 
+    // add the icon array
     util__json_add_owned_object(message, "icons", json_icons_array);
 
+    // send to the receiver
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
 }
@@ -134,24 +149,29 @@ void server_msg__administration__send_group_list_to_single_client(client_t *rece
     cJSON *single_group_id_object = NULL_POINTER;
     uint64 x = 0;
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // permission system is off
     if (g_server_settings.is_permission_system_enabled == FALSE)
     {
         return;
     }
 
+    // create group list message
     root = server_msg__delivery__new_message("group_list", &message);
     json_groups_array = cJSON_CreateArray();
 
     // create array of clients
     for (x = 0; x < MAX_GROUPS; x++)
     {
+        // skip empty slots
         if (g_groups_array[x].is_existing == FALSE)
         {
             continue;
         }
 
+        // add the group fields
         single_group_id_object = cJSON_CreateObject();
         cJSON_AddNumberToObject(single_group_id_object, "group_id", (double)g_groups_array[x].id);
         cJSON_AddStringToObject(single_group_id_object, "group_name", g_groups_array[x].name);
@@ -159,18 +179,24 @@ void server_msg__administration__send_group_list_to_single_client(client_t *rece
         cJSON_AddBoolToObject(single_group_id_object, "is_default_guest", g_groups_array[x].is_default_guest == TRUE);
         cJSON_AddNumberToObject(single_group_id_object, "group_linked_icon_id", (double)g_groups_array[x].icon_id);
         util__json_add_owned_object(single_group_id_object, "has_icon", cJSON_CreateBool(g_groups_array[x].has_icon == TRUE));
+
+        // add permissions if allowed
         if (permissions__is_allowed_in_groups(receiver, PERMISSION_VIEW_GROUP_PERMISSIONS) == TRUE)
         {
             util__json_add_owned_object(single_group_id_object, "permissions", permissions__write(&g_groups_array[x].permissions));
         }
+
+        // add allowed group controls
         util__json_add_owned_object(single_group_id_object, "access", permissions__write_group_access(receiver, x));
         util__json_add_owned_array(json_groups_array, single_group_id_object);
     }
 
+    // add groups and rights
     util__json_add_owned_object(message, "groups", json_groups_array);
     util__json_add_owned_object(message, "access", permissions__write_access(receiver));
     util__json_add_owned_object(message, "channel_groups", g_server_settings.is_permission_system_enabled ? channel_groups__write_catalog(permissions__is_allowed_in_groups(receiver, PERMISSION_VIEW_GROUP_PERMISSIONS)) : cJSON_CreateArray());
 
+    // send to the receiver
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
 }
@@ -203,33 +229,42 @@ void server_msg__administration__send_identity_list_to_single_client(client_t *r
     uint64 t = 0;
     uint64 c = 0;
 
+    // check the view permission
     if (permissions__is_allowed(receiver, PERMISSION_VIEW_GROUP_MEMBERS) == FALSE)
     {
         return;
     }
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // create identity list message
     root = server_msg__delivery__new_message("identity_list", &message);
     json_identities_array = cJSON_CreateArray();
 
+    // lock groups and identities
     clib__read_lock(&g_groups_global_rwlock_guard);
     pthread_mutex_lock(&g_client_stored_data_mutex);
 
+    // add every stored identity
     for (i = 0; i < MAX_CLIENT_STORED_DATA; i++)
     {
+        // reset both flags
         is_online = FALSE;
         has_assigned_group = FALSE;
 
+        // skip empty slots
         if (g_client_stored_data[i].public_key[0] == 0 || (g_client_stored_data[i].group_id_count == 0 && g_client_stored_data[i].raw_public_key[0] == 0 && g_client_stored_data[i].base64_avatar[0] == 0))
         {
             continue;
         }
 
+        // add hash and username
         single_identity_object = cJSON_CreateObject();
         cJSON_AddStringToObject(single_identity_object, "public_key_hash", &g_client_stored_data[i].public_key[0]);
         cJSON_AddStringToObject(single_identity_object, "username", &g_client_stored_data[i].username[0]);
 
+        // add assigned group ids
         identity_group_ids_array = cJSON_CreateArray();
         for (t = 0; g_server_settings.is_permission_system_enabled == TRUE && t < g_client_stored_data[i].group_id_count; t++)
         {
@@ -241,6 +276,8 @@ void server_msg__administration__send_identity_list_to_single_client(client_t *r
             util__json_add_owned_array(identity_group_ids_array, cJSON_CreateNumber((double)group_id));
             has_assigned_group = TRUE;
         }
+
+        // use the guest group
         if (g_server_settings.is_permission_system_enabled == TRUE && has_assigned_group == FALSE && g_guest_group_id < MAX_GROUPS)
         {
             util__json_add_owned_array(identity_group_ids_array, cJSON_CreateNumber((double)g_guest_group_id));
@@ -270,14 +307,18 @@ void server_msg__administration__send_identity_list_to_single_client(client_t *r
         }
         util__json_add_owned_object(single_identity_object, "is_online", cJSON_CreateBool(is_online == TRUE));
 
+        // add identity to array
         util__json_add_owned_array(json_identities_array, single_identity_object);
     }
 
+    // unlock identities and groups
     pthread_mutex_unlock(&g_client_stored_data_mutex);
     clib__unlock(&g_groups_global_rwlock_guard);
 
+    // add the identity array
     util__json_add_owned_object(message, "identities", json_identities_array);
 
+    // send to the receiver
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
 }
@@ -295,8 +336,10 @@ void server_msg__administration__send_force_admin_password_change_to_single_clie
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 
+    // create password change message
     root = server_msg__delivery__new_message("force_admin_password_change", &message);
 
+    // send to the receiver
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
 }
@@ -316,17 +359,22 @@ void server_msg__administration__send_access_denied_to_single_client(client_t *r
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 
+    // check the receiver
     if (receiver == NULL_POINTER || receiver->is_existing == FALSE || receiver->is_authenticated == FALSE)
     {
         return;
     }
 
+    // create access denied message
     root = server_msg__delivery__new_message("access_denied", &message);
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // add reason or default
     cJSON_AddStringToObject(message, "reason", reason != NULL_POINTER && reason[0] != 0 ? reason : "Insufficient permissions.");
 
+    // send to the receiver
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
 }
@@ -347,26 +395,26 @@ void server_msg__administration__send_permission_denied_to_single_client(client_
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 
-    // Check the receiver.
+    // check the receiver
     if (receiver == NULL_POINTER || receiver->is_existing == FALSE || receiver->is_authenticated == FALSE)
     {
         return;
     }
 
-    // Create the message.
+    // create the message
     root = server_msg__delivery__new_message("access_denied", &message);
 
-    // Debug log.
+    // debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    // Add the fields.
+    // add the fields
     cJSON_AddStringToObject(message, "reason", "Insufficient permissions.");
     if (permission != NULL_POINTER && permission[0] != 0)
     {
         cJSON_AddStringToObject(message, "permission", permission);
     }
 
-    // Send and free.
+    // send and free
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
 }
@@ -384,16 +432,20 @@ void server_msg__administration__send_admin_log_to_single_client(client_t *recei
     cJSON *message = NULL_POINTER;
     cJSON *json_lines = NULL_POINTER;
 
+    // read the log lines
     json_lines = server_logs__build_json_array();
     if (json_lines == NULL_POINTER)
     {
         return;
     }
 
+    // create admin log message
     root = server_msg__delivery__new_message("admin_log", &message);
 
+    // add the log lines
     util__json_add_owned_object(message, "lines", json_lines);
 
+    // send to the receiver
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
 }
@@ -411,20 +463,26 @@ void server_msg__administration__send_add_group_to_client_event_to_all_clients(c
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // permission system is off
     if (g_server_settings.is_permission_system_enabled == FALSE)
     {
         return;
     }
 
+    // create group added message
     root = server_msg__delivery__new_message("group_add_to_client", &message);
 
+    // add group and client
     cJSON_AddNumberToObject(message, "group_id", group_id);
     cJSON_AddNumberToObject(message, "client_id", (double)subject->client_id);
 
+    // send to all clients
     server_msg__delivery__send_json_to_all_clients(root, NULL_POINTER);
 
+    // free the message
     cJSON_Delete(root);
 }
 
@@ -441,20 +499,26 @@ void server_msg__administration__send_remove_group_from_client_event_to_all_clie
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // permission system is off
     if (g_server_settings.is_permission_system_enabled == FALSE)
     {
         return;
     }
 
+    // create group removed message
     root = server_msg__delivery__new_message("remove_group_from_client", &message);
 
+    // add group and client
     cJSON_AddNumberToObject(message, "group_id", group_id);
     cJSON_AddNumberToObject(message, "client_id", (double)subject->client_id);
 
+    // send to all clients
     server_msg__delivery__send_json_to_all_clients(root, NULL_POINTER);
 
+    // free the message
     cJSON_Delete(root);
 }
 
@@ -471,15 +535,20 @@ void server_msg__administration__send_add_new_icon_event_to_all_clients(uint64 n
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // create icon added message
     root = server_msg__delivery__new_message("icon_add", &message);
 
+    // add id and image
     cJSON_AddNumberToObject(message, "icon_id", new_icon_id);
     cJSON_AddStringToObject(message, "base64_icon", icon_base64_value);
 
+    // send to all clients
     server_msg__delivery__send_json_to_all_clients(root, NULL_POINTER);
 
+    // free the message
     cJSON_Delete(root);
 }
 
@@ -495,14 +564,19 @@ void server_msg__administration__send_remove_group_event_to_all_clients(uint64 g
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // create group deleted message
     root = server_msg__delivery__new_message("group_delete", &message);
 
+    // add the group id
     cJSON_AddNumberToObject(message, "group_id", group_id);
 
+    // send to all clients
     server_msg__delivery__send_json_to_all_clients(root, NULL_POINTER);
 
+    // free the message
     cJSON_Delete(root);
 }
 
@@ -518,14 +592,19 @@ void server_msg__administration__send_remove_icon_event_to_all_clients(uint64 ic
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // create icon deleted message
     root = server_msg__delivery__new_message("icon_delete", &message);
 
+    // add the icon id
     cJSON_AddNumberToObject(message, "icon_id", icon_id);
 
+    // send to all clients
     server_msg__delivery__send_json_to_all_clients(root, NULL_POINTER);
 
+    // free the message
     cJSON_Delete(root);
 }
 
@@ -543,16 +622,21 @@ void server_msg__administration__send_group_icon_changed_event_to_all_clients(ui
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // create icon changed message
     root = server_msg__delivery__new_message("group_icon_changed", &message);
 
+    // add group and icon
     cJSON_AddNumberToObject(message, "group_id", group_id);
     util__json_add_owned_object(message, "has_icon", cJSON_CreateBool(has_icon == TRUE));
     cJSON_AddNumberToObject(message, "group_linked_icon_id", icon_id);
 
+    // send to all clients
     server_msg__delivery__send_json_to_all_clients(root, NULL_POINTER);
 
+    // free the message
     cJSON_Delete(root);
 }
 
@@ -571,10 +655,13 @@ void server_msg__administration__send_create_new_group_event_to_all_clients(uint
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // create new group message
     root = server_msg__delivery__new_message("group_add", &message);
 
+    // add the group fields
     cJSON_AddNumberToObject(message, "group_id", group_id);
     cJSON_AddStringToObject(message, "group_name", group_name);
     cJSON_AddStringToObject(message, "group_type", permissions__group_type_name(g_groups_array[group_id].group_type));
@@ -582,8 +669,10 @@ void server_msg__administration__send_create_new_group_event_to_all_clients(uint
     cJSON_AddNumberToObject(message, "group_linked_icon_id", group_linked_icon_id);
     util__json_add_owned_object(message, "has_icon", cJSON_CreateBool(has_icon == TRUE));
 
+    // send to all clients
     server_msg__delivery__send_json_to_all_clients(root, NULL_POINTER);
 
+    // free the message
     cJSON_Delete(root);
 }
 
@@ -597,8 +686,11 @@ void server_msg__administration__send_group_permissions_changed(uint64 group_id)
     cJSON *root = server_msg__delivery__new_message("group_permissions_changed", &message);
     uint64 i = 0;
 
+    // add id and permissions
     cJSON_AddNumberToObject(message, "group_id", (double)group_id);
     util__json_add_owned_object(message, "permissions", permissions__write(&g_groups_array[group_id].permissions));
+
+    // send to allowed clients
     for (i = 0; i < (uint64)g_server_settings.max_client_count; i++)
     {
         if (permissions__is_allowed_in_groups(&g_clients_array[i], PERMISSION_VIEW_GROUP_PERMISSIONS) == TRUE)
@@ -606,6 +698,8 @@ void server_msg__administration__send_group_permissions_changed(uint64 group_id)
             server_msg__delivery__send_json_to_client(&g_clients_array[i], root);
         }
     }
+
+    // free the message
     cJSON_Delete(root);
 }
 
@@ -618,8 +712,11 @@ void server_msg__administration__send_admin_status_to_single_client(client_t *re
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 
+    // build admin status message
     root = server_msg__delivery__new_message("admin_status", &message);
     cJSON_AddBoolToObject(message, "is_admin", receiver->is_admin);
+
+    // send to the receiver
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
 }
@@ -630,10 +727,13 @@ void server_msg__administration__send_admin_status_to_single_client(client_t *re
  */
 void server_msg__administration__send_permission_update_to_single_client(client_t *receiver)
 {
+    // check the receiver
     if (receiver == NULL_POINTER || receiver->is_existing == FALSE || receiver->is_authenticated == FALSE || receiver->is_music_bot == TRUE)
     {
         return;
     }
+
+    // update key, send groups
     clib__read_lock(&g_groups_global_rwlock_guard);
     identity_store__update_offline_public_key(receiver);
     server_msg__administration__send_group_list_to_single_client(receiver);
@@ -648,6 +748,7 @@ void server_msg__administration__send_permission_updates_to_all_clients(void)
 {
     uint64 i = 0;
 
+    // update every client
     for (i = 0; i < (uint64)g_server_settings.max_client_count; i++)
     {
         server_msg__administration__send_permission_update_to_single_client(&g_clients_array[i]);

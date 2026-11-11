@@ -25,13 +25,17 @@ void server_msg__chat__send_server_chat_message_id_for_local_chat_message_id_to_
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 
+    // create the id message
     root = server_msg__delivery__new_message("server_chat_message_id_for_local_message_id", &message);
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // add both message ids
     cJSON_AddNumberToObject(message, "server_chat_message_id", chat_message_id);
     cJSON_AddNumberToObject(message, "local_message_id", local_message_id);
 
+    // send to the receiver
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
 }
@@ -54,16 +58,20 @@ void server_msg__chat__send_message_to_single_client(client_t *receiver, client_
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // create direct chat message
     root = server_msg__delivery__new_message("direct_chat_message", &message);
 
+    // add text, purpose, sender
     cJSON_AddStringToObject(message, "value", chat_message_value);
     cJSON_AddStringToObject(message, "purpose", purpose);
     cJSON_AddStringToObject(message, "sender_username", sender->username);
     cJSON_AddNumberToObject(message, "sender_id", sender->client_id);
     cJSON_AddNumberToObject(message, "server_chat_message_id", server_chat_message_id);
 
+    // send to the receiver
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
 }
@@ -85,18 +93,23 @@ void server_msg__chat__send_message_to_clients_in_same_channel(client_t *sender,
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // create channel chat message
     root = server_msg__delivery__new_message("channel_chat_message", &message);
 
+    // add text and sender
     cJSON_AddStringToObject(message, "value", chat_message_value);
     cJSON_AddStringToObject(message, "sender_username", sender->username);
     cJSON_AddNumberToObject(message, "sender_id", (double)sender->client_id);
     cJSON_AddNumberToObject(message, "channel_id", channel_id);
     cJSON_AddNumberToObject(message, "server_chat_message_id", server_chat_message_id);
 
+    // send to other members
     server_msg__delivery__send_json_to_channel(root, channel_id, sender);
 
+    // free the message
     cJSON_Delete(root);
 }
 
@@ -122,16 +135,21 @@ void server_msg__chat__send_message_action_to_single_client(client_t *receiver, 
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 
+    // create the action message
     root = server_msg__delivery__new_message(action_type, &message);
 
+    // add target and requester
     cJSON_AddNumberToObject(message, "chat_message_id", target_chat_message_id);
     cJSON_AddStringToObject(message, "requester_public_key", requester_public_key);
     cJSON_AddBoolToObject(message, "requester_is_admin", requester_is_admin == TRUE);
+
+    // add the new text
     if (new_message_value != NULL_POINTER)
     {
         cJSON_AddStringToObject(message, "new_message_value", new_message_value);
     }
 
+    // send to the receiver
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
 }
@@ -157,18 +175,24 @@ void server_msg__chat__send_message_action_to_clients_in_same_channel(uint64 rec
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 
+    // create the action message
     root = server_msg__delivery__new_message(action_type, &message);
 
+    // add target and requester
     cJSON_AddNumberToObject(message, "chat_message_id", target_chat_message_id);
     cJSON_AddStringToObject(message, "requester_public_key", requester_public_key);
     cJSON_AddBoolToObject(message, "requester_is_admin", requester_is_admin == TRUE);
+
+    // add the new text
     if (new_message_value != NULL_POINTER)
     {
         cJSON_AddStringToObject(message, "new_message_value", new_message_value);
     }
 
+    // send to channel members
     server_msg__delivery__send_json_to_channel(root, receiving_channel_id, NULL_POINTER);
 
+    // free the message
     cJSON_Delete(root);
 }
 
@@ -186,13 +210,17 @@ void server_msg__chat__send_poke_to_single_client(client_t *receiver, client_t *
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // create the poke message
     root = server_msg__delivery__new_message("poke", &message);
 
+    // add sender and text
     cJSON_AddNumberToObject(message, "client_id", (double)sender->client_id);
     cJSON_AddStringToObject(message, "poke_message", poke_message);
 
+    // send to the receiver
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
 }
@@ -218,30 +246,38 @@ void server_msg__chat__send_typing_indicator(client_t *subject, char *receiver_t
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // check the receiver type
     is_direct_message = clib__is_string_equal(receiver_type, "user");
 
+    // create typing indicator message
     root = server_msg__delivery__new_message("typing_indicator", &message);
 
+    // add client and receiver
     cJSON_AddNumberToObject(message, "client_id", (double)subject->client_id);
     cJSON_AddStringToObject(message, "receiver_type", receiver_type);
     cJSON_AddNumberToObject(message, "receiver_id", (double)receiver_id);
 
+    // find the receivers
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
         client_in_loop = &g_clients_array[i];
 
+        // skip clients without login
         if (client_in_loop->is_existing == FALSE || client_in_loop->is_authenticated == FALSE)
         {
             continue;
         }
 
+        // skip music bots
         if (client_in_loop->is_music_bot == TRUE)
         {
             continue;
         }
 
+        // skip the typing client
         if (client_in_loop == subject)
         {
             continue; // he knows he is typing
@@ -260,9 +296,11 @@ void server_msg__chat__send_typing_indicator(client_t *subject, char *receiver_t
             continue;
         }
 
+        // send to this client
         server_msg__delivery__send_json_to_client(client_in_loop, root);
     }
 
+    // free the message
     cJSON_Delete(root);
 }
 
@@ -287,34 +325,42 @@ void server_msg__chat__send_queued_offline_messages_to_single_client(client_t *r
     uint64 lowest_sequence_number = 0;
     int64 next_slot = 0;
 
+    // check queue and receiver
     if (g_offline_messages == NULL_POINTER || receiver == NULL_POINTER || receiver->public_key[0] == 0)
     {
         return;
     }
 
+    // hash the public key
     util__hash_password_to_base64(receiver->public_key, recipient_identity_hash, sizeof(recipient_identity_hash));
 
     // deliver in the order they were sent: repeatedly pick the lowest sequence number still queued
     // for this identity. the queue is small and this runs once per connect
     while (TRUE)
     {
+        // reset the found slot
         next_slot = -1;
         lowest_sequence_number = 0;
 
+        // lock the message queue
         pthread_mutex_lock(&g_offline_messages_mutex);
 
+        // find the oldest message
         for (i = 0; i < MAX_OFFLINE_MESSAGES; i++)
         {
+            // skip unused slots
             if (g_offline_messages[i].is_used == FALSE)
             {
                 continue;
             }
 
+            // skip other receivers
             if (clib__is_string_equal(&g_offline_messages[i].recipient_identity_hash[0], recipient_identity_hash) == FALSE)
             {
                 continue;
             }
 
+            // keep the lowest number
             if (next_slot == -1 || g_offline_messages[i].sequence_number < lowest_sequence_number)
             {
                 next_slot = (int64)i;
@@ -322,14 +368,17 @@ void server_msg__chat__send_queued_offline_messages_to_single_client(client_t *r
             }
         }
 
+        // nothing left to send
         if (next_slot == -1)
         {
             pthread_mutex_unlock(&g_offline_messages_mutex);
             break;
         }
 
+        // create offline chat message
         root = server_msg__delivery__new_message("offline_chat_message", &message);
 
+        // add text, sender, time
         cJSON_AddStringToObject(message, "value", g_offline_messages[next_slot].base64_encrypted_message);
         cJSON_AddStringToObject(message, "sender_identity_hash", g_offline_messages[next_slot].sender_identity_hash);
         cJSON_AddStringToObject(message, "sender_name", &g_offline_messages[next_slot].sender_name[0]);
@@ -343,15 +392,20 @@ void server_msg__chat__send_queued_offline_messages_to_single_client(client_t *r
         }
         clib__null_memory(&g_offline_messages[next_slot], sizeof(offline_chat_message_t));
 
+        // unlock the message queue
         pthread_mutex_unlock(&g_offline_messages_mutex);
 
+        // send to the receiver
         server_msg__delivery__send_json_to_client(receiver, root);
 
+        // free the message
         cJSON_Delete(root);
 
+        // count the sent message
         delivered_count++;
     }
 
+    // write the debug log
     if (delivered_count > 0)
     {
         DBG_SERVER_MESSAGE log_info("%s %llu %s", "delivered", delivered_count, "offline message(s) on connect \n");
@@ -375,18 +429,25 @@ void server_msg__chat__send_url_resolved_to_single_client(client_t *client, cons
     cJSON *root = cJSON_CreateObject();
     cJSON *message = result != NULL_POINTER ? cJSON_Duplicate(result, TRUE) : cJSON_CreateObject();
 
+    // add message to root
     if (!util__json_add_owned_object(root, "message", message))
     {
         cJSON_Delete(root);
         return;
     }
+
+    // add type and id
     cJSON_AddStringToObject(message, "type", "url_resolved");
     cJSON_AddStringToObject(message, "request_id", request_id);
+
+    // add status without preview
     if (result == NULL_POINTER)
     {
         cJSON_AddStringToObject(message, "url", url);
         cJSON_AddStringToObject(message, "status", g_server_settings.is_link_preview_allowed ? "unavailable" : "disabled");
     }
+
+    // send to the client
     server_msg__delivery__send_json_to_client(client, root);
     cJSON_Delete(root);
 }

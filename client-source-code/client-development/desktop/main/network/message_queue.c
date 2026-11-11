@@ -21,20 +21,27 @@ boole desktop_message_queue__push(desktop_message_queue_t *queue, const char *da
 {
     desktop_message_t *message = NULL_POINTER;
 
+    // check data and space
     if (!data || !desktop_message_queue__has_space(queue, size))
     {
         return 0;
     }
+
+    // allocate the message bytes
     message = &queue->messages[(queue->head + queue->count) % DESKTOP_QUEUE_SLOTS];
     message->data = calloc(1, size + 1);
     if (!message->data)
     {
         return 0;
     }
+
+    // copy the message
     clib__memcpy(message->data, data, size);
     message->size = size;
     message->binary = binary;
     message->expires = 0;
+
+    // update the queue counters
     queue->bytes += size;
     queue->count++;
     return 1;
@@ -51,10 +58,13 @@ boole desktop_message_queue__push(desktop_message_queue_t *queue, const char *da
  */
 boole desktop_message_queue__push_until(desktop_message_queue_t *queue, const char *data, uint64 size, boole binary, uint64 expires)
 {
+    // queue the message
     if (!desktop_message_queue__push(queue, data, size, binary))
     {
         return FALSE;
     }
+
+    // store the expiry time
     queue->messages[(queue->head + queue->count - 1) % DESKTOP_QUEUE_SLOTS].expires = expires;
     return TRUE;
 }
@@ -69,6 +79,8 @@ void desktop_message_queue__expire(desktop_message_queue_t *queue, uint64 now)
 {
     desktop_message_queue_t retained = { 0 };
     desktop_message_t message = { 0 };
+
+    // remove expired messages
     while (desktop_message_queue__pop(queue, &message))
     {
         if (message.expires && (!now || now >= message.expires))
@@ -81,6 +93,8 @@ void desktop_message_queue__expire(desktop_message_queue_t *queue, uint64 now)
             retained.bytes += message.size;
         }
     }
+
+    // replace the queue
     *queue = retained;
     clib__null_memory(&retained, sizeof(retained));
 }
@@ -93,13 +107,20 @@ void desktop_message_queue__expire(desktop_message_queue_t *queue, uint64 now)
  */
 boole desktop_message_queue__pop(desktop_message_queue_t *queue, desktop_message_t *message)
 {
+    // clear the output
     clib__null_memory(message, sizeof(*message));
+
+    // queue is empty
     if (!queue->count)
     {
         return 0;
     }
+
+    // take the first message
     *message = queue->messages[queue->head];
     clib__null_memory(&queue->messages[queue->head], sizeof(*message));
+
+    // update head and counters
     queue->head = (queue->head + 1) % DESKTOP_QUEUE_SLOTS;
     queue->count--;
     queue->bytes -= message->size;
@@ -113,12 +134,15 @@ boole desktop_message_queue__pop(desktop_message_queue_t *queue, desktop_message
  */
 void desktop_message__release(desktop_message_t *message)
 {
+    // erase and free bytes
     if (message->data)
     {
         clib__null_memory(message->data, message->size);
         desktop_memory__erase(message->data, message->size + 1);
         free(message->data);
     }
+
+    // clear the message
     clib__null_memory(message, sizeof(*message));
 }
 

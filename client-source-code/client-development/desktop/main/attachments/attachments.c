@@ -16,6 +16,7 @@ static boole _attachments_internal__make_room(desktop_attachments_t *attachments
  */
 void desktop_attachment_record__release(desktop_attachment_record_t *record)
 {
+    // erase bytes and pixels
     if (record->bytes)
     {
         mbedtls_platform_zeroize(record->bytes, record->bytes_capacity);
@@ -26,6 +27,8 @@ void desktop_attachment_record__release(desktop_attachment_record_t *record)
     }
     free(record->bytes);
     free(record->pixels);
+
+    // free the encrypted texts
     if (record->wire && record->wire_capacity)
     {
         mbedtls_platform_zeroize(record->wire, record->wire_capacity);
@@ -33,6 +36,8 @@ void desktop_attachment_record__release(desktop_attachment_record_t *record)
     crypto_session__free_text(record->wire);
     crypto_session__free_text(record->header);
     crypto_session__free_text(record->preview);
+
+    // reset pointers and sizes
     record->bytes = NULL;
     record->pixels = NULL;
     record->wire = NULL;
@@ -41,6 +46,8 @@ void desktop_attachment_record__release(desktop_attachment_record_t *record)
     record->wire_size = 0;
     record->wire_capacity = 0;
     record->bytes_capacity = 0;
+
+    // erase keys and path
     mbedtls_platform_zeroize(&record->keys, sizeof(record->keys));
     mbedtls_platform_zeroize(&record->previous, sizeof(record->previous));
     mbedtls_platform_zeroize(record->path, sizeof(record->path));
@@ -66,7 +73,10 @@ void desktop_attachment_record__clear(desktop_attachment_record_t *record)
  */
 void desktop_attachment_record__fail(desktop_attachment_record_t *record, const char *detail)
 {
+    // free buffers and keys
     desktop_attachment_record__release(record);
+
+    // store the failure state
     record->view.state = DESKTOP_ATTACHMENT_FAILED;
     record->job = ATTACHMENT_JOB_NONE;
     clib__string_copy(record->view.detail, sizeof(record->view.detail), detail);
@@ -81,6 +91,8 @@ void desktop_attachment_record__fail(desktop_attachment_record_t *record, const 
 desktop_attachment_record_t *desktop_attachments__find(desktop_attachments_t *attachments, uint64 id)
 {
     int64 index = 0;
+
+    // search by ID
     for (index = 0; id && index < DESKTOP_ATTACHMENT_COUNT; index++)
     {
         if (attachments->records[index].view.id == id)
@@ -101,6 +113,8 @@ desktop_attachment_record_t *desktop_attachments__reserve(desktop_attachments_t 
     desktop_attachment_record_t *selected = NULL_POINTER;
     desktop_attachment_record_t *record = NULL_POINTER;
     int64 index = 0;
+
+    // choose empty or oldest
     for (index = 0; index < DESKTOP_ATTACHMENT_COUNT; index++)
     {
         record = &attachments->records[index];
@@ -114,6 +128,8 @@ desktop_attachment_record_t *desktop_attachments__reserve(desktop_attachments_t 
             selected = record;
         }
     }
+
+    // reset the chosen record
     if (selected)
     {
         desktop_attachment_record__clear(selected);
@@ -152,8 +168,11 @@ static boole _attachments_internal__make_room(desktop_attachments_t *attachments
     int64 index = 0;
     desktop_attachment_record_t *oldest = NULL_POINTER;
     desktop_attachment_record_t *record = NULL_POINTER;
+
+    // repeat until it fits
     while (TRUE)
     {
+        // count size, find oldest
         total = required;
         oldest = NULL;
         for (index = 0; index < DESKTOP_ATTACHMENT_COUNT; index++)
@@ -169,14 +188,20 @@ static boole _attachments_internal__make_room(desktop_attachments_t *attachments
                 oldest = record;
             }
         }
+
+        // the size fits
         if (total <= DESKTOP_ATTACHMENT_CACHE_LIMIT)
         {
             return TRUE;
         }
+
+        // nothing can be released
         if (!oldest)
         {
             return FALSE;
         }
+
+        // release the oldest record
         desktop_attachment_record__fail(oldest, "Attachment released from memory. Ask the sender to resend it if needed.");
     }
 }
@@ -197,28 +222,40 @@ static void _attachments_internal__worker(void *context)
     int64 job = 0;
     boole stop = FALSE;
     boole saved = FALSE;
+
+    // loop until stopped
     while (TRUE)
     {
+        // clear the work record
         clib__null_memory(&work, sizeof(work));
         job = ATTACHMENT_JOB_NONE;
+
+        // lock and read flags
         desktop_mutex__lock(attachments->mutex);
         stop = attachments->stop;
         replacement = attachments->next_crypto;
         attachments->next_crypto = NULL;
+
+        // find a waiting job
         for (index = 0; !stop && index < DESKTOP_ATTACHMENT_COUNT; index++)
         {
             record = &attachments->records[index];
             if (record->job && !record->busy && (record->job == ATTACHMENT_JOB_SAVE || attachments->connected))
             {
+                // copy the record
                 work = *record;
                 job = record->job;
                 record->job = ATTACHMENT_JOB_NONE;
                 record->busy = TRUE;
+
+                // clear the record pointers
                 record->bytes = NULL;
                 record->pixels = NULL;
                 record->wire = NULL;
                 record->header = NULL;
                 record->preview = NULL;
+
+                // erase the record keys
                 mbedtls_platform_zeroize(&record->keys, sizeof(record->keys));
                 mbedtls_platform_zeroize(&record->previous, sizeof(record->previous));
                 mbedtls_platform_zeroize(record->path, sizeof(record->path));
@@ -227,23 +264,32 @@ static void _attachments_internal__worker(void *context)
             }
         }
         desktop_mutex__unlock(attachments->mutex);
+
+        // use the new crypto
         if (replacement)
         {
             crypto_session__destroy(crypto);
             crypto = replacement;
             replacement = NULL;
         }
+
+        // stop was requested
         if (stop)
         {
             break;
         }
+
+        // wait for a job
         if (!job)
         {
             desktop_system__sleep(10);
             continue;
         }
+
+        // run the job
         if (job == ATTACHMENT_JOB_SAVE)
         {
+            // write the file
             saved = desktop_attachment_file__save(work.path, work.bytes, work.view.size);
             mbedtls_platform_zeroize(work.path, sizeof(work.path));
             work.view.saved |= saved;
@@ -255,24 +301,32 @@ static void _attachments_internal__worker(void *context)
         }
         else if (job == ATTACHMENT_JOB_PACK)
         {
+            // encrypt the selected file
             desktop_attachment_codec__pack(&work, crypto);
         }
         else if (job == ATTACHMENT_JOB_DECODE)
         {
+            // decrypt the received data
             desktop_attachment_codec__decode(&work, crypto);
         }
         else if (job == ATTACHMENT_JOB_OFFER)
         {
+            // check the received offer
             desktop_attachment_codec__offer(&work, crypto);
         }
+
+        // store the result
         desktop_mutex__lock(attachments->mutex);
         record = desktop_attachments__find(attachments, work.view.id);
         if (record && record->view.epoch == attachments->epoch && record->view.state != DESKTOP_ATTACHMENT_CANCELLED)
         {
+            // check the cache limit
             if (!_attachments_internal__make_room(attachments, work.view.id, _attachments_internal__cache_size(&work)))
             {
                 desktop_attachment_record__fail(&work, "Attachment memory limit reached. Finish another transfer first.");
             }
+
+            // copy the work back
             work.job = ATTACHMENT_JOB_NONE;
             work.busy = FALSE;
             work.decision = record->decision ? record->decision : work.decision;
@@ -285,8 +339,12 @@ static void _attachments_internal__worker(void *context)
         }
         attachments->revision++;
         desktop_mutex__unlock(attachments->mutex);
+
+        // free the work record
         desktop_attachment_record__clear(&work);
     }
+
+    // destroy the crypto
     crypto_session__destroy(crypto);
 }
 
@@ -297,17 +355,25 @@ static void _attachments_internal__worker(void *context)
 desktop_attachments_t *desktop_attachments__create(void)
 {
     desktop_attachments_t *attachments = calloc(1, sizeof(*attachments));
+
+    // check the allocation
     if (!attachments)
     {
         return NULL;
     }
+
+    // create the mutex
     attachments->mutex = desktop_mutex__create();
     attachments->revision = 1;
     attachments->preferences_revision = 1;
+
+    // start the worker thread
     if (attachments->mutex)
     {
         attachments->thread = desktop_thread__start(_attachments_internal__worker, attachments);
     }
+
+    // destroy on failure
     if (!attachments->thread)
     {
         desktop_attachments__destroy(attachments);
@@ -324,21 +390,31 @@ desktop_attachments_t *desktop_attachments__create(void)
 void desktop_attachments__destroy(desktop_attachments_t *attachments)
 {
     int64 index = 0;
+
+    // nothing to destroy
     if (!attachments)
     {
         return;
     }
+
+    // set the stop flag
     if (attachments->mutex)
     {
         desktop_mutex__lock(attachments->mutex);
         attachments->stop = TRUE;
         desktop_mutex__unlock(attachments->mutex);
     }
+
+    // wait for the thread
     desktop_thread__join(attachments->thread);
+
+    // clear every record
     for (index = 0; index < DESKTOP_ATTACHMENT_COUNT; index++)
     {
         desktop_attachment_record__clear(&attachments->records[index]);
     }
+
+    // free the manager
     crypto_session__destroy(attachments->next_crypto);
     desktop_mutex__destroy(attachments->mutex);
     mbedtls_platform_zeroize(attachments, sizeof(*attachments));
@@ -355,15 +431,21 @@ boole desktop_attachments__start(desktop_attachments_t *attachments, const deskt
 {
     desktop_crypto_t *copy = crypto_session__copy_identity(crypto);
     int64 index = 0;
+
+    // check the copy
     if (!copy)
     {
         return FALSE;
     }
+
+    // start a new epoch
     desktop_mutex__lock(attachments->mutex);
     attachments->epoch++;
     attachments->connected = TRUE;
     attachments->uploading = 0;
     attachments->preferences_sent = 0;
+
+    // clear or cancel records
     for (index = 0; index < DESKTOP_ATTACHMENT_COUNT; index++)
     {
         if (!attachments->records[index].busy)
@@ -375,6 +457,8 @@ boole desktop_attachments__start(desktop_attachments_t *attachments, const deskt
             attachments->records[index].view.state = DESKTOP_ATTACHMENT_CANCELLED;
         }
     }
+
+    // store the new identity
     crypto_session__destroy(attachments->next_crypto);
     attachments->next_crypto = copy;
     attachments->revision++;
@@ -391,9 +475,13 @@ void desktop_attachments__disconnect(desktop_attachments_t *attachments)
 {
     int64 index = 0;
     desktop_attachment_record_t *record = NULL_POINTER;
+
+    // set disconnected state
     desktop_mutex__lock(attachments->mutex);
     attachments->connected = FALSE;
     attachments->uploading = 0;
+
+    // cancel unfinished transfers
     for (index = 0; index < DESKTOP_ATTACHMENT_COUNT; index++)
     {
         record = &attachments->records[index];
@@ -422,6 +510,8 @@ boole desktop_attachments__view(desktop_attachments_t *attachments, desktop_atta
 {
     int64 index = 0;
     boole changed = FALSE;
+
+    // copy a changed view
     desktop_mutex__lock(attachments->mutex);
     if (view->revision != attachments->revision)
     {
@@ -448,6 +538,8 @@ boole desktop_attachments__decide(desktop_attachments_t *attachments, uint64 id,
 {
     desktop_attachment_record_t *record = NULL_POINTER;
     boole queued = FALSE;
+
+    // store the decision
     desktop_mutex__lock(attachments->mutex);
     record = desktop_attachments__find(attachments, id);
     if (attachments->connected && record && record->view.state == DESKTOP_ATTACHMENT_OFFERED && !record->decision)
@@ -469,6 +561,8 @@ boole desktop_attachments__cancel(desktop_attachments_t *attachments, uint64 id)
 {
     desktop_attachment_record_t *record = NULL_POINTER;
     boole queued = FALSE;
+
+    // store the cancel decision
     desktop_mutex__lock(attachments->mutex);
     record = desktop_attachments__find(attachments, id);
     if (record && record->view.state > DESKTOP_ATTACHMENT_EMPTY && record->view.state < DESKTOP_ATTACHMENT_READY)
@@ -496,6 +590,8 @@ boole desktop_attachments__save(desktop_attachments_t *attachments, uint64 id, c
 {
     desktop_attachment_record_t *record = NULL_POINTER;
     boole queued = FALSE;
+
+    // queue the save job
     desktop_mutex__lock(attachments->mutex);
     record = desktop_attachments__find(attachments, id);
     if (record && record->bytes && !record->busy && !record->job && record->view.state == DESKTOP_ATTACHMENT_READY && path && path[0] && clib__string_copy(record->path, sizeof(record->path), path))
@@ -522,8 +618,12 @@ ubyte *desktop_attachments__image(desktop_attachments_t *attachments, uint64 id,
     desktop_attachment_record_t *record = NULL_POINTER;
     ubyte *pixels = NULL_POINTER;
     uint64 size = 0;
+
+    // clear the outputs
     *width = 0;
     *height = 0;
+
+    // copy the preview pixels
     desktop_mutex__lock(attachments->mutex);
     record = desktop_attachments__find(attachments, id);
     if (record && record->pixels)
@@ -552,13 +652,20 @@ void desktop_attachments__preferences(desktop_attachments_t *attachments, const 
     int64 index = 0;
     desktop_attachment_record_t *record = NULL_POINTER;
     boole blocked = FALSE;
+
+    // store the preferences
     desktop_mutex__lock(attachments->mutex);
     attachments->preferences = *preferences;
     attachments->preferences_revision++;
+
+    // cancel blocked transfers
     for (index = 0; index < DESKTOP_ATTACHMENT_COUNT; index++)
     {
+        // read the block setting
         record = &attachments->records[index];
         blocked = record->view.peer >= 0 ? (record->view.picture ? preferences->block_direct_pictures : preferences->block_direct_files) : (record->view.picture ? preferences->block_channel_pictures : preferences->block_channel_files);
+
+        // cancel the incoming transfer
         if (blocked && !record->view.outgoing && record->view.state > DESKTOP_ATTACHMENT_EMPTY && record->view.state < DESKTOP_ATTACHMENT_READY)
         {
             record->decision = 3;

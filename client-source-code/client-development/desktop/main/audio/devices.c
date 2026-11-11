@@ -44,27 +44,40 @@ boole desktop_device_key__make(ma_backend backend, const ma_device_id *id, char 
     uint64 offset = 0;
     uint64 index = 0;
     uint value = 0;
+
+    // check the destination
     if (!key || !capacity)
     {
         return FALSE;
     }
+
+    // clear the key
     key[0] = 0;
+
+    // check the device ID
     if (!id)
     {
         return FALSE;
     }
+
+    // choose the ID field
     switch (backend)
     {
     case ma_backend_wasapi:
+        // count the ID characters
         tag = "wasapi:";
         while (length < 64 && id->wasapi[length])
         {
             length++;
         }
+
+        // check length and capacity
         if (!length || length == 64 || capacity < 8 + length * 4)
         {
             return FALSE;
         }
+
+        // write the WASAPI key
         clib__string_copy(key, capacity, tag);
         offset = 7;
         for (index = 0; index < length; index++)
@@ -124,6 +137,8 @@ boole desktop_device_key__make(ma_backend backend, const ma_device_id *id, char 
     default:
         return FALSE;
     }
+
+    // find the text length
     if (text)
     {
         end = clib__memchr(text, 0, maximum);
@@ -134,11 +149,15 @@ boole desktop_device_key__make(ma_backend backend, const ma_device_id *id, char 
         length = (uint64)(end - text);
         bytes = (const ubyte *)text;
     }
+
+    // check the key capacity
     offset = (uint64)clib__strlen(tag);
     if (capacity < offset + length * 2 + 1)
     {
         return FALSE;
     }
+
+    // write the hex key
     clib__string_copy(key, capacity, tag);
     for (index = 0; index < length; index++)
     {
@@ -161,16 +180,22 @@ static void _devices_internal__append(desktop_device_catalog_t *catalog, ma_back
 {
     desktop_device_t *item = NULL_POINTER;
     int64 index = 0;
+
+    // check the device limit
     if (catalog->view.count >= DESKTOP_DEVICE_LIMIT)
     {
         catalog->view.truncated = TRUE;
         return;
     }
+
+    // build the device key
     item = &catalog->view.items[catalog->view.count];
     if (!desktop_device_key__make(backend, &info->id, item->key, sizeof(item->key)))
     {
         return;
     }
+
+    // skip a repeated device
     for (index = 0; index < catalog->view.count; index++)
     {
         if (catalog->view.items[index].capture == capture && clib__strcmp(item->key, catalog->view.items[index].key) == 0)
@@ -179,6 +204,8 @@ static void _devices_internal__append(desktop_device_catalog_t *catalog, ma_back
             return;
         }
     }
+
+    // store the device record
     clib__string_copy_n(item->name, sizeof(item->name), info->name, sizeof(info->name) - 1);
     item->capture = capture;
     item->default_device = info->isDefault != 0;
@@ -206,49 +233,71 @@ static void _devices_internal__worker(void *context)
     boole requested = FALSE;
     boole initialized = FALSE;
     uint64 revision = 0;
+
+    // loop until stopped
     while (TRUE)
     {
+        // read stop and request
         desktop_mutex__lock(devices->mutex);
         stop = devices->stop;
         requested = devices->requested;
         devices->requested = FALSE;
         desktop_mutex__unlock(devices->mutex);
+
+        // stop was requested
         if (stop)
         {
             break;
         }
+
+        // wait for a request
         if (!requested)
         {
             desktop_system__sleep(20);
             continue;
         }
+
+        // clear the catalog
         if (catalog)
         {
             clib__null_memory(catalog, sizeof(*catalog));
         }
+
+        // list the devices
         initialized = native && catalog && ma_context_init(NULL, 0, NULL, native) == MA_SUCCESS;
         if (initialized && ma_context_get_devices(native, &outputs, &output_count, &inputs, &input_count) == MA_SUCCESS)
         {
+            // set the catalog flags
             catalog->view.ready = TRUE;
             catalog->view.truncated = output_count > DESKTOP_DEVICE_LIMIT / 2 || input_count > DESKTOP_DEVICE_LIMIT / 2;
+
+            // add the outputs
             for (index = 0; index < output_count && index < DESKTOP_DEVICE_LIMIT / 2; index++)
             {
                 _devices_internal__append(catalog, native->backend, &outputs[index], FALSE);
             }
+
+            // add the inputs
             for (index = 0; index < input_count && index < DESKTOP_DEVICE_LIMIT / 2; index++)
             {
                 _devices_internal__append(catalog, native->backend, &inputs[index], TRUE);
             }
+
+            // set the detail text
             clib__string_copy(catalog->view.detail, sizeof(catalog->view.detail), catalog->view.truncated ? "Showing the first 32 devices of each kind. Choices apply when saved." : "Device choices apply when saved.");
         }
         else if (catalog)
         {
             clib__string_copy(catalog->view.detail, sizeof(catalog->view.detail), "Could not list audio devices. Choose Refresh to retry.");
         }
+
+        // close the audio context
         if (initialized)
         {
             ma_context_uninit(native);
         }
+
+        // store the new catalog
         desktop_mutex__lock(devices->mutex);
         revision = devices->catalog.view.revision + 1;
         if (catalog)
@@ -263,6 +312,8 @@ static void _devices_internal__worker(void *context)
         devices->catalog.view.revision = revision;
         desktop_mutex__unlock(devices->mutex);
     }
+
+    // erase and free memory
     if (catalog)
     {
         clib__null_memory(catalog, sizeof(*catalog));
@@ -281,21 +332,31 @@ static void _devices_internal__worker(void *context)
 desktop_devices_t *desktop_devices__create(boole native)
 {
     desktop_devices_t *devices = calloc(1, sizeof(*devices));
+
+    // check the allocation
     if (!devices)
     {
         return NULL;
     }
+
+    // create the mutex
     devices->mutex = desktop_mutex__create();
     devices->catalog.view.revision = 1;
+
+    // start the worker thread
     if (devices->mutex && native)
     {
         devices->thread = desktop_thread__start(_devices_internal__worker, devices);
     }
+
+    // destroy on failure
     if (!devices->mutex || (native && !devices->thread))
     {
         desktop_devices__destroy(devices);
         return NULL;
     }
+
+    // set the detail text
     clib__string_copy(devices->catalog.view.detail, sizeof(devices->catalog.view.detail), "Device list has not been refreshed.");
     return devices;
 }
@@ -307,17 +368,24 @@ desktop_devices_t *desktop_devices__create(boole native)
  */
 void desktop_devices__destroy(desktop_devices_t *devices)
 {
+    // nothing to destroy
     if (!devices)
     {
         return;
     }
+
+    // set the stop flag
     if (devices->mutex)
     {
         desktop_mutex__lock(devices->mutex);
         devices->stop = TRUE;
         desktop_mutex__unlock(devices->mutex);
     }
+
+    // wait for the thread
     desktop_thread__join(devices->thread);
+
+    // free the manager
     desktop_mutex__destroy(devices->mutex);
     clib__null_memory(devices, sizeof(*devices));
     desktop_memory__erase(devices, sizeof(*devices));
@@ -334,6 +402,8 @@ void desktop_devices__destroy(desktop_devices_t *devices)
 boole desktop_devices__view(desktop_devices_t *devices, desktop_devices_view_t *view, boole refresh)
 {
     boole changed = FALSE;
+
+    // lock and request refresh
     desktop_mutex__lock(devices->mutex);
     if (refresh && devices->thread && !devices->catalog.view.scanning)
     {
@@ -342,6 +412,8 @@ boole desktop_devices__view(desktop_devices_t *devices, desktop_devices_view_t *
         devices->catalog.view.revision++;
         clib__string_copy(devices->catalog.view.detail, sizeof(devices->catalog.view.detail), "Looking for audio devices...");
     }
+
+    // copy the changed catalog
     if (view && view->revision != devices->catalog.view.revision)
     {
         *view = devices->catalog.view;
@@ -363,7 +435,11 @@ boole desktop_devices__resolve(desktop_devices_t *devices, const char *key, bool
 {
     int64 index = 0;
     boole found = FALSE;
+
+    // clear the selection
     clib__null_memory(selection, sizeof(*selection));
+
+    // find the device key
     desktop_mutex__lock(devices->mutex);
     for (index = 0; index < devices->catalog.view.count; index++)
     {

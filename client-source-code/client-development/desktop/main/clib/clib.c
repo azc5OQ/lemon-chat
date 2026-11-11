@@ -191,6 +191,7 @@ int64 clib__rem64(int64 numerator, int64 denominator)
 }
 float clib__fminf(float x, float y)
 {
+    // check for NaN
     if (x != x)
     {
         return y;
@@ -199,6 +200,8 @@ float clib__fminf(float x, float y)
     {
         return x;
     }
+
+    // combine the zero signs
     if (x == 0.0f && y == 0.0f)
     {
         union
@@ -209,10 +212,13 @@ float clib__fminf(float x, float y)
         a.u |= b.u;
         return a.f;
     }
+
+    // choose the smaller value
     return x < y ? x : y;
 }
 float clib__fmaxf(float x, float y)
 {
+    // check for NaN
     if (x != x)
     {
         return y;
@@ -221,6 +227,8 @@ float clib__fmaxf(float x, float y)
     {
         return x;
     }
+
+    // combine the zero signs
     if (x == 0.0f && y == 0.0f)
     {
         union
@@ -231,6 +239,8 @@ float clib__fmaxf(float x, float y)
         a.u &= b.u;
         return a.f;
     }
+
+    // choose the larger value
     return x > y ? x : y;
 }
 // Private implementation, included by stdlib.c. Never read outside the caller's
@@ -265,11 +275,14 @@ static CLIB_NO_LIBCALL void *clib__copy_bytes(void *dst, const void *src, nuint 
 {
     ubyte *d = (ubyte *)dst;
     const ubyte *s = (const ubyte *)src;
+
+    // nothing to copy
     if (!d || !s || !n)
     {
         return dst;
     }
 #if CLIB_HAS_VECTOR
+    // copy 64-byte blocks
     while (n >= 64)
     {
         _clib_internal_vector a = CLIB_VECTOR_LOAD(s);
@@ -284,6 +297,8 @@ static CLIB_NO_LIBCALL void *clib__copy_bytes(void *dst, const void *src, nuint 
         d += 64;
         n -= 64;
     }
+
+    // copy 16-byte blocks
     while (n >= 16)
     {
         CLIB_VECTOR_STORE(d, CLIB_VECTOR_LOAD(s));
@@ -292,8 +307,8 @@ static CLIB_NO_LIBCALL void *clib__copy_bytes(void *dst, const void *src, nuint 
         n -= 16;
     }
 #endif
-    // MSVC has no per-function no_builtin equivalent. Volatile byte accesses
-    // keep its scalar fallback from being rewritten to an external call.
+    // MSVC has no per-function no_builtin equivalent. volatile byte accesses
+    // keep its scalar fallback from being rewritten to an external call
 #if defined(COMPILER_MSVC)
     volatile ubyte *tail = d;
     while (n--)
@@ -301,6 +316,7 @@ static CLIB_NO_LIBCALL void *clib__copy_bytes(void *dst, const void *src, nuint 
         *tail++ = *s++;
     }
 #else
+    // copy the remaining bytes
     while (n--)
     {
         *d++ = *s++;
@@ -312,11 +328,14 @@ static CLIB_NO_LIBCALL void *clib__copy_bytes(void *dst, const void *src, nuint 
 static CLIB_NO_LIBCALL void *clib__fill_bytes(void *dst, int value, nuint n)
 {
     ubyte *d = (ubyte *)dst;
+
+    // nothing to fill
     if (!d || !n)
     {
         return dst;
     }
 #if CLIB_HAS_VECTOR
+    // fill 64-byte blocks
     _clib_internal_vector v = CLIB_VECTOR_FILL(value);
     while (n >= 64)
     {
@@ -327,6 +346,8 @@ static CLIB_NO_LIBCALL void *clib__fill_bytes(void *dst, int value, nuint n)
         d += 64;
         n -= 64;
     }
+
+    // fill 16-byte blocks
     while (n >= 16)
     {
         CLIB_VECTOR_STORE(d, v);
@@ -335,12 +356,14 @@ static CLIB_NO_LIBCALL void *clib__fill_bytes(void *dst, int value, nuint n)
     }
 #endif
 #if defined(COMPILER_MSVC)
+    // fill the remaining bytes
     volatile ubyte *tail = d;
     while (n--)
     {
         *tail++ = (ubyte)value;
     }
 #else
+    // fill the remaining bytes
     while (n--)
     {
         *d++ = (ubyte)value;
@@ -353,18 +376,23 @@ static CLIB_NO_LIBCALL void *clib__move_bytes(void *dst, const void *src, nuint 
 {
     ubyte *d = (ubyte *)dst;
     const ubyte *s = (const ubyte *)src;
+
+    // nothing to move
     if (!d || !s || d == s || !n)
     {
         return dst;
     }
-    // Integer addresses avoid relational comparisons of unrelated pointers.
+    // integer addresses avoid relational comparisons of unrelated pointers
     if ((nuint)d < (nuint)s || (nuint)d - (nuint)s >= n)
     {
         return clib__copy_bytes(dst, src, n);
     }
+
+    // start from the end
     d += n;
     s += n;
 #if CLIB_HAS_VECTOR
+    // copy 16-byte blocks backward
     while (n >= 16)
     {
         d -= 16;
@@ -373,6 +401,8 @@ static CLIB_NO_LIBCALL void *clib__move_bytes(void *dst, const void *src, nuint 
         n -= 16;
     }
 #endif
+
+    // copy remaining bytes backward
     while (n--)
     {
         *--d = *--s;
@@ -399,6 +429,8 @@ uint64 clib__udivmod64(uint64 numerator, uint64 denominator, uint64 *remainder)
 {
 #if defined(ARCHITECTURE_NATIVE_DIV64)
     uint64 quotient = numerator / denominator;
+
+    // store the remainder
     if (remainder)
     {
         *remainder = numerator % denominator;
@@ -408,8 +440,8 @@ uint64 clib__udivmod64(uint64 numerator, uint64 denominator, uint64 *remainder)
     uint64 quotient = 0;
     uint64 bit = 1;
     uint64 divisor = denominator;
-    // Zero is outside the API contract; keep the normalization loop bounded
-    // even for that invalid input. No platform-specific trap is required.
+    // zero is outside the API contract; keep the normalization loop bounded
+    // even for that invalid input. no platform-specific trap is required
     if (!denominator || numerator < denominator)
     {
         if (remainder)
@@ -418,10 +450,12 @@ uint64 clib__udivmod64(uint64 numerator, uint64 denominator, uint64 *remainder)
         }
         return 0;
     }
+
+    // power of two divisor
     if ((denominator & (denominator - 1)) == 0)
     {
-        // Common row widths and binary units need only shifts and a mask.
-        // All shift counts are constants, including on narrow targets.
+        // common row widths and binary units need only shifts and a mask.
+        // all shift counts are constants, including on narrow targets
         quotient = numerator;
         if (divisor >> 32)
         {
@@ -452,6 +486,8 @@ uint64 clib__udivmod64(uint64 numerator, uint64 denominator, uint64 *remainder)
         {
             quotient >>= 1;
         }
+
+        // store the remainder
         if (remainder)
         {
             *remainder = numerator & (denominator - 1);
@@ -459,6 +495,7 @@ uint64 clib__udivmod64(uint64 numerator, uint64 denominator, uint64 *remainder)
         return quotient;
     }
 #if defined(ARCHITECTURE_NATIVE_DIV32)
+    // use 32-bit division
     if ((numerator >> 32) == 0)
     {
         uint n = (uint)numerator, d = (uint)denominator;
@@ -470,13 +507,15 @@ uint64 clib__udivmod64(uint64 numerator, uint64 denominator, uint64 *remainder)
         return quotient;
     }
 #endif
-    // Align only as far as needed. divisor <= numerator/2 prevents overflow;
-    // subtracting descending multiples gives quotient and remainder together.
+    // align only as far as needed. divisor <= numerator/2 prevents overflow;
+    // subtracting descending multiples gives quotient and remainder together
     while (divisor <= (numerator >> 1))
     {
         divisor <<= 1;
         bit <<= 1;
     }
+
+    // subtract and set bits
     while (bit)
     {
         if (numerator >= divisor)
@@ -487,6 +526,8 @@ uint64 clib__udivmod64(uint64 numerator, uint64 denominator, uint64 *remainder)
         divisor >>= 1;
         bit >>= 1;
     }
+
+    // store the remainder
     if (remainder)
     {
         *remainder = numerator;
@@ -499,21 +540,27 @@ int64 clib__divmod64(int64 numerator, int64 denominator, int64 *remainder)
 {
 #if defined(ARCHITECTURE_NATIVE_DIV64)
     int64 quotient = numerator / denominator;
+
+    // store the remainder
     if (remainder)
     {
         *remainder = numerator % denominator;
     }
     return quotient;
 #else
-    // Unsigned magnitudes also represent INT64_MIN without signed overflow.
+    // unsigned magnitudes also represent INT64_MIN without signed overflow
     uint64 n = numerator < 0 ? 0ULL - (uint64)numerator : (uint64)numerator;
     uint64 d = denominator < 0 ? 0ULL - (uint64)denominator : (uint64)denominator;
     uint64 r;
     uint64 q = clib__udivmod64(n, d, remainder ? &r : NULL_POINTER);
+
+    // set the remainder sign
     if (remainder)
     {
         *remainder = numerator < 0 && r ? -(int64)(r - 1) - 1 : (int64)r;
     }
+
+    // set the quotient sign
     return (numerator < 0) != (denominator < 0) && q ? -(int64)(q - 1) - 1 : (int64)q;
 #endif
 }
@@ -548,14 +595,19 @@ void clib__null_memory(void *dst, int64 count)
  */
 int clib__memcmp(const void *a, const void *b, int64 count)
 {
+    // nothing to compare
     if (count <= 0)
     {
         return 0;
     }
+
+    // same pointer is equal
     if (a == b)
     {
         return 0;
     }
+
+    // check for null pointers
     if (a == NULL_POINTER)
     {
         return -1;
@@ -564,6 +616,8 @@ int clib__memcmp(const void *a, const void *b, int64 count)
     {
         return 1;
     }
+
+    // compare the bytes
     const ubyte *pa = (const ubyte *)a;
     const ubyte *pb = (const ubyte *)b;
     while (count-- > 0)
@@ -583,6 +637,7 @@ int clib__memcmp(const void *a, const void *b, int64 count)
 
 static void _clib_internal_sort_swap(ubyte *a, ubyte *b, nuint size)
 {
+    // swap each byte
     while (size--)
     {
         ubyte v = *a;
@@ -593,18 +648,23 @@ static void _clib_internal_sort_swap(ubyte *a, ubyte *b, nuint size)
 
 static void _clib_internal_sort_sift(ubyte *base, nuint parent, nuint count, nuint size, int (*compare)(const void *, const void *))
 {
-    // parent < count/2 also keeps parent*2+1 from overflowing.
+    // parent < count/2 also keeps parent*2+1 from overflowing
     while (parent < count / 2)
     {
+        // choose the larger child
         nuint child = parent * 2 + 1;
         if (child + 1 < count && compare(base + child * size, base + (child + 1) * size) < 0)
         {
             child++;
         }
+
+        // stop when ordered
         if (compare(base + parent * size, base + child * size) >= 0)
         {
             break;
         }
+
+        // swap parent and child
         _clib_internal_sort_swap(base + parent * size, base + child * size, size);
         parent = child;
     }
@@ -612,15 +672,20 @@ static void _clib_internal_sort_sift(ubyte *base, nuint parent, nuint count, nui
 
 void clib__qsort(void *base, nuint count, nuint size, int (*compare)(const void *, const void *))
 {
+    // check arguments
     if (!base || !compare || !size || count < 2 || count > (nuint)-1 / size)
     {
         return;
     }
+
+    // build the heap
     ubyte *bytes = (ubyte *)base;
     for (nuint i = count / 2; i > 0; i--)
     {
         _clib_internal_sort_sift(bytes, i - 1, count, size, compare);
     }
+
+    // move largest to end
     while (--count)
     {
         _clib_internal_sort_swap(bytes, bytes + count * size, size);
@@ -638,10 +703,13 @@ void clib__qsort(void *base, nuint count, nuint size, int (*compare)(const void 
  */
 CLIB_NO_LIBCALL int64 clib__strlen(const char *s)
 {
+    // check the string
     if (s == NULL_POINTER)
     {
         return 0;
     }
+
+    // find the terminator
     const char *p = s;
     while (*p != 0)
     {
@@ -661,10 +729,13 @@ CLIB_NO_LIBCALL int64 clib__strlen(const char *s)
  */
 int clib__strcmp(const char *a, const char *b)
 {
+    // same pointer is equal
     if (a == b)
     {
         return 0;
     }
+
+    // check for null pointers
     if (a == NULL_POINTER)
     {
         return -1;
@@ -673,10 +744,10 @@ int clib__strcmp(const char *a, const char *b)
     {
         return 1;
     }
-    // Cast to ubyte for the subtract so byte values >= 128
+    // cast to ubyte for the subtract so byte values >= 128
     // don't get sign-extended into a negative when comparing. libc's
     // strcmp does the same; without this, "abc" vs "\x80bc" would
-    // wrongly report "abc > ...".
+    // wrongly report "abc > ..."
     while (*a != 0 && *a == *b)
     {
         a++;
@@ -696,14 +767,19 @@ int clib__strcmp(const char *a, const char *b)
  */
 int clib__strncmp(const char *a, const char *b, int64 n)
 {
+    // nothing to compare
     if (n <= 0)
     {
         return 0;
     }
+
+    // same pointer is equal
     if (a == b)
     {
         return 0;
     }
+
+    // check for null pointers
     if (a == NULL_POINTER)
     {
         return -1;
@@ -712,12 +788,16 @@ int clib__strncmp(const char *a, const char *b, int64 n)
     {
         return 1;
     }
+
+    // skip the equal bytes
     while (n > 0 && *a != 0 && *a == *b)
     {
         a++;
         b++;
         n--;
     }
+
+    // report the difference
     if (n == 0)
     {
         return 0;
@@ -736,21 +816,23 @@ int clib__strncmp(const char *a, const char *b, int64 n)
  */
 const char *clib__strstr(const char *haystack, const char *needle)
 {
+    // check arguments
     if (haystack == NULL_POINTER || needle == NULL_POINTER)
     {
         return NULL_POINTER;
     }
-    // Empty needle conventionally matches at position 0 (libc
-    // strstr behaves this way -- returns `haystack`).
+    // empty needle conventionally matches at position 0 (libc
+    // strstr behaves this way -- returns `haystack`)
     if (*needle == 0)
     {
         return haystack;
     }
-    // O(n*m) naive scan. For the parser use case (looking up short
+    // O(n*m) naive scan. for the parser use case (looking up short
     // keywords) this is fine; replace with Boyer-Moore or similar if
-    // a caller ever hits perf problems.
+    // a caller ever hits perf problems
     for (const char *p = haystack; *p != 0; p++)
     {
+        // compare from this position
         const char *h = p;
         const char *n = needle;
         while (*n != 0 && *h == *n)
@@ -758,6 +840,8 @@ const char *clib__strstr(const char *haystack, const char *needle)
             h++;
             n++;
         }
+
+        // whole needle matched
         if (*n == 0)
         {
             return p;
@@ -777,10 +861,13 @@ const char *clib__strstr(const char *haystack, const char *needle)
  */
 const char *clib__strchr(const char *s, int ch)
 {
+    // check the string
     if (s == NULL_POINTER)
     {
         return NULL_POINTER;
     }
+
+    // find the character
     char target = (char)ch;
     while (*s != 0)
     {
@@ -791,7 +878,7 @@ const char *clib__strchr(const char *s, int ch)
         s++;
     }
     // libc strchr matches the terminator when ch == 0, returning a
-    // pointer to the final byte. Match that behaviour.
+    // pointer to the final byte. match that behaviour
     if (target == 0)
     {
         return s;
@@ -813,20 +900,26 @@ const char *clib__strchr(const char *s, int ch)
  */
 static int64 clib__strcpy_safe(char *dst, int64 dst_cap, const char *src)
 {
-    // Always returns strlen(src) (so the caller can detect truncation
-    // via the result). Even if dst_cap is 0 we still walk src to get
+    // always returns strlen(src) (so the caller can detect truncation
+    // via the result). even if dst_cap is 0 we still walk src to get
     // that length; fast paths are available if the caller doesn't
-    // care about detecting truncation.
+    // care about detecting truncation
     int64 src_len = clib__strlen(src);
+
+    // check the destination
     if (dst == NULL_POINTER || dst_cap <= 0)
     {
         return src_len;
     }
+
+    // limit the copy length
     int64 copy_len = src_len;
     if (copy_len > dst_cap - 1)
     {
         copy_len = dst_cap - 1;
     }
+
+    // copy and terminate
     for (int64 i = 0; i < copy_len; i++)
     {
         dst[i] = src[i];
@@ -866,6 +959,7 @@ int clib__isdigit(int c)
  */
 int clib__isxdigit(int c)
 {
+    // check the three ranges
     if (c >= '0' && c <= '9')
     {
         return 1;
@@ -946,41 +1040,60 @@ static int64 _clib_internal__parse_integer(const char *s, char **endptr, int bas
     const char *p = s;
     uint64 value = 0, limit, cutoff, cutlim;
     int negative = 0, any = 0, overflow = 0;
+
+    // reset the end pointer
     if (endptr)
     {
         *endptr = (char *)s;
     }
+
+    // check arguments
     if (!s || (base != 0 && (base < 2 || base > 36)))
     {
         return 0;
     }
+
+    // skip leading whitespace
     while (clib__isspace((ubyte)*p))
     {
         p++;
     }
+
+    // read the sign
     if (*p == '-' || *p == '+')
     {
         negative = *p++ == '-';
     }
+
+    // skip the hex prefix
     if ((base == 0 || base == 16) && p[0] == '0' && (p[1] == 'x' || p[1] == 'X') && clib__isxdigit((ubyte)p[2]))
     {
         p += 2;
         base = 16;
     }
+
+    // choose the base
     if (base == 0)
     {
         base = *p == '0' ? 8 : 10;
     }
+
+    // compute the overflow limits
     limit = maximum + (uint64)negative;
     cutoff = clib__udivmod64(limit, (uint)base, &cutlim);
+
+    // read the digits
     for (;; p++)
     {
+        // convert character to digit
         int c = (ubyte)*p;
         int digit = c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'z' ? c - 'a' + 10 : c >= 'A' && c <= 'Z' ? c - 'A' + 10 : 36;
         if (digit >= base)
         {
             break;
         }
+
+        // add digit unless overflow
         any = 1;
         if (value > cutoff || (value == cutoff && (uint)digit > cutlim))
         {
@@ -991,19 +1104,25 @@ static int64 _clib_internal__parse_integer(const char *s, char **endptr, int bas
             value = value * (uint)base + (uint)digit;
         }
     }
+
+    // no digits found
     if (!any)
     {
         return 0;
     }
+
+    // store the end pointer
     if (endptr)
     {
         *endptr = (char *)p;
     }
+
+    // use limit on overflow
     if (overflow)
     {
         value = limit;
     }
-    // -(magnitude - 1) - 1 also handles the most negative signed value.
+    // -(magnitude - 1) - 1 also handles the most negative signed value
     return negative && value ? -(int64)(value - 1) - 1 : (int64)value;
 }
 
@@ -1505,6 +1624,7 @@ static double _clib_internal_math_scalbn(double x, int n)
     } u;
     double_t y = x;
 
+    // bring exponent into range
     if (n > 1023)
     {
         y *= 0x1p1023;
@@ -1535,6 +1655,8 @@ static double _clib_internal_math_scalbn(double x, int n)
             }
         }
     }
+
+    // build factor and multiply
     u.i = (uint64)(0x3ff + n) << 52;
     x = y * u.f;
     return x;
@@ -1572,17 +1694,23 @@ float clib__floorf(float x)
     int e = (int)(u.i >> 23 & 0xff) - 0x7f;
     uint m;
 
+    // nothing to round
     if (e >= 23)
     {
         return x;
     }
+
+    // round toward minus infinity
     if (e >= 0)
     {
+        // check for fraction bits
         m = 0x007fffff >> e;
         if ((u.i & m) == 0)
         {
             return x;
         }
+
+        // clear the fraction bits
         FORCE_EVAL(x + 0x1p120f);
         if (u.i >> 31)
         {
@@ -1592,6 +1720,7 @@ float clib__floorf(float x)
     }
     else
     {
+        // magnitude below one
         FORCE_EVAL(x + 0x1p120f);
         if (u.i >> 31 == 0)
         {
@@ -1622,6 +1751,7 @@ double clib__floor(double x)
     int e = u.i >> 52 & 0x7ff;
     double_t y;
 
+    // nothing to round
     if (e >= 0x3ff + 52 || x == 0)
     {
         return x;
@@ -1641,6 +1771,8 @@ double clib__floor(double x)
         FORCE_EVAL(y);
         return u.i >> 63 ? -1 : 0;
     }
+
+    // choose the lower neighbor
     if (y > 0)
     {
         return x + y - 1;
@@ -1660,17 +1792,23 @@ float clib__ceilf(float x)
     int e = (int)(u.i >> 23 & 0xff) - 0x7f;
     uint m;
 
+    // nothing to round
     if (e >= 23)
     {
         return x;
     }
+
+    // round toward plus infinity
     if (e >= 0)
     {
+        // check for fraction bits
         m = 0x007fffff >> e;
         if ((u.i & m) == 0)
         {
             return x;
         }
+
+        // clear the fraction bits
         FORCE_EVAL(x + 0x1p120f);
         if (u.i >> 31 == 0)
         {
@@ -1680,6 +1818,7 @@ float clib__ceilf(float x)
     }
     else
     {
+        // magnitude below one
         FORCE_EVAL(x + 0x1p120f);
         if (u.i >> 31)
         {
@@ -1710,6 +1849,7 @@ double clib__ceil(double x)
     int e = u.i >> 52 & 0x7ff;
     double_t y;
 
+    // nothing to round
     if (e >= 0x3ff + 52 || x == 0)
     {
         return x;
@@ -1729,6 +1869,8 @@ double clib__ceil(double x)
         FORCE_EVAL(y);
         return u.i >> 63 ? -0.0 : 1;
     }
+
+    // choose the upper neighbor
     if (y < 0)
     {
         return x + y + 1;
@@ -1751,10 +1893,13 @@ float clib__fmodf(float x, float y)
     uint i;
     uint uxi = ux.i;
 
+    // invalid arguments give NaN
     if (uy.i << 1 == 0 || isnan(y) || ex == 0xff)
     {
         return (x * y) / (x * y);
     }
+
+    // magnitude not above divisor
     if (uxi << 1 <= uy.i << 1)
     {
         if (uxi << 1 == uy.i << 1)
@@ -1792,6 +1937,8 @@ float clib__fmodf(float x, float y)
         uxi &= -1U >> 9;
         uxi |= 1U << 23;
     }
+
+    // normalize the divisor
     if (!ey)
     {
         for (i = uy.i << 9; i >> 31 == 0; ey--, i <<= 1)
@@ -1818,6 +1965,8 @@ float clib__fmodf(float x, float y)
         }
         uxi <<= 1;
     }
+
+    // last subtraction step
     i = uxi - uy.i;
     if (i >> 31 == 0)
     {
@@ -1827,6 +1976,8 @@ float clib__fmodf(float x, float y)
         }
         uxi = i;
     }
+
+    // normalize the result
     for (; uxi >> 23 == 0; uxi <<= 1, ex--)
         ;
 
@@ -1840,6 +1991,8 @@ float clib__fmodf(float x, float y)
     {
         uxi >>= -ex + 1;
     }
+
+    // restore the sign
     uxi |= sx;
     ux.i = uxi;
     return ux.f;
@@ -1861,10 +2014,13 @@ double clib__fmod(double x, double y)
     /* float load/store to inner loops ruining performance and code size */
     uint64 uxi = ux.i;
 
+    // invalid arguments give NaN
     if (uy.i << 1 == 0 || isnan(y) || ex == 0x7ff)
     {
         return (x * y) / (x * y);
     }
+
+    // magnitude not above divisor
     if (uxi << 1 <= uy.i << 1)
     {
         if (uxi << 1 == uy.i << 1)
@@ -1886,6 +2042,8 @@ double clib__fmod(double x, double y)
         uxi &= -1ULL >> 12;
         uxi |= 1ULL << 52;
     }
+
+    // normalize the divisor
     if (!ey)
     {
         for (i = uy.i << 12; i >> 63 == 0; ey--, i <<= 1)
@@ -1912,6 +2070,8 @@ double clib__fmod(double x, double y)
         }
         uxi <<= 1;
     }
+
+    // last subtraction step
     i = uxi - uy.i;
     if (i >> 63 == 0)
     {
@@ -1921,6 +2081,8 @@ double clib__fmod(double x, double y)
         }
         uxi = i;
     }
+
+    // normalize the result
     for (; uxi >> 52 == 0; uxi <<= 1, ex--)
         ;
 
@@ -1934,6 +2096,8 @@ double clib__fmod(double x, double y)
     {
         uxi >>= -ex + 1;
     }
+
+    // restore the sign
     uxi |= (uint64)sx << 63;
     ux.i = uxi;
     return ux.f;
@@ -2035,6 +2199,7 @@ static float _clib_internal_math__tandf(double x, int odd)
 {
     double_t z, r, w, s, t, u;
 
+    // square the argument
     z = x * x;
     /*
      * Split up the polynomial into small independent terms to give
@@ -2255,6 +2420,7 @@ static int _clib_internal_math__rem_pio2_large(double *x, double *y, int e0, int
         q[i] = fw;
     }
 
+    // set the term count
     jz = jk;
 recompute:
     /* distill q[] into iq[] reversingly */
@@ -2270,6 +2436,8 @@ recompute:
     z -= 8.0 * clib__floor(z * 0.125); /* trim off integer >= 8 */
     n = (int)z;
     z -= (double)n;
+
+    // compare fraction with half
     ih = 0;
     if (q0 > 0)
     { /* need iq[jz-1] to determine n */
@@ -2287,8 +2455,11 @@ recompute:
         ih = 2;
     }
 
+    // fraction at least half
     if (ih > 0)
     { /* q > 0.5 */
+
+        // subtract fraction from one
         n += 1;
         carry = 0;
         for (i = 0; i < jz; i++)
@@ -2307,6 +2478,8 @@ recompute:
                 iq[i] = 0xffffff - j;
             }
         }
+
+        // mask the highest chunk
         if (q0 > 0)
         { /* rare case: chance is 1 in 12 */
             switch (q0)
@@ -2319,6 +2492,8 @@ recompute:
                 break;
             }
         }
+
+        // subtract remainder from one
         if (ih == 2)
         {
             z = 1.0 - z;
@@ -2332,6 +2507,7 @@ recompute:
     /* check if recomputation is needed */
     if (z == 0.0)
     {
+        // check chunks for zero
         j = 0;
         for (i = jz - 1; i >= jk; i--)
         {
@@ -2339,9 +2515,12 @@ recompute:
         }
         if (j == 0)
         { /* need recomputation */
+
+            // count the needed terms
             for (k = 1; iq[jk - k] == 0; k++)
                 ; /* k = no. of terms needed */
 
+            // add the new terms
             for (i = jz + 1; i <= jz + k; i++)
             { /* add q[jz+1] to q[jz+k] */
                 f[jx + i] = (double)ipio2[jv + i];
@@ -2351,6 +2530,8 @@ recompute:
                 }
                 q[i] = fw;
             }
+
+            // repeat with more terms
             jz += k;
             goto recompute;
         }
@@ -2406,6 +2587,7 @@ recompute:
     switch (prec)
     {
     case 0:
+        // sum into one value
         fw = 0.0;
         for (i = jz; i >= 0; i--)
         {
@@ -2415,6 +2597,7 @@ recompute:
         break;
     case 1:
     case 2:
+        // sum the high part
         fw = 0.0;
         for (i = jz; i >= 0; i--)
         {
@@ -2423,6 +2606,8 @@ recompute:
         // TODO: drop excess precision here once double_t is used
         fw = (double)fw;
         y[0] = ih == 0 ? fw : -fw;
+
+        // sum the low part
         fw = fq[0] - fw;
         for (i = 1; i <= jz; i++)
         {
@@ -2431,6 +2616,8 @@ recompute:
         y[1] = ih == 0 ? fw : -fw;
         break;
     case 3: /* painful */
+
+        // sum into three values
         for (i = jz; i > 0; i--)
         {
             fw = fq[i - 1] + fq[i];
@@ -2447,6 +2634,8 @@ recompute:
         {
             fw += fq[i];
         }
+
+        // store with the sign
         if (ih == 0)
         {
             y[0] = fq[0];
@@ -2460,6 +2649,8 @@ recompute:
             y[2] = -fw;
         }
     }
+
+    // keep three lowest bits
     return n & 7;
 }
 
@@ -2512,6 +2703,7 @@ static int _clib_internal_math__rem_pio2f(float x, double *y)
     uint ix;
     int n, sign, e0;
 
+    // clear the sign bit
     ix = u.i & 0x7fffffff;
     /* 25+53 bit pi is good enough for medium size */
     if (ix < 0x4dc90fdb)
@@ -2535,6 +2727,8 @@ static int _clib_internal_math__rem_pio2f(float x, double *y)
         }
         return n;
     }
+
+    // infinity or NaN argument
     if (ix >= 0x7f800000)
     { /* x is inf or NaN */
         *y = x - x;
@@ -2546,6 +2740,8 @@ static int _clib_internal_math__rem_pio2f(float x, double *y)
     u.i = ix - (e0 << 23);
     tx[0] = u.f;
     n = _clib_internal_math__rem_pio2_large(tx, ty, e0, 1, 0);
+
+    // restore the sign
     if (sign)
     {
         *y = -ty[0];
@@ -2584,10 +2780,12 @@ float clib__sinf(float x)
     uint ix;
     int n, sign;
 
+    // split sign and magnitude
     GET_FLOAT_WORD(ix, x);
     sign = ix >> 31;
     ix &= 0x7fffffff;
 
+    // no reduction needed
     if (ix <= 0x3f490fda)
     { /* |x| ~<= pi/4 */
         if (ix < 0x39800000)
@@ -2598,6 +2796,8 @@ float clib__sinf(float x)
         }
         return _clib_internal_math__sindf(x);
     }
+
+    // reduce medium angles
     if (ix <= 0x407b53d1)
     { /* |x| ~<= 5*pi/4 */
         if (ix <= 0x4016cbe3)
@@ -2613,6 +2813,8 @@ float clib__sinf(float x)
         }
         return _clib_internal_math__sindf(sign ? -(x + s2pio2) : -(x - s2pio2));
     }
+
+    // reduce larger angles
     if (ix <= 0x40e231d5)
     { /* |x| ~<= 9*pi/4 */
         if (ix <= 0x40afeddf)
@@ -2678,10 +2880,12 @@ float clib__cosf(float x)
     uint ix;
     unsigned n, sign;
 
+    // split sign and magnitude
     GET_FLOAT_WORD(ix, x);
     sign = ix >> 31;
     ix &= 0x7fffffff;
 
+    // no reduction needed
     if (ix <= 0x3f490fda)
     { /* |x| ~<= pi/4 */
         if (ix < 0x39800000)
@@ -2692,6 +2896,8 @@ float clib__cosf(float x)
         }
         return _clib_internal_math__cosdf(x);
     }
+
+    // reduce medium angles
     if (ix <= 0x407b53d1)
     { /* |x| ~<= 5*pi/4 */
         if (ix > 0x4016cbe3) /* |x|  ~> 3*pi/4 */
@@ -2710,6 +2916,8 @@ float clib__cosf(float x)
             }
         }
     }
+
+    // reduce larger angles
     if (ix <= 0x40e231d5)
     { /* |x| ~<= 9*pi/4 */
         if (ix > 0x40afeddf) /* |x| ~> 7*pi/4 */
@@ -2778,10 +2986,12 @@ float clib__tanf(float x)
     uint ix;
     unsigned n, sign;
 
+    // split sign and magnitude
     GET_FLOAT_WORD(ix, x);
     sign = ix >> 31;
     ix &= 0x7fffffff;
 
+    // no reduction needed
     if (ix <= 0x3f490fda)
     { /* |x| ~<= pi/4 */
         if (ix < 0x39800000)
@@ -2792,6 +3002,8 @@ float clib__tanf(float x)
         }
         return _clib_internal_math__tandf(x, 0);
     }
+
+    // reduce medium angles
     if (ix <= 0x407b53d1)
     { /* |x| ~<= 5*pi/4 */
         if (ix <= 0x4016cbe3) /* |x| ~<= 3pi/4 */
@@ -2803,6 +3015,8 @@ float clib__tanf(float x)
             return _clib_internal_math__tandf((sign ? x + t2pio2 : x - t2pio2), 0);
         }
     }
+
+    // reduce larger angles
     if (ix <= 0x40e231d5)
     { /* |x| ~<= 9*pi/4 */
         if (ix <= 0x40afeddf) /* |x| ~<= 7*pi/4 */
@@ -2865,9 +3079,12 @@ float clib__atanf(float x)
     uint ix, sign;
     int id;
 
+    // split sign and magnitude
     GET_FLOAT_WORD(ix, x);
     sign = ix >> 31;
     ix &= 0x7fffffff;
+
+    // very large argument
     if (ix >= 0x4c800000)
     { /* if |x| >= 2**26 */
         if (isnan(x))
@@ -2877,8 +3094,12 @@ float clib__atanf(float x)
         z = atanhi[3] + 0x1p-120f;
         return sign ? -z : z;
     }
+
+    // reduce the argument
     if (ix < 0x3ee00000)
     { /* |x| < 0.4375 */
+
+        // very small argument
         if (ix < 0x39800000)
         { /* |x| < 2**-12 */
             if (ix < 0x00800000)
@@ -2892,6 +3113,7 @@ float clib__atanf(float x)
     }
     else
     {
+        // choose interval and transform
         x = clib__fabsf(x);
         if (ix < 0x3f980000)
         { /* |x| < 1.1875 */
@@ -2926,10 +3148,14 @@ float clib__atanf(float x)
     /* break sum from i=0 to 10 aT[i]z**(i+1) into odd and even poly */
     s1 = z * (aT[0] + w * (aT[2] + w * aT[4]));
     s2 = w * (aT[1] + w * aT[3]);
+
+    // result without reduction
     if (id < 0)
     {
         return x - x * (s1 + s2);
     }
+
+    // add the table value
     z = atanhi[id] - ((x * (s1 + s2) - atanlo[id]) - x);
     return sign ? -z : z;
 }
@@ -2957,16 +3183,23 @@ float clib__atan2f(float y, float x)
     float z;
     uint m, ix, iy;
 
+    // check for NaN
     if (isnan(x) || isnan(y))
     {
         return x + y;
     }
+
+    // read the float bits
     GET_FLOAT_WORD(ix, x);
     GET_FLOAT_WORD(iy, y);
+
+    // second argument is one
     if (ix == 0x3f800000) /* x=1.0 */
     {
         return clib__atanf(y);
     }
+
+    // save and clear signs
     m = ((iy >> 31) & 1) | ((ix >> 30) & 2); /* 2*sign(x)+sign(y) */
     ix &= 0x7fffffff;
     iy &= 0x7fffffff;
@@ -3037,6 +3270,8 @@ float clib__atan2f(float y, float x)
     {
         z = clib__atanf(clib__fabsf(y / x));
     }
+
+    // choose result by signs
     switch (m)
     {
     case 0:
@@ -3072,6 +3307,8 @@ static const float pio2_hi = 1.5707962513e+00, /* 0x3fc90fda */
 static float R(float z)
 {
     float_t p, q;
+
+    // divide two polynomials
     p = z * (pS0 + z * (pS1 + z * pS2));
     q = 1.0f + z * qS1;
     return p / q;
@@ -3082,6 +3319,7 @@ float clib__acosf(float x)
     float z, w, s, c, df;
     uint hx, ix;
 
+    // read the float bits
     GET_FLOAT_WORD(hx, x);
     ix = hx & 0x7fffffff;
     /* |x| >= 1 or nan */
@@ -3157,6 +3395,7 @@ float clib__expf(float x)
     uint64 ki, t;
     double_t kd, xd, z, r, r2, y, s;
 
+    // check for large arguments
     xd = (double_t)x;
     abstop = top12(x) & 0x7ff;
     if (predict_false(abstop >= top12(88.0f)))
@@ -3166,14 +3405,20 @@ float clib__expf(float x)
         {
             return 0.0f;
         }
+
+        // infinity or NaN argument
         if (abstop >= top12(INFINITY))
         {
             return x + x;
         }
+
+        // report the overflow
         if (x > 0x1.62e42ep6f) /* x > log(0x1p128) ~= 88.72 */
         {
             return _clib_internal_math__math_oflowf(0);
         }
+
+        // report the underflow
         if (x < -0x1.9fe368p6f) /* x < log(0x1p-150) ~= -103.97 */
         {
             return _clib_internal_math__math_uflowf(0);
@@ -3195,6 +3440,8 @@ float clib__expf(float x)
     ki = asuint64(kd);
     kd -= SHIFT;
 #endif
+
+    // compute the remainder
     r = z - kd;
 
     /* exp(x) = 2^(k/N) * 2^(r/N) ~= s * (C0*r^3 + C1*r^2 + C2*r + 1) */
@@ -3241,12 +3488,15 @@ float clib__logf(float x)
     uint ix, iz, tmp;
     int k, i;
 
+    // read the float bits
     ix = asuint(x);
     /* Fix sign of zero with downward rounding when x==1.  */
     if (WANT_ROUNDING && predict_false(ix == 0x3f800000))
     {
         return 0;
     }
+
+    // check for special values
     if (predict_false(ix - 0x00800000 >= 0x7f800000 - 0x00800000))
     {
         /* x < 0x1p-126 or inf or nan.  */
@@ -3254,10 +3504,14 @@ float clib__logf(float x)
         {
             return _clib_internal_math__math_divzerof(1);
         }
+
+        // return infinity unchanged
         if (ix == 0x7f800000) /* log(inf) == inf.  */
         {
             return x;
         }
+
+        // negative or NaN argument
         if ((ix & 0x80000000) || ix * 2 >= 0xff000000)
         {
             return _clib_internal_math__math_invalidf(x);
@@ -3377,6 +3631,8 @@ static inline float exp2_inline(double_t xd, uint sign_bias)
     ki = asuint64(kd);
     kd -= SHIFT; /* k/N */
 #endif
+
+    // compute the remainder
     r = xd - kd;
 
     /* exp2(x) = 2^(k/N) * 2^r ~= s * (C0*r^3 + C1*r^2 + C2*r + 1) */
@@ -3397,18 +3653,26 @@ static inline float exp2_inline(double_t xd, uint sign_bias)
 static inline int checkint(uint iy)
 {
     int e = iy >> 23 & 0xff;
+
+    // magnitude below one
     if (e < 0x7f)
     {
         return 0;
     }
+
+    // large values are even
     if (e > 0x7f + 23)
     {
         return 2;
     }
+
+    // fraction bits are set
     if (iy & ((1 << (0x7f + 23 - e)) - 1))
     {
         return 0;
     }
+
+    // check odd or even
     if (iy & (1 << (0x7f + 23 - e)))
     {
         return 1;
@@ -3426,6 +3690,7 @@ float clib__powf(float x, float y)
     uint sign_bias = 0;
     uint ix, iy;
 
+    // check for special values
     ix = asuint(x);
     iy = asuint(y);
     if (predict_false(ix - 0x00800000 >= 0x7f800000 - 0x00800000 || zeroinfnan(iy)))
@@ -3433,28 +3698,41 @@ float clib__powf(float x, float y)
         /* Either (x < 0x1p-126 or inf or nan) or (y is 0 or inf or nan).  */
         if (predict_false(zeroinfnan(iy)))
         {
+            // zero exponent gives one
             if (2 * iy == 0)
             {
                 return issignalingf_inline(x) ? x + y : 1.0f;
             }
+
+            // base one gives one
             if (ix == 0x3f800000)
             {
                 return issignalingf_inline(y) ? x + y : 1.0f;
             }
+
+            // NaN gives NaN
             if (2 * ix > 2u * 0x7f800000 || 2 * iy > 2u * 0x7f800000)
             {
                 return x + y;
             }
+
+            // magnitude one gives one
             if (2 * ix == 2 * 0x3f800000)
             {
                 return 1.0f;
             }
+
+            // infinite exponent gives zero
             if ((2 * ix < 2 * 0x3f800000) == !(iy & 0x80000000))
             {
                 return 0.0f; /* |x|<1 && y==inf or |x|>1 && y==-inf.  */
             }
+
+            // result is infinity
             return y * y;
         }
+
+        // special base value
         if (predict_false(zeroinfnan(ix)))
         {
             float_t x2 = x * x;
@@ -3489,8 +3767,12 @@ float clib__powf(float x, float y)
             ix -= 23 << 23;
         }
     }
+
+    // multiply logarithm by exponent
     double_t logx = log2_inline(ix);
     double_t ylogx = y * logx; /* cannot overflow, y is single prec.  */
+
+    // check overflow and underflow
     if (predict_false((asuint64(ylogx) >> 47 & 0xffff) >= asuint64(126.0 * POWF_SCALE) >> 47))
     {
         /* |y*log(x)| >= 126.  */
@@ -3503,6 +3785,8 @@ float clib__powf(float x, float y)
             return _clib_internal_math__math_uflowf(sign_bias);
         }
     }
+
+    // compute the final power
     return exp2_inline(ylogx, sign_bias);
 }
 
@@ -3553,6 +3837,7 @@ float clib__sqrtf(float x)
 {
     uint ix, m, m1, m0, even, ey;
 
+    // check for special values
     ix = asuint(x);
     if (predict_false(ix - 0x00800000 >= 0x7f800000 - 0x00800000))
     {
@@ -3561,10 +3846,14 @@ float clib__sqrtf(float x)
         {
             return x;
         }
+
+        // return infinity unchanged
         if (ix == 0x7f800000)
         {
             return x;
         }
+
+        // negative or NaN argument
         if (ix > 0x7f800000)
         {
             return _clib_internal_math__math_invalidf(x);
@@ -3661,10 +3950,14 @@ double clib__sqrt(double x)
         {
             return x;
         }
+
+        // return infinity unchanged
         if (ix == 0x7ff0000000000000)
         {
             return x;
         }
+
+        // negative or NaN argument
         if (ix > 0x7ff0000000000000)
         {
             return _clib_internal_math__math_invalid(x);
@@ -3744,6 +4037,7 @@ double clib__sqrt(double x)
     static const uint64 three = 0xc0000000;
     uint64 r, s, d, u, i;
 
+    // read the table estimate
     i = (ix >> 46) % 128;
     r = (uint)_clib_internal_math__rsqrt_tab[i] << 16;
     /* |r clib__sqrt(m) - 1| < 0x1.fdp-9 */
@@ -3824,16 +4118,19 @@ static int64 clib__strcat_safe(char *dst, int64 dst_cap, const char *src)
     int64 copy_len = 0;
     int64 i = 0;
 
+    // check the destination
     if (dst == NULL_POINTER || dst_cap <= 0)
     {
         return src_len;
     }
 
+    // find the destination end
     while (dst_len < dst_cap && dst[dst_len] != 0)
     {
         dst_len = dst_len + 1;
     }
 
+    // check the terminator
     if (dst_len >= dst_cap)
     {
         // dst is not terminated within its capacity; terminate it and report the overflow
@@ -3841,16 +4138,20 @@ static int64 clib__strcat_safe(char *dst, int64 dst_cap, const char *src)
         return dst_cap + src_len;
     }
 
+    // limit the copy length
     room = dst_cap - 1 - dst_len;
     copy_len = (src_len < room) ? src_len : room;
 
+    // copy the characters
     for (i = 0; i < copy_len; i++)
     {
         dst[dst_len + i] = src[i];
     }
 
+    // terminate the string
     dst[dst_len + copy_len] = 0;
 
+    // return the full length
     return dst_len + src_len;
 }
 
@@ -3867,6 +4168,7 @@ const char *clib__strrchr(const char *s, int ch)
 {
     const char *found = NULL_POINTER;
 
+    // check the string
     if (s == NULL_POINTER)
     {
         return NULL_POINTER;
@@ -3881,6 +4183,8 @@ const char *clib__strrchr(const char *s, int ch)
         }
         s++;
     }
+
+    // zero matches the terminator
     if ((char)ch == 0)
     {
         return s;
@@ -3893,10 +4197,13 @@ const void *clib__memchr(const void *block, int ch, int64 count)
     const ubyte *bytes = (const ubyte *)block;
     int64 i = 0;
 
+    // check arguments
     if (block == NULL_POINTER || count <= 0)
     {
         return NULL_POINTER;
     }
+
+    // find the byte
     for (i = 0; i < count; i++)
     {
         if (bytes[i] == (ubyte)ch)
@@ -3911,10 +4218,13 @@ static int64 clib__strncpy_safe(char *dst, int64 dst_cap, const char *src, int64
 {
     int64 written = 0;
 
+    // check the destination
     if (dst == NULL_POINTER || dst_cap <= 0)
     {
         return 0;
     }
+
+    // copy the characters
     if (src != NULL_POINTER)
     {
         while (written < count && written < dst_cap - 1 && src[written] != 0)
@@ -3923,6 +4233,8 @@ static int64 clib__strncpy_safe(char *dst, int64 dst_cap, const char *src, int64
             written++;
         }
     }
+
+    // terminate the string
     dst[written] = 0;
     return written;
 }
@@ -3939,30 +4251,40 @@ typedef struct _clib_internal_format_output
 
 static void _clib_internal_format_repeat(_clib_internal_format_output *out, char c, int64 n)
 {
+    // nothing to write
     if (n <= 0)
     {
         return;
     }
+
+    // write only what fits
     int64 available = out->dst && out->cap > out->at + 1 ? out->cap - out->at - 1 : 0;
     int64 written = n < available ? n : available;
     if (written)
     {
         clib__memset(out->dst + out->at, c, written);
     }
+
+    // advance by full length
     out->at += n;
 }
 static void _clib_internal_format_text(_clib_internal_format_output *out, const char *s, int64 n)
 {
+    // nothing to write
     if (n <= 0)
     {
         return;
     }
+
+    // copy only what fits
     int64 available = out->dst && out->cap > out->at + 1 ? out->cap - out->at - 1 : 0;
     int64 written = n < available ? n : available;
     if (written)
     {
         clib__memcpy(out->dst + out->at, s, written);
     }
+
+    // advance by full length
     out->at += n;
 }
 static void _clib_internal_format_number(_clib_internal_format_output *out, uint64 value, int base, int upper, char sign, int alternate, int64 width, int64 precision, int left, int zero)
@@ -3971,6 +4293,8 @@ static void _clib_internal_format_number(_clib_internal_format_output *out, uint
     int n = 0, prefix_n = 0;
     const char *alphabet = upper ? "0123456789ABCDEF" : "0123456789abcdef";
     uint64 original = value;
+
+    // build digits in reverse
     if (value || precision != 0)
     {
         do
@@ -3980,6 +4304,8 @@ static void _clib_internal_format_number(_clib_internal_format_output *out, uint
             digits[n++] = alphabet[digit];
         } while (value);
     }
+
+    // build the prefix
     if (sign)
     {
         prefix[prefix_n++] = sign;
@@ -3989,30 +4315,42 @@ static void _clib_internal_format_number(_clib_internal_format_output *out, uint
         prefix[prefix_n++] = '0';
         prefix[prefix_n++] = upper ? 'X' : 'x';
     }
+
+    // add octal leading zero
     if (alternate && base == 8 && (n == 0 || digits[n - 1] != '0') && precision <= n)
     {
         precision = n + 1;
     }
+
+    // compute zeros and padding
     int64 leading = precision > n ? precision - n : 0;
     int64 padding = width - prefix_n - leading - n;
     if (padding < 0)
     {
         padding = 0;
     }
+
+    // pad with spaces before
     if (!left && (!zero || precision >= 0))
     {
         _clib_internal_format_repeat(out, ' ', padding);
     }
+
+    // write prefix and zeros
     _clib_internal_format_text(out, prefix, prefix_n);
     if (!left && zero && precision < 0)
     {
         _clib_internal_format_repeat(out, '0', padding);
     }
     _clib_internal_format_repeat(out, '0', leading);
+
+    // write the digits
     while (n)
     {
         _clib_internal_format_text(out, &digits[--n], 1);
     }
+
+    // pad with spaces after
     if (left)
     {
         _clib_internal_format_repeat(out, ' ', padding);
@@ -4032,6 +4370,8 @@ static int _clib_internal_format_decimal(double value, char *digits, int *point)
     } bits = { value };
     uint64 mantissa = bits.u & 0xfffffffffffffULL;
     int exponent = (int)((bits.u >> 52) & 2047);
+
+    // adjust mantissa and exponent
     if (exponent)
     {
         mantissa |= 1ULL << 52;
@@ -4041,12 +4381,16 @@ static int _clib_internal_format_decimal(double value, char *digits, int *point)
     {
         exponent = -1074;
     }
+
+    // zero is one digit
     if (!mantissa)
     {
         digits[0] = '0';
         *point = 1;
         return 1;
     }
+
+    // split mantissa into limbs
     uint limbs[96];
     int count = 0;
     do
@@ -4055,9 +4399,13 @@ static int _clib_internal_format_decimal(double value, char *digits, int *point)
         mantissa = clib__udivmod64(mantissa, 1000000000u, &digit);
         limbs[count++] = (uint)digit;
     } while (mantissa);
+
+    // choose factor and steps
     int scale = exponent < 0 ? -exponent : 0;
     uint factor = exponent < 0 ? 5 : 2;
     int steps = exponent < 0 ? -exponent : exponent;
+
+    // multiply by the factor
     for (int i = 0; i < steps; i++)
     {
         uint64 carry = 0;
@@ -4068,14 +4416,19 @@ static int _clib_internal_format_decimal(double value, char *digits, int *point)
             carry = clib__udivmod64(next, 1000000000u, &digit);
             limbs[j] = (uint)digit;
         }
+
+        // add limb for carry
         if (carry)
         {
             limbs[count++] = (uint)carry;
         }
     }
+
+    // write the decimal digits
     int n = 0;
     for (int j = count - 1; j >= 0; j--)
     {
+        // skip leading zeros
         uint divisor = 100000000;
         if (j == count - 1)
         {
@@ -4084,12 +4437,16 @@ static int _clib_internal_format_decimal(double value, char *digits, int *point)
                 divisor /= 10;
             }
         }
+
+        // write the limb digits
         while (divisor)
         {
             digits[n++] = (char)('0' + limbs[j] / divisor % 10);
             divisor /= 10;
         }
     }
+
+    // store the point position
     *point = n - scale;
     return n;
 }
@@ -4101,11 +4458,18 @@ static void _clib_internal_format_float(_clib_internal_format_output *out, doubl
         uint64 u;
     } bits = { value };
     char sign = (bits.u >> 63) ? '-' : positive_sign;
+
+    // clear the sign bit
     bits.u &= 0x7fffffffffffffffULL;
+
+    // write infinity or NaN
     if ((bits.u >> 52) == 2047)
     {
+        // choose text and padding
         const char *text = (bits.u & 0xfffffffffffffULL) ? (upper ? "NAN" : "nan") : (upper ? "INF" : "inf");
         int64 pad = width - 3 - (sign != 0);
+
+        // write the padded text
         if (!left)
         {
             _clib_internal_format_repeat(out, ' ', pad);
@@ -4121,16 +4485,23 @@ static void _clib_internal_format_float(_clib_internal_format_output *out, doubl
         }
         return;
     }
+
+    // use the default precision
     if (precision < 0)
     {
         precision = 6;
     }
+
+    // convert to decimal digits
     char digits[800];
     int point;
     int n = _clib_internal_format_decimal(bits.d, digits, &point);
     int64 keep = (int64)point + precision;
+
+    // round to the precision
     if (keep < n)
     {
+        // choose the rounding direction
         int up = 0;
         if (keep >= 0)
         {
@@ -4141,6 +4512,8 @@ static void _clib_internal_format_float(_clib_internal_format_output *out, doubl
             }
             up = next > 5 || (next == 5 && (sticky || (keep && ((digits[keep - 1] - '0') & 1))));
         }
+
+        // apply the rounding
         if (keep <= 0)
         {
             digits[0] = up ? '1' : '0';
@@ -4149,12 +4522,15 @@ static void _clib_internal_format_float(_clib_internal_format_output *out, doubl
         }
         else
         {
+            // replace trailing nines
             n = (int)keep;
             int i = n - 1;
             while (up && i >= 0 && digits[i] == '9')
             {
                 digits[i--] = '0';
             }
+
+            // increase the next digit
             if (up && i >= 0)
             {
                 digits[i]++;
@@ -4171,9 +4547,13 @@ static void _clib_internal_format_float(_clib_internal_format_output *out, doubl
             }
         }
     }
+
+    // compute the padding
     int64 integers = point > 0 ? point : 1;
     int dot = precision > 0 || alternate;
     int64 pad = width - integers - precision - dot - (sign != 0);
+
+    // write padding and sign
     if (!left && !zero)
     {
         _clib_internal_format_repeat(out, ' ', pad);
@@ -4186,6 +4566,8 @@ static void _clib_internal_format_float(_clib_internal_format_output *out, doubl
     {
         _clib_internal_format_repeat(out, '0', pad);
     }
+
+    // write the integer part
     if (point <= 0)
     {
         _clib_internal_format_repeat(out, '0', 1);
@@ -4196,10 +4578,14 @@ static void _clib_internal_format_float(_clib_internal_format_output *out, doubl
         _clib_internal_format_text(out, digits, take);
         _clib_internal_format_repeat(out, '0', point - take);
     }
+
+    // write the decimal point
     if (dot)
     {
         _clib_internal_format_text(out, ".", 1);
     }
+
+    // write zeros after point
     int64 remaining = precision;
     if (point < 0)
     {
@@ -4207,6 +4593,8 @@ static void _clib_internal_format_float(_clib_internal_format_output *out, doubl
         _clib_internal_format_repeat(out, '0', zeros);
         remaining -= zeros;
     }
+
+    // write the fraction digits
     int start = point > 0 ? point : 0;
     int64 take = start < n ? n - start : 0;
     if (take > remaining)
@@ -4217,7 +4605,11 @@ static void _clib_internal_format_float(_clib_internal_format_output *out, doubl
     {
         _clib_internal_format_text(out, digits + start, take);
     }
+
+    // fill precision with zeros
     _clib_internal_format_repeat(out, '0', remaining - take);
+
+    // pad with spaces after
     if (left)
     {
         _clib_internal_format_repeat(out, ' ', pad);
@@ -4227,17 +4619,24 @@ static void _clib_internal_format_float(_clib_internal_format_output *out, doubl
 static int64 clib__vformat(char *dst, int64 cap, const char *fmt, va_list args)
 {
     _clib_internal_format_output out = { dst, cap > 0 ? cap : 0, 0 };
+
+    // replace missing format
     if (!fmt)
     {
         fmt = "";
     }
+
+    // read the format string
     while (*fmt)
     {
+        // copy plain characters
         if (*fmt != '%')
         {
             _clib_internal_format_text(&out, fmt++, 1);
             continue;
         }
+
+        // read the flags
         fmt++;
         int left = 0, zero = 0, alternate = 0;
         char sign = 0;
@@ -4272,6 +4671,8 @@ static int64 clib__vformat(char *dst, int64 cap, const char *fmt, va_list args)
             }
             fmt++;
         }
+
+        // read the width
         int64 width = 0, precision = -1;
         if (*fmt == '*')
         {
@@ -4298,6 +4699,8 @@ static int64 clib__vformat(char *dst, int64 cap, const char *fmt, va_list args)
         {
             width = INT_MAX;
         }
+
+        // read the precision
         if (*fmt == '.')
         {
             fmt++;
@@ -4327,6 +4730,8 @@ static int64 clib__vformat(char *dst, int64 cap, const char *fmt, va_list args)
                 precision = INT_MAX;
             }
         }
+
+        // read the length modifier
         char length = 0;
         if (*fmt == 'l' || *fmt == 'h' || *fmt == 'j' || *fmt == 'z' || *fmt == 't')
         {
@@ -4342,17 +4747,23 @@ static int64 clib__vformat(char *dst, int64 cap, const char *fmt, va_list args)
                 fmt++;
             }
         }
+
+        // read the conversion character
         char conversion = *fmt;
         if (!conversion)
         {
             break;
         }
         fmt++;
+
+        // write the converted value
         if (conversion == 's' || conversion == 'c' || conversion == '%')
         {
             char c;
             const char *text;
             int64 n = 0;
+
+            // find text and length
             if (conversion == 's')
             {
                 text = va_arg(args, const char *);
@@ -4371,6 +4782,8 @@ static int64 clib__vformat(char *dst, int64 cap, const char *fmt, va_list args)
                 text = &c;
                 n = 1;
             }
+
+            // write the padded text
             if (!left)
             {
                 _clib_internal_format_repeat(&out, ' ', width - n);
@@ -4388,6 +4801,8 @@ static int64 clib__vformat(char *dst, int64 cap, const char *fmt, va_list args)
         else if (conversion == 'd' || conversion == 'i' || conversion == 'u' || conversion == 'x' || conversion == 'X' || conversion == 'o' || conversion == 'p')
         {
             uint64 value;
+
+            // read the integer argument
             int is_signed = conversion == 'd' || conversion == 'i';
             if (conversion == 'p')
             {
@@ -4397,6 +4812,8 @@ static int64 clib__vformat(char *dst, int64 cap, const char *fmt, va_list args)
             else if (is_signed)
             {
                 int64 v;
+
+                // read the signed value
                 if (length == 'q' || length == 'j')
                 {
                     v = va_arg(args, int64);
@@ -4414,6 +4831,8 @@ static int64 clib__vformat(char *dst, int64 cap, const char *fmt, va_list args)
                     int i = va_arg(args, int);
                     v = length == 'h' ? (short)i : length == 'b' ? (signed char)i : i;
                 }
+
+                // split sign and magnitude
                 value = v < 0 ? 0ULL - (uint64)v : (uint64)v;
                 if (v < 0)
                 {
@@ -4422,6 +4841,7 @@ static int64 clib__vformat(char *dst, int64 cap, const char *fmt, va_list args)
             }
             else
             {
+                // read the unsigned value
                 sign = 0;
                 if (length == 'q' || length == 'j')
                 {
@@ -4441,15 +4861,20 @@ static int64 clib__vformat(char *dst, int64 cap, const char *fmt, va_list args)
                     value = length == 'h' ? (ushort)v : length == 'b' ? (ubyte)v : v;
                 }
             }
+
+            // write the number
             int base = conversion == 'o' ? 8 : (conversion == 'x' || conversion == 'X' || conversion == 'p') ? 16 : 10;
             _clib_internal_format_number(&out, value, base, conversion == 'X', sign, alternate, width, precision, left, zero);
         }
         else
         {
+            // copy unknown conversion
             _clib_internal_format_text(&out, "%", 1);
             _clib_internal_format_text(&out, &conversion, 1);
         }
     }
+
+    // terminate the output
     if (dst && cap > 0)
     {
         dst[out.at < cap ? out.at : cap - 1] = 0;
@@ -4462,6 +4887,7 @@ static int64 clib__format(char *dst, int64 dst_cap, const char *fmt, ...)
     va_list args;
     int64 written = 0;
 
+    // format with argument list
     va_start(args, fmt);
     written = clib__vformat(dst, dst_cap, fmt, args);
     va_end(args);
@@ -4474,11 +4900,16 @@ static int64 clib__u64toa_hex(char *dst, int64 dst_cap, uint64 value)
     int64 length = 0;
     int64 i = 0;
 
+    // clear the digit buffer
     clib__null_memory(digits, sizeof(digits));
+
+    // check the destination
     if (dst == NULL_POINTER || dst_cap <= 0)
     {
         return 0;
     }
+
+    // write an empty string
     dst[0] = 0;
     if (dst_cap == 1)
     {
@@ -4491,10 +4922,14 @@ static int64 clib__u64toa_hex(char *dst, int64 dst_cap, uint64 value)
         value >>= 4;
         length++;
     } while (value != 0 && length < 16);
+
+    // refuse a short buffer
     if (length + 1 > dst_cap)
     {
         return 0;
     }
+
+    // copy digits in reverse
     for (i = 0; i < length; i++)
     {
         dst[i] = digits[length - 1 - i];
@@ -4518,6 +4953,7 @@ static int64 clib__i64toa(char *dst, int64 dst_cap, int64 value)
     int64 i = 0;
     boole negative = FALSE;
 
+    // read sign and magnitude
     if (value < 0)
     {
         negative = TRUE;
@@ -4529,6 +4965,7 @@ static int64 clib__i64toa(char *dst, int64 dst_cap, int64 value)
         magnitude = (uint64)value;
     }
 
+    // build digits in reverse
     do
     {
         uint64 digit;
@@ -4537,26 +4974,32 @@ static int64 clib__i64toa(char *dst, int64 dst_cap, int64 value)
         n = n + 1;
     } while (magnitude != 0ull);
 
+    // add the minus sign
     if (negative == TRUE)
     {
         reversed[n] = '-';
         n = n + 1;
     }
 
+    // check the destination
     if (dst == NULL_POINTER || dst_cap <= 0)
     {
         return n;
     }
 
+    // limit the copy length
     copy_len = (n < dst_cap - 1) ? n : dst_cap - 1;
 
+    // copy digits in reverse
     for (i = 0; i < copy_len; i++)
     {
         dst[i] = reversed[n - 1 - i];
     }
 
+    // terminate the string
     dst[copy_len] = 0;
 
+    // return the full length
     return n;
 }
 
@@ -4576,33 +5019,48 @@ double clib__strtod(const char *s, char **endptr)
     int negative = 0, fractional = 0, any = 0, significant = 0;
     int first_dropped = -1, sticky = 0, exponent_negative = 0;
     static const double powers[] = { 1e1, 1e2, 1e4, 1e8, 1e16, 1e32, 1e64, 1e128, 1e256 };
+
+    // reset the end pointer
     if (endptr)
     {
         *endptr = (char *)s;
     }
+
+    // check the string
     if (!s)
     {
         return 0.0;
     }
+
+    // skip leading whitespace
     while (clib__isspace((ubyte)*p))
     {
         p++;
     }
+
+    // read the sign
     if (*p == '-' || *p == '+')
     {
         negative = *p++ == '-';
     }
+
+    // read the digits
     for (;; p++)
     {
+        // decimal point starts fraction
         if (*p == '.' && !fractional)
         {
             fractional = 1;
             continue;
         }
+
+        // stop at other characters
         if (*p < '0' || *p > '9')
         {
             break;
         }
+
+        // add digit to mantissa
         int digit = *p - '0';
         any = 1;
         if (!significant && !digit)
@@ -4623,6 +5081,7 @@ double clib__strtod(const char *s, char **endptr)
         }
         else
         {
+            // digit is not stored
             if (!fractional && exponent < 1000000000)
             {
                 exponent++;
@@ -4637,17 +5096,24 @@ double clib__strtod(const char *s, char **endptr)
             }
         }
     }
+
+    // no digits found
     if (!any)
     {
         return 0.0;
     }
+
+    // read the exponent
     if (*p == 'e' || *p == 'E')
     {
+        // read the exponent sign
         const char *mark = p++;
         if (*p == '-' || *p == '+')
         {
             exponent_negative = *p++ == '-';
         }
+
+        // read the exponent digits
         const char *digits = p;
         while (*p >= '0' && *p <= '9')
         {
@@ -4657,6 +5123,8 @@ double clib__strtod(const char *s, char **endptr)
             }
             p++;
         }
+
+        // add exponent when valid
         if (p == digits)
         {
             p = mark;
@@ -4666,14 +5134,20 @@ double clib__strtod(const char *s, char **endptr)
             exponent += exponent_negative ? -explicit_exponent : explicit_exponent;
         }
     }
+
+    // store the end pointer
     if (endptr)
     {
         *endptr = (char *)p;
     }
+
+    // round the mantissa
     if (first_dropped > 5 || (first_dropped == 5 && (sticky || (mantissa & 1))))
     {
         mantissa++;
     }
+
+    // apply the decimal exponent
     double value = (double)mantissa;
     if (mantissa && exponent > 308)
     {
@@ -4691,8 +5165,8 @@ double clib__strtod(const char *s, char **endptr)
     else if (mantissa)
     {
         unsigned magnitude = (unsigned)(exponent < 0 ? -exponent : exponent);
-        // Largest power first keeps subnormal results from underflowing before
-        // the significant digits have been included. At most nine operations.
+        // largest power first keeps subnormal results from underflowing before
+        // the significant digits have been included. at most nine operations
         for (int i = 8; i >= 0; i--)
         {
             if (magnitude & (1u << i))
@@ -4701,6 +5175,8 @@ double clib__strtod(const char *s, char **endptr)
             }
         }
     }
+
+    // set the sign
     return negative ? -value : value;
 }
 
@@ -4759,6 +5235,8 @@ double clib__copysign(double magnitude, double sign)
 {
     clib_double_bits_t m;
     clib_double_bits_t s;
+
+    // copy the sign bit
     m.value = magnitude;
     s.value = sign;
     m.bits = (m.bits & 0x7fffffffffffffffULL) | (s.bits & 0x8000000000000000ULL);
@@ -4767,26 +5245,37 @@ double clib__copysign(double magnitude, double sign)
 
 double clib__hypot(double x, double y)
 {
+    // take absolute values
     x = clib__fabs(x);
     y = clib__fabs(y);
     clib_double_bits_t a;
     clib_double_bits_t b;
     a.value = x;
     b.value = y;
+
+    // infinity gives infinity
     if (a.bits == 0x7ff0000000000000ULL || b.bits == 0x7ff0000000000000ULL)
     {
         a.bits = 0x7ff0000000000000ULL;
         return a.value;
     }
+
+    // NaN gives NaN
     if (!clib__isfinite(x) || !clib__isfinite(y))
     {
         return clib__nan();
     }
+
+    // use larger as scale
     double scale = _clib_internal_double_max(x, y);
+
+    // both values are zero
     if (scale == 0.0)
     {
         return 0.0;
     }
+
+    // compute with scaled values
     x /= scale;
     y /= scale;
     return scale * clib__sqrt(x * x + y * y);
@@ -4794,23 +5283,32 @@ double clib__hypot(double x, double y)
 
 double clib__exp(double x)
 {
+    // check for NaN
     if (x != x)
     {
         return x;
     }
+
+    // result underflows to zero
     if (x < -745.133219101941)
     {
         return 0.0;
     }
+
+    // result overflows to infinity
     if (x > 709.782712893384)
     {
         clib_double_bits_t infinity;
         infinity.bits = 0x7ff0000000000000ULL;
         return infinity.value;
     }
+
+    // find the binary exponent
     int k = (int)clib__floor(x * 1.4426950408889634074 + 0.5);
     /* Split ln(2) reduces cancellation in the argument reduction. */
     double r = (x - k * 0.69314718036912381649) - k * 1.9082149292705877000e-10;
+
+    // sum the series
     double sum = 1.0;
     double term = 1.0;
     for (int i = 1; i <= 18; ++i)
@@ -4819,52 +5317,71 @@ double clib__exp(double x)
         sum += term;
     }
     clib_double_bits_t scale;
+
+    // exponent above the range
     if (k > 1023)
     {
         scale.bits = 0x7fe0000000000000ULL;
         return (sum * 2.0) * scale.value;
     }
+
+    // exponent below the range
     if (k < -1022)
     {
         scale.bits = (uint64)(k + 1022 + 1023) << 52;
         return sum * scale.value * 2.2250738585072013831e-308;
     }
+
+    // scale by binary exponent
     scale.bits = (uint64)(k + 1023) << 52;
     return sum * scale.value;
 }
 
 double clib__log(double x)
 {
+    // negative or NaN argument
     if (x < 0.0 || x != x)
     {
         return clib__nan();
     }
+
+    // zero gives minus infinity
     if (x == 0.0)
     {
         clib_double_bits_t infinity;
         infinity.bits = 0xfff0000000000000ULL;
         return infinity.value;
     }
+
+    // return infinity unchanged
     if (!clib__isfinite(x))
     {
         return x;
     }
     int correction = 0;
+
+    // scale up subnormal argument
     if (x < 2.2250738585072013831e-308)
     {
         x *= 18014398509481984.0;
         correction = -54;
     }
+
+    // split exponent and mantissa
     clib_double_bits_t v;
     v.value = x;
     int exponent = (int)((v.bits >> 52) & 0x7ff) - 1023 + correction;
     v.bits = (v.bits & 0x000fffffffffffffULL) | 0x3ff0000000000000ULL;
     double mantissa = v.value;
+
+    // keep mantissa near one
     if (mantissa > 1.4142135623730950488)
     {
         mantissa *= 0.5;
         ++exponent;
     }
+
+    // sum the series
     double z = (mantissa - 1.0) / (mantissa + 1.0);
     double term = z;
     double sum = z;
@@ -4873,6 +5390,8 @@ double clib__log(double x)
         term *= z * z;
         sum += term / k;
     }
+
+    // add the exponent part
     return exponent * 0.69314718055994530942 + 2.0 * sum;
 }
 
@@ -4888,11 +5407,17 @@ double clib__pow_positive(double x, double exponent)
 double clib__cos_bounded(double x)
 {
     const double pi = 3.14159265358979323846;
+
+    // refuse values outside range
     if (!clib__isfinite(x) || clib__fabs(x) > 2.0 * pi)
     {
         return clib__nan();
     }
+
+    // reduce to one period
     x -= clib__floor((x + pi) / (2.0 * pi)) * (2.0 * pi);
+
+    // reduce to half period
     double sign = 1.0;
     if (x > pi * 0.5)
     {
@@ -4904,6 +5429,8 @@ double clib__cos_bounded(double x)
         x = -pi - x;
         sign = -1.0;
     }
+
+    // sum the series
     double sum = 1.0;
     double term = 1.0;
     for (int k = 1; k <= 12; ++k)
@@ -4919,10 +5446,14 @@ double clib__cos_bounded(double x)
 int64 clib__string_length(const char *string, uint64 capacity)
 {
     uint64 i = 0;
+
+    // check arguments
     if (!string || !capacity || capacity > (uint64)INT64_MAX || capacity > SIZE_MAX)
     {
         return -1;
     }
+
+    // find the terminator
     for (i = 0; i < capacity; i++)
     {
         if (string[i] == 0)
@@ -4935,15 +5466,20 @@ int64 clib__string_length(const char *string, uint64 capacity)
 
 boole clib__string_copy_n(char *destination, uint64 capacity, const char *source, uint64 length)
 {
+    // check the destination
     if (!destination || !capacity || capacity > SIZE_MAX || capacity > (uint64)INT64_MAX)
     {
         return FALSE;
     }
+
+    // check source and length
     if ((!source && length) || length >= capacity)
     {
         destination[0] = 0;
         return FALSE;
     }
+
+    // copy and terminate
     clib__memmove(destination, source, (int64)length);
     destination[length] = 0;
     return TRUE;
@@ -4953,10 +5489,14 @@ boole clib__string_copy_n(char *destination, uint64 capacity, const char *source
 boole clib__string_copy(char *destination, uint64 capacity, cstring source)
 {
     uint64 length = 0;
+
+    // check the destination
     if (!destination || !capacity || capacity > SIZE_MAX || capacity > (uint64)INT64_MAX)
     {
         return FALSE;
     }
+
+    // count the source length
     if (source)
     {
         while (length < capacity && source[length])
@@ -4964,6 +5504,8 @@ boole clib__string_copy(char *destination, uint64 capacity, cstring source)
             length++;
         }
     }
+
+    // copy the counted bytes
     return clib__string_copy_n(destination, capacity, source, length);
 }
 
@@ -4973,19 +5515,27 @@ boole clib__string_append(char *destination, uint64 capacity, cstring source)
     int64 length = clib__string_length(destination, capacity);
     uint64 added = 0;
     uint64 remaining = 0;
+
+    // check both strings
     if (length < 0 || !source)
     {
         return FALSE;
     }
+
+    // count the source length
     remaining = capacity - (uint64)length;
     while (added < remaining && source[added])
     {
         added++;
     }
+
+    // refuse when too long
     if (added >= remaining)
     {
         return FALSE;
     }
+
+    // copy and terminate
     clib__memmove(destination + length, source, (int64)added);
     destination[(uint64)length + added] = 0;
     return TRUE;
@@ -4995,13 +5545,19 @@ int64 clib__string_vformat(char *destination, uint64 capacity, cstring format, v
 {
     int64 required = 0;
     va_list copy;
+
+    // check arguments
     if (!format || capacity > SIZE_MAX || capacity > (uint64)INT64_MAX || (!destination && capacity))
     {
         return -1;
     }
+
+    // measure the needed length
     va_copy(copy, arguments);
     required = clib__vformat(NULL_POINTER, 0, format, copy);
     va_end(copy);
+
+    // write if it fits
     if (capacity)
     {
         if (required < 0 || (uint64)required >= capacity)
@@ -5021,6 +5577,8 @@ int64 clib__string_format(char *destination, uint64 capacity, cstring format, ..
 {
     va_list arguments;
     int64 required = 0;
+
+    // format with argument list
     va_start(arguments, format);
     required = clib__string_vformat(destination, capacity, format, arguments);
     va_end(arguments);
@@ -5030,6 +5588,8 @@ int64 clib__string_format(char *destination, uint64 capacity, cstring format, ..
 void clib__string_trim_newline(char *string, uint64 capacity)
 {
     int64 length = clib__string_length(string, capacity);
+
+    // remove the line ending
     if (length > 0 && string[length - 1] == '\n')
     {
         string[--length] = 0;
@@ -5043,14 +5603,19 @@ void clib__string_trim_newline(char *string, uint64 capacity)
 /* Compatibility for existing byte-oriented application code, with zero-capacity handling. */
 void clib__copy_memory(const void *source, void *destination, uint64 length, uint64 capacity)
 {
+    // check arguments
     if (!source || !destination)
     {
         return;
     }
+
+    // limit to the capacity
     if (length > capacity)
     {
         length = capacity;
     }
+
+    // copy the bytes
     if (length <= (uint64)INT64_MAX && length <= SIZE_MAX)
     {
         clib__memmove(destination, source, (int64)length);
@@ -5078,10 +5643,14 @@ uint64 clib__utf8_string_length(cstring string)
 int64 clib__utf8_string_length_check_max_length(cstring string, int maximum)
 {
     int64 i = 0;
+
+    // check arguments
     if (!string || maximum < 0)
     {
         return -1;
     }
+
+    // find the terminator
     for (i = 0; i <= maximum; i++)
     {
         if (!string[i])
@@ -5099,39 +5668,56 @@ unsigned long clib__strtoul(cstring string, char **end, int base)
     boole negative = FALSE;
     boole any = FALSE;
     boole overflow = FALSE;
+
+    // reset the end pointer
     if (end)
     {
         *end = (char *)string;
     }
+
+    // check arguments
     if (!string || (base && (base < 2 || base > 36)))
     {
         return 0;
     }
+
+    // skip leading whitespace
     while (clib__isspace((ubyte)*string))
     {
         string++;
     }
+
+    // read the sign
     if (*string == '-' || *string == '+')
     {
         negative = *string++ == '-';
     }
+
+    // skip the hex prefix
     if ((base == 0 || base == 16) && string[0] == '0' && (string[1] == 'x' || string[1] == 'X') && clib__isxdigit((ubyte)string[2]))
     {
         string += 2;
         base = 16;
     }
+
+    // choose the base
     if (!base)
     {
         base = *string == '0' ? 8 : 10;
     }
+
+    // read the digits
     for (;; string++)
     {
+        // convert character to digit
         int c = clib__tolower((ubyte)*string);
         int digit = c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'z' ? c - 'a' + 10 : -1;
         if (digit < 0 || digit >= base)
         {
             break;
         }
+
+        // add digit unless overflow
         any = TRUE;
         if (value > (ULONG_MAX - (unsigned long)digit) / (unsigned long)base)
         {
@@ -5142,9 +5728,13 @@ unsigned long clib__strtoul(cstring string, char **end, int base)
             value = value * (unsigned long)base + (unsigned long)digit;
         }
     }
+
+    // store the end pointer
     if (end)
     {
         *end = (char *)(any ? string : start);
     }
+
+    // apply overflow and sign
     return overflow ? ULONG_MAX : negative ? 0ul - value : value;
 }

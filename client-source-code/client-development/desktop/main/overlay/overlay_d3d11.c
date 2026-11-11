@@ -57,10 +57,14 @@ static void _overlay_d3d11_internal__log(meek_log_level_e level, const char *fil
 {
     (void)file;
     (void)line;
+
+    // skip levels below warning
     if (level < MEEK_LOG__WARN)
     {
         return;
     }
+
+    // write the message
     OutputDebugStringA("Lemon overlay: ");
     OutputDebugStringA(message);
     OutputDebugStringA("\n");
@@ -76,24 +80,33 @@ static boole _overlay_d3d11_internal__scene(void)
     char path[32768] = { 0 };
     gui_node_t *root = NULL_POINTER;
 
+    // load the font
     clib__null_memory(&path, sizeof(path));
     if (!font__init() || clib__string_format(path, sizeof(path), "%sfonts/SpaceGrotesk-Regular.ttf", g_directory) < 0 || !font__register_from_file("SpaceGrotesk-Regular", path))
     {
         return 0;
     }
+
+    // load the styles
     clib__string_format(path, sizeof(path), "%sassets/overlay.style", g_directory);
     if (!parser_style__load_styles(path))
     {
         return 0;
     }
+
+    // load the UI file
     clib__string_format(path, sizeof(path), "%sassets/overlay.ui", g_directory);
     root = parser_xml__load_ui(path);
     if (!root)
     {
         return 0;
     }
+
+    // set the scene root
     scene__set_root(root);
     scene__set_scale(1.0f);
+
+    // find the required nodes
     return scene__find_by_id("overlay-members") && scene__find_by_id("overlay-channel");
 }
 
@@ -122,20 +135,29 @@ static void _overlay_d3d11_internal__draw(IDXGISwapChain *chain)
     char caption_text[64] = { 0 };
     uint omitted = 0;
 
+    // read the snapshot
     desktop_overlay_ipc__read(g_ipc, &g_snapshot);
+
+    // free textures when hidden
     if (g_ready && g_chain == chain && g_render_thread == GetCurrentThreadId() && !desktop_overlay_data__visible(&g_snapshot, GetTickCount64()))
     {
         desktop_ui_voice__shutdown();
     }
+
+    // nothing to draw
     if (!desktop_overlay_data__visible(&g_snapshot, GetTickCount64()) || g_failed || g_resizing || (g_chain && (g_chain != chain || g_render_thread != GetCurrentThreadId())))
     {
         return;
     }
+
+    // check the output window
     clib__null_memory(&description, sizeof(description));
     if (FAILED(IDXGISwapChain_GetDesc(chain, &description)) || !description.OutputWindow || IsIconic(description.OutputWindow))
     {
         return;
     }
+
+    // read the buffer size
     buffer = NULL;
     clib__null_memory(&texture, sizeof(texture));
     if (FAILED(IDXGISwapChain_GetBuffer(chain, 0, &IID_ID3D11Texture2D, (void **)&buffer)))
@@ -148,32 +170,45 @@ static void _overlay_d3d11_internal__draw(IDXGISwapChain *chain)
     {
         return;
     }
+
+    // prepare the renderer once
     if (!g_chain)
     {
+        // read the game device
         if (FAILED(IDXGISwapChain_GetDevice(chain, &IID_ID3D11Device, (void **)&g_device)))
         {
             return;
         }
         ID3D11Device_GetImmediateContext(g_device, &g_context);
+
+        // store chain and thread
         g_chain = chain;
         IDXGISwapChain_AddRef(g_chain);
         g_render_thread = GetCurrentThreadId();
+
+        // start the UI library
         clib__null_memory(&services, sizeof(services));
         services.write_log = _overlay_d3d11_internal__log;
         host_services__set(&services);
         memory_manager__init();
         widget_registry__bootstrap_builtins();
         desktop_ui_voice__register();
+
+        // attach the renderer
         if (!embedded_d3d11__attach(g_device, g_context, chain))
         {
             g_failed = 1;
             return;
         }
     }
+
+    // start the frame
     if (!embedded_d3d11__begin_frame(texture.Width, texture.Height))
     {
         return;
     }
+
+    // load the scene once
     if (!g_ready)
     {
         g_ready = _overlay_d3d11_internal__scene();
@@ -184,11 +219,16 @@ static void _overlay_d3d11_internal__draw(IDXGISwapChain *chain)
             return;
         }
     }
+
+    // update after a change
     if (g_displayed.revision != g_snapshot.revision || g_displayed.member_count != g_snapshot.member_count || g_displayed.preview != g_snapshot.preview || g_displayed.total_member_count != g_snapshot.total_member_count || clib__memcmp(g_displayed.members, g_snapshot.members, sizeof(g_snapshot.members)) != 0 || clib__strcmp(g_displayed.channel, g_snapshot.channel) != 0 || g_viewport_height != texture.Height)
     {
+        // set the channel title
         title = scene__find_by_id("overlay-channel");
         caption = scene__find_by_id("overlay-caption");
         scene__set_text(title, g_snapshot.channel, clib__strlen(g_snapshot.channel));
+
+        // calculate the row limit
         visible = g_snapshot;
         maximum = texture.Height > 240 ? (texture.Height / 3 - 64) / 24 : 1;
         if (maximum > 8)
@@ -199,10 +239,12 @@ static void _overlay_d3d11_internal__draw(IDXGISwapChain *chain)
         {
             maximum = 1;
         }
+
+        // choose the visible members
         if (visible.member_count > maximum)
         {
             visible.member_count = 0;
-            // Keep speakers visible when the channel is taller than the viewport.
+            // keep speakers visible when the channel is taller than the viewport
             for (speaking = 1; speaking >= 0; speaking--)
             {
                 for (index = 0; index < g_snapshot.member_count && visible.member_count < maximum; index++)
@@ -214,8 +256,12 @@ static void _overlay_d3d11_internal__draw(IDXGISwapChain *chain)
                 }
             }
         }
+
+        // find list and panel
         members = scene__find_by_id("overlay-members");
         panel = scene__find_by_id("overlay-panel");
+
+        // set the caption text
         omitted = g_snapshot.total_member_count - visible.member_count;
         if (caption)
         {
@@ -230,24 +276,34 @@ static void _overlay_d3d11_internal__draw(IDXGISwapChain *chain)
             scene__set_text(caption, caption_text, clib__strlen(caption_text));
             clib__string_copy(caption->klass, sizeof(caption->klass), caption_text[0] ? "" : "hidden");
         }
+
+        // update the member list
         desktop_member_view__update(members, &visible);
         list_height = visible.member_count ? (float)visible.member_count * 24.0f : 24.0f;
         members->style[GUI_NODE_STATE__DEFAULT].size_h = list_height;
         members->style[GUI_NODE_STATE__DEFAULT].size_h_explicit = TRUE;
+
+        // set the panel height
         if (panel)
         {
             panel->style[GUI_NODE_STATE__DEFAULT].size_h = list_height + 42.0f + (caption_text[0] ? 20.0f : 0.0f);
             panel->style[GUI_NODE_STATE__DEFAULT].size_h_explicit = TRUE;
         }
+
+        // store the displayed state
         g_displayed = g_snapshot;
         g_viewport_height = texture.Height;
     }
+
+    // draw the scene
     scene__begin_frame_time((int64)GetTickCount64());
     scene__resolve_styles();
     animator__tick();
     scene__layout(texture.Width, texture.Height);
     scene__emit_draws();
     embedded_d3d11__end_frame();
+
+    // count the drawn frame
     InterlockedIncrement(&g_drawn_frames);
 }
 
@@ -262,11 +318,14 @@ static void _overlay_d3d11_internal__draw(IDXGISwapChain *chain)
  */
 static HRESULT STDMETHODCALLTYPE _overlay_d3d11_internal__present(IDXGISwapChain *chain, UINT interval, UINT flags)
 {
+    // draw the overlay
     if (!(flags & DXGI_PRESENT_TEST) && TryEnterCriticalSection(&g_render_lock))
     {
         _overlay_d3d11_internal__draw(chain);
         LeaveCriticalSection(&g_render_lock);
     }
+
+    // call the original Present
     return g_present(chain, interval, flags);
 }
 
@@ -287,6 +346,7 @@ static HRESULT STDMETHODCALLTYPE _overlay_d3d11_internal__resize(IDXGISwapChain 
     boole owned = 0;
     HRESULT result = 0;
 
+    // release the render target
     EnterCriticalSection(&g_render_lock);
     owned = g_chain == chain;
     if (owned)
@@ -295,7 +355,11 @@ static HRESULT STDMETHODCALLTYPE _overlay_d3d11_internal__resize(IDXGISwapChain 
         embedded_d3d11__release_render_target();
     }
     LeaveCriticalSection(&g_render_lock);
+
+    // call the original resize
     result = g_resize(chain, count, width, height, format, flags);
+
+    // clear the resize flag
     if (owned)
     {
         EnterCriticalSection(&g_render_lock);
@@ -329,12 +393,15 @@ __declspec(dllexport) DWORD WINAPI lemon_overlay_start(void *ignored)
     void *resize = NULL_POINTER;
     HMODULE pinned = NULL;
 
+    // start only once
     (void)ignored;
     previous = InterlockedCompareExchange(&g_started, 1, 0);
     if (previous)
     {
         return previous == 2;
     }
+
+    // read the first snapshot
     g_ipc = desktop_overlay_ipc__open(GetCurrentProcessId(), 0);
     if (!g_ipc || !desktop_overlay_ipc__read(g_ipc, &g_snapshot) || !desktop_overlay_data__visible(&g_snapshot, GetTickCount64()))
     {
@@ -343,6 +410,8 @@ __declspec(dllexport) DWORD WINAPI lemon_overlay_start(void *ignored)
         InterlockedExchange(&g_started, 0);
         return 0;
     }
+
+    // read the DLL path
     clib__null_memory(&wide_path, sizeof(wide_path));
     length = GetModuleFileNameW(g_module, wide_path, 32768);
     if (!length || length >= 32768)
@@ -350,21 +419,33 @@ __declspec(dllexport) DWORD WINAPI lemon_overlay_start(void *ignored)
         InterlockedExchange(&g_started, -1);
         return 0;
     }
+
+    // remove the file name
     while (length && wide_path[length - 1] != L'\\')
     {
         length--;
     }
     wide_path[length] = 0;
+
+    // convert to UTF-8
     if (!WideCharToMultiByte(CP_UTF8, 0, wide_path, -1, g_directory, sizeof(g_directory), NULL, NULL))
     {
         InterlockedExchange(&g_started, -1);
         return 0;
     }
+
+    // create the render lock
     InitializeCriticalSection(&g_render_lock);
+
+    // create a temporary window
     window = CreateWindowExW(0, L"STATIC", L"Lemon overlay renderer discovery", WS_OVERLAPPED, 0, 0, 64, 64, NULL, NULL, g_module, NULL);
+
+    // clear the object pointers
     chain = NULL;
     device = NULL;
     context = NULL;
+
+    // fill the chain description
     clib__null_memory(&description, sizeof(description));
     description.BufferDesc.Width = 64;
     description.BufferDesc.Height = 64;
@@ -374,6 +455,8 @@ __declspec(dllexport) DWORD WINAPI lemon_overlay_start(void *ignored)
     description.BufferCount = 1;
     description.OutputWindow = window;
     description.Windowed = TRUE;
+
+    // create device and chain
     result = E_FAIL;
     if (window)
     {
@@ -383,16 +466,23 @@ __declspec(dllexport) DWORD WINAPI lemon_overlay_start(void *ignored)
             result = D3D11CreateDeviceAndSwapChain(NULL, D3D_DRIVER_TYPE_WARP, NULL, 0, NULL, 0, D3D11_SDK_VERSION, &description, &chain, &device, NULL, &context);
         }
     }
+
+    // install the hooks
     success = 0;
     if (SUCCEEDED(result) && MH_Initialize() == MH_OK)
     {
+        // read the function addresses
         present = (void *)chain->lpVtbl->Present;
         resize = (void *)chain->lpVtbl->ResizeBuffers;
+
+        // create and enable hooks
         if (MH_CreateHook(present, _overlay_d3d11_internal__present, (void **)&g_present) == MH_OK && MH_CreateHook(resize, _overlay_d3d11_internal__resize, (void **)&g_resize) == MH_OK && MH_EnableHook(resize) == MH_OK && MH_EnableHook(present) == MH_OK)
         {
             pinned = NULL;
             success = GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_PIN | GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS, (LPCWSTR)lemon_overlay_start, &pinned) != 0;
         }
+
+        // remove hooks on failure
         if (!success)
         {
             MH_DisableHook(present);
@@ -400,6 +490,8 @@ __declspec(dllexport) DWORD WINAPI lemon_overlay_start(void *ignored)
             MH_Uninitialize();
         }
     }
+
+    // release the temporary objects
     if (context)
     {
         ID3D11DeviceContext_Release(context);
@@ -412,10 +504,14 @@ __declspec(dllexport) DWORD WINAPI lemon_overlay_start(void *ignored)
     {
         ID3D11Device_Release(device);
     }
+
+    // destroy the temporary window
     if (window)
     {
         DestroyWindow(window);
     }
+
+    // store the start result
     InterlockedExchange(&g_started, success ? 2 : -1);
     return success;
 }
@@ -442,6 +538,8 @@ __declspec(dllexport) DWORD WINAPI lemon_overlay_frames(void)
 BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved)
 {
     (void)reserved;
+
+    // store the module handle
     if (reason == DLL_PROCESS_ATTACH)
     {
         g_module = instance;

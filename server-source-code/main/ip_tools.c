@@ -40,15 +40,20 @@ static uint64 _ip_tools_internal__add_local_ipv4(struct sockaddr *address, char 
     char text[IPV4_ADDRESS_STRING_LENGTH] = { 0 };
     uint64 index = 0;
 
+    // check address and capacity
     if (address == NULL_POINTER || address->sa_family != AF_INET || count >= capacity)
     {
         return count;
     }
+
+    // skip unusable addresses
     bytes = (const ubyte *)&((struct sockaddr_in *)address)->sin_addr;
     if (bytes[0] == 0 || bytes[0] == 127 || bytes[0] >= 224 || (bytes[0] == 169 && bytes[1] == 254))
     {
         return count;
     }
+
+    // skip a duplicate address
     clib__string_format(text, sizeof(text), "%u.%u.%u.%u", (uint)bytes[0], (uint)bytes[1], (uint)bytes[2], (uint)bytes[3]);
     for (index = 0; index < count; index++)
     {
@@ -57,6 +62,8 @@ static uint64 _ip_tools_internal__add_local_ipv4(struct sockaddr *address, char 
             return count;
         }
     }
+
+    // add the address
     clib__string_copy(addresses[count], sizeof(addresses[count]), text);
     return count + 1;
 }
@@ -74,7 +81,7 @@ uint64 ip_tools__get_local_ipv4_addresses(char addresses[][IPV4_ADDRESS_STRING_L
     IP_ADAPTER_ADDRESSES *adapters = NULL_POINTER;
     IP_ADAPTER_ADDRESSES *adapter = NULL_POINTER;
     IP_ADAPTER_UNICAST_ADDRESS *address = NULL_POINTER;
-    ULONG size = 15000; // GetAdaptersAddresses writes an ULONG.
+    ULONG size = 15000; // GetAdaptersAddresses writes an ULONG
     uint64 result = ERROR_BUFFER_OVERFLOW;
     uint64 attempt = 0;
 #else
@@ -82,34 +89,46 @@ uint64 ip_tools__get_local_ipv4_addresses(char addresses[][IPV4_ADDRESS_STRING_L
     struct ifaddrs *interface = NULL_POINTER;
 #endif
 
+    // check arguments
     if (addresses == NULL_POINTER || capacity == 0 || capacity > SIZE_MAX / sizeof(addresses[0]))
     {
         return 0;
     }
 #ifdef _WIN32
+    // read the adapter list
     for (attempt = 0; attempt < 3; attempt++)
     {
+        // allocate the buffer
         adapters = malloc(size);
         if (adapters == NULL_POINTER)
         {
             return 0;
         }
+
+        // fill the buffer
         result = GetAdaptersAddresses(AF_INET, GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER, NULL_POINTER, adapters, &size);
         if (result != ERROR_BUFFER_OVERFLOW)
         {
             break;
         }
+
+        // free before next attempt
         free(adapters);
         adapters = NULL_POINTER;
     }
+
+    // add the adapter addresses
     if (result == NO_ERROR)
     {
         for (adapter = adapters; adapter != NULL_POINTER && count < capacity; adapter = adapter->Next)
         {
+            // skip inactive adapters
             if (adapter->OperStatus != IfOperStatusUp || adapter->IfType == IF_TYPE_SOFTWARE_LOOPBACK)
             {
                 continue;
             }
+
+            // add the valid addresses
             for (address = adapter->FirstUnicastAddress; address != NULL_POINTER && count < capacity; address = address->Next)
             {
                 if (address->DadState == IpDadStatePreferred || address->DadState == IpDadStateDeprecated)
@@ -119,12 +138,17 @@ uint64 ip_tools__get_local_ipv4_addresses(char addresses[][IPV4_ADDRESS_STRING_L
             }
         }
     }
+
+    // free the adapter list
     free(adapters);
 #else
+    // read the interface list
     if (getifaddrs(&interfaces) != 0)
     {
         return 0;
     }
+
+    // add active interface addresses
     for (interface = interfaces; interface != NULL_POINTER && count < capacity; interface = interface->ifa_next)
     {
         if ((interface->ifa_flags & IFF_UP) != 0 && (interface->ifa_flags & IFF_LOOPBACK) == 0)
@@ -132,6 +156,8 @@ uint64 ip_tools__get_local_ipv4_addresses(char addresses[][IPV4_ADDRESS_STRING_L
             count = _ip_tools_internal__add_local_ipv4(interface->ifa_addr, addresses, count, capacity);
         }
     }
+
+    // free the interface list
     freeifaddrs(interfaces);
 #endif
     return count;
@@ -157,20 +183,21 @@ void append_to_string_buffer(StringBuffer *sb, const char *str)
     uint64 str_len = clib__strlen(str);
     uint64 new_length;
 
+    // calculate the new length
     if (str_len > SIZE_MAX - sb->length - 1)
     {
         exit(1);
     }
     new_length = sb->length + str_len;
 
-    // Resize the buffer if necessary
+    // resize the buffer if necessary
     if (new_length >= sb->capacity)
     {
         capacity = new_length < SIZE_MAX / 2 ? (new_length + 1) * 2 : new_length + 1;
         resized = (char *)realloc(sb->buffer, capacity);
         if (resized == NULL_POINTER)
         {
-            // Handle memory allocation failure
+            // handle memory allocation failure
             DBG_IP_TOOLS printf("%s", "Memory allocation failed \n");
             exit(1);
         }
@@ -178,7 +205,7 @@ void append_to_string_buffer(StringBuffer *sb, const char *str)
         sb->capacity = capacity;
     }
 
-    // Append the string to the buffer
+    // append the string to the buffer
     if (!clib__string_append(sb->buffer, sb->capacity, str))
     {
         exit(1);
@@ -230,16 +257,19 @@ void free_string_buffer(StringBuffer *sb)
  */
 void init_string_buffer(StringBuffer *sb)
 {
+    // set capacity and length
     sb->capacity = INITIAL_CAPACITY;
     sb->length = 0;
+
+    // allocate the buffer
     sb->buffer = (char *)malloc(sb->capacity);
     if (sb->buffer == NULL_POINTER)
     {
-        // Handle memory allocation failure
+        // handle memory allocation failure
         DBG_IP_TOOLS printf("%s", "void init_string_buffer(StringBuffer* sb) Memory allocation failed \n");
         exit(1);
     }
-    sb->buffer[0] = '\0'; // Empty string to start with
+    sb->buffer[0] = '\0'; // empty string to start with
 }
 
 /**
@@ -261,6 +291,7 @@ void ip_tools_load_iso_country_code(char *ip_address_to_resolve, char *out_memor
         uint64 code_count = sizeof(debug_iso_codes) / sizeof(debug_iso_codes[0]);
         uint64 index = 0;
 
+        // read and increase counter
         pthread_mutex_lock(&debug_iso_mutex);
         index = debug_iso_counter % code_count;
         debug_iso_counter = debug_iso_counter + 1;
@@ -280,8 +311,8 @@ void ip_tools_load_iso_country_code(char *ip_address_to_resolve, char *out_memor
     char mmdb_file[] = "dbip-country-lite-2025-06.mmdb";
     MMDB_s mmdb = { 0 };
     int64 status = 0;
-    int gai_error = 0; // MMDB_lookup_string writes an int.
-    int mmdb_error = 0; // MMDB_lookup_string writes an int.
+    int gai_error = 0; // MMDB_lookup_string writes an int
+    int mmdb_error = 0; // MMDB_lookup_string writes an int
     MMDB_lookup_result_s gresult = { 0 };
     MMDB_entry_data_list_s *gdata = NULL_POINTER;
     int64 gstatus = 0;
@@ -289,6 +320,7 @@ void ip_tools_load_iso_country_code(char *ip_address_to_resolve, char *out_memor
     StringBuffer sb = { 0 };
     char *json_mmdb_entry_data_list = NULL_POINTER;
 
+    // check arguments
     if (ip_address_to_resolve == NULL_POINTER || out_memory_to_write_country_code_to == NULL_POINTER)
     {
         DBG_IP_TOOLS log_info("%s", "ip_tools_load_iso_country_code char* ip_address_to_resolve is null pointer \n");
@@ -296,8 +328,10 @@ void ip_tools_load_iso_country_code(char *ip_address_to_resolve, char *out_memor
         goto label_ip_tools_load_iso_country_code_end;
     }
 
+    // log the address
     DBG_IP_TOOLS log_info("%s %s %s", "ip_tools_load_iso_country_code ip_address_to_resolve -> ", ip_address_to_resolve, "\n");
 
+    // open the database
     status = MMDB_open(mmdb_file, MMDB_MODE_MMAP, &mmdb);
 
     if (MMDB_SUCCESS != status)
@@ -306,13 +340,14 @@ void ip_tools_load_iso_country_code(char *ip_address_to_resolve, char *out_memor
         goto label_ip_tools_load_iso_country_code_end;
     }
 
+    // mark the database open
     is_database_open = TRUE;
 
-    // Perform the lookup in the MMDB
+    // perform the lookup in the MMDB
 
     gresult = MMDB_lookup_string(&mmdb, &ip_address_to_resolve[0], &gai_error, &mmdb_error);
 
-    // Check for errors in the lookup process
+    // check for errors in the lookup process
     if (gai_error != 0)
     {
         DBG_IP_TOOLS log_info("%s", "gai_error != 0 \n");
@@ -324,40 +359,41 @@ void ip_tools_load_iso_country_code(char *ip_address_to_resolve, char *out_memor
         goto label_ip_tools_load_iso_country_code_end;
     }
 
-    // Declare a pointer for the data list
+    // declare a pointer for the data list
 
-    // If no entry is found, return
+    // if no entry is found, return
     if (gresult.found_entry == FALSE)
     {
         DBG_IP_TOOLS log_info("%s", "!gresult.found_entry \n");
         goto label_ip_tools_load_iso_country_code_end;
     }
 
-    // Get the entry data list from the MMDB entry
+    // get the entry data list from the MMDB entry
     gstatus = MMDB_get_entry_data_list(&gresult.entry, &gdata);
     if (gstatus != MMDB_SUCCESS)
     {
         DBG_IP_TOOLS log_info("%s", "gstatus != MMDB_SUCCESS \n");
 
-        // The common exit releases any partial entry list.
+        // the common exit releases any partial entry list
         goto label_ip_tools_load_iso_country_code_end;
     }
 
+    // create the string buffer
     sb.capacity = INITIAL_CAPACITY;
     sb.length = 0;
     sb.buffer = 0;
 
     init_string_buffer(&sb);
 
-    // Dump the entry data list to stdout (for debugging)
+    // dump the entry data list to stdout (for debugging)
     json_mmdb_entry_data_list = MMDB_dump_entry_data_list(&sb, gdata, 0);
     DBG_IP_TOOLS log_info("%s %s %s", "json is", json_mmdb_entry_data_list, "\n");
 
-    // Clean up the entry data list
+    // clean up the entry data list
     MMDB_free_entry_data_list(gdata);
     gdata = NULL_POINTER;
 
-    // Define the function that processes the entry data
+    // define the function that processes the entry data
 
     if (json_mmdb_entry_data_list == NULL_POINTER)
     {
@@ -365,6 +401,7 @@ void ip_tools_load_iso_country_code(char *ip_address_to_resolve, char *out_memor
         goto label_ip_tools_load_iso_country_code_end;
     }
 
+    // parse the JSON
     json_root_object1 = cJSON_Parse(json_mmdb_entry_data_list);
 
     if (json_root_object1 == 0)
@@ -373,6 +410,7 @@ void ip_tools_load_iso_country_code(char *ip_address_to_resolve, char *out_memor
         goto label_ip_tools_load_iso_country_code_end;
     }
 
+    // find the country object
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root_object1, "country");
     if (json_message_object == 0)
     {
@@ -380,12 +418,14 @@ void ip_tools_load_iso_country_code(char *ip_address_to_resolve, char *out_memor
         goto label_ip_tools_load_iso_country_code_end;
     }
 
+    // check the object type
     if (cJSON_IsObject(json_message_object) == FALSE)
     {
         DBG_IP_TOOLS log_info("%s", "cJSON_IsObject(json_message_object) \n");
         goto label_ip_tools_load_iso_country_code_end;
     }
 
+    // find the ISO code
     json_country_iso_code = cJSON_GetObjectItemCaseSensitive(json_message_object, "iso_code");
     if (cJSON_IsString(json_country_iso_code) == FALSE)
     {
@@ -393,26 +433,32 @@ void ip_tools_load_iso_country_code(char *ip_address_to_resolve, char *out_memor
         goto label_ip_tools_load_iso_country_code_end;
     }
 
+    // check the code text
     if (json_country_iso_code->valuestring == NULL_POINTER)
     {
         DBG_IP_TOOLS log_info("%s", "json_country_iso_code->valuestring == NULL \n");
         goto label_ip_tools_load_iso_country_code_end;
     }
 
+    // log the code
     DBG_IP_TOOLS log_info("%s %s %s", "json_country_iso_code->valuestring ", json_country_iso_code->valuestring, "\n");
 
+    // copy the country code
     if (clib__strlen(json_country_iso_code->valuestring) == 2)
     {
         clib__string_copy(out_memory_to_write_country_code_to, 3, json_country_iso_code->valuestring);
     }
 
 label_ip_tools_load_iso_country_code_end:
+    // free the memory
     cJSON_Delete(json_root_object1);
     free_string_buffer(&sb);
     if (gdata != NULL_POINTER)
     {
         MMDB_free_entry_data_list(gdata);
     }
+
+    // close the database
     if (is_database_open == TRUE)
     {
         MMDB_close(&mmdb);

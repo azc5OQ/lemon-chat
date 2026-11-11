@@ -47,10 +47,14 @@ void desktop_hotkey__destroy(desktop_hotkey_t *hotkey)
 boole desktop_hotkey__down(desktop_hotkey_t *hotkey, int64 key)
 {
     int code = 0;
+
+    // check arguments
     if (!hotkey || desktop_hotkey__index(key) < 0)
     {
         return FALSE;
     }
+
+    // read the key state
     code = (int)(key >= 1 && key <= 12 ? VK_F1 + key - 1 : key);
     return (GetAsyncKeyState(code) & 0x8000) != 0;
 }

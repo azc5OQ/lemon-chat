@@ -37,8 +37,10 @@ boole identity_store__is_public_key_present_in_client_stored_data(char *public_k
     boole result = FALSE;
     uint64 i = 0;
 
+    // lock the identity store
     pthread_mutex_lock(&g_client_stored_data_mutex);
 
+    // find the public key
     for (i = 0; i < MAX_CLIENT_STORED_DATA; i++)
     {
         if (clib__is_string_equal(g_client_stored_data[i].public_key, public_key) == TRUE)
@@ -49,6 +51,7 @@ boole identity_store__is_public_key_present_in_client_stored_data(char *public_k
         }
     }
 
+    // unlock the identity store
     pthread_mutex_unlock(&g_client_stored_data_mutex);
 
     return result;
@@ -69,17 +72,17 @@ boole identity_store__read_identity_username(const char *public_key, char *out_u
     uint64 i = 0;
     boole is_found = FALSE;
 
-    // Check arguments.
+    // check arguments
     if (public_key == NULL_POINTER || public_key[0] == 0 || out_username == NULL_POINTER || out_username_size == 0)
     {
         return FALSE;
     }
 
-    // Hash the key.
+    // hash the key
     out_username[0] = 0;
     util__hash_password_to_base64(public_key, identity_hash, sizeof(identity_hash));
 
-    // Find the identity.
+    // find the identity
     pthread_mutex_lock(&g_client_stored_data_mutex);
     for (i = 0; i < MAX_CLIENT_STORED_DATA; i++)
     {
@@ -119,57 +122,69 @@ void identity_store__restore_identity_groups(client_t *client)
     boole match_found = FALSE;
     uint64 restored_count = 0;
 
+    // check the client
     if (client == NULL_POINTER)
     {
         DBG_IDENTITIES log_info("%s", "restore_identity_groups: client is NULL, nothing to restore \n");
         return;
     }
 
+    // hash the public key
     util__hash_password_to_base64(client->public_key, identity_hash, sizeof(identity_hash));
 
     DBG_IDENTITIES log_info("%s %llu %s %s %s", "restore_identity_groups: client_id", client->client_id, "connecting with identity hash [", identity_hash, "] \n");
 
+    // lock the identity store
     pthread_mutex_lock(&g_client_stored_data_mutex);
 
+    // find the identity
     for (i = 0; i < MAX_CLIENT_STORED_DATA; i++)
     {
+        // skip empty slots
         if (g_client_stored_data[i].public_key[0] == 0)
         {
             continue;
         }
 
+        // skip other identities
         if (clib__is_string_equal(g_client_stored_data[i].public_key, identity_hash) == FALSE)
         {
             DBG_IDENTITIES log_info("%s %llu %s %s %s", "restore_identity_groups: store slot", i, "holds a different identity [", g_client_stored_data[i].public_key, "] \n");
             continue;
         }
 
+        // reserve space for groups
         if (g_client_stored_data[i].group_id_count > MAX_GROUPS_FOR_SINGLE_CLIENT || !clib__int_vector_reserve(&client->group_ids, cvector_size(client->group_ids) + MAX_GROUPS_FOR_SINGLE_CLIENT))
         {
-            // Never restore only a subset: omitting a restrictive group can grant rights.
+            // never restore only a subset: omitting a restrictive group can grant rights
             pthread_mutex_unlock(&g_client_stored_data_mutex);
             client->is_authenticated = FALSE;
             ws_abort_client(client->p_ws_connection);
             return;
         }
+
+        // set the found flag
         match_found = TRUE;
         DBG_IDENTITIES log_info("%s %llu %s %llu %s", "restore_identity_groups: MATCH in store slot", i, "with", (uint64)g_client_stored_data[i].group_id_count, "stored group ids \n");
 
+        // restore the groups
         for (t = 0; t < g_client_stored_data[i].group_id_count; t++)
         {
             group_id = g_client_stored_data[i].group_ids[t];
 
-            // Guest is assigned from the current memberships after restoration.
+            // Guest is assigned from the current memberships after restoration
             if (group_id == g_guest_group_id || group_id >= MAX_GROUPS || g_groups_array[group_id].is_existing == FALSE)
             {
                 DBG_IDENTITIES log_info("%s %llu %s", "restore_identity_groups: skipping stored group id", group_id, "- it no longer exists on the server \n");
                 continue;
             }
 
+            // add the group
             cvector_push_back(client->group_ids, (int)group_id);
             restored_count++;
             DBG_IDENTITIES log_info("%s %llu %s", "restore_identity_groups: restored group id", group_id, "\n");
 
+            // set the admin flag
             if (group_id == ADMIN_GROUP_ID && g_server_settings.is_permission_system_enabled == TRUE)
             {
                 client->is_admin = TRUE;
@@ -180,8 +195,10 @@ void identity_store__restore_identity_groups(client_t *client)
         break;
     }
 
+    // unlock the identity store
     pthread_mutex_unlock(&g_client_stored_data_mutex);
 
+    // log the result
     if (match_found == FALSE)
     {
         DBG_IDENTITIES log_info("%s %s %s", "restore_identity_groups: NO stored identity matched hash [", identity_hash, "] - client starts with no restored groups (wrong passphrase, or the identity was never saved) \n");
@@ -210,29 +227,36 @@ void identity_store__restore_identity_avatar(client_t *client)
     uint64 i = 0;
     uint64 avatar_len = 0;
 
+    // check the client
     if (client == NULL_POINTER || client->public_key[0] == 0)
     {
         return;
     }
 
+    // hash the public key
     util__hash_password_to_base64(client->public_key, identity_hash, sizeof(identity_hash));
 
+    // lock the identity store
     pthread_mutex_lock(&g_client_stored_data_mutex);
 
+    // find the identity
     for (i = 0; i < MAX_CLIENT_STORED_DATA; i++)
     {
         if (clib__is_string_equal(g_client_stored_data[i].public_key, identity_hash) == TRUE)
         {
             if (g_client_stored_data[i].base64_avatar[0] != 0)
             {
+                // read the avatar length
                 avatar_len = clib__utf8_string_length(&g_client_stored_data[i].base64_avatar[0]);
 
+                // free the old avatar
                 if (client->base64_avatar != NULL_POINTER)
                 {
                     memorymanager__free((nuint)client->base64_avatar);
                     client->base64_avatar = NULL_POINTER;
                 }
 
+                // copy the saved avatar
                 client->base64_avatar = (char *)memorymanager__allocate(avatar_len + 1, MEMALLOC_AVATAR);
                 if (client->base64_avatar != NULL_POINTER)
                 {
@@ -244,6 +268,7 @@ void identity_store__restore_identity_avatar(client_t *client)
         }
     }
 
+    // unlock the identity store
     pthread_mutex_unlock(&g_client_stored_data_mutex);
 }
 
@@ -255,6 +280,7 @@ void identity_store__snapshot_connected_clients_into_identity_store(void)
 {
     uint64 i = 0;
 
+    // save every client
     for (i = 0; i < (uint64)g_server_settings.max_client_count; i++)
     {
         identity_store__sync_client_identity_in_store(&g_clients_array[i]);
@@ -282,28 +308,34 @@ void identity_store__sync_client_identity_in_store(client_t *client)
     uint64 j = 0;
     int64 slot = 0;
 
+    // check the setting
     if (g_server_settings.is_identity_storage_enabled == FALSE)
     {
         return;
     }
 
+    // check the client
     if (client == NULL_POINTER)
     {
         return;
     }
 
+    // check the client state
     if (client->is_existing == FALSE || client->is_authenticated == FALSE || client->is_music_bot == TRUE)
     {
         return;
     }
 
+    // check the public key
     if (client->public_key[0] == 0)
     {
         return; // no key yet -> nothing to key the identity on
     }
 
+    // hash the public key
     util__hash_password_to_base64(client->public_key, identity_hash, sizeof(identity_hash));
 
+    // count the groups
     for (t = 0; t < cvector_size(client->group_ids); t++)
     {
         if ((uint64)client->group_ids[t] != g_guest_group_id)
@@ -312,6 +344,7 @@ void identity_store__sync_client_identity_in_store(client_t *client)
         }
     }
 
+    // lock the identity store
     pthread_mutex_lock(&g_client_stored_data_mutex);
 
     // find this identity's existing slot (if any)
@@ -325,6 +358,7 @@ void identity_store__sync_client_identity_in_store(client_t *client)
         }
     }
 
+    // remove entry without data
     if (group_count == 0 && (slot == -1 || (g_client_stored_data[slot].base64_avatar[0] == 0 && g_client_stored_data[slot].raw_public_key[0] == 0)))
     {
         if (slot != -1)
@@ -348,6 +382,7 @@ void identity_store__sync_client_identity_in_store(client_t *client)
         }
     }
 
+    // the store is full
     if (slot == -1)
     {
         DBG_IDENTITIES log_info("%s %llu %s", "sync_identity: identity store FULL, cannot store client_id", client->client_id, "\n");
@@ -362,9 +397,10 @@ void identity_store__sync_client_identity_in_store(client_t *client)
     clib__null_memory(&g_client_stored_data[slot].group_ids[0], sizeof(g_client_stored_data[slot].group_ids));
     clib__string_copy(g_client_stored_data[slot].public_key, sizeof(g_client_stored_data[slot].public_key), identity_hash);
 
-    // Save the username without the letter that is added while another client uses the name.
+    // save the username without the letter that is added while another client uses the name
     clib__string_copy(g_client_stored_data[slot].username, sizeof(g_client_stored_data[slot].username), client->preferred_username[0] != 0 ? client->preferred_username : client->username);
 
+    // copy the groups
     g_client_stored_data[slot].group_id_count = 0;
     for (t = 0; t < cvector_size(client->group_ids) && g_client_stored_data[slot].group_id_count < MAX_GROUPS_FOR_SINGLE_CLIENT; t++)
     {
@@ -378,6 +414,7 @@ void identity_store__sync_client_identity_in_store(client_t *client)
 
     DBG_IDENTITIES log_info("%s %llu %s %lld %s %llu %s %s %s", "sync_identity: client_id", client->client_id, "mirrored into slot", slot, "with", (uint64)g_client_stored_data[slot].group_id_count, "group(s), hash [", identity_hash, "] \n");
 
+    // unlock the identity store
     pthread_mutex_unlock(&g_client_stored_data_mutex);
 }
 
@@ -398,13 +435,16 @@ boole identity_store__delete_identity_from_store_by_hash(char *identity_hash)
     uint64 i = 0;
     boole found = FALSE;
 
+    // check the identity hash
     if (identity_hash == NULL_POINTER || identity_hash[0] == 0)
     {
         return FALSE;
     }
 
+    // lock the identity store
     pthread_mutex_lock(&g_client_stored_data_mutex);
 
+    // clear the matching slot
     for (i = 0; i < MAX_CLIENT_STORED_DATA; i++)
     {
         if (clib__is_string_equal(g_client_stored_data[i].public_key, identity_hash) == TRUE)
@@ -416,6 +456,7 @@ boole identity_store__delete_identity_from_store_by_hash(char *identity_hash)
         }
     }
 
+    // unlock the identity store
     pthread_mutex_unlock(&g_client_stored_data_mutex);
 
     return found;
@@ -440,15 +481,19 @@ void identity_store__set_identity_avatar_by_hash(char *identity_hash, char *base
     int64 slot = -1;
     boole clearing = FALSE;
 
+    // check the identity hash
     if (identity_hash == NULL_POINTER || identity_hash[0] == 0)
     {
         return;
     }
 
+    // choose store or clear
     clearing = (boole)(base64_avatar == NULL_POINTER || base64_avatar[0] == 0);
 
+    // lock the identity store
     pthread_mutex_lock(&g_client_stored_data_mutex);
 
+    // find the identity
     for (i = 0; i < MAX_CLIENT_STORED_DATA; i++)
     {
         if (clib__is_string_equal(g_client_stored_data[i].public_key, identity_hash) == TRUE)
@@ -458,14 +503,17 @@ void identity_store__set_identity_avatar_by_hash(char *identity_hash, char *base
         }
     }
 
+    // create missing entry
     if (slot == -1)
     {
+        // nothing to clear
         if (clearing == TRUE)
         {
             pthread_mutex_unlock(&g_client_stored_data_mutex);
             return; // nothing stored to clear
         }
 
+        // find a free slot
         for (i = 0; i < MAX_CLIENT_STORED_DATA; i++)
         {
             if (g_client_stored_data[i].public_key[0] == 0)
@@ -475,6 +523,7 @@ void identity_store__set_identity_avatar_by_hash(char *identity_hash, char *base
             }
         }
 
+        // the store is full
         if (slot == -1)
         {
             DBG_IDENTITIES log_info("%s", "set_identity_avatar: identity store FULL, cannot store avatar \n");
@@ -482,12 +531,15 @@ void identity_store__set_identity_avatar_by_hash(char *identity_hash, char *base
             return;
         }
 
+        // store the identity hash
         clib__null_memory(&g_client_stored_data[slot], sizeof(client_stored_data_t));
         clib__string_copy(g_client_stored_data[slot].public_key, sizeof(g_client_stored_data[slot].public_key), identity_hash);
     }
 
+    // clear the old avatar
     clib__null_memory(&g_client_stored_data[slot].base64_avatar[0], MAX_CLIENT_AVATAR_LENGTH);
 
+    // store a given avatar
     if (clearing == FALSE)
     {
         clib__string_copy(g_client_stored_data[slot].base64_avatar, sizeof(g_client_stored_data[slot].base64_avatar), base64_avatar);
@@ -498,6 +550,7 @@ void identity_store__set_identity_avatar_by_hash(char *identity_hash, char *base
         clib__null_memory(&g_client_stored_data[slot], sizeof(client_stored_data_t));
     }
 
+    // unlock the identity store
     pthread_mutex_unlock(&g_client_stored_data_mutex);
 }
 
@@ -513,18 +566,22 @@ void identity_store__touch_identity_last_seen_by_hash(char *identity_hash)
 {
     uint64 i = 0;
 
+    // check the settings
     if (g_server_settings.is_identity_storage_enabled == FALSE || g_server_settings.is_last_seen_enabled == FALSE)
     {
         return;
     }
 
+    // check the identity hash
     if (identity_hash == NULL_POINTER || identity_hash[0] == 0)
     {
         return;
     }
 
+    // lock the identity store
     pthread_mutex_lock(&g_client_stored_data_mutex);
 
+    // update last seen time
     for (i = 0; i < MAX_CLIENT_STORED_DATA; i++)
     {
         if (clib__is_string_equal(g_client_stored_data[i].public_key, identity_hash) == TRUE)
@@ -534,6 +591,7 @@ void identity_store__touch_identity_last_seen_by_hash(char *identity_hash)
         }
     }
 
+    // unlock the identity store
     pthread_mutex_unlock(&g_client_stored_data_mutex);
 }
 
@@ -552,23 +610,28 @@ void identity_store__store_identity_raw_public_key(char *identity_hash, char *ra
     uint64 i = 0;
     int64 slot = -1;
 
+    // check the settings
     if (g_server_settings.is_identity_storage_enabled == FALSE || g_server_settings.is_offline_messaging_allowed == FALSE)
     {
         return;
     }
 
+    // check arguments
     if (!(identity_hash != NULL_POINTER && identity_hash[0] != 0) || !(raw_public_key != NULL_POINTER && raw_public_key[0] != 0))
     {
         return;
     }
 
+    // refuse long key
     if (clib__utf8_string_length(raw_public_key) >= MAX_PUBLIC_KEY_LENGTH)
     {
         return;
     }
 
+    // lock the identity store
     pthread_mutex_lock(&g_client_stored_data_mutex);
 
+    // find the identity
     for (i = 0; i < MAX_CLIENT_STORED_DATA; i++)
     {
         if (clib__is_string_equal(g_client_stored_data[i].public_key, identity_hash) == TRUE)
@@ -578,8 +641,10 @@ void identity_store__store_identity_raw_public_key(char *identity_hash, char *ra
         }
     }
 
+    // create missing entry
     if (slot == -1)
     {
+        // find a free slot
         for (i = 0; i < MAX_CLIENT_STORED_DATA; i++)
         {
             if (g_client_stored_data[i].public_key[0] == 0)
@@ -589,6 +654,7 @@ void identity_store__store_identity_raw_public_key(char *identity_hash, char *ra
             }
         }
 
+        // the store is full
         if (slot == -1)
         {
             DBG_IDENTITIES log_info("%s", "store_identity_raw_public_key: identity store FULL \n");
@@ -596,13 +662,16 @@ void identity_store__store_identity_raw_public_key(char *identity_hash, char *ra
             return;
         }
 
+        // store the identity hash
         clib__null_memory(&g_client_stored_data[slot], sizeof(client_stored_data_t));
         clib__string_copy(g_client_stored_data[slot].public_key, sizeof(g_client_stored_data[slot].public_key), identity_hash);
     }
 
+    // store the public key
     clib__null_memory(&g_client_stored_data[slot].raw_public_key[0], MAX_PUBLIC_KEY_LENGTH);
     clib__string_copy(g_client_stored_data[slot].raw_public_key, sizeof(g_client_stored_data[slot].raw_public_key), raw_public_key);
 
+    // unlock the identity store
     pthread_mutex_unlock(&g_client_stored_data_mutex);
 }
 
@@ -614,13 +683,16 @@ void identity_store__clear_identity_raw_public_key(char *identity_hash)
 {
     uint64 i = 0;
 
+    // check the identity hash
     if (identity_hash == NULL_POINTER || identity_hash[0] == 0)
     {
         return;
     }
 
+    // lock the identity store
     pthread_mutex_lock(&g_client_stored_data_mutex);
 
+    // clear the saved key
     for (i = 0; i < MAX_CLIENT_STORED_DATA; i++)
     {
         if (clib__is_string_equal(g_client_stored_data[i].public_key, identity_hash) == TRUE)
@@ -630,6 +702,7 @@ void identity_store__clear_identity_raw_public_key(char *identity_hash)
         }
     }
 
+    // unlock the identity store
     pthread_mutex_unlock(&g_client_stored_data_mutex);
 }
 
@@ -657,11 +730,13 @@ boole identity_store__queue_offline_message(char *recipient_identity_hash, char 
     uint64 oldest_sequence_number = 0;
     char *message_copy = NULL_POINTER;
 
+    // check arguments
     if (g_offline_messages == NULL_POINTER || recipient_identity_hash == NULL_POINTER || base64_encrypted_message == NULL_POINTER)
     {
         return FALSE;
     }
 
+    // check message length
     message_length = clib__utf8_string_length(base64_encrypted_message);
     if (message_length == 0 || message_length >= MAX_OFFLINE_MESSAGE_LENGTH)
     {
@@ -669,6 +744,7 @@ boole identity_store__queue_offline_message(char *recipient_identity_hash, char 
         return FALSE;
     }
 
+    // lock the offline messages
     pthread_mutex_lock(&g_offline_messages_mutex);
 
     // one pass: count what this recipient already has waiting, find a free slot, and remember the
@@ -708,6 +784,7 @@ boole identity_store__queue_offline_message(char *recipient_identity_hash, char 
         free_slot = oldest_slot;
     }
 
+    // refuse when full
     if (free_slot == -1)
     {
         DBG_IDENTITIES log_info("%s", "queue_offline_message: queue FULL, message refused \n");
@@ -715,6 +792,7 @@ boole identity_store__queue_offline_message(char *recipient_identity_hash, char 
         return FALSE;
     }
 
+    // allocate the message copy
     message_copy = (char *)memorymanager__allocate(message_length + 1, MEMALLOC_OFFLINE_MESSAGE);
     if (message_copy == NULL_POINTER)
     {
@@ -722,9 +800,11 @@ boole identity_store__queue_offline_message(char *recipient_identity_hash, char 
         return FALSE;
     }
 
+    // copy the message
     clib__null_memory(&g_offline_messages[free_slot], sizeof(offline_chat_message_t));
     clib__copy_memory(base64_encrypted_message, message_copy, message_length, message_length);
 
+    // set the slot fields
     g_offline_messages[free_slot].is_used = TRUE;
     g_offline_messages[free_slot].base64_encrypted_message = message_copy;
     g_offline_messages[free_slot].message_length = message_length;
@@ -732,6 +812,7 @@ boole identity_store__queue_offline_message(char *recipient_identity_hash, char 
     g_offline_message_sequence_counter++;
     g_offline_messages[free_slot].sequence_number = g_offline_message_sequence_counter;
 
+    // copy recipient and sender
     clib__string_copy(g_offline_messages[free_slot].recipient_identity_hash, sizeof(g_offline_messages[free_slot].recipient_identity_hash), recipient_identity_hash);
 
     if (sender_identity_hash != NULL_POINTER)
@@ -746,6 +827,7 @@ boole identity_store__queue_offline_message(char *recipient_identity_hash, char 
 
     DBG_IDENTITIES log_info("%s %llu %s", "queue_offline_message: queued as sequence", g_offline_messages[free_slot].sequence_number, "\n");
 
+    // unlock the offline messages
     pthread_mutex_unlock(&g_offline_messages_mutex);
 
     return TRUE;
@@ -765,13 +847,16 @@ void identity_store__free_offline_messages_for_identity(char *identity_hash)
 {
     uint64 i = 0;
 
+    // check arguments
     if (g_offline_messages == NULL_POINTER || identity_hash == NULL_POINTER || identity_hash[0] == 0)
     {
         return;
     }
 
+    // lock the offline messages
     pthread_mutex_lock(&g_offline_messages_mutex);
 
+    // free matching messages
     for (i = 0; i < MAX_OFFLINE_MESSAGES; i++)
     {
         if (g_offline_messages[i].is_used == TRUE && clib__is_string_equal(&g_offline_messages[i].recipient_identity_hash[0], identity_hash) == TRUE)
@@ -784,6 +869,7 @@ void identity_store__free_offline_messages_for_identity(char *identity_hash)
         }
     }
 
+    // unlock the offline messages
     pthread_mutex_unlock(&g_offline_messages_mutex);
 }
 
@@ -804,15 +890,19 @@ boole identity_store__get_identity_avatar_by_hash(char *identity_hash, char *out
     uint64 i = 0;
     boole found = FALSE;
 
+    // check arguments
     if (!(identity_hash != NULL_POINTER && identity_hash[0] != 0) || !(out_buffer != NULL_POINTER && out_buffer_size != 0))
     {
         return FALSE;
     }
 
+    // clear the output buffer
     out_buffer[0] = 0;
 
+    // lock the identity store
     pthread_mutex_lock(&g_client_stored_data_mutex);
 
+    // copy the saved avatar
     for (i = 0; i < MAX_CLIENT_STORED_DATA; i++)
     {
         if (clib__is_string_equal(g_client_stored_data[i].public_key, identity_hash) == TRUE)
@@ -825,6 +915,7 @@ boole identity_store__get_identity_avatar_by_hash(char *identity_hash, char *out
         }
     }
 
+    // unlock the identity store
     pthread_mutex_unlock(&g_client_stored_data_mutex);
 
     return found;
@@ -852,22 +943,28 @@ boole identity_store__modify_identity_group_in_store(char *identity_hash, uint64
     boole has_group = FALSE;
     uint64 group_index = 0;
 
+    // check arguments
     if (identity_hash == NULL_POINTER || identity_hash[0] == 0 || group_id == g_guest_group_id)
     {
         return FALSE;
     }
 
+    // lock the identity store
     pthread_mutex_lock(&g_client_stored_data_mutex);
 
+    // find the identity
     for (i = 0; i < MAX_CLIENT_STORED_DATA; i++)
     {
+        // skip other identities
         if (clib__is_string_equal(g_client_stored_data[i].public_key, identity_hash) == FALSE)
         {
             continue;
         }
 
+        // set the found flag
         found_identity = TRUE;
 
+        // find the group
         for (t = 0; t < g_client_stored_data[i].group_id_count; t++)
         {
             if (g_client_stored_data[i].group_ids[t] == group_id)
@@ -878,6 +975,7 @@ boole identity_store__modify_identity_group_in_store(char *identity_hash, uint64
             }
         }
 
+        // add or remove group
         if (add == TRUE)
         {
             if (has_group == FALSE && g_client_stored_data[i].group_id_count < MAX_GROUPS_FOR_SINGLE_CLIENT)
@@ -890,6 +988,7 @@ boole identity_store__modify_identity_group_in_store(char *identity_hash, uint64
         {
             if (has_group == TRUE)
             {
+                // remove the group id
                 for (t = group_index; (t + 1) < g_client_stored_data[i].group_id_count; t++)
                 {
                     g_client_stored_data[i].group_ids[t] = g_client_stored_data[i].group_ids[t + 1];
@@ -909,6 +1008,7 @@ boole identity_store__modify_identity_group_in_store(char *identity_hash, uint64
         break;
     }
 
+    // unlock the identity store
     pthread_mutex_unlock(&g_client_stored_data_mutex);
 
     return found_identity;
@@ -925,6 +1025,7 @@ void identity_store__remove_group_from_all_identities(uint64 group_id)
     uint64 destination = 0;
     client_stored_data_t *identity = NULL_POINTER;
 
+    // remove from every identity
     pthread_mutex_lock(&g_client_stored_data_mutex);
     for (i = 0; i < MAX_CLIENT_STORED_DATA; i++)
     {
@@ -951,11 +1052,16 @@ void identity_store__update_offline_public_key(client_t *client)
 {
     char identity_hash[IDENTITY_HASH_MAX_LENGTH] = { 0 };
 
+    // check the client
     if (client == NULL_POINTER || client->is_existing == FALSE || client->is_authenticated == FALSE || client->is_music_bot == TRUE || client->public_key[0] == 0)
     {
         return;
     }
+
+    // hash the public key
     util__hash_password_to_base64(client->public_key, identity_hash, sizeof(identity_hash));
+
+    // store or clear key
     if (g_server_settings.is_offline_messaging_allowed == TRUE && permissions__is_allowed_in_groups(client, PERMISSION_RECEIVE_OFFLINE_MESSAGES) == TRUE)
     {
         identity_store__store_identity_raw_public_key(identity_hash, client->public_key);

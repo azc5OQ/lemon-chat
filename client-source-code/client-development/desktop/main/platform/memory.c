@@ -10,6 +10,8 @@ void desktop_memory__erase(void *buffer, uint64 capacity)
 {
     volatile ubyte *bytes = buffer;
     uint64 index = 0;
+
+    // set bytes to zero
     if (bytes)
     {
         for (index = 0; index < capacity; index++)

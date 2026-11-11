@@ -15,6 +15,8 @@ boole server_msg__connection__process_challenge(desktop_session_t *session, cons
 {
     char challenge[1025] = { 0 };
     boole complete = crypto_session__challenge(session->crypto, server_msg__read_string(message, "value"), challenge, sizeof(challenge)) && crypto_session__finish_negotiation(session->crypto, message);
+
+    // send response or report
     if (complete)
     {
         complete = client_msg__connection__send_challenge_response(session, challenge);
@@ -23,6 +25,8 @@ boole server_msg__connection__process_challenge(desktop_session_t *session, cons
     {
         desktop_session__detail(session, "The identity challenge or server key exchange is invalid.", 1);
     }
+
+    // erase the challenge
     mbedtls_platform_zeroize(challenge, sizeof(challenge));
     return complete;
 }
@@ -40,17 +44,22 @@ boole server_msg__connection__read_client(desktop_session_t *session, const cJSO
     int64 slot = -1;
     int64 audio = server_msg__read_number(data, "audio_state");
 
+    // read the client fields
     client.id = server_msg__read_number(data, "client_id");
     client.channel = server_msg__read_number(data, "channel_id");
     client.audio = audio >= 1 && audio <= 4 ? (int)audio : 3;
     client.idle = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(data, "is_idle"));
     client.music = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(data, "is_music_bot"));
     server_msg__tree__read_client(&client, data);
+
+    // check the client record
     slot = desktop_session__client(session, client.id);
     if (client.id < 0 || !clib__string_copy(client.name, sizeof(client.name), server_msg__read_string(data, "username")) || clib__strlen(public_key) >= sizeof(session->client_keys[0]) || (slot < 0 && session->model.client_count == DESKTOP_SESSION_CLIENTS))
     {
         return 0;
     }
+
+    // choose the client serial
     if (slot < 0)
     {
         slot = (int)session->model.client_count++;
@@ -58,6 +67,7 @@ boole server_msg__connection__read_client(desktop_session_t *session, const cJSO
     }
     else if (clib__strcmp(session->client_keys[slot], public_key) == 0)
     {
+        // keep the local settings
         client.serial = session->model.clients[slot].serial;
         client.muted = session->model.clients[slot].muted;
         client.ignored = session->model.clients[slot].ignored;
@@ -68,8 +78,12 @@ boole server_msg__connection__read_client(desktop_session_t *session, const cJSO
     {
         client.serial = ++session->next_client_serial;
     }
+
+    // store the client record
     session->model.clients[slot] = client;
     clib__string_copy(session->client_keys[slot], sizeof(session->client_keys[slot]), public_key);
+
+    // update the local client
     if (public_key[0] && clib__strcmp(public_key, session->public_key) == 0)
     {
         session->model.local_id = client.id;

@@ -9,10 +9,14 @@
 boole desktop_chat__valid_id(const char *id)
 {
     int64 index = 0;
+
+    // check the length
     if (clib__string_length(id, 33) != 32)
     {
         return FALSE;
     }
+
+    // check the hex characters
     for (index = 0; index < 32; index++)
     {
         if (!((id[index] >= '0' && id[index] <= '9') || (id[index] >= 'a' && id[index] <= 'f')))
@@ -37,38 +41,51 @@ boole desktop_chat__valid_text(const char *text)
     uint64 minimum = 0;
     ubyte byte = 0;
     boole visible = FALSE;
+
+    // check the length
     if (length <= 0)
     {
         return FALSE;
     }
+
+    // check every character
     while (index < length)
     {
+        // read the first byte
         byte = (ubyte)text[index++];
         codepoint = byte;
         remaining = 0;
         minimum = 0;
+
+        // find the sequence length
         if (byte >= 0xc2 && byte <= 0xdf)
         {
+            // sequence of two bytes
             codepoint = byte & 0x1f;
             remaining = 1;
             minimum = 0x80;
         }
         else if (byte >= 0xe0 && byte <= 0xef)
         {
+            // sequence of three bytes
             codepoint = byte & 0x0f;
             remaining = 2;
             minimum = 0x800;
         }
         else if (byte >= 0xf0 && byte <= 0xf4)
         {
+            // sequence of four bytes
             codepoint = byte & 7;
             remaining = 3;
             minimum = 0x10000;
         }
         else if (byte >= 0x80)
         {
+            // refuse other first bytes
             return FALSE;
         }
+
+        // read the continuation bytes
         while (remaining-- > 0)
         {
             if (index == length || ((ubyte)text[index] & 0xc0) != 0x80)
@@ -77,10 +94,14 @@ boole desktop_chat__valid_text(const char *text)
             }
             codepoint = (codepoint << 6) | ((ubyte)text[index++] & 0x3f);
         }
+
+        // check the code point
         if (codepoint < minimum || codepoint > 0x10ffff || (codepoint >= 0xd800 && codepoint <= 0xdfff))
         {
             return FALSE;
         }
+
+        // mark visible characters
         if (!(codepoint <= 0x20 || codepoint == 0xa0 || codepoint == 0x1680 || (codepoint >= 0x2000 && codepoint <= 0x200a) || codepoint == 0x2028 || codepoint == 0x2029 || codepoint == 0x202f || codepoint == 0x205f || codepoint == 0x3000 || codepoint == 0xfeff))
         {
             visible = TRUE;
@@ -100,15 +121,21 @@ boole desktop_session__can_edit(const desktop_session_view_t *view, const deskto
     int64 index = 0;
     boole author = FALSE;
     boole recipient = FALSE;
+
+    // check the message state
     if (!view || !chat || !view->connected || view->idle || !chat->local_id || chat->attachment_id || chat->pending || chat->edit_local_id || !chat->author_public_key[0] || !desktop_chat__valid_id(chat->reaction_id) || chat->connection_serial != view->connection_serial)
     {
         return FALSE;
     }
+
+    // find author and recipient
     for (index = 0; index < view->client_count; index++)
     {
         author |= view->clients[index].id == view->local_id && view->clients[index].serial == chat->author_serial;
         recipient |= view->clients[index].id == chat->peer && view->clients[index].serial == chat->peer_serial && !view->clients[index].music;
     }
+
+    // check author and destination
     return author && (chat->peer >= 0 ? recipient && view->policy_private : chat->channel == view->channel && view->keys_ready);
 }
 
@@ -126,20 +153,29 @@ boole desktop_session__edit(desktop_session_t *session, uint64 sequence, uint64 
     const desktop_chat_t *chat = NULL_POINTER;
     int64 index = 0;
     boole queued = FALSE;
+
+    // check session and text
     if (!session || !desktop_chat__valid_text(text))
     {
         return FALSE;
     }
+
+    // fill the command
     command.edit = TRUE;
     command.chat_sequence = sequence;
     command.connection_serial = connection_serial;
     clib__string_copy(command.text, sizeof(command.text), text);
+
+    // lock the session
     desktop_mutex__lock(session->mutex);
+
+    // find the chat message
     for (index = 0; index < session->published.chat_count; index++)
     {
         chat = &session->published.chats[index];
         if (chat->sequence == sequence && chat->connection_serial == connection_serial)
         {
+            // queue the edit command
             if (session->running && !session->stop && session->command_count < 8 && desktop_session__can_edit(&session->published, chat))
             {
                 command.peer = chat->peer;
@@ -151,6 +187,8 @@ boole desktop_session__edit(desktop_session_t *session, uint64 sequence, uint64 
             break;
         }
     }
+
+    // unlock and erase command
     desktop_mutex__unlock(session->mutex);
     desktop_memory__erase(&command, sizeof(command));
     return queued;

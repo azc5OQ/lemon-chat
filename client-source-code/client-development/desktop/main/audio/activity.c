@@ -18,10 +18,14 @@ struct desktop_activity_t
 desktop_activity_t *desktop_activity__create(void)
 {
     desktop_activity_t *activity = calloc(1, sizeof(*activity));
+
+    // check the allocation
     if (!activity)
     {
         return NULL;
     }
+
+    // create the detector
     activity->detector = fvad_new();
     if (!activity->detector)
     {
@@ -29,6 +33,8 @@ desktop_activity_t *desktop_activity__create(void)
         free(activity);
         return NULL;
     }
+
+    // reset the detector
     desktop_activity__reset(activity);
     return activity;
 }
@@ -40,6 +46,7 @@ desktop_activity_t *desktop_activity__create(void)
  */
 void desktop_activity__destroy(desktop_activity_t *activity)
 {
+    // free the detector
     if (activity)
     {
         fvad_free(activity->detector);
@@ -56,9 +63,12 @@ void desktop_activity__destroy(desktop_activity_t *activity)
  */
 void desktop_activity__reset(desktop_activity_t *activity)
 {
+    // reset the detector
     fvad_reset(activity->detector);
     fvad_set_sample_rate(activity->detector, DESKTOP_AUDIO_RATE);
     fvad_set_mode(activity->detector, 2);
+
+    // reset counter and level
     activity->remaining = 0;
     activity->level = -90;
 }
@@ -77,7 +87,11 @@ boole desktop_activity__process(desktop_activity_t *activity, const float *mono,
     float value = 0;
     int64 index = 0;
     int detected = 0;
+
+    // check the threshold
     threshold = threshold >= -60 && threshold <= -10 ? threshold : -45;
+
+    // convert samples, add energy
     for (index = 0; index < DESKTOP_AUDIO_FRAME; index++)
     {
         value = mono[index];
@@ -85,15 +99,23 @@ boole desktop_activity__process(desktop_activity_t *activity, const float *mono,
         samples[index] = (short)(value * 32767.0f);
         energy += (double)value * value;
     }
+
+    // calculate the level
     energy /= DESKTOP_AUDIO_FRAME;
     activity->level = energy > 0.000000001 ? (int64)(4.342944819 * clib__log(energy)) : -90;
+
+    // run speech detector
     detected = fvad_process(activity->detector, samples, DESKTOP_AUDIO_FRAME);
     clib__null_memory(samples, sizeof(samples));
+
+    // report detected speech
     if (detected == 1 && activity->level >= threshold)
     {
         activity->remaining = 10;
         return TRUE;
     }
+
+    // count down remaining frames
     if (activity->remaining > 0)
     {
         activity->remaining--;

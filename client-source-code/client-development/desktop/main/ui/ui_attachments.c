@@ -38,6 +38,8 @@ static const desktop_attachment_t *_ui_attachments_internal__find(uint64 id);
 static const desktop_attachment_t *_ui_attachments_internal__find(uint64 id)
 {
     int64 index = 0;
+
+    // find the attachment
     for (index = 0; index < DESKTOP_ATTACHMENT_COUNT; index++)
     {
         if (g_attachment_view->attachments.items[index].id == id)
@@ -57,11 +59,14 @@ static const desktop_attachment_t *_ui_attachments_internal__find(uint64 id)
 static void _ui_attachments_internal__text(const char *id, const char *text)
 {
     gui_node_t *node = scene__find_by_id((char *)id);
+
+    // set the new text
     if (node)
     {
         scene__set_text(node, text, clib__strlen(text));
     }
 #ifdef _WIN32
+    // request a redraw
     platform_win32__request_render();
 #endif
 }
@@ -75,6 +80,8 @@ static void _ui_attachments_internal__text(const char *id, const char *text)
 static void _ui_attachments_internal__panel(const char *id, boole visible)
 {
     gui_node_t *node = scene__find_by_id((char *)id);
+
+    // change the visibility
     if (node)
     {
         clib__string_copy(node->klass, sizeof(node->klass), visible ? "column panel" : "column panel hidden");
@@ -84,6 +91,7 @@ static void _ui_attachments_internal__panel(const char *id, boole visible)
         }
     }
 #ifdef _WIN32
+    // request a redraw
     platform_win32__request_render();
 #endif
 }
@@ -100,6 +108,8 @@ static void _ui_attachments_internal__panel(const char *id, boole visible)
 static gui_node_t *_ui_attachments_internal__node(gui_node_t *parent, gui_node_type_e type, const char *text, const char *klass, uint64 id)
 {
     gui_node_t *node = parent ? scene__node_new(type) : NULL;
+
+    // add the new node
     if (node)
     {
         scene__set_text(node, text, clib__strlen(text));
@@ -125,23 +135,33 @@ void desktop_ui_attachments__append(gui_node_t *parent, uint64 id)
     const desktop_attachment_t *attachment = _ui_attachments_internal__find(id);
     gui_node_t *actions = NULL_POINTER;
     char text[384] = { 0 };
+
+    // report a missing attachment
     if (!attachment)
     {
         _ui_attachments_internal__node(parent, GUI_NODE_TYPE__TEXT, "Attachment is no longer in memory.", "chat-text muted", 0);
         return;
     }
+
+    // add the picture
     if (attachment->picture && attachment->image_width > 0 && attachment->state != DESKTOP_ATTACHMENT_FAILED && attachment->state != DESKTOP_ATTACHMENT_CANCELLED)
     {
         desktop_ui_images__append(parent, attachment);
     }
+
+    // add name and size
     clib__string_format(text, sizeof(text), "%s%s%llu KB", attachment->name[0] ? attachment->name : attachment->picture ? "Picture" : "File", " - ", (attachment->size + 1023) / 1024);
     _ui_attachments_internal__node(parent, GUI_NODE_TYPE__TEXT, text, "chat-text", 0);
+
+    // add detail and progress
     clib__string_format(text, sizeof(text), "%s%s", attachment->detail, "");
     if (attachment->state == DESKTOP_ATTACHMENT_UPLOADING || attachment->state == DESKTOP_ATTACHMENT_RECEIVING)
     {
         clib__string_format(text, sizeof(text), "%s - %lld%%", attachment->detail, attachment->progress);
     }
     _ui_attachments_internal__node(parent, GUI_NODE_TYPE__TEXT, text, "chat-text muted", 0);
+
+    // add the action buttons
     actions = _ui_attachments_internal__node(parent, GUI_NODE_TYPE__DIV, "", "row attachment-actions", 0);
     if (attachment->state == DESKTOP_ATTACHMENT_OFFERED)
     {
@@ -156,6 +176,8 @@ void desktop_ui_attachments__append(gui_node_t *parent, uint64 id)
     {
         _ui_attachments_internal__node(actions, GUI_NODE_TYPE__BUTTON, "Cancel", "attachment-cancel", id);
     }
+
+    // clear the text buffer
     mbedtls_platform_zeroize(text, sizeof(text));
 }
 
@@ -169,24 +191,36 @@ static void _ui_attachments_internal__open(gui_event_t *event)
     gui_node_t *picker = scene__find_by_id("attachment-picker");
     gui_node_t *filename = scene__find_by_id("attachment-filename");
     char path[DESKTOP_ATTACHMENT_PATH] = { 0 };
+
+    // clear the old request
     mbedtls_platform_zeroize(&g_attachment_request, sizeof(g_attachment_request));
     g_attachment_save_id = 0;
+
+    // store the destination
     g_attachment_request.peer = desktop_session_view__peer(&g_attachment_request.peer_serial);
     g_attachment_request.channel = g_attachment_view->channel;
     g_attachment_request.picture = event && event->sender && clib__strcmp(event->sender->id, "picture-button") == 0;
+
+    // set the start folder
     if (picker && desktop_attachment_file__home(path, sizeof(path)))
     {
         widget_filepicker__set_path(picker, path);
     }
+
+    // disable the filename field
     if (filename)
     {
         filename->state = GUI_NODE_STATE__DISABLED;
     }
+
+    // show the attachment panel
     _ui_attachments_internal__text("attachment-title", g_attachment_request.picture ? "Send picture" : "Send file");
     _ui_attachments_internal__text("attachment-filename", "");
     _ui_attachments_internal__text("attachment-submit", "Send");
     _ui_attachments_internal__text("attachment-result", "Choose a file, then Send. The destination stays the conversation you opened this from.");
     _ui_attachments_internal__panel("attachment-panel", TRUE);
+
+    // clear the path buffer
     mbedtls_platform_zeroize(path, sizeof(path));
 }
 
@@ -198,7 +232,11 @@ static void _ui_attachments_internal__open(gui_event_t *event)
 static void _ui_attachments_internal__close(gui_event_t *event)
 {
     (void)event;
+
+    // hide the attachment panel
     _ui_attachments_internal__panel("attachment-panel", FALSE);
+
+    // clear the file selection
     mbedtls_platform_zeroize(&g_attachment_request, sizeof(g_attachment_request));
     g_attachment_save_id = 0;
     _ui_attachments_internal__text("attachment-filename", "");
@@ -212,9 +250,14 @@ static void _ui_attachments_internal__close(gui_event_t *event)
 static void _ui_attachments_internal__pick(gui_event_t *event)
 {
     char name[256] = { 0 };
+
+    // check for a file
     if (event && !event->file.is_dir && event->file.path)
     {
+        // read the file name
         desktop_attachment_file__name(name, sizeof(name), event->file.path);
+
+        // store the file path
         if (g_attachment_save_id)
         {
             _ui_attachments_internal__text("attachment-result", "Choose a new filename. Existing files are not overwritten.");
@@ -232,9 +275,12 @@ static void _ui_attachments_internal__pick(gui_event_t *event)
     }
     else if (!g_attachment_save_id)
     {
+        // clear the file selection
         mbedtls_platform_zeroize(g_attachment_request.path, sizeof(g_attachment_request.path));
         _ui_attachments_internal__text("attachment-filename", "");
     }
+
+    // clear the name buffer
     mbedtls_platform_zeroize(name, sizeof(name));
 }
 
@@ -252,6 +298,8 @@ static void _ui_attachments_internal__submit(gui_event_t *event)
     char path[DESKTOP_ATTACHMENT_PATH] = { 0 };
     boole queued = FALSE;
     (void)event;
+
+    // queue save or send
     if (g_attachment_save_id)
     {
         desktop_attachment_file__name(name, sizeof(name), filename ? filename->text : "");
@@ -264,6 +312,8 @@ static void _ui_attachments_internal__submit(gui_event_t *event)
     {
         queued = desktop_session__attach(g_attachment_session, &g_attachment_request);
     }
+
+    // close or report failure
     if (queued)
     {
         _ui_attachments_internal__close(NULL);
@@ -272,6 +322,8 @@ static void _ui_attachments_internal__submit(gui_event_t *event)
     {
         _ui_attachments_internal__text("attachment-result", "Choose a valid file or filename and check that the destination is still available.");
     }
+
+    // clear the buffers
     mbedtls_platform_zeroize(name, sizeof(name));
     mbedtls_platform_zeroize(path, sizeof(path));
 }
@@ -287,18 +339,27 @@ static void _ui_attachments_internal__action(gui_event_t *event)
     const desktop_attachment_t *attachment = _ui_attachments_internal__find(id);
     desktop_attachments_t *attachments = desktop_session__attachments(g_attachment_session);
     gui_node_t *filename = scene__find_by_id("attachment-filename");
+
+    // check the attachment
     if (!attachment)
     {
         return;
     }
+
+    // choose by button class
     if (clib__strcmp(event->sender->klass, "attachment-save") == 0)
     {
+        // open the save panel
         _ui_attachments_internal__open(NULL);
         g_attachment_save_id = id;
+
+        // set the save texts
         _ui_attachments_internal__text("attachment-title", "Save attachment");
         _ui_attachments_internal__text("attachment-submit", "Save");
         _ui_attachments_internal__text("attachment-filename", attachment->name);
         _ui_attachments_internal__text("attachment-result", "Choose a folder and a new filename. Existing files are not overwritten.");
+
+        // enable the filename field
         if (filename)
         {
             filename->state = GUI_NODE_STATE__DEFAULT;
@@ -328,6 +389,8 @@ static void _ui_attachments_internal__values(gui_event_t *event)
     gui_node_t *scale = scene__find_by_id("chat-scale");
     char text[64] = { 0 };
     (void)event;
+
+    // update the size label
     if (scale)
     {
         clib__string_format(text, sizeof(text), "Chat size: %lld%%", (int64)scale->value / 5 * 5);
@@ -349,11 +412,15 @@ static void _ui_attachments_internal__settings(gui_event_t *event)
     gui_node_t *node = NULL_POINTER;
     char text[32] = { 0 };
     (void)event;
+
+    // copy the saved values
     values[0] = preferences->scale_percent;
     values[1] = preferences->block_channel_pictures;
     values[2] = preferences->block_channel_files;
     values[3] = preferences->block_direct_pictures;
     values[4] = preferences->block_direct_files;
+
+    // set the controls
     for (index = 0; index < 5; index++)
     {
         node = scene__find_by_id((char *)ids[index]);
@@ -362,17 +429,27 @@ static void _ui_attachments_internal__settings(gui_event_t *event)
             node->value = (float)values[index];
         }
     }
+
+    // show the image size
     clib__string_format(text, sizeof(text), "%lld", preferences->image_width);
     _ui_attachments_internal__text("chat-image-width", text);
     clib__string_format(text, sizeof(text), "%lld", preferences->image_height);
     _ui_attachments_internal__text("chat-image-height", text);
+
+    // show the theme name
     _ui_attachments_internal__text("chat-theme", g_attachment_settings->theme[0] ? g_attachment_settings->theme : "classic.css");
+
+    // select the theme preset
     node = scene__find_by_id("chat-theme-preset");
     if (node)
     {
         node->value = !g_attachment_settings->theme[0] || clib__strcmp(g_attachment_settings->theme, "classic.css") == 0 ? 0 : clib__strcmp(g_attachment_settings->theme, "slate.css") == 0 ? 1 : clib__strcmp(g_attachment_settings->theme, "amber.css") == 0 ? 2 : clib__strcmp(g_attachment_settings->theme, "ivory.css") == 0 ? 3 : clib__strcmp(g_attachment_settings->theme, "midnight.css") == 0 ? 4 : clib__strcmp(g_attachment_settings->theme, "win95.css") == 0 ? 5 : 6;
     }
+
+    // update the theme fields
     _ui_attachments_internal__theme(NULL);
+
+    // show the settings panel
     _ui_attachments_internal__text("chat-settings-result", "Changes apply when saved.");
     _ui_attachments_internal__values(NULL);
     _ui_attachments_internal__panel("chat-settings-panel", TRUE);
@@ -390,10 +467,14 @@ static void _ui_attachments_internal__theme(gui_event_t *event)
     gui_node_t *custom = scene__find_by_id("chat-theme-custom");
     int64 index = select ? (int64)select->value : -1;
     (void)event;
+
+    // set the theme name
     if (index >= 0 && index < 6)
     {
         _ui_attachments_internal__text("chat-theme", names[index]);
     }
+
+    // show or hide fields
     if (custom)
     {
         clib__string_copy(custom->klass, sizeof(custom->klass), index == 6 ? "column theme-file-fields" : "column theme-file-fields hidden");
@@ -427,11 +508,15 @@ static void _ui_attachments_internal__save_settings(gui_event_t *event)
     boole valid = TRUE;
     gui_node_t *theme = scene__find_by_id("chat-theme");
     (void)event;
+
+    // find the controls
     for (index = 0; index < 7; index++)
     {
         controls[index] = scene__find_by_id((char *)ids[index]);
         valid &= controls[index] != NULL;
     }
+
+    // read width and height
     for (index = 0; valid && index < 2; index++)
     {
         valid = controls[index]->text[0] != 0 && clib__strlen(controls[index]->text) <= 4;
@@ -442,6 +527,8 @@ static void _ui_attachments_internal__save_settings(gui_event_t *event)
         }
         valid &= values[index] >= 64 && values[index] <= 1024;
     }
+
+    // copy the new values
     if (valid)
     {
         settings.chat.image_width = values[0];
@@ -453,6 +540,8 @@ static void _ui_attachments_internal__save_settings(gui_event_t *event)
         settings.chat.block_direct_files = controls[6]->value != 0;
         valid = settings.chat.scale_percent >= 75 && settings.chat.scale_percent <= 150;
     }
+
+    // save or report failure
     if (!valid)
     {
         _ui_attachments_internal__text("chat-settings-result", "Image dimensions must be between 64 and 1024 pixels; chat size between 75 and 150 percent.");
@@ -468,6 +557,8 @@ static void _ui_attachments_internal__save_settings(gui_event_t *event)
         desktop_ui_attachments__apply();
         _ui_attachments_internal__text("chat-settings-result", "Settings saved");
     }
+
+    // clear the settings copy
     mbedtls_platform_zeroize(&settings, sizeof(settings));
 }
 
@@ -478,6 +569,8 @@ static void _ui_attachments_internal__save_settings(gui_event_t *event)
 void desktop_ui_attachments__apply(void)
 {
     desktop_chat_preferences_t *preferences = &g_attachment_settings->chat;
+
+    // replace the wrong values
     if (preferences->image_width < 64 || preferences->image_width > 1024)
     {
         preferences->image_width = 480;
@@ -490,11 +583,17 @@ void desktop_ui_attachments__apply(void)
     {
         preferences->scale_percent = 100;
     }
+
+    // apply the chat scale
     if (!desktop_ui_theme__scale(preferences->scale_percent))
     {
         _ui_attachments_internal__text("chat-settings-result", "This theme has no room for the chat size rules.");
     }
+
+    // set the attachment preferences
     desktop_attachments__preferences(desktop_session__attachments(g_attachment_session), preferences);
+
+    // apply the chat format
     desktop_ui_chat_format__apply();
 #ifdef _WIN32
     platform_win32__request_render();
@@ -510,9 +609,12 @@ void desktop_ui_attachments__apply(void)
  */
 void desktop_ui_attachments__initialize(desktop_session_t *session, desktop_session_view_t *view, desktop_settings_t *settings)
 {
+    // store the arguments
     g_attachment_session = session;
     g_attachment_view = view;
     g_attachment_settings = settings;
+
+    // register the handlers
     scene__register_handler("on_attachment_open", _ui_attachments_internal__open);
     scene__register_handler("on_attachment_close", _ui_attachments_internal__close);
     scene__register_handler("on_attachment_pick", _ui_attachments_internal__pick);
@@ -523,6 +625,8 @@ void desktop_ui_attachments__initialize(desktop_session_t *session, desktop_sess
     scene__register_handler("on_chat_settings_close", _ui_attachments_internal__close_settings);
     scene__register_handler("on_chat_settings_save", _ui_attachments_internal__save_settings);
     scene__register_handler("on_chat_settings_values", _ui_attachments_internal__values);
+
+    // initialize the images
     desktop_ui_images__initialize(desktop_session__attachments(session), &settings->chat);
 }
 
@@ -532,7 +636,10 @@ void desktop_ui_attachments__initialize(desktop_session_t *session, desktop_sess
  */
 void desktop_ui_attachments__shutdown(void)
 {
+    // release the textures
     desktop_ui_images__shutdown();
+
+    // clear the stored state
     mbedtls_platform_zeroize(&g_attachment_request, sizeof(g_attachment_request));
     g_attachment_save_id = 0;
     g_attachment_session = NULL;

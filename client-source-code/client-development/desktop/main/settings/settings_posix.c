@@ -27,14 +27,17 @@ static boole _settings_internal__path(char *path, uint64 capacity, boole create)
     uint64 length = 0;
     int result = 0;
 
+    // read the home folder
     clib__null_memory(path, capacity);
     home = getenv("HOME");
 #ifdef __APPLE__
+    // build the macOS path
     if (home && home[0] == '/')
     {
         result = clib__string_copy(path, capacity, home) && clib__string_append(path, capacity, "/Library/Application Support/LemonChat");
     }
 #else
+    // read the config folder
     configuration = getenv("XDG_CONFIG_HOME");
     if (configuration && configuration[0] == '/')
     {
@@ -46,10 +49,14 @@ static boole _settings_internal__path(char *path, uint64 capacity, boole create)
     }
 #endif
     (void)configuration;
+
+    // check the folder path
     if (!result)
     {
         return 0;
     }
+
+    // create the folders
     if (create)
     {
         length = clib__strlen(path);
@@ -70,6 +77,8 @@ static boole _settings_internal__path(char *path, uint64 capacity, boole create)
             }
         }
     }
+
+    // add the file name
     return clib__string_append(path, capacity, "/desktop.json");
 }
 
@@ -89,17 +98,24 @@ boole desktop_settings_file__read(char *bytes, uint64 capacity, uint64 *length)
     uint64 used = 0;
     boole success = 0;
 
+    // clear the output
     clib__null_memory(bytes, capacity);
     *length = 0;
+
+    // build the file path
     if (!_settings_internal__path(path, sizeof(path), 0))
     {
         return 0;
     }
+
+    // open the file
     file = open(path, O_RDONLY | O_CLOEXEC);
     if (file < 0)
     {
         return 0;
     }
+
+    // read the whole file
     if (fstat(file, &information) == 0 && S_ISREG(information.st_mode) && information.st_size > 0 && (uint64)information.st_size < capacity)
     {
         while (used < (uint64)information.st_size)
@@ -117,7 +133,11 @@ boole desktop_settings_file__read(char *bytes, uint64 capacity, uint64 *length)
         }
         success = used == (uint64)information.st_size;
     }
+
+    // close the file
     close(file);
+
+    // store the length
     if (success)
     {
         *length = used;
@@ -140,15 +160,20 @@ boole desktop_settings_file__write(const char *bytes, uint64 length)
     uint64 used = 0;
     boole success = 0;
 
+    // build the file paths
     if (length >= DESKTOP_SETTINGS_FILE_CAPACITY || !_settings_internal__path(path, sizeof(path), 1) || !clib__string_copy(temporary, sizeof(temporary), path) || !clib__string_append(temporary, sizeof(temporary), ".XXXXXX"))
     {
         return 0;
     }
+
+    // create the temporary file
     file = mkstemp(temporary);
     if (file < 0)
     {
         return 0;
     }
+
+    // write all bytes
     while (used < length)
     {
         written = write(file, bytes + used, length - used);
@@ -162,15 +187,21 @@ boole desktop_settings_file__write(const char *bytes, uint64 length)
         }
         used += (uint64)written;
     }
+
+    // sync and close file
     success = used == length && fsync(file) == 0;
     if (close(file) != 0)
     {
         success = 0;
     }
+
+    // replace the settings file
     if (success)
     {
         success = rename(temporary, path) == 0;
     }
+
+    // delete on failure
     if (!success)
     {
         unlink(temporary);

@@ -26,22 +26,30 @@ static char *_client_chat_internal__text(desktop_session_t *session, const char 
     cJSON *wrapper = NULL_POINTER;
     char *result = NULL_POINTER;
     int64 index = 0;
+
+    // create the random bytes
     if (capacity < 33 || !crypto_session__random(session->crypto, random, sizeof(random)))
     {
         mbedtls_platform_zeroize(random, sizeof(random));
         return NULL;
     }
+
+    // write the hex ID
     clib__null_memory(id, capacity);
     for (index = 0; index < 16; index++)
     {
         id[index * 2] = hex[random[index] >> 4];
         id[index * 2 + 1] = hex[random[index] & 15];
     }
+
+    // build the JSON wrapper
     wrapper = cJSON_CreateObject();
     if (wrapper && cJSON_AddStringToObject(wrapper, "value", text) && cJSON_AddStringToObject(wrapper, "reaction_id", id) && desktop_chat_format__write(format, wrapper))
     {
         result = cJSON_PrintUnformatted(wrapper);
     }
+
+    // free and erase memory
     crypto_session__free_json(wrapper);
     mbedtls_platform_zeroize(random, sizeof(random));
     return result;
@@ -63,16 +71,25 @@ static boole _client_chat_internal__channel(desktop_session_t *session, int64 ch
     boole complete = 0;
     boole sent = FALSE;
 
+    // check channel and keys
     if (channel != session->model.channel || !session->model.keys_ready || !payload)
     {
         desktop_session__detail(session, "Message was not sent: the channel changed or its keys are not ready.", 0);
         return FALSE;
     }
+
+    // encrypt the content
     encrypted = payload ? crypto_session__content_encrypt(session->crypto, &session->keys, payload) : NULL;
     envelope = encrypted ? crypto_session__channel_seal(&session->keys, encrypted) : NULL;
+
+    // build the chat message
     message = client_msg__delivery__new_message("channel_chat_message");
     complete = envelope && message && cJSON_AddStringToObject(message, "value", envelope) && cJSON_AddNumberToObject(message, "receiver_id", (double)channel) && cJSON_AddNumberToObject(message, "local_message_id", (double)local_id);
+
+    // send the message
     sent = client_msg__delivery__send(session, message, complete);
+
+    // free the buffers
     crypto_session__free_text(envelope);
     crypto_session__free_text(encrypted);
     return sent;
@@ -102,6 +119,8 @@ static boole _client_chat_internal__direct(desktop_session_t *session, int64 pee
     boole complete = 0;
     boole sent = FALSE;
     boole keys_ready = FALSE;
+
+    // check the recipient
     if (slot < 0 || session->model.clients[slot].serial != serial || peer == session->model.local_id || session->model.clients[slot].music || !session->client_keys[slot][0] || (!payload && !is_closed_notice))
     {
         if (!is_closed_notice)
@@ -110,6 +129,8 @@ static boole _client_chat_internal__direct(desktop_session_t *session, int64 pee
         }
         return FALSE;
     }
+
+    // create the content keys
     keys_ready = crypto_session__content_keys(session->crypto, &keys);
     // the notice has no text: its type alone tells the receiving client that the conversation was closed
     body = client_msg__delivery__new_message(is_closed_notice ? "direct_chat_closed" : "direct_chat_message");
@@ -117,25 +138,37 @@ static boole _client_chat_internal__direct(desktop_session_t *session, int64 pee
     {
         body_json = cJSON_PrintUnformatted(body);
     }
+
+    // encrypt the body
     if (keys_ready && body_json)
     {
         encrypted_body = crypto_session__direct_content_encrypt(&keys, body_json, 1024, FALSE);
     }
+
+    // build the envelope
     if (encrypted_body)
     {
         envelope_json = crypto_session__direct_seal(session->crypto, session->client_keys[slot], &keys, encrypted_body);
     }
+
+    // build the direct message
     message = client_msg__delivery__new_message("direct_chat_message");
     complete = message && envelope_json && cJSON_AddStringToObject(message, "purpose", "conversation") && cJSON_AddStringToObject(message, "value", envelope_json) && cJSON_AddNumberToObject(message, "receiver_id", (double)peer) && cJSON_AddNumberToObject(message, "local_message_id", (double)local_id);
+
+    // send or report failure
     sent = client_msg__delivery__send(session, message, complete);
     if (!sent && !is_closed_notice)
     {
         desktop_session__detail(session, "Private message could not be encrypted or queued.", 0);
     }
+
+    // free the buffers
     crypto_session__free_json(body);
     crypto_session__free_text(body_json);
     crypto_session__free_text(encrypted_body);
     crypto_session__free_text(envelope_json);
+
+    // erase the keys
     mbedtls_platform_zeroize(&keys, sizeof(keys));
     return sent;
 }
@@ -150,9 +183,13 @@ static void _client_chat_internal__remember(desktop_session_t *session, const ch
 {
     desktop_chat_t *chat = &session->model.chats[session->model.chat_count - 1];
     int64 local = desktop_session__client(session, session->model.local_id);
+
+    // store the author identity
     chat->author_serial = local >= 0 ? session->model.clients[local].serial : 0;
     clib__string_copy(chat->author_public_key, sizeof(chat->author_public_key), session->public_key);
     clib__string_copy(chat->reaction_id, sizeof(chat->reaction_id), id);
+
+    // copy a valid format
     if (desktop_chat_format__valid(format))
     {
         chat->format = *format;
@@ -172,11 +209,15 @@ void client_msg__chat__send_channel_message(desktop_session_t *session, int64 ch
     char *payload = _client_chat_internal__text(session, text, id, sizeof(id), format);
     uint64 local_id = ++session->next_local_id;
     int64 local = desktop_session__client(session, session->model.local_id);
+
+    // send and store message
     if (_client_chat_internal__channel(session, channel, payload, local_id))
     {
         server_msg__chat__append(session, channel, local >= 0 ? session->model.clients[local].name : "You", text, local_id);
         _client_chat_internal__remember(session, id, format);
     }
+
+    // free and erase buffers
     crypto_session__free_text(payload);
     mbedtls_platform_zeroize(id, sizeof(id));
 }
@@ -194,11 +235,15 @@ void client_msg__chat__send_direct_message(desktop_session_t *session, int64 pee
     char id[33] = { 0 };
     char *payload = _client_chat_internal__text(session, text, id, sizeof(id), format);
     uint64 local_id = ++session->next_local_id;
+
+    // send and store message
     if (_client_chat_internal__direct(session, peer, serial, payload, local_id, FALSE))
     {
         server_msg__chat__append_direct(session, desktop_session__client(session, peer), text, local_id);
         _client_chat_internal__remember(session, id, format);
     }
+
+    // free and erase buffers
     crypto_session__free_text(payload);
     mbedtls_platform_zeroize(id, sizeof(id));
 }
@@ -234,6 +279,8 @@ void client_msg__chat__send_edit(desktop_session_t *session, uint64 sequence, ui
     int64 index = 0;
     uint64 local_id = 0;
     boole sent = FALSE;
+
+    // find the chat message
     for (index = 0; index < session->model.chat_count; index++)
     {
         if (session->model.chats[index].sequence == sequence)
@@ -242,22 +289,32 @@ void client_msg__chat__send_edit(desktop_session_t *session, uint64 sequence, ui
             break;
         }
     }
+
+    // check the edit conditions
     if (!chat || connection_serial != session->model.connection_serial || !desktop_session__can_edit(&session->model, chat) || !desktop_chat__valid_text(text) || clib__strcmp(chat->author_public_key, session->public_key) != 0)
     {
         desktop_session__detail(session, "Edit was not sent: the message, connection, recipient or encryption keys are no longer available.", FALSE);
         return;
     }
+
+    // skip unchanged text
     if (clib__strcmp(chat->text, text) == 0)
     {
         return;
     }
+
+    // build the edit content
     edit = client_msg__delivery__new_message("chat_message_edit");
     if (edit && cJSON_AddStringToObject(edit, "message_id", chat->reaction_id) && cJSON_AddStringToObject(edit, "author_public_key", chat->author_public_key) && cJSON_AddStringToObject(edit, "new_message_value", text))
     {
         payload = cJSON_PrintUnformatted(edit);
     }
+
+    // send the edit
     local_id = ++session->next_local_id;
     sent = chat->peer >= 0 ? _client_chat_internal__direct(session, chat->peer, chat->peer_serial, payload, local_id, FALSE) : _client_chat_internal__channel(session, chat->channel, payload, local_id);
+
+    // store the new text
     if (sent)
     {
         clib__null_memory(chat->text, sizeof(chat->text));
@@ -265,6 +322,8 @@ void client_msg__chat__send_edit(desktop_session_t *session, uint64 sequence, ui
         chat->edited = TRUE;
         chat->edit_local_id = local_id;
     }
+
+    // free the buffers
     crypto_session__free_text(payload);
     crypto_session__free_json(edit);
 }

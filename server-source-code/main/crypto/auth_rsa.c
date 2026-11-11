@@ -42,25 +42,32 @@
 uint64 auth_rsa__get_public_key_bit_length(char *public_key_modulus)
 {
     ubyte modulus_binary[1024] = { 0 };
-    size_t modulus_length = 0; // mbedTLS writes through size_t*.
+    size_t modulus_length = 0; // mbedTLS writes through size_t*
     uint64 first_nonzero = 0;
     uint64 key_string_length = 0;
     uint64 bits = 0;
     ubyte top_byte = 0;
 
+    // check the argument
     if (public_key_modulus == NULL_POINTER)
     {
         goto cleanup;
     }
+
+    // decode the modulus
     key_string_length = (uint64)clib__strlen(public_key_modulus);
     if (key_string_length == 0 || key_string_length > 1372 || mbedtls_base64_decode(modulus_binary, sizeof(modulus_binary), &modulus_length, (const ubyte *)public_key_modulus, (uint64)key_string_length) != 0)
     {
         goto cleanup;
     }
+
+    // skip leading zero bytes
     while (first_nonzero < modulus_length && modulus_binary[first_nonzero] == 0)
     {
         first_nonzero++;
     }
+
+    // count the bits
     if (first_nonzero < modulus_length)
     {
         top_byte = modulus_binary[first_nonzero];
@@ -73,6 +80,7 @@ uint64 auth_rsa__get_public_key_bit_length(char *public_key_modulus)
     }
 
 cleanup:
+    // clear the buffer
     clib__null_memory(modulus_binary, sizeof(modulus_binary));
     return bits;
 }
@@ -98,54 +106,71 @@ char *auth_rsa__encrypt_string_with_public_key(char *public_key_modulus, ubyte *
     char *encoded = NULL_POINTER;
     char *result = NULL_POINTER;
     uint64 key_string_length = 0;
-    size_t modulus_length = 0; // mbedTLS writes through size_t*.
+    size_t modulus_length = 0; // mbedTLS writes through size_t*
     uint64 ciphertext_length = 0;
     uint64 encoded_capacity = 0;
-    size_t written = 0; // mbedTLS writes through size_t*.
+    size_t written = 0; // mbedTLS writes through size_t*
 
+    // prepare the contexts
     mbedtls_rsa_init(&rsa);
     mbedtls_entropy_init(&entropy);
     mbedtls_ctr_drbg_init(&ctr_drbg);
     mbedtls_mpi_init(&modulus);
     mbedtls_mpi_init(&exponent);
 
+    // check arguments
     if (public_key_modulus == NULL_POINTER || bytes == NULL_POINTER || buffer_length == 0 || buffer_length > 256)
     {
         goto cleanup;
     }
+
+    // decode the modulus
     key_string_length = (uint64)clib__strlen(public_key_modulus);
     if (key_string_length == 0 || key_string_length > 1372 || mbedtls_base64_decode(modulus_binary, sizeof(modulus_binary), &modulus_length, (const ubyte *)public_key_modulus, (uint64)key_string_length) != 0 || modulus_length == 0)
     {
         goto cleanup;
     }
+
+    // build the RSA key
     if (mbedtls_mpi_read_binary(&modulus, modulus_binary, modulus_length) != 0 || mbedtls_mpi_lset(&exponent, 3) != 0 || mbedtls_rsa_import(&rsa, &modulus, NULL_POINTER, NULL_POINTER, NULL_POINTER, &exponent) != 0 || mbedtls_rsa_complete(&rsa) != 0 || mbedtls_rsa_check_pubkey(&rsa) != 0 || mbedtls_rsa_set_padding(&rsa, MBEDTLS_RSA_PKCS_V15, MBEDTLS_MD_NONE) != 0)
     {
         goto cleanup;
     }
+
+    // check the data size
     ciphertext_length = mbedtls_rsa_get_len(&rsa);
     if (ciphertext_length < 11 || ciphertext_length > sizeof(modulus_binary) || buffer_length > ciphertext_length - 11)
     {
         goto cleanup;
     }
+
+    // start the random generator
     if (mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy, (const ubyte *)personalization, (uint64)clib__strlen(personalization)) != 0)
     {
         goto cleanup;
     }
+
+    // encrypt the challenge
     ciphertext = (ubyte *)memorymanager__allocate(ciphertext_length, MEMALLOC_PUBLIC_KEY_ENCRYPT);
     if (ciphertext == NULL_POINTER || mbedtls_rsa_pkcs1_encrypt(&rsa, mbedtls_ctr_drbg_random, &ctr_drbg, (uint64)buffer_length, bytes, ciphertext) != 0)
     {
         goto cleanup;
     }
+
+    // convert to base64
     encoded_capacity = 4 * ((ciphertext_length + 2) / 3) + 1;
     encoded = (char *)memorymanager__allocate(encoded_capacity, MEMALLOC_PUBLIC_KEY_ENCRYPT);
     if (encoded == NULL_POINTER || mbedtls_base64_encode((ubyte *)encoded, encoded_capacity, &written, ciphertext, ciphertext_length) != 0)
     {
         goto cleanup;
     }
+
+    // keep the encoded text
     result = encoded;
     encoded = NULL_POINTER;
 
 cleanup:
+    // free the memory
     memorymanager__free((nuint)encoded);
     memorymanager__free((nuint)ciphertext);
     mbedtls_mpi_free(&exponent);

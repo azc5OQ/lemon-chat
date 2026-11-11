@@ -84,21 +84,31 @@ static void _audio_internal__mix(audio_peer_t *peers, float *mixed, int64 volume
 desktop_audio_t *desktop_audio__create(boole use_devices)
 {
     desktop_audio_t *audio = calloc(1, sizeof(*audio));
+
+    // check the allocation
     if (!audio)
     {
         return NULL;
     }
+
+    // create mutex, devices, sounds
     audio->mutex = desktop_mutex__create();
     audio->device_list = desktop_devices__create(use_devices);
     audio->sounds = desktop_sounds__create("assets/sounds.json", use_devices);
+
+    // set default options
     audio->devices = use_devices != 0;
     audio->options.volume = 100;
     audio->options.gain = 100;
     audio->options.voice_bitrate = 64;
+
+    // start worker thread
     if (audio->mutex && audio->device_list)
     {
         audio->thread = desktop_thread__start(_audio_internal__worker, audio);
     }
+
+    // free on failure
     if (!audio->thread)
     {
         desktop_sounds__destroy(audio->sounds);
@@ -118,17 +128,24 @@ desktop_audio_t *desktop_audio__create(boole use_devices)
  */
 void desktop_audio__destroy(desktop_audio_t *audio)
 {
+    // nothing to free
     if (!audio)
     {
         return;
     }
+
+    // stop worker thread
     desktop_mutex__lock(audio->mutex);
     audio->stop = 1;
     desktop_mutex__unlock(audio->mutex);
     desktop_thread__join(audio->thread);
+
+    // free devices, sounds, mutex
     desktop_devices__destroy(audio->device_list);
     desktop_sounds__destroy(audio->sounds);
     desktop_mutex__destroy(audio->mutex);
+
+    // clear and free memory
     clib__null_memory(audio, sizeof(*audio));
     desktop_memory__erase(audio, sizeof(*audio));
     free(audio);
@@ -144,12 +161,16 @@ void desktop_audio__configure(desktop_audio_t *audio, const desktop_audio_option
 {
     desktop_audio_options_t checked = *options;
     boole devices_changed = FALSE;
+
+    // check device names
     if (!clib__memchr(checked.input_device, 0, sizeof(checked.input_device)) || !clib__memchr(checked.output_device, 0, sizeof(checked.output_device)))
     {
         checked.enabled = FALSE;
         clib__null_memory(checked.input_device, sizeof(checked.input_device));
         clib__null_memory(checked.output_device, sizeof(checked.output_device));
     }
+
+    // correct option values
     checked.enabled = checked.enabled != 0;
     checked.microphone = checked.enabled && checked.microphone;
     checked.transmit = checked.microphone && checked.transmit;
@@ -158,8 +179,12 @@ void desktop_audio__configure(desktop_audio_t *audio, const desktop_audio_option
     checked.voice_bitrate = checked.voice_bitrate >= 32 && checked.voice_bitrate <= 128 ? checked.voice_bitrate : 64;
     checked.volume = checked.volume < 0 ? 0 : (checked.volume > 100 ? 100 : checked.volume);
     checked.gain = checked.gain < 0 ? 0 : (checked.gain > 200 ? 200 : checked.gain);
+
+    // lock and compare devices
     desktop_mutex__lock(audio->mutex);
     devices_changed = clib__strcmp(checked.input_device, audio->options.input_device) != 0 || clib__strcmp(checked.output_device, audio->options.output_device) != 0;
+
+    // reset after device change
     if (devices_changed)
     {
         audio->reset++;
@@ -168,6 +193,8 @@ void desktop_audio__configure(desktop_audio_t *audio, const desktop_audio_option
         audio->playback_head = 0;
         audio->incoming_count = 0;
         audio->incoming_head = 0;
+
+        // reset the status
         audio->status.voice_active = FALSE;
         audio->status.transmitting = FALSE;
         audio->status.capture_ready = FALSE;
@@ -175,13 +202,19 @@ void desktop_audio__configure(desktop_audio_t *audio, const desktop_audio_option
         clib__null_memory(audio->incoming, sizeof(audio->incoming));
         clib__null_memory(audio->playback, sizeof(audio->playback));
     }
+
+    // set transmit end time
     audio->transmit_until = checked.transmit || checked.voice_activation ? desktop_system__milliseconds() + 200 : 0;
+
+    // reset after activation change
     if (checked.voice_activation != audio->options.voice_activation)
     {
         audio->reset++;
         _audio_internal__discard_capture(audio);
         audio->status.voice_active = FALSE;
     }
+
+    // discard capture without transmit
     if (!checked.transmit && !checked.voice_activation)
     {
         _audio_internal__discard_capture(audio);
@@ -189,6 +222,8 @@ void desktop_audio__configure(desktop_audio_t *audio, const desktop_audio_option
         audio->status.transmitting = FALSE;
         audio->status.input_level = -90;
     }
+
+    // clear queues when disabled
     if (!checked.enabled && audio->options.enabled)
     {
         audio->reset++;
@@ -199,8 +234,12 @@ void desktop_audio__configure(desktop_audio_t *audio, const desktop_audio_option
         clib__null_memory(audio->incoming, sizeof(audio->incoming));
         clib__null_memory(audio->playback, sizeof(audio->playback));
     }
+
+    // store options and unlock
     audio->options = checked;
     desktop_mutex__unlock(audio->mutex);
+
+    // request device refresh
     if (devices_changed && (checked.input_device[0] || checked.output_device[0]))
     {
         desktop_devices__view(audio->device_list, NULL, TRUE);
@@ -226,9 +265,12 @@ boole desktop_audio__devices(desktop_audio_t *audio, desktop_devices_view_t *vie
  */
 static void _audio_internal__discard_capture(desktop_audio_t *audio)
 {
+    // clear capture buffer
     clib__null_memory(audio->capture, sizeof(audio->capture));
     audio->capture_head = 0;
     audio->capture_count = 0;
+
+    // clear outgoing packets
     clib__null_memory(audio->outgoing, sizeof(audio->outgoing));
     audio->outgoing_head = 0;
     audio->outgoing_count = 0;
@@ -242,6 +284,7 @@ static void _audio_internal__discard_capture(desktop_audio_t *audio)
  */
 void desktop_audio__status(desktop_audio_t *audio, desktop_audio_status_t *status)
 {
+    // copy the status
     desktop_mutex__lock(audio->mutex);
     *status = audio->status;
     desktop_mutex__unlock(audio->mutex);
@@ -254,8 +297,11 @@ void desktop_audio__status(desktop_audio_t *audio, desktop_audio_status_t *statu
  */
 void desktop_audio__reset(desktop_audio_t *audio)
 {
+    // lock, request reset
     desktop_mutex__lock(audio->mutex);
     audio->reset++;
+
+    // empty all queues
     audio->incoming_count = 0;
     audio->outgoing_count = 0;
     audio->capture_count = 0;
@@ -264,10 +310,14 @@ void desktop_audio__reset(desktop_audio_t *audio)
     audio->outgoing_head = 0;
     audio->capture_head = 0;
     audio->playback_head = 0;
+
+    // clear queue memory
     clib__null_memory(audio->capture, sizeof(audio->capture));
     clib__null_memory(audio->playback, sizeof(audio->playback));
     clib__null_memory(audio->incoming, sizeof(audio->incoming));
     clib__null_memory(audio->outgoing, sizeof(audio->outgoing));
+
+    // reset the status
     audio->status.voice_active = FALSE;
     audio->status.transmitting = FALSE;
     audio->status.input_level = -90;
@@ -283,10 +333,14 @@ void desktop_audio__reset(desktop_audio_t *audio)
 boole desktop_audio__receive(desktop_audio_t *audio, const desktop_audio_packet_t *packet)
 {
     boole accepted = 0;
+
+    // check the packet
     if (!packet || !packet->size || packet->size > DESKTOP_AUDIO_PACKET)
     {
         return 0;
     }
+
+    // queue the packet
     desktop_mutex__lock(audio->mutex);
     if (audio->options.enabled && audio->incoming_count < AUDIO_INCOMING)
     {
@@ -314,8 +368,11 @@ void desktop_audio__discard_music(desktop_audio_t *audio)
     uint64 source = 0;
     uint64 destination = 0;
 
+    // lock, request music reset
     desktop_mutex__lock(audio->mutex);
     audio->music_reset++;
+
+    // keep voice packets
     for (index = 0; index < audio->incoming_count; index++)
     {
         source = (audio->incoming_head + index) % AUDIO_INCOMING;
@@ -326,6 +383,8 @@ void desktop_audio__discard_music(desktop_audio_t *audio)
             retained++;
         }
     }
+
+    // clear unused slots
     for (index = retained; index < audio->incoming_count; index++)
     {
         source = (audio->incoming_head + index) % AUDIO_INCOMING;
@@ -333,7 +392,7 @@ void desktop_audio__discard_music(desktop_audio_t *audio)
     }
     audio->incoming_count = retained;
 
-    // Already mixed output cannot be separated back into its senders.
+    // already mixed output cannot be separated back into its senders
     audio->playback_head = 0;
     audio->playback_count = 0;
     clib__null_memory(audio->playback, sizeof(audio->playback));
@@ -350,19 +409,28 @@ boole desktop_audio__next_packet(desktop_audio_t *audio, desktop_audio_packet_t 
 {
     boole available = 0;
     uint64 now = desktop_system__milliseconds();
+
+    // clear output packet
     clib__null_memory(packet, sizeof(*packet));
+
+    // take next packet
     desktop_mutex__lock(audio->mutex);
     while (audio->outgoing_count && audio->options.transmit && now < audio->transmit_until && (!audio->options.voice_activation || audio->status.voice_active))
     {
+        // remove first packet
         *packet = audio->outgoing[audio->outgoing_head];
         clib__null_memory(&audio->outgoing[audio->outgoing_head], sizeof(*packet));
         audio->outgoing_head = (audio->outgoing_head + 1) % AUDIO_OUTGOING;
         audio->outgoing_count--;
+
+        // stop at recent packet
         if (now - packet->created < DESKTOP_AUDIO_PACKET_AGE)
         {
             available = TRUE;
             break;
         }
+
+        // clear old packet
         clib__null_memory(packet, sizeof(*packet));
     }
     desktop_mutex__unlock(audio->mutex);
@@ -379,18 +447,25 @@ boole desktop_audio__next_packet(desktop_audio_t *audio, desktop_audio_packet_t 
 void desktop_audio__capture(desktop_audio_t *audio, const float *mono, uint64 frames)
 {
     uint64 index = 0;
+
+    // check arguments, try lock
     if (!mono || !frames || frames > AUDIO_RING_FRAMES || !desktop_mutex__try_lock(audio->mutex))
     {
         return;
     }
+
+    // add samples while transmitting
     if ((audio->options.transmit || audio->options.voice_activation) && desktop_system__milliseconds() < audio->transmit_until)
     {
+        // empty a full buffer
         if (frames > AUDIO_RING_FRAMES - audio->capture_count)
         {
             audio->status.dropped_capture_frames += (int64)audio->capture_count;
             audio->capture_head = 0;
             audio->capture_count = 0;
         }
+
+        // copy the samples
         for (index = 0; index < frames; index++)
         {
             audio->capture[(audio->capture_head + audio->capture_count + index) % AUDIO_RING_FRAMES] = mono[index];
@@ -412,15 +487,23 @@ void desktop_audio__playback(desktop_audio_t *audio, float *stereo, uint64 frame
     uint64 index = 0;
     uint64 available = 0;
     uint64 position = 0;
+
+    // check arguments
     if (!stereo || frames > AUDIO_RING_FRAMES)
     {
         return;
     }
+
+    // fill with silence
     clib__null_memory(stereo, frames * 2 * sizeof(float));
+
+    // try to lock
     if (!desktop_mutex__try_lock(audio->mutex))
     {
         return;
     }
+
+    // move samples to output
     available = frames < audio->playback_count ? frames : audio->playback_count;
     for (index = 0; index < available; index++)
     {
@@ -432,6 +515,8 @@ void desktop_audio__playback(desktop_audio_t *audio, float *stereo, uint64 frame
     }
     audio->playback_head = (audio->playback_head + available) % AUDIO_RING_FRAMES;
     audio->playback_count -= available;
+
+    // add notification sounds
     desktop_sounds__mix(audio->sounds, stereo, frames, audio->notification_volume);
     desktop_mutex__unlock(audio->mutex);
 }
@@ -449,17 +534,24 @@ static void _audio_internal__callback(ma_device *device, void *output, const voi
     desktop_audio_t *audio = device->pUserData;
     uint64 offset = 0;
     uint64 count = 0;
+
+    // pass frames in parts
     while (offset < frames)
     {
+        // limit part size
         count = frames - offset;
         if (count > DESKTOP_AUDIO_FRAME)
         {
             count = DESKTOP_AUDIO_FRAME;
         }
+
+        // fill the output
         if (output)
         {
             desktop_audio__playback(audio, (float *)output + offset * 2, count);
         }
+
+        // store the input
         if (input)
         {
             desktop_audio__capture(audio, (const float *)input + offset, count);
@@ -481,11 +573,15 @@ static boole _audio_internal__device(desktop_audio_t *audio, ma_device *device, 
     ma_device_config configuration = ma_device_config_init(capture ? ma_device_type_capture : ma_device_type_playback);
     desktop_device_selection_t selection = { 0 };
     ma_result result = MA_ERROR;
+
+    // find saved device
     if (key[0] && !desktop_devices__resolve(audio->device_list, key, capture, &selection))
     {
         desktop_devices__view(audio->device_list, NULL, TRUE);
         return FALSE;
     }
+
+    // set device format
     configuration.sampleRate = DESKTOP_AUDIO_RATE;
     configuration.periodSizeInMilliseconds = 10;
     configuration.capture.format = ma_format_f32;
@@ -494,6 +590,8 @@ static boole _audio_internal__device(desktop_audio_t *audio, ma_device *device, 
     configuration.playback.channels = 2;
     configuration.dataCallback = _audio_internal__callback;
     configuration.pUserData = audio;
+
+    // open the device
     if (key[0])
     {
         configuration.capture.pDeviceID = capture ? &selection.id : NULL;
@@ -508,6 +606,8 @@ static boole _audio_internal__device(desktop_audio_t *audio, ma_device *device, 
     {
         return 0;
     }
+
+    // start the device
     if (ma_device_start(device) != MA_SUCCESS)
     {
         ma_device_uninit(device);
@@ -524,6 +624,7 @@ static boole _audio_internal__device(desktop_audio_t *audio, ma_device *device, 
  */
 static void _audio_internal__detail(desktop_audio_t *audio, const char *text)
 {
+    // store status text
     desktop_mutex__lock(audio->mutex);
     clib__string_copy(audio->status.detail, sizeof(audio->status.detail), text);
     desktop_mutex__unlock(audio->mutex);
@@ -538,13 +639,18 @@ static void _audio_internal__clear_peer(audio_peer_t *peer)
 {
     OpusDecoder *decoder = peer->decoder;
 
+    // free music buffer
     if (peer->music_pcm)
     {
         desktop_memory__erase(peer->music_pcm, AUDIO_MUSIC_FRAMES * 2 * sizeof(float));
         free(peer->music_pcm);
     }
+
+    // clear all but decoder
     clib__null_memory(peer, sizeof(*peer));
     peer->decoder = decoder;
+
+    // reset the decoder
     if (decoder)
     {
         opus_decoder_ctl(decoder, OPUS_RESET_STATE);
@@ -560,6 +666,7 @@ static void _audio_internal__clear_music(audio_peer_t *peers)
 {
     int64 index = 0;
 
+    // clear music peers
     for (index = 0; index < AUDIO_PEERS; index++)
     {
         if (peers[index].music)
@@ -584,16 +691,21 @@ static void _audio_internal__append(audio_peer_t *peer, const float *pcm, uint64
     uint64 capacity = peer->music ? AUDIO_MUSIC_FRAMES : AUDIO_PEER_FRAMES;
     float *output = peer->music ? peer->music_pcm : peer->pcm;
 
+    // check buffer and size
     if (!output || frames > capacity)
     {
         return;
     }
+
+    // discard oldest frames
     if (frames > capacity - peer->count)
     {
         discard = frames - (capacity - peer->count);
         peer->head = (peer->head + discard) % capacity;
         peer->count -= discard;
     }
+
+    // copy new frames
     for (index = 0; index < frames; index++)
     {
         position = (peer->head + peer->count + index) % capacity;
@@ -618,6 +730,8 @@ static void _audio_internal__decode(desktop_audio_t *audio, audio_peer_t *peers,
     int64 frames = 0;
     ushort delta = 0;
     uint64 now = desktop_system__milliseconds();
+
+    // find the peer
     for (index = 0; index < AUDIO_PEERS; index++)
     {
         if (peers[index].active && peers[index].id == packet->sender)
@@ -626,6 +740,8 @@ static void _audio_internal__decode(desktop_audio_t *audio, audio_peer_t *peers,
             break;
         }
     }
+
+    // choose unused peer
     if (!peer)
     {
         for (index = 0; index < AUDIO_PEERS; index++)
@@ -638,19 +754,27 @@ static void _audio_internal__decode(desktop_audio_t *audio, audio_peer_t *peers,
             }
         }
     }
+
+    // check peer and packet
     if (!peer || !peer->decoder || opus_packet_get_nb_samples(packet->data, (opus_int32)packet->size, DESKTOP_AUDIO_RATE) > AUDIO_PEER_FRAMES)
     {
         goto label_rejected;
     }
+
+    // check sequence number
     delta = (ushort)(packet->sequence - peer->sequence);
     if (peer->active && now - peer->last_received < 500 && (delta == 0 || delta > 32768))
     {
         goto label_rejected;
     }
+
+    // reset peer state
     if (!peer->active || peer->music != (packet->music != FALSE) || delta >= 500 || (!packet->music && now - peer->last_received > 500))
     {
         _audio_internal__clear_peer(peer);
     }
+
+    // create music buffer
     peer->music = packet->music != FALSE;
     if (peer->music && !peer->music_pcm)
     {
@@ -660,20 +784,27 @@ static void _audio_internal__decode(desktop_audio_t *audio, audio_peer_t *peers,
             goto label_rejected;
         }
     }
+
+    // decode the packet
     frames = opus_decode_float(peer->decoder, packet->data, (opus_int32)packet->size, scratch, AUDIO_PEER_FRAMES, 0);
     if (frames <= 0)
     {
         goto label_rejected;
     }
+
+    // update peer state
     peer->id = packet->sender;
     peer->sequence = packet->sequence;
     peer->last_received = now;
     peer->active = 1;
     peer->concealed = 0;
     peer->gain = 1 + (float)(packet->volume_offset < -100 ? -100 : packet->volume_offset > 100 ? 100 : packet->volume_offset) / 100;
+
+    // add decoded frames
     _audio_internal__append(peer, scratch, (uint64)frames);
     return;
 label_rejected:
+    // count rejected packet
     desktop_mutex__lock(audio->mutex);
     audio->status.rejected_packets++;
     desktop_mutex__unlock(audio->mutex);
@@ -699,24 +830,34 @@ static void _audio_internal__mix(audio_peer_t *peers, float *mixed, int64 volume
     float gain = (float)volume / 100.0f;
     float concealed[DESKTOP_AUDIO_FRAME * 2] = { 0 };
     uint64 now = desktop_system__milliseconds();
+
+    // clear the output
     clib__null_memory(mixed, DESKTOP_AUDIO_FRAME * 2 * sizeof(float));
+
+    // add active peers
     for (member = 0; member < AUDIO_PEERS; member++)
     {
+        // skip inactive peers
         peer = &peers[member];
         if (!peer->active)
         {
             continue;
         }
+
+        // skip music not ready
         if (peer->music)
         {
+            // clear ended music
             if (!peer->count && now - peer->last_received > 2000)
             {
                 _audio_internal__clear_peer(peer);
                 continue;
             }
+
+            // start after enough frames
             if (!peer->playing)
             {
-                // A short final fragment must also drain when no more packets arrive.
+                // a short final fragment must also drain when no more packets arrive
                 if (!peer->count || (peer->count < AUDIO_MUSIC_START_FRAMES && now - peer->last_received < 1000))
                 {
                     continue;
@@ -724,6 +865,8 @@ static void _audio_internal__mix(audio_peer_t *peers, float *mixed, int64 volume
                 peer->playing = TRUE;
             }
         }
+
+        // fill missing frame
         if (!peer->music && !peer->count && peer->concealed < 2 && now - peer->last_received < 120)
         {
             if (opus_decode_float(peer->decoder, NULL, 0, concealed, DESKTOP_AUDIO_FRAME, 0) == DESKTOP_AUDIO_FRAME)
@@ -732,6 +875,8 @@ static void _audio_internal__mix(audio_peer_t *peers, float *mixed, int64 volume
             }
             peer->concealed++;
         }
+
+        // add peer samples
         capacity = peer->music ? AUDIO_MUSIC_FRAMES : AUDIO_PEER_FRAMES;
         pcm = peer->music ? peer->music_pcm : peer->pcm;
         available = peer->count < DESKTOP_AUDIO_FRAME ? peer->count : DESKTOP_AUDIO_FRAME;
@@ -743,15 +888,21 @@ static void _audio_internal__mix(audio_peer_t *peers, float *mixed, int64 volume
         }
         peer->head = (peer->head + available) % capacity;
         peer->count -= available;
+
+        // stop music when empty
         if (peer->music && !peer->count)
         {
             peer->playing = FALSE;
         }
     }
+
+    // apply the volume
     for (frame = 0; frame < DESKTOP_AUDIO_FRAME * 2; frame++)
     {
         mixed[frame] *= gain;
     }
+
+    // limit the peaks
     opus_pcm_soft_clip(mixed, DESKTOP_AUDIO_FRAME, 2, clip_memory);
 }
 
@@ -802,17 +953,22 @@ static void _audio_internal__worker(void *context)
     char input_device[DESKTOP_DEVICE_KEY] = { 0 };
     char output_device[DESKTOP_DEVICE_KEY] = { 0 };
 
+    // create the encoder
     encoder = opus_encoder_create(DESKTOP_AUDIO_RATE, 1, OPUS_APPLICATION_VOIP, &error);
     if (!peers || !encoder || !activity)
     {
         _audio_internal__detail(audio, "Audio codec initialization failed.");
         goto label_finished;
     }
+
+    // set encoder options
     if (opus_encoder_ctl(encoder, OPUS_SET_BITRATE(64000)) != OPUS_OK || opus_encoder_ctl(encoder, OPUS_SET_COMPLEXITY(8)) != OPUS_OK || opus_encoder_ctl(encoder, OPUS_SET_MAX_BANDWIDTH(OPUS_BANDWIDTH_FULLBAND)) != OPUS_OK || opus_encoder_ctl(encoder, OPUS_SET_SIGNAL(OPUS_SIGNAL_VOICE)) != OPUS_OK || opus_encoder_ctl(encoder, OPUS_SET_VBR(1)) != OPUS_OK)
     {
         _audio_internal__detail(audio, "Audio encoder configuration failed.");
         goto label_finished;
     }
+
+    // create the decoders
     for (index = 0; index < AUDIO_PEERS; index++)
     {
         peers[index].decoder = opus_decoder_create(DESKTOP_AUDIO_RATE, 2, &error);
@@ -822,26 +978,37 @@ static void _audio_internal__worker(void *context)
             goto label_finished;
         }
     }
+
+    // run until stopped
     while (!stop)
     {
+        // lock, read stop request
         desktop_mutex__lock(audio->mutex);
         stop = audio->stop;
+
+        // transmit time has ended
         if ((audio->options.transmit || audio->options.voice_activation) && desktop_system__milliseconds() >= audio->transmit_until)
         {
-            // Protocol work stalled. Do not continue transmitting under an old push-to-talk decision.
+            // protocol work stalled. do not continue transmitting under an old push-to-talk decision
             audio->options.transmit = FALSE;
             audio->options.voice_activation = FALSE;
             _audio_internal__discard_capture(audio);
         }
+
+        // copy options and counters
         options = audio->options;
         notifications = audio->notifications;
         observed = audio->reset;
         music_observed = audio->music_reset;
         desktop_mutex__unlock(audio->mutex);
+
+        // leave the loop
         if (stop)
         {
             break;
         }
+
+        // apply new bitrate
         if (options.voice_bitrate != bitrate)
         {
             if (opus_encoder_ctl(encoder, OPUS_SET_BITRATE((opus_int32)(options.voice_bitrate * 1000))) != OPUS_OK)
@@ -851,6 +1018,8 @@ static void _audio_internal__worker(void *context)
             }
             bitrate = options.voice_bitrate;
         }
+
+        // apply requested reset
         if (epoch != observed)
         {
             for (index = 0; index < AUDIO_PEERS; index++)
@@ -864,13 +1033,18 @@ static void _audio_internal__worker(void *context)
             desktop_activity__reset(activity);
             epoch = observed;
         }
+
+        // apply music reset
         if (music_epoch != music_observed)
         {
             _audio_internal__clear_music(peers);
             music_epoch = music_observed;
         }
+
+        // open and close devices
         if (audio->devices)
         {
+            // reset retry times
             if (clib__strcmp(output_device, options.output_device) != 0)
             {
                 playback_retry = 0;
@@ -879,18 +1053,24 @@ static void _audio_internal__worker(void *context)
             {
                 capture_retry = 0;
             }
+
+            // close playback device
             if (playback_started && ((!options.enabled && !notifications) || !ma_device_is_started(&playback) || clib__strcmp(output_device, options.output_device) != 0))
             {
                 ma_device_uninit(&playback);
                 playback_started = 0;
                 playback_retry = 0;
             }
+
+            // close capture device
             if (capture_started && (!options.microphone || !ma_device_is_started(&capture) || clib__strcmp(input_device, options.input_device) != 0))
             {
                 ma_device_uninit(&capture);
                 capture_started = 0;
                 capture_retry = 0;
             }
+
+            // open playback device
             if ((options.enabled || notifications) && !playback_started && desktop_system__milliseconds() >= playback_retry)
             {
                 playback_started = _audio_internal__device(audio, &playback, FALSE, options.output_device);
@@ -898,6 +1078,8 @@ static void _audio_internal__worker(void *context)
                 playback_retry = desktop_system__milliseconds() + 3000;
                 _audio_internal__detail(audio, playback_started ? "Listening" : "Could not open the selected speakers. Check Audio settings or reconnect the device.");
             }
+
+            // open capture device
             if (options.microphone && !capture_started && desktop_system__milliseconds() >= capture_retry)
             {
                 capture_started = _audio_internal__device(audio, &capture, TRUE, options.input_device);
@@ -911,9 +1093,12 @@ static void _audio_internal__worker(void *context)
         }
         else
         {
+            // set states without devices
             playback_started = options.enabled || notifications;
             capture_started = options.microphone;
         }
+
+        // start new transmission
         wanted = (options.transmit || options.voice_activation) && capture_started;
         if (wanted && !transmitting)
         {
@@ -924,18 +1109,25 @@ static void _audio_internal__worker(void *context)
             voice_active = FALSE;
         }
         transmitting = wanted;
+
+        // reset voice flag
         if (!wanted || (captured_at && desktop_system__milliseconds() - captured_at > 250))
         {
             voice_active = FALSE;
         }
+
+        // update the status
         desktop_mutex__lock(audio->mutex);
         audio->status.playback_ready = playback_started;
         audio->status.capture_ready = capture_started;
         audio->status.voice_active = voice_active;
         audio->status.transmitting = options.transmit && transmitting && (!options.voice_activation || voice_active);
         desktop_mutex__unlock(audio->mutex);
+
+        // decode incoming packets
         for (batch = 0; batch < 16; batch++)
         {
+            // take one packet
             desktop_mutex__lock(audio->mutex);
             have_packet = audio->incoming_count > 0 && audio->music_reset == music_epoch;
             if (have_packet)
@@ -946,14 +1138,21 @@ static void _audio_internal__worker(void *context)
                 audio->incoming_count--;
             }
             desktop_mutex__unlock(audio->mutex);
+
+            // queue is empty
             if (!have_packet)
             {
                 break;
             }
+
+            // decode the packet
             _audio_internal__decode(audio, peers, &packet, decoded);
         }
+
+        // encode captured frames
         for (batch = 0; batch < 4 && transmitting; batch++)
         {
+            // take one captured frame
             desktop_mutex__lock(audio->mutex);
             buffered = audio->capture_count;
             if (buffered >= DESKTOP_AUDIO_FRAME && (audio->options.transmit || audio->options.voice_activation) && audio->reset == epoch)
@@ -972,10 +1171,14 @@ static void _audio_internal__worker(void *context)
                 buffered = 0;
             }
             desktop_mutex__unlock(audio->mutex);
+
+            // not enough samples
             if (buffered < DESKTOP_AUDIO_FRAME)
             {
                 break;
             }
+
+            // apply gain and limits
             gain = (float)options.gain / 100.0f;
             for (frame = 0; frame < DESKTOP_AUDIO_FRAME; frame++)
             {
@@ -986,26 +1189,37 @@ static void _audio_internal__worker(void *context)
                 }
                 mono[frame] = mono[frame] < -1.0f ? -1.0f : (mono[frame] > 1.0f ? 1.0f : mono[frame]);
             }
+
+            // run speech detector
             voice_active = desktop_activity__process(activity, mono, options.activation_threshold);
             captured_at = desktop_system__milliseconds();
+
+            // encode the frame
             clib__null_memory(&packet, sizeof(packet));
             encoded = opus_encode_float(encoder, mono, DESKTOP_AUDIO_FRAME, packet.data, sizeof(packet.data));
             clib__null_memory(mono, sizeof(mono));
+
+            // queue encoded packet
             if (encoded > 0)
             {
+                // set packet fields
                 packet.size = (uint64)encoded;
                 packet.created = desktop_system__milliseconds();
                 packet.sequence = ++sequence;
+
+                // lock and check state
                 desktop_mutex__lock(audio->mutex);
                 if ((audio->options.transmit || audio->options.voice_activation) && audio->reset == epoch && desktop_system__milliseconds() < audio->transmit_until)
                 {
-                    // Retain 60 ms locally while silent; sending still requires speech and server permission.
+                    // retain 60 ms locally while silent; sending still requires speech and server permission
                     while (audio->outgoing_count >= (options.voice_activation && !voice_active ? 3 : AUDIO_OUTGOING))
                     {
                         clib__null_memory(&audio->outgoing[audio->outgoing_head], sizeof(packet));
                         audio->outgoing_head = (audio->outgoing_head + 1) % AUDIO_OUTGOING;
                         audio->outgoing_count--;
                     }
+
+                    // add packet, update status
                     audio->outgoing[(audio->outgoing_head + audio->outgoing_count) % AUDIO_OUTGOING] = packet;
                     audio->outgoing_count++;
                     audio->status.voice_active = voice_active;
@@ -1015,16 +1229,25 @@ static void _audio_internal__worker(void *context)
                 desktop_mutex__unlock(audio->mutex);
             }
         }
+
+        // fill playback buffer
         for (batch = 0; batch < 2 && playback_started; batch++)
         {
+            // read buffered count
             desktop_mutex__lock(audio->mutex);
             buffered = audio->playback_count;
             desktop_mutex__unlock(audio->mutex);
+
+            // enough is buffered
             if (buffered >= DESKTOP_AUDIO_FRAME * 2)
             {
                 break;
             }
+
+            // mix next frame
             _audio_internal__mix(peers, mixed, options.volume, clip_memory);
+
+            // add to playback buffer
             desktop_mutex__lock(audio->mutex);
             if (audio->options.enabled && audio->reset == epoch && audio->music_reset == music_epoch && audio->playback_count <= AUDIO_RING_FRAMES - DESKTOP_AUDIO_FRAME)
             {
@@ -1038,9 +1261,12 @@ static void _audio_internal__worker(void *context)
             }
             desktop_mutex__unlock(audio->mutex);
         }
+
+        // wait 5 milliseconds
         desktop_system__sleep(5);
     }
 label_finished:
+    // close the devices
     if (audio->devices && capture_started)
     {
         ma_device_uninit(&capture);
@@ -1049,8 +1275,12 @@ label_finished:
     {
         ma_device_uninit(&playback);
     }
+
+    // free encoder and detector
     opus_encoder_destroy(encoder);
     desktop_activity__destroy(activity);
+
+    // free decoders and peers
     if (peers)
     {
         for (index = 0; index < AUDIO_PEERS; index++)
@@ -1062,16 +1292,21 @@ label_finished:
         desktop_memory__erase(peers, AUDIO_PEERS * sizeof(*peers));
         free(peers);
     }
+
+    // clear sample buffers
     clib__null_memory(mono, sizeof(mono));
     clib__null_memory(decoded, sizeof(decoded));
 }
 
 void desktop_audio__sound(desktop_audio_t *audio, desktop_sound_t id)
 {
+    // check arguments
     if (!audio)
     {
         return;
     }
+
+    // play if notifications on
     desktop_mutex__lock(audio->mutex);
     if (audio->notifications)
     {
@@ -1082,10 +1317,13 @@ void desktop_audio__sound(desktop_audio_t *audio, desktop_sound_t id)
 
 void desktop_audio__stop_sound(desktop_audio_t *audio, desktop_sound_t id)
 {
+    // check arguments
     if (!audio)
     {
         return;
     }
+
+    // stop the sound
     desktop_mutex__lock(audio->mutex);
     desktop_sounds__stop(audio->sounds, id);
     desktop_mutex__unlock(audio->mutex);
@@ -1093,13 +1331,18 @@ void desktop_audio__stop_sound(desktop_audio_t *audio, desktop_sound_t id)
 
 void desktop_audio__notifications(desktop_audio_t *audio, boole enabled, int64 volume, const char *output)
 {
+    // store notification settings
     desktop_mutex__lock(audio->mutex);
     audio->notifications = enabled;
     audio->notification_volume = volume < 0 ? 0 : (volume > 100 ? 100 : volume);
+
+    // clear sounds when off
     if (!enabled)
     {
         desktop_sounds__clear(audio->sounds);
     }
+
+    // change output device
     if (clib__strcmp(audio->options.output_device, output) != 0)
     {
         audio->reset++;
@@ -1113,11 +1356,14 @@ void desktop_audio__notifications(desktop_audio_t *audio, boole enabled, int64 v
 // Closing voice leaves the selected speakers available for notifications.
 void desktop_audio__stop_voice(desktop_audio_t *audio)
 {
+    // disable voice options
     desktop_mutex__lock(audio->mutex);
     audio->options.enabled = FALSE;
     audio->options.microphone = FALSE;
     audio->options.transmit = FALSE;
     audio->options.voice_activation = FALSE;
     desktop_mutex__unlock(audio->mutex);
+
+    // clear the queues
     desktop_audio__reset(audio);
 }

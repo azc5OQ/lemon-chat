@@ -13,11 +13,14 @@ void server_msg__emojis__send_list(client_t *receiver)
     cJSON *root = NULL_POINTER;
     cJSON *emojis = emojis__catalogue();
 
+    // report the missing list
     if (emojis == NULL_POINTER)
     {
         server_msg__emojis__send_error(receiver, "load_server_emojis", "There is not enough memory to send the emoji list.", NULL_POINTER);
         return;
     }
+
+    // build emoji list message
     root = server_msg__delivery__new_message("server_emoji_list", &message);
     if (root == NULL_POINTER || !util__json_add_owned_object(message, "emojis", emojis))
     {
@@ -25,6 +28,8 @@ void server_msg__emojis__send_list(client_t *receiver)
         cJSON_Delete(root);
         return;
     }
+
+    // send to the receiver
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
 }
@@ -39,11 +44,14 @@ void server_msg__emojis__send_image(client_t *receiver, cstring id)
     cJSON *image = emojis__image(id);
     cJSON *root = NULL_POINTER;
 
+    // report the missing emoji
     if (image == NULL_POINTER)
     {
         server_msg__emojis__send_error(receiver, "load_server_emoji", "This emoji is no longer available.", id);
         return;
     }
+
+    // build emoji image message
     root = cJSON_CreateObject();
     if (root == NULL_POINTER || cJSON_AddStringToObject(image, "type", "server_emoji_image") == NULL_POINTER || !util__json_add_owned_object(root, "message", image))
     {
@@ -51,6 +59,8 @@ void server_msg__emojis__send_image(client_t *receiver, cstring id)
         cJSON_Delete(root);
         return;
     }
+
+    // send to the receiver
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
 }
@@ -65,8 +75,11 @@ void server_msg__emojis__send_added(cstring id, cstring name)
     cJSON *message = NULL_POINTER;
     cJSON *root = server_msg__delivery__new_message("server_emoji_added", &message);
 
+    // add id and name
     cJSON_AddStringToObject(message, "id", id);
     cJSON_AddStringToObject(message, "name", name);
+
+    // send to all clients
     server_msg__delivery__send_json_to_all_clients(root, NULL_POINTER);
     cJSON_Delete(root);
 }
@@ -80,7 +93,10 @@ void server_msg__emojis__send_deleted(cstring id)
     cJSON *message = NULL_POINTER;
     cJSON *root = server_msg__delivery__new_message("server_emoji_deleted", &message);
 
+    // add the emoji id
     cJSON_AddStringToObject(message, "emoji_id", id);
+
+    // send to all clients
     server_msg__delivery__send_json_to_all_clients(root, NULL_POINTER);
     cJSON_Delete(root);
 }
@@ -97,12 +113,15 @@ void server_msg__emojis__send_error(client_t *receiver, cstring operation, cstri
     cJSON *message = NULL_POINTER;
     cJSON *root = server_msg__delivery__new_message("server_emoji_error", &message);
 
+    // add operation, reason, id
     cJSON_AddStringToObject(message, "operation", operation);
     cJSON_AddStringToObject(message, "reason", reason);
     if (emojis__is_id_valid(id) != FALSE)
     {
         cJSON_AddStringToObject(message, "emoji_id", id);
     }
+
+    // send to the receiver
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
 }

@@ -25,14 +25,19 @@ void server_msg__actions__receive(desktop_session_t *session, const cJSON *messa
     const cJSON *role = NULL_POINTER;
     int64 role_id = 0;
     desktop_server_info_t *info = &session->model.server_info;
+
+    // choose by message type
     if (clib__strcmp(type, "authentication_status") == 0)
     {
+        // read the allowed features
         feature = cJSON_GetObjectItemCaseSensitive(message, "is_chat_picture_allowed");
         session->model.policy_pictures = !cJSON_IsBool(feature) || cJSON_IsTrue(feature);
         feature = cJSON_GetObjectItemCaseSensitive(message, "is_file_upload_allowed");
         session->model.policy_files = !cJSON_IsBool(feature) || cJSON_IsTrue(feature);
         feature = cJSON_GetObjectItemCaseSensitive(message, "is_private_messaging_allowed");
         session->model.policy_private = !cJSON_IsBool(feature) || cJSON_IsTrue(feature);
+
+        // read the size limits
         capacity = server_msg__read_number(message, "chat_picture_max_size");
         if (capacity > 0)
         {
@@ -43,6 +48,8 @@ void server_msg__actions__receive(desktop_session_t *session, const cJSON *messa
         {
             session->model.file_limit = (uint64)capacity;
         }
+
+        // read the remaining flags
         session->model.permission_system = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(message, "is_permission_system_enabled"));
         if (cJSON_IsBool(cJSON_GetObjectItemCaseSensitive(message, "is_idle_mode_allowed")))
         {
@@ -55,6 +62,7 @@ void server_msg__actions__receive(desktop_session_t *session, const cJSON *messa
     }
     else if (clib__strcmp(type, "admin_status") == 0)
     {
+        // store the admin flag
         session->model.administrator = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(message, "is_admin"));
         if (!session->model.permission_system)
         {
@@ -63,6 +71,7 @@ void server_msg__actions__receive(desktop_session_t *session, const cJSON *messa
     }
     else if (clib__strcmp(type, "group_list") == 0)
     {
+        // read the local permissions
         actions = cJSON_GetObjectItemCaseSensitive(message, "access");
         session->model.can_assign_groups = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(actions, "assign_groups"));
         session->model.can_remove_groups = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(actions, "remove_groups"));
@@ -72,12 +81,16 @@ void server_msg__actions__receive(desktop_session_t *session, const cJSON *messa
         session->model.moderation_power[1] = server_msg__read_number(cJSON_GetObjectItemCaseSensitive(actions, "powers"), "ban_power");
         session->model.can_create_channel = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(actions, "create_channel"));
         session->model.can_create_temp_channel = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(actions, "create_temp_channel"));
+
+        // clear the client access
         for (index = 0; index < session->model.client_count; index++)
         {
             session->model.clients[index].access_known = 0;
             session->model.clients[index].access = 0;
             clib__null_memory(session->model.clients[index].assignable_roles, sizeof(session->model.clients[index].assignable_roles));
         }
+
+        // clear the channel access
         for (index = 0; index < session->model.channel_count; index++)
         {
             session->model.channels[index].access_known = 0;
@@ -86,6 +99,7 @@ void server_msg__actions__receive(desktop_session_t *session, const cJSON *messa
     }
     else if (clib__strcmp(type, "server_info") == 0)
     {
+        // store uptime and slots
         info->ready = TRUE;
         info->revision++;
         info->uptime = server_msg__read_number(message, "uptime_seconds");
@@ -93,8 +107,12 @@ void server_msg__actions__receive(desktop_session_t *session, const cJSON *messa
         info->max_slots = server_msg__read_number(message, "max_slots");
         info->features_known = 0;
         info->features_enabled = 0;
+
+        // store the server capacity
         capacity = server_msg__read_number(message, "max_slots");
         session->model.server_capacity = capacity > 0 && capacity <= 2147483647 ? (int)capacity : 0;
+
+        // read the feature flags
         actions = cJSON_GetObjectItemCaseSensitive(message, "features");
         for (index = 0; index < DESKTOP_SERVER_FEATURES; index++)
         {
@@ -102,6 +120,8 @@ void server_msg__actions__receive(desktop_session_t *session, const cJSON *messa
             info->features_known |= cJSON_IsBool(feature) ? 1ULL << index : 0;
             info->features_enabled |= cJSON_IsTrue(feature) ? 1ULL << index : 0;
         }
+
+        // read temp channel permission
         if (!session->model.permission_system && cJSON_IsObject(actions))
         {
             session->model.can_create_temp_channel = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(actions, "is_temp_channel_creation_allowed"));
@@ -109,6 +129,7 @@ void server_msg__actions__receive(desktop_session_t *session, const cJSON *messa
     }
     else if (clib__strcmp(type, "channel_access") == 0 && channel)
     {
+        // read the channel rights
         actions = cJSON_GetObjectItemCaseSensitive(message, "rights");
         channel->access_known = cJSON_IsObject(actions);
         channel->access = 0;
@@ -121,10 +142,13 @@ void server_msg__actions__receive(desktop_session_t *session, const cJSON *messa
     }
     else if (clib__strcmp(type, "client_context_access") == 0 && client && client->channel == server_msg__read_number(message, "channel_id") && clib__strcmp(session->client_keys[slot], server_msg__read_string(message, "identity")) == 0)
     {
+        // reset the client access
         actions = cJSON_GetObjectItemCaseSensitive(message, "actions");
         client->access_known = cJSON_IsObject(actions);
         client->access = 0;
         clib__null_memory(client->assignable_roles, sizeof(client->assignable_roles));
+
+        // read the assignable roles
         cJSON_ArrayForEach(role, cJSON_GetObjectItemCaseSensitive(message, "channel_groups"))
         {
             if (cJSON_IsNumber(role) && role->valuedouble >= 0 && role->valuedouble < DESKTOP_TREE_CHANNEL_GROUPS)
@@ -136,6 +160,8 @@ void server_msg__actions__receive(desktop_session_t *session, const cJSON *messa
                 }
             }
         }
+
+        // read the allowed actions
         client->access |= cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(actions, "move")) ? DESKTOP_ACCESS_MOVE : 0;
         client->access |= cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(actions, "kick_from_channel")) ? DESKTOP_ACCESS_KICK_CHANNEL : 0;
         client->access |= cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(actions, "mute")) ? DESKTOP_ACCESS_MUTE_CHANNEL : 0;
@@ -143,11 +169,15 @@ void server_msg__actions__receive(desktop_session_t *session, const cJSON *messa
     }
     else if (clib__strcmp(type, "moderation_result") == 0)
     {
+        // show the result text
         desktop_session__detail(session, server_msg__read_string(message, "text"), 0);
     }
     else if (clib__strcmp(type, "poke") == 0 && (!client || !client->ignored))
     {
+        // copy the sender name
         clib__string_copy(session->model.notice_sender, sizeof(session->model.notice_sender), client ? client->name : "A client");
+
+        // copy the poke text
         text = server_msg__read_string(message, "poke_message");
         length = (uint64)clib__strlen(text);
         if (length >= sizeof(session->model.notice_text))
@@ -159,6 +189,8 @@ void server_msg__actions__receive(desktop_session_t *session, const cJSON *messa
             }
         }
         clib__string_copy_n(session->model.notice_text, sizeof(session->model.notice_text), text, length);
+
+        // increase the notice sequence
         session->model.notice_sequence++;
     }
 }

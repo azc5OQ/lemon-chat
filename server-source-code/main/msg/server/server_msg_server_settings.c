@@ -19,6 +19,7 @@ static void _server_msg_server_settings_internal__add_server_info(cJSON *message
  */
 void server_msg__server_settings__add_attachment_receive_policy(cJSON *message)
 {
+    // add the blocking flags
     cJSON_AddBoolToObject(message, "is_blocking_direct_chat_pictures_active", g_server_settings.is_blocking_direct_chat_pictures_active);
     cJSON_AddBoolToObject(message, "is_blocking_direct_chat_files_active", g_server_settings.is_blocking_direct_chat_files_active);
     cJSON_AddBoolToObject(message, "is_blocking_channel_chat_pictures_active", g_server_settings.is_blocking_channel_chat_pictures_active);
@@ -48,12 +49,17 @@ void server_msg__server_settings__send_to_single_client(client_t *receiver, bool
     uint64 webrtc_received = 0;
     uint64 webrtc_sent = 0;
 
+    // create settings values message
     root = server_msg__delivery__new_message("server_settings_values", &message);
+
+    // add the byte counters
     base__get_webrtc_bytes(&webrtc_received, &webrtc_sent);
     cJSON_AddNumberToObject(message, "websocket_received_bytes", (double)ws_get_received_bytes());
     cJSON_AddNumberToObject(message, "websocket_sent_bytes", (double)ws_get_sent_bytes());
     cJSON_AddNumberToObject(message, "webrtc_received_bytes", (double)webrtc_received);
     cJSON_AddNumberToObject(message, "webrtc_sent_bytes", (double)webrtc_sent);
+
+    // add the memory usage
     if (util__get_process_ram_usage(&ram_bytes) != FALSE)
     {
         cJSON_AddNumberToObject(message, "ram_bytes", (double)ram_bytes);
@@ -62,7 +68,11 @@ void server_msg__server_settings__send_to_single_client(client_t *receiver, bool
     {
         cJSON_AddNullToObject(message, "ram_bytes");
     }
+
+    // add the server uptime
     cJSON_AddNumberToObject(message, "uptime_seconds", (double)base__get_server_uptime_seconds());
+
+    // count the used slots
     for (i = 0; i < (uint64)g_server_settings.max_client_count; i++)
     {
         if (g_clients_array[i].is_existing == TRUE || g_clients_array[i].timestamp_connected != 0)
@@ -70,10 +80,14 @@ void server_msg__server_settings__send_to_single_client(client_t *receiver, bool
             used_slots++;
         }
     }
+
+    // add slots and limits
     cJSON_AddNumberToObject(message, "used_slots", (double)used_slots);
     cJSON_AddNumberToObject(message, "max_slots", (double)g_server_settings.max_client_count);
     cJSON_AddNumberToObject(message, "reserved_slots", (double)g_server_settings.reserved_slots);
     cJSON_AddNumberToObject(message, "max_channel_count", (double)g_server_settings.channel_count_limit);
+
+    // send the short version
     if (memory_only)
     {
         cJSON_AddBoolToObject(message, "memory_only", TRUE);
@@ -81,12 +95,18 @@ void server_msg__server_settings__send_to_single_client(client_t *receiver, bool
         cJSON_Delete(root);
         return;
     }
+
+    // add the encryption settings
     cJSON_AddNumberToObject(message, "dh_exchange_count", (double)g_server_settings.dh_exchange_count);
     cJSON_AddNumberToObject(message, "session_encryption_layer_count", (double)g_server_settings.session_encryption_layer_count);
     cJSON_AddStringToObject(message, "session_cipher", ciphers__name(g_server_settings.session_cipher));
     cJSON_AddBoolToObject(message, "is_random_cipher_layer_enabled", g_server_settings.is_random_cipher_layer_enabled);
     cJSON_AddNumberToObject(message, "connection_password_count", (double)g_server_settings.keys_count);
+
+    // add the snapshot status
     musicbot_store__write_status(message);
+
+    // add web client settings
     cJSON_AddBoolToObject(message, "is_client_http_enabled", g_server_settings.is_client_http_enabled);
     cJSON_AddBoolToObject(message, "is_client_http_blank_when_disabled", g_server_settings.is_client_http_blank_when_disabled);
     cJSON_AddBoolToObject(message, "is_client_config_embedded", g_server_settings.is_client_config_embedded);
@@ -95,12 +115,18 @@ void server_msg__server_settings__send_to_single_client(client_t *receiver, bool
     cJSON_AddStringToObject(message, "default_theme", g_server_settings.default_theme);
     cJSON_AddStringToObject(message, "default_mobile_theme", g_server_settings.default_mobile_theme);
     cJSON_AddNumberToObject(message, "http_port", (double)g_server_settings.http_port);
+
+    // add the blocking flags
     server_msg__server_settings__add_attachment_receive_policy(message);
+
+    // add public info settings
     cJSON_AddBoolToObject(message, "is_server_uptime_published", g_server_settings.is_server_uptime_published);
     cJSON_AddBoolToObject(message, "is_server_slots_published", g_server_settings.is_server_slots_published);
     cJSON_AddBoolToObject(message, "is_server_banner_published", g_server_settings.is_server_banner_published);
     cJSON_AddBoolToObject(message, "is_server_features_published", g_server_settings.is_server_features_published);
     cJSON_AddStringToObject(message, "server_banner", g_server_settings.server_banner != NULL_POINTER ? g_server_settings.server_banner : "");
+
+    // add the feature switches
     util__json_add_owned_object(message, "is_display_country_flags_active", cJSON_CreateBool(g_server_settings.is_display_country_flags_active == TRUE));
     util__json_add_owned_object(message, "is_admin_country_flag_hidden", cJSON_CreateBool(g_server_settings.is_admin_country_flag_hidden == TRUE));
     util__json_add_owned_object(message, "is_voice_chat_active", cJSON_CreateBool(g_server_settings.is_voice_chat_active == TRUE));
@@ -121,11 +147,15 @@ void server_msg__server_settings__send_to_single_client(client_t *receiver, bool
     cJSON_AddBoolToObject(message, "is_permission_system_enabled", g_server_settings.is_permission_system_enabled);
     cJSON_AddBoolToObject(message, "is_stored_client_list_allowed", g_server_settings.is_identity_storage_enabled && g_server_settings.is_stored_client_list_allowed);
     cJSON_AddBoolToObject(message, "is_connection_check_enforced", g_server_settings.is_connection_check_enforced);
+
+    // add channel key reuse
     cJSON_AddBoolToObject(message, "is_channel_key_reuse_enabled", g_server_settings.is_channel_key_reuse_enabled);
     cJSON_AddBoolToObject(message, "is_channel_key_reuse_on_join_allowed", g_server_settings.is_channel_key_reuse_on_join_allowed);
     cJSON_AddBoolToObject(message, "is_channel_key_reuse_on_leave_allowed", g_server_settings.is_channel_key_reuse_on_leave_allowed);
     cJSON_AddNumberToObject(message, "channel_key_reuse_join_min_clients", (double)g_server_settings.channel_key_reuse_join_min_clients);
     cJSON_AddNumberToObject(message, "channel_key_reuse_leave_min_clients", (double)g_server_settings.channel_key_reuse_leave_min_clients);
+
+    // add limits and sizes
     cJSON_AddNumberToObject(message, "max_concurrent_logins", (double)g_server_settings.max_concurrent_logins);
     cJSON_AddNumberToObject(message, "webrtc_datachannel_cooldown_seconds", (double)g_server_settings.webrtc_datachannel_cooldown_seconds);
     cJSON_AddNumberToObject(message, "icon_max_size_bytes", (double)g_server_settings.icon_max_size_bytes);
@@ -137,6 +167,8 @@ void server_msg__server_settings__send_to_single_client(client_t *receiver, bool
     cJSON_AddNumberToObject(message, "file_upload_max_size_mb", (double)(g_server_settings.file_upload_max_size_bytes / (1024 * 1024)));
     cJSON_AddNumberToObject(message, "chat_picture_max_size_mb", (double)(g_server_settings.chat_picture_max_size_bytes / (1024 * 1024)));
     util__json_add_owned_object(message, "is_chat_picture_allowed", cJSON_CreateBool(g_server_settings.is_chat_picture_allowed == TRUE));
+
+    // add the blocked countries
     util__json_add_owned_object(message, "is_country_blocking_active", cJSON_CreateBool(g_server_settings.is_country_blocking_active == TRUE));
     json_blocked_countries = cJSON_CreateArray();
 
@@ -145,6 +177,8 @@ void server_msg__server_settings__send_to_single_client(client_t *receiver, bool
         util__json_add_owned_array(json_blocked_countries, cJSON_CreateString(&g_server_settings.blocked_countries[i][0]));
     }
     util__json_add_owned_object(message, "blocked_countries", json_blocked_countries);
+
+    // add the logging settings
     util__json_add_owned_object(message, "is_logging_client_joins_enabled", cJSON_CreateBool(g_server_settings.is_logging_client_joins_enabled == TRUE));
     util__json_add_owned_object(message, "is_logging_username_changes_enabled", cJSON_CreateBool(g_server_settings.is_logging_username_changes_enabled == TRUE));
     util__json_add_owned_object(message, "is_logging_group_changes_enabled", cJSON_CreateBool(g_server_settings.is_logging_group_changes_enabled == TRUE));
@@ -159,6 +193,7 @@ void server_msg__server_settings__send_to_single_client(client_t *receiver, bool
     // include the current ban list so the admin's bans section can render it
     json_bans = cJSON_CreateArray();
 
+    // lock and add bans
     clib__read_lock(&g_bans_global_rwlock_guard);
     for (i = 0; i < MAX_BANS; i++)
     {
@@ -178,6 +213,7 @@ void server_msg__server_settings__send_to_single_client(client_t *receiver, bool
     util__json_add_owned_object(message, "bans", json_bans);
     clib__unlock(&g_bans_global_rwlock_guard);
 
+    // send to the receiver
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
 }
@@ -197,15 +233,20 @@ static void _server_msg_server_settings_internal__add_server_info(cJSON *message
     uint64 used_slots = 0;
     uint64 i = 0;
 
+    // add the visibility flags
     visibility = cJSON_AddObjectToObject(message, "visibility");
     cJSON_AddBoolToObject(visibility, "uptime", g_server_settings.is_server_uptime_published);
     cJSON_AddBoolToObject(visibility, "slots", g_server_settings.is_server_slots_published);
     cJSON_AddBoolToObject(visibility, "banner", g_server_settings.is_server_banner_published);
     cJSON_AddBoolToObject(visibility, "features", g_server_settings.is_server_features_published);
+
+    // add uptime if published
     if (g_server_settings.is_server_uptime_published == TRUE)
     {
         cJSON_AddNumberToObject(message, "uptime_seconds", (double)base__get_server_uptime_seconds());
     }
+
+    // add slots if published
     if (g_server_settings.is_server_slots_published == TRUE)
     {
         for (i = 0; i < (uint64)g_server_settings.max_client_count; i++)
@@ -218,21 +259,27 @@ static void _server_msg_server_settings_internal__add_server_info(cJSON *message
         cJSON_AddNumberToObject(message, "used_slots", (double)used_slots);
         cJSON_AddNumberToObject(message, "max_slots", (double)g_server_settings.max_client_count);
     }
+
+    // add banner if published
     if (g_server_settings.is_server_banner_published == TRUE && include_banner == TRUE)
     {
         cJSON_AddStringToObject(message, "server_banner", g_server_settings.server_banner != NULL_POINTER ? g_server_settings.server_banner : "");
     }
+
+    // add banner changed flag
     if (g_server_settings.is_server_banner_published == TRUE && banner_changed == TRUE)
     {
         cJSON_AddBoolToObject(message, "banner_changed", TRUE);
     }
+
+    // features are not published
     if (g_server_settings.is_server_features_published == FALSE)
     {
         return;
     }
 
-    // Only public feature switches belong here. Passwords, keys, bans and
-    // administrator-only settings must stay in their existing private replies.
+    // only public feature switches belong here. passwords, keys, bans and
+    // administrator-only settings must stay in their existing private replies
     features = cJSON_AddObjectToObject(message, "features");
     cJSON_AddBoolToObject(features, "is_voice_chat_active", g_server_settings.is_voice_chat_active);
     cJSON_AddBoolToObject(features, "is_music_bot_audio_active", g_server_settings.is_music_bot_audio_active);
@@ -273,7 +320,10 @@ void server_msg__server_settings__send_info_to_single_client(client_t *receiver,
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 
+    // create server info message
     root = server_msg__delivery__new_message("server_info", &message);
+
+    // add info if allowed
     if (permissions__is_allowed(receiver, PERMISSION_VIEW_SERVER_INFO) == TRUE)
     {
         _server_msg_server_settings_internal__add_server_info(message, include_banner, banner_changed);
@@ -282,6 +332,8 @@ void server_msg__server_settings__send_info_to_single_client(client_t *receiver,
     {
         util__json_add_owned_object(message, "visibility", cJSON_CreateObject());
     }
+
+    // send to the receiver
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
 }
@@ -298,8 +350,11 @@ void server_msg__server_settings__send_info_to_all_clients(boole banner_changed)
     cJSON *message = NULL_POINTER;
     uint64 i = 0;
 
+    // build server info message
     root = server_msg__delivery__new_message("server_info", &message);
     _server_msg_server_settings_internal__add_server_info(message, FALSE, banner_changed);
+
+    // send to allowed clients
     for (i = 0; i < (uint64)g_server_settings.max_client_count; i++)
     {
         if (permissions__is_allowed(&g_clients_array[i], PERMISSION_VIEW_SERVER_INFO) == TRUE)
@@ -307,6 +362,8 @@ void server_msg__server_settings__send_info_to_all_clients(boole banner_changed)
             server_msg__delivery__send_json_to_client(&g_clients_array[i], root);
         }
     }
+
+    // free the message
     cJSON_Delete(root);
 }
 
@@ -336,9 +393,12 @@ void server_msg__server_settings__send_banner_result_to_single_client(client_t *
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 
+    // build banner result message
     root = server_msg__delivery__new_message("server_banner_result", &message);
     cJSON_AddBoolToObject(message, "success", success);
     cJSON_AddStringToObject(message, "error", error);
+
+    // send to the receiver
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
 }
@@ -356,13 +416,17 @@ void server_msg__server_settings__send_policy_update_to_all_clients(void)
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 
+    // create server policy message
     root = server_msg__delivery__new_message("server_policy", &message);
     server_msg__server_settings__add_attachment_receive_policy(message);
 
+    // add the upload rules
     cJSON_AddBoolToObject(message, "is_file_upload_allowed", g_server_settings.is_file_upload_allowed);
     cJSON_AddNumberToObject(message, "file_upload_max_size", (double)g_server_settings.file_upload_max_size_bytes);
     cJSON_AddNumberToObject(message, "chat_picture_max_size", (double)g_server_settings.chat_picture_max_size_bytes);
     cJSON_AddBoolToObject(message, "is_chat_picture_allowed", g_server_settings.is_chat_picture_allowed);
+
+    // add the feature switches
     cJSON_AddBoolToObject(message, "is_typing_indicator_allowed", g_server_settings.is_typing_indicator_allowed);
     cJSON_AddBoolToObject(message, "is_client_rename_allowed", g_server_settings.is_client_rename_allowed);
     cJSON_AddBoolToObject(message, "is_link_preview_allowed", g_server_settings.is_link_preview_allowed);
@@ -373,11 +437,15 @@ void server_msg__server_settings__send_policy_update_to_all_clients(void)
     cJSON_AddBoolToObject(message, "is_permission_system_enabled", g_server_settings.is_permission_system_enabled);
     cJSON_AddBoolToObject(message, "is_stored_client_list_allowed", g_server_settings.is_identity_storage_enabled && g_server_settings.is_stored_client_list_allowed);
     cJSON_AddBoolToObject(message, "is_connection_check_enforced", g_server_settings.is_connection_check_enforced);
+
+    // add channel key reuse
     cJSON_AddBoolToObject(message, "is_channel_key_reuse_enabled", g_server_settings.is_channel_key_reuse_enabled);
     cJSON_AddBoolToObject(message, "is_channel_key_reuse_on_join_allowed", g_server_settings.is_channel_key_reuse_on_join_allowed);
     cJSON_AddBoolToObject(message, "is_channel_key_reuse_on_leave_allowed", g_server_settings.is_channel_key_reuse_on_leave_allowed);
     cJSON_AddNumberToObject(message, "channel_key_reuse_join_min_clients", (double)g_server_settings.channel_key_reuse_join_min_clients);
     cJSON_AddNumberToObject(message, "channel_key_reuse_leave_min_clients", (double)g_server_settings.channel_key_reuse_leave_min_clients);
+
+    // add the media switches
     cJSON_AddBoolToObject(message, "is_music_bot_marquee_visible_to_everyone", g_server_settings.is_music_bot_marquee_visible_to_everyone);
     cJSON_AddBoolToObject(message, "is_video_streaming_allowed", g_server_settings.is_video_streaming_active);
     cJSON_AddBoolToObject(message, "is_audio_over_websocket_allowed", g_server_settings.is_audio_over_websocket_allowed);
@@ -387,6 +455,7 @@ void server_msg__server_settings__send_policy_update_to_all_clients(void)
     cJSON_AddBoolToObject(message, "is_voice_chat_active", g_server_settings.is_voice_chat_active);
     cJSON_AddBoolToObject(message, "is_music_bot_audio_active", g_server_settings.is_music_bot_audio_active);
 
+    // send to all clients
     server_msg__delivery__send_json_to_all_clients(root, NULL_POINTER);
     cJSON_Delete(root);
 }
@@ -401,9 +470,13 @@ void server_msg__server_settings__send_saved(client_t *receiver, boole success)
     cJSON *message = NULL_POINTER;
     cJSON *root = server_msg__delivery__new_message("server_settings_saved", &message);
 
+    // add the snapshot status
     musicbot_store__write_status(message);
 
+    // add the success flag
     cJSON_AddBoolToObject(message, "success", success);
+
+    // send to the receiver
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
 }

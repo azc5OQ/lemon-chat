@@ -34,28 +34,34 @@ static boole _client_msg_video_internal__is_json_video_stream_start_valid(cJSON 
     uint64 i = 0;
     char c = 0;
 
+    // check the message object
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
     if (json_message_object == NULL_POINTER)
     {
         return FALSE;
     }
 
+    // check the source field
     json_source = cJSON_GetObjectItemCaseSensitive(json_message_object, "source");
     if (cJSON_IsString(json_source) == FALSE || json_source->valuestring == NULL_POINTER)
     {
         return FALSE;
     }
+
+    // allow screen or file
     if (clib__is_string_equal(json_source->valuestring, "screen") == FALSE && clib__is_string_equal(json_source->valuestring, "file") == FALSE)
     {
         return FALSE;
     }
 
+    // check the codec field
     json_codec = cJSON_GetObjectItemCaseSensitive(json_message_object, "codec");
     if (cJSON_IsString(json_codec) == FALSE || json_codec->valuestring == NULL_POINTER)
     {
         return FALSE;
     }
 
+    // check the codec length
     codec_length = clib__utf8_string_length(json_codec->valuestring);
     if (codec_length == 0 || codec_length >= VIDEO_STREAM_CODEC_MAX_LENGTH)
     {
@@ -73,18 +79,24 @@ static boole _client_msg_video_internal__is_json_video_stream_start_valid(cJSON 
         return FALSE;
     }
 
+    // read width, height, fps
     json_width = cJSON_GetObjectItemCaseSensitive(json_message_object, "width");
     json_height = cJSON_GetObjectItemCaseSensitive(json_message_object, "height");
     json_fps = cJSON_GetObjectItemCaseSensitive(json_message_object, "fps");
 
+    // check the width
     if (util__json_read_int64(json_width, 16, VIDEO_STREAM_MAX_DIMENSION, &validated_dimension) == FALSE)
     {
         return FALSE;
     }
+
+    // check the height
     if (util__json_read_int64(json_height, 16, VIDEO_STREAM_MAX_DIMENSION, &validated_dimension) == FALSE)
     {
         return FALSE;
     }
+
+    // check the frame rate
     if (util__json_read_int64(json_fps, 1, VIDEO_STREAM_MAX_FPS, &validated_dimension) == FALSE)
     {
         return FALSE;
@@ -115,30 +127,37 @@ void client_msg__video__process_start(cJSON *json_root, uint64 sender_client_id)
     cJSON *json_is_sound_included = NULL_POINTER;
     cstring refusal_reason = "";
 
+    // check the spam protection
     if (base__is_request_allowed_based_on_spam_protection(sender_client_id) == FALSE)
     {
         return;
     }
 
+    // check the start request
     if (_client_msg_video_internal__is_json_video_stream_start_valid(json_root) == FALSE)
     {
         DBG_VIDEO_CHANNEL log_info("%s", "client_msg__video__process_start request is not valid \n");
         return;
     }
 
+    // read the message field
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
 
+    // lock clients and channels
     clib__write_lock(&g_clients_global_rwlock_guard);
     clib__write_lock(&g_channels_global_rwlock_guard);
 
+    // find the client
     client = &g_clients_array[sender_client_id];
 
+    // start the video stream
     if (base__is_current_client_request(sender_client_id) == TRUE && client->is_existing == TRUE && client->is_authenticated == TRUE)
     {
         json_is_sound_included = cJSON_GetObjectItemCaseSensitive(json_message_object, "is_sound_included");
 
         if (video_channel__start(client, cJSON_GetObjectItemCaseSensitive(json_message_object, "source")->valuestring, cJSON_GetObjectItemCaseSensitive(json_message_object, "codec")->valuestring, (int64)cJSON_GetObjectItemCaseSensitive(json_message_object, "width")->valuedouble, (int64)cJSON_GetObjectItemCaseSensitive(json_message_object, "height")->valuedouble, (int64)cJSON_GetObjectItemCaseSensitive(json_message_object, "fps")->valuedouble, (boole)(cJSON_IsBool(json_is_sound_included) && cJSON_IsTrue(json_is_sound_included)), &refusal_reason) == FALSE)
         {
+            // send the refusal reason
             if (clib__is_string_equal(refusal_reason, "insufficient_permissions") == TRUE)
             {
                 server_msg__administration__send_permission_denied_to_single_client(client, permissions__power_name(PERMISSION_STREAM_POWER));
@@ -147,6 +166,7 @@ void client_msg__video__process_start(cJSON *json_root, uint64 sender_client_id)
         }
     }
 
+    // unlock channels and clients
     clib__unlock(&g_channels_global_rwlock_guard);
     clib__unlock(&g_clients_global_rwlock_guard);
 }
@@ -163,11 +183,14 @@ void client_msg__video__process_stop(cJSON *json_root, uint64 sender_client_id)
 {
     client_t *client = NULL_POINTER;
 
+    // lock clients and channels
     clib__write_lock(&g_clients_global_rwlock_guard);
     clib__write_lock(&g_channels_global_rwlock_guard);
 
+    // find the client
     client = &g_clients_array[sender_client_id];
 
+    // stop the client stream
     if (base__is_current_client_request(sender_client_id) == TRUE &&
         client->is_existing == TRUE &&
         client->is_authenticated == TRUE &&
@@ -178,6 +201,7 @@ void client_msg__video__process_stop(cJSON *json_root, uint64 sender_client_id)
         video_channel__stop(client->channel_id, "stopped");
     }
 
+    // unlock channels and clients
     clib__unlock(&g_channels_global_rwlock_guard);
     clib__unlock(&g_clients_global_rwlock_guard);
 }
@@ -197,23 +221,28 @@ void client_msg__video__process_watch(cJSON *json_root, uint64 sender_client_id)
     cJSON *json_is_watching = NULL_POINTER;
     cstring refusal_reason = "";
 
+    // check the message object
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
     if (json_message_object == NULL_POINTER)
     {
         return;
     }
 
+    // check the watching flag
     json_is_watching = cJSON_GetObjectItemCaseSensitive(json_message_object, "is_watching");
     if (cJSON_IsBool(json_is_watching) == FALSE)
     {
         return;
     }
 
+    // lock clients and channels
     clib__write_lock(&g_clients_global_rwlock_guard);
     clib__write_lock(&g_channels_global_rwlock_guard);
 
+    // find the client
     client = &g_clients_array[sender_client_id];
 
+    // set the watching state
     if (base__is_current_client_request(sender_client_id) == TRUE && client->is_existing == TRUE && client->is_authenticated == TRUE)
     {
         if (video_channel__set_viewer_watching(client, (boole)cJSON_IsTrue(json_is_watching), &refusal_reason) == FALSE)
@@ -222,6 +251,7 @@ void client_msg__video__process_watch(cJSON *json_root, uint64 sender_client_id)
         }
     }
 
+    // unlock channels and clients
     clib__unlock(&g_channels_global_rwlock_guard);
     clib__unlock(&g_clients_global_rwlock_guard);
 }
@@ -243,39 +273,49 @@ void client_msg__video__process_allow_viewer(cJSON *json_root, uint64 sender_cli
     cJSON *json_is_allowed = NULL_POINTER;
     uint64 viewer_client_id = 0;
 
+    // check the spam protection
     if (base__is_request_allowed_based_on_spam_protection(sender_client_id) == FALSE)
     {
         return;
     }
 
+    // check the message object
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
     if (json_message_object == NULL_POINTER)
     {
         return;
     }
 
+    // read the viewer fields
     json_client_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "client_id");
     json_is_allowed = cJSON_GetObjectItemCaseSensitive(json_message_object, "is_allowed");
 
+    // check the viewer id
     if (g_server_settings.max_client_count == 0 || util__json_read_uint64(json_client_id, g_server_settings.max_client_count - 1, &viewer_client_id) == FALSE)
     {
         return;
     }
+
+    // check the allowed flag
     if (cJSON_IsBool(json_is_allowed) == FALSE)
     {
         return;
     }
 
+    // lock clients and channels
     clib__write_lock(&g_clients_global_rwlock_guard);
     clib__write_lock(&g_channels_global_rwlock_guard);
 
+    // find the client
     client = &g_clients_array[sender_client_id];
 
+    // allow or refuse viewer
     if (base__is_current_client_request(sender_client_id) == TRUE && client->is_existing == TRUE && client->is_authenticated == TRUE)
     {
         video_channel__allow_viewer(client, viewer_client_id, (boole)cJSON_IsTrue(json_is_allowed));
     }
 
+    // unlock channels and clients
     clib__unlock(&g_channels_global_rwlock_guard);
     clib__unlock(&g_clients_global_rwlock_guard);
 }
@@ -293,16 +333,20 @@ void client_msg__video__process_keyframe_request(cJSON *json_root, uint64 sender
 {
     client_t *client = NULL_POINTER;
 
+    // lock clients and channels
     clib__write_lock(&g_clients_global_rwlock_guard);
     clib__write_lock(&g_channels_global_rwlock_guard);
 
+    // find the client
     client = &g_clients_array[sender_client_id];
 
+    // forward the keyframe request
     if (base__is_current_client_request(sender_client_id) == TRUE && client->is_existing == TRUE && client->is_authenticated == TRUE)
     {
         video_channel__forward_keyframe_request(client);
     }
 
+    // unlock channels and clients
     clib__unlock(&g_channels_global_rwlock_guard);
     clib__unlock(&g_clients_global_rwlock_guard);
 }

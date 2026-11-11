@@ -11,6 +11,7 @@
  */
 void desktop_overlay_data__clear(desktop_overlay_snapshot_t *snapshot)
 {
+    // reset the snapshot fields
     clib__null_memory(snapshot, sizeof(*snapshot));
     snapshot->magic = DESKTOP_OVERLAY_MAGIC;
     snapshot->version = DESKTOP_OVERLAY_VERSION;
@@ -29,10 +30,13 @@ boole desktop_overlay_data__valid(const desktop_overlay_snapshot_t *snapshot)
 {
     uint index = 0;
 
+    // check the header fields
     if (!snapshot || snapshot->magic != DESKTOP_OVERLAY_MAGIC || snapshot->version != DESKTOP_OVERLAY_VERSION || snapshot->size != sizeof(*snapshot) || snapshot->member_count > DESKTOP_OVERLAY_MEMBERS || snapshot->total_member_count < snapshot->member_count || snapshot->enabled > 1 || snapshot->preview > 1 || !clib__memchr(snapshot->channel, 0, sizeof(snapshot->channel)))
     {
         return 0;
     }
+
+    // check every member
     for (index = 0; index < snapshot->member_count; index++)
     {
         if (!clib__memchr(snapshot->members[index].name, 0, sizeof(snapshot->members[index].name)) || (snapshot->members[index].flags & ~(DESKTOP_OVERLAY_SPEAKING | DESKTOP_OVERLAY_MUTED | DESKTOP_OVERLAY_LOCAL | DESKTOP_OVERLAY_DEAFENED | DESKTOP_OVERLAY_LOCAL_MUTE)))
@@ -69,6 +73,7 @@ void desktop_overlay_data__preview(desktop_overlay_snapshot_t *snapshot, uint64 
     const char *names[] = { "You", "Alice", "Sam", "Taylor", "Jordan", "Morgan" };
     uint index = 0;
 
+    // set the sample channel
     desktop_overlay_data__clear(snapshot);
     snapshot->preview = 1;
     snapshot->member_count = 6;
@@ -76,6 +81,7 @@ void desktop_overlay_data__preview(desktop_overlay_snapshot_t *snapshot, uint64 
     snapshot->revision = (uint)(now_ms / 1100);
     clib__string_copy(snapshot->channel, sizeof(snapshot->channel), "Gaming / squad");
 
+    // add the sample members
     for (index = 0; index < snapshot->member_count; index++)
     {
         snapshot->members[index].id = index + 1;
@@ -84,6 +90,8 @@ void desktop_overlay_data__preview(desktop_overlay_snapshot_t *snapshot, uint64 
         {
             snapshot->members[index].flags |= DESKTOP_OVERLAY_SPEAKING;
         }
+
+        // set the muted members
         if (index == 3)
         {
             snapshot->members[index].flags = DESKTOP_OVERLAY_MUTED;
@@ -96,6 +104,8 @@ void desktop_overlay_data__preview(desktop_overlay_snapshot_t *snapshot, uint64 
         {
             snapshot->members[index].flags = DESKTOP_OVERLAY_LOCAL_MUTE;
         }
+
+        // copy the member name
         clib__string_copy(snapshot->members[index].name, sizeof(snapshot->members[index].name), names[index]);
     }
 }

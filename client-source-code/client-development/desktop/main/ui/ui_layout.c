@@ -41,6 +41,7 @@ static void _ui_layout_internal__workspace(gui_node_t *node, float x, float y, f
  */
 void desktop_ui_layout__theme(const char *name)
 {
+    // choose the layout mode
     if (name && (clib__strcmp(name, "slate.css") == 0 || clib__strcmp(name, "midnight.css") == 0))
     {
         g_layout_mode = DESKTOP_LAYOUT_RIGHT;
@@ -53,6 +54,8 @@ void desktop_ui_layout__theme(const char *name)
     {
         g_layout_mode = DESKTOP_LAYOUT_LEFT;
     }
+
+    // reset the drag offset
     g_layout_sidebar_grab = 0;
 }
 
@@ -67,18 +70,26 @@ void desktop_ui_layout__raise(gui_node_t *node)
     gui_node_t *previous = NULL_POINTER;
     gui_node_t *child = NULL_POINTER;
     int64 order = 10;
+
+    // find the outer panel
     while (node && node->parent != root)
     {
         node = node->parent;
     }
+
+    // accept panels only
     if (!root || !node || clib__strncmp(node->klass, "column panel", 12) != 0)
     {
         return;
     }
+
+    // find the previous sibling
     for (child = root->first_child; child && child != node; child = child->next_sibling)
     {
         previous = child;
     }
+
+    // move the panel last
     if (child && root->last_child != node)
     {
         if (previous)
@@ -93,6 +104,8 @@ void desktop_ui_layout__raise(gui_node_t *node)
         root->last_child = node;
         node->next_sibling = NULL;
     }
+
+    // set the panel order
     for (child = root->first_child; child; child = child->next_sibling)
     {
         if (clib__strncmp(child->klass, "column panel", 12) == 0)
@@ -100,6 +113,8 @@ void desktop_ui_layout__raise(gui_node_t *node)
             child->resolved.z_index = (int)order++;
         }
     }
+
+    // discard the stored layout
     root->layout_memo_frame = ~(uint64)0;
 }
 
@@ -142,12 +157,13 @@ static void _ui_layout_internal__composer(float scale)
     float minimum_height = 0;
     boole expanded = FALSE;
 
+    // check the controls
     if (!composer || !row || !input || !send || !actions || !controls || scale <= 0)
     {
         return;
     }
 
-    // Use the resolved chat scale and the font metrics used by the input renderer.
+    // use the resolved chat scale and the font metrics used by the input renderer
     chat_scale = actions->resolved.size_h > 0 ? actions->resolved.size_h / 24 : 1;
     expanded = controls->resolved.display != GUI_DISPLAY__NONE;
     font = font__at(input->resolved.font_family, input->resolved.font_size * scale);
@@ -157,17 +173,21 @@ static void _ui_layout_internal__composer(float scale)
     input->resolved.size_h_explicit = TRUE;
     input->resolved.height_pct = 0;
 
-    // Reserve Send and all visible rows before the conversation receives the remaining height.
+    // reserve Send and all visible rows before the conversation receives the remaining height
     row_height = clib__fmaxf(input_height, send->resolved.size_h) + row->resolved.pad_t + row->resolved.pad_b + 2 * scene__border_width(row, scale) / scale;
     row->resolved.size_h = row_height;
     row->resolved.size_h_explicit = TRUE;
     row->resolved.height_pct = 0;
+
+    // add up the heights
     content_height = row_height + actions->resolved.size_h + composer->resolved.gap;
     if (expanded)
     {
         content_height += controls->resolved.size_h + composer->resolved.gap;
     }
     content_height += composer->resolved.pad_t + composer->resolved.pad_b + 2 * scene__border_width(composer, scale) / scale;
+
+    // set the composer height
     minimum_height = (expanded ? 116 : 80) * chat_scale + clib__fmaxf(0, row_height - 32 * chat_scale);
     composer->resolved.size_h = clib__fmaxf(minimum_height, content_height);
     composer->resolved.size_h_explicit = TRUE;
@@ -205,28 +225,35 @@ static void _ui_layout_internal__workspace(gui_node_t *node, float x, float y, f
     float chat_minimum = 0;
     int64 index = 0;
 
+    // use the original layout
     if (!sidebar || !divider || !conversation || sidebar->parent != node || divider->parent != node || conversation->parent != node || node->child_count != 3 || scale <= 0)
     {
         g_layout_original_div.layout(node, x, y, width, height, scale);
         return;
     }
+
+    // set the node bounds
     node->bounds = (gui_rect_t){ x, y, clib__fmaxf(0, width), clib__fmaxf(0, height) };
     node->content_w = node->bounds.w;
     node->content_h = node->bounds.h;
+
+    // nothing to place
     if (width <= 0 || height <= 0)
     {
         return;
     }
 
-    // Keep traversal and keyboard order aligned with the visible pane order.
+    // keep traversal and keyboard order aligned with the visible pane order
     node->first_child = g_layout_mode == DESKTOP_LAYOUT_RIGHT ? conversation : sidebar;
     node->last_child = g_layout_mode == DESKTOP_LAYOUT_RIGHT ? sidebar : conversation;
     node->first_child->next_sibling = divider;
     divider->next_sibling = node->last_child;
     node->last_child->next_sibling = NULL;
 
+    // calculate the three rectangles
     if (g_layout_mode == DESKTOP_LAYOUT_TOP)
     {
+        // place the sidebar above
         chat_minimum = (composer ? composer->resolved.size_h : 80) + (tabs ? tabs->resolved.size_h : 30) + (caption ? caption->resolved.size_h : 22) + conversation->resolved.pad_t + conversation->resolved.pad_b + 3 * conversation->resolved.gap + 24;
         chat_minimum = chat_minimum * scale + 2 * scene__border_width(conversation, scale);
         pane_size = clib__fminf(g_layout_sidebar_height * scale, clib__fmaxf(0, inner_h - chat_minimum - divider_size - 2 * gap));
@@ -236,10 +263,13 @@ static void _ui_layout_internal__workspace(gui_node_t *node, float x, float y, f
     }
     else
     {
+        // place the sidebar beside
         pane_size = clib__fminf(g_layout_sidebar_width * scale, clib__fmaxf(0, inner_w - 300 * scale - divider_size - 2 * gap));
         rectangles[0] = (gui_rect_t){ left, top, pane_size, inner_h };
         rectangles[1] = (gui_rect_t){ left + pane_size + gap, top, divider_size, inner_h };
         rectangles[2] = (gui_rect_t){ left + pane_size + divider_size + 2 * gap, top, clib__fmaxf(0, inner_w - pane_size - divider_size - 2 * gap), inner_h };
+
+        // move the sidebar right
         if (g_layout_mode == DESKTOP_LAYOUT_RIGHT)
         {
             rectangles[2].x = left;
@@ -248,6 +278,7 @@ static void _ui_layout_internal__workspace(gui_node_t *node, float x, float y, f
         }
     }
 
+    // place the three parts
     for (index = 0; index < 3; index++)
     {
         regions[index]->resolved.width_pct = 0;
@@ -283,16 +314,22 @@ static void _ui_layout_internal__window(gui_node_t *node, float x, float y, floa
     float placed = 0;
     int64 order = 10;
 
+    // set the composer size
     _ui_layout_internal__composer(scale);
+
+    // fit every panel
     for (child = node->first_child; child; child = child->next_sibling)
     {
+        // skip other children
         if (clib__strncmp(child->klass, "column panel", 12) != 0)
         {
             continue;
         }
+
+        // set order and width
         child->resolved.z_index = (int)order++;
         panel_w = clib__fminf(child->resolved.size_w, clib__fmaxf(1, available_w - 16));
-        // These forms hug their visible fields, then scroll if the window is too small.
+        // these forms hug their visible fields, then scroll if the window is too small
         if ((clib__strcmp(child->id, "connection-panel") == 0 || clib__strcmp(child->id, "identity-panel") == 0) && child->resolved.display != GUI_DISPLAY__NONE)
         {
             child->resolved.size_h = 0;
@@ -300,24 +337,34 @@ static void _ui_layout_internal__window(gui_node_t *node, float x, float y, floa
             scene__measure_node(child, 0, 0, panel_w * scale, 0);
             child->resolved.size_h = child->bounds.h / scale;
         }
+
+        // calculate height and position
         panel_h = clib__fminf(child->resolved.size_h, clib__fmaxf(1, available_h - 44));
         left = child->resolved.inset_r_set ? available_w - child->resolved.inset_r - panel_w : child->resolved.inset_l;
         top = child->resolved.inset_t;
+
+        // limit the drag offset
         placed = clib__fmaxf(8, clib__fminf(left + child->drag_offset_x / scale, available_w - panel_w - 8));
         child->drag_offset_x = (placed - left) * scale;
         placed = clib__fmaxf(36, clib__fminf(top + child->drag_offset_y / scale, available_h - panel_h - 8));
         child->drag_offset_y = (placed - top) * scale;
+
+        // store size and position
         child->resolved.size_w = panel_w;
         child->resolved.size_h = panel_h;
         child->resolved.inset_l = left;
         child->resolved.inset_l_set = TRUE;
         child->resolved.inset_r = 0;
         child->resolved.inset_r_set = FALSE;
+
+        // set the editor width
         if (editor && clib__strcmp(child->id, "channels-panel") == 0)
         {
             editor->resolved.size_w = clib__fminf(200, panel_w * 0.27f);
         }
     }
+
+    // call the original layout
     g_layout_original_window.layout(node, x, y, width, height, scale);
 }
 
@@ -342,7 +389,11 @@ static void _ui_layout_internal__tabs(gui_node_t *node, float x, float y, float 
     float maximum = 0;
     float tab_width = 144 * scale;
     boole committed = width > 0 && height > 0 && !scene__layout_is_measuring();
+
+    // set the node bounds
     node->bounds = (gui_rect_t){ x, y, clib__fmaxf(0, width), node->resolved.size_h * scale };
+
+    // find the selected tab
     for (child = node->first_child; child; child = child->next_sibling)
     {
         if (child->value == node->value)
@@ -352,9 +403,13 @@ static void _ui_layout_internal__tabs(gui_node_t *node, float x, float y, float 
         }
         cursor += tab_width + 2 * scale;
     }
+
+    // set the content size
     node->content_w = clib__fmaxf(0, cursor - 2 * scale);
     node->content_h = node->bounds.h;
     maximum = clib__fmaxf(0, node->content_w - node->bounds.w);
+
+    // show the selected tab
     if (committed && node->user_data)
     {
         if (selected_right > node->scroll_x + node->bounds.w)
@@ -367,10 +422,14 @@ static void _ui_layout_internal__tabs(gui_node_t *node, float x, float y, float 
         }
         node->user_data = NULL;
     }
+
+    // limit the scroll position
     if (committed)
     {
         node->scroll_x = clib__fmaxf(0, clib__fminf(node->scroll_x, maximum));
         node->scroll_x_target = node->scroll_x;
+
+        // update both scroll buttons
         if (previous)
         {
             previous->state = node->scroll_x <= 0 ? GUI_NODE_STATE__DISABLED : GUI_NODE_STATE__DEFAULT;
@@ -380,6 +439,8 @@ static void _ui_layout_internal__tabs(gui_node_t *node, float x, float y, float 
             next->state = node->scroll_x >= maximum ? GUI_NODE_STATE__DISABLED : GUI_NODE_STATE__DEFAULT;
         }
     }
+
+    // place every tab
     cursor = x - node->scroll_x;
     for (child = node->first_child; child; child = child->next_sibling)
     {
@@ -398,6 +459,8 @@ static void _ui_layout_internal__scroll_tabs(gui_event_t *event)
 {
     gui_node_t *tabs = scene__find_by_id("conversation-tabs");
     float direction = 1;
+
+    // scroll the conversation tabs
     if (tabs && event && event->sender)
     {
         direction = clib__strcmp(event->sender->id, "tabs-previous") == 0 ? -1 : 1;
@@ -417,6 +480,7 @@ static void _ui_layout_internal__scroll_tabs(gui_event_t *event)
  */
 static void _ui_layout_internal__down(gui_node_t *node, int64 x, int64 y, int64 button)
 {
+    // start a divider drag
     if (clib__strcmp(node->id, "sidebar-divider") == 0 && button == 0)
     {
         g_layout_sidebar_grab = g_layout_mode == DESKTOP_LAYOUT_TOP ? (float)y - node->bounds.y : (float)x - node->bounds.x;
@@ -442,17 +506,21 @@ static boole _ui_layout_internal__drag(gui_node_t *node, int64 x, int64 y)
     float border = 0;
     float origin = 0;
     float extent = 0;
+
+    // resize the sidebar
     if (workspace && clib__strcmp(node->id, "sidebar-divider") == 0)
     {
         border = scene__border_width(workspace, scale);
         if (g_layout_mode == DESKTOP_LAYOUT_TOP)
         {
+            // set the sidebar height
             origin = workspace->bounds.y + workspace->resolved.pad_t * scale + border;
             extent = ((float)y - g_layout_sidebar_grab - origin) / scale - workspace->resolved.gap;
             g_layout_sidebar_height = clib__fmaxf(120, clib__fminf(320, extent));
         }
         else
         {
+            // set the sidebar width
             origin = workspace->bounds.x + workspace->resolved.pad_l * scale + border;
             extent = ((float)x - g_layout_sidebar_grab - origin) / scale - workspace->resolved.gap;
             if (g_layout_mode == DESKTOP_LAYOUT_RIGHT)
@@ -464,6 +532,8 @@ static boole _ui_layout_internal__drag(gui_node_t *node, int64 x, int64 y)
         }
         return TRUE;
     }
+
+    // call the original function
     return g_layout_original_button.on_mouse_drag ? g_layout_original_button.on_mouse_drag(node, x, y) : FALSE;
 }
 
@@ -478,6 +548,7 @@ static void _ui_layout_internal__key(gui_node_t *node, int64 key, boole down)
 {
     float direction = 0;
 
+    // resize sidebar by key
     if (clib__strcmp(node->id, "sidebar-divider") == 0 && down)
     {
         if (g_layout_mode == DESKTOP_LAYOUT_TOP && (key == 38 || key == 40))
@@ -525,11 +596,15 @@ static void _ui_layout_internal__div(gui_node_t *node, float x, float y, float w
     gui_node_t *members = NULL_POINTER;
     gui_node_t *audio = NULL_POINTER;
     int64 count = node->child_count;
+
+    // arrange the workspace
     if (clib__strcmp(node->id, "workspace") == 0)
     {
         _ui_layout_internal__workspace(node, x, y, width, height, scale);
         return;
     }
+
+    // set both sidebar widths
     if (g_layout_mode == DESKTOP_LAYOUT_TOP && clib__strcmp(node->id, "sidebar") == 0 && width > 0)
     {
         members = scene__find_by_id("member-list");
@@ -543,12 +618,16 @@ static void _ui_layout_internal__div(gui_node_t *node, float x, float y, float w
             members->resolved.size_w = clib__fmaxf(1, width / scale - node->resolved.pad_l - node->resolved.pad_r - 2 * scene__border_width(node, scale) / scale - node->resolved.gap - audio_width);
         }
     }
+
+    // set the input width
     if (clib__strcmp(node->id, "composer-input-row") == 0 && width > 0 && node->first_child && node->last_child)
     {
         child = node->first_child;
         child->resolved.width_pct = 0;
         child->resolved.size_w = clib__fmaxf(1, width / scale - node->resolved.pad_l - node->resolved.pad_r - 2 * scene__border_width(node, scale) / scale - node->resolved.gap - node->last_child->resolved.size_w);
     }
+
+    // use equal button widths
     if (count > 0 && width > 0 && (clib__strcmp(node->klass, "row audio-buttons") == 0 || clib__strcmp(node->klass, "row bookmark-buttons") == 0 || clib__strcmp(node->klass, "row attachment-actions") == 0 || clib__strcmp(node->klass, "row identity-actions") == 0 || clib__strcmp(node->id, "identity-file-actions") == 0 || clib__strcmp(node->id, "chat-settings-buttons") == 0))
     {
         button_width = clib__fmaxf(1, (width / scale - node->resolved.pad_l - node->resolved.pad_r - (count - 1) * node->resolved.gap) / count);
@@ -558,6 +637,8 @@ static void _ui_layout_internal__div(gui_node_t *node, float x, float y, float w
             child->resolved.size_w = button_width;
         }
     }
+
+    // set key field width
     if (clib__strncmp(node->id, "server-key-row-", 15) == 0 && width > 0)
     {
         for (child = node->first_child; child; child = child->next_sibling)
@@ -570,6 +651,8 @@ static void _ui_layout_internal__div(gui_node_t *node, float x, float y, float w
             }
         }
     }
+
+    // set connection button width
     if (clib__strcmp(node->id, "connection-buttons") == 0 && width > 0)
     {
         button_width = clib__fminf(120, clib__fmaxf(1, (width / scale - (count - 1) * node->resolved.gap) / clib__fmaxf(1, (float)count)));
@@ -579,12 +662,16 @@ static void _ui_layout_internal__div(gui_node_t *node, float x, float y, float w
             child->resolved.size_w = button_width;
         }
     }
+
+    // set first child width
     if (width > 0 && node->first_child && (clib__strcmp(node->klass, "row connection-address-row") == 0 || clib__strcmp(node->klass, "row connection-key-heading") == 0 || clib__strcmp(node->klass, "row chat-message-heading") == 0))
     {
         child = node->first_child;
         child->resolved.width_pct = 0;
         child->resolved.size_w = clib__fmaxf(1, width / scale - node->resolved.gap - (clib__strcmp(node->klass, "row chat-message-heading") == 0 ? (node->child_count > 1 ? 26 : 0) : clib__strcmp(node->klass, "row connection-address-row") == 0 ? 90 : 100));
     }
+
+    // call the layout function
     if (clib__strcmp(node->id, "conversation-tabs") == 0)
     {
         _ui_layout_internal__tabs(node, x, y, width, height, scale);
@@ -593,6 +680,8 @@ static void _ui_layout_internal__div(gui_node_t *node, float x, float y, float w
     {
         g_layout_original_div.layout(node, x, y, width, height, scale);
     }
+
+    // set the meter width
     if (clib__strcmp(node->id, "input-meter-fill") == 0 && width > 0 && height > 0)
     {
         node->bounds.w *= clib__fmaxf(0, clib__fminf(1, node->value));
@@ -607,14 +696,20 @@ void desktop_ui_layout__register(void)
 {
     const widget_vtable_t *original = widget_registry__get(GUI_NODE_TYPE__DIV);
     int64 type = 0;
+
+    // check the div widget
     if (!original || !original->layout || original == &g_layout_div)
     {
         return;
     }
+
+    // replace the div layout
     g_layout_original_div = *original;
     g_layout_div = *original;
     g_layout_div.layout = _ui_layout_internal__div;
     widget_registry__register(GUI_NODE_TYPE__DIV, &g_layout_div);
+
+    // replace the window layout
     original = widget_registry__get(GUI_NODE_TYPE__WINDOW);
     if (original && original->layout)
     {
@@ -623,6 +718,8 @@ void desktop_ui_layout__register(void)
         g_layout_window.layout = _ui_layout_internal__window;
         widget_registry__register(GUI_NODE_TYPE__WINDOW, &g_layout_window);
     }
+
+    // replace the button functions
     original = widget_registry__get(GUI_NODE_TYPE__BUTTON);
     if (original)
     {
@@ -633,7 +730,11 @@ void desktop_ui_layout__register(void)
         g_layout_button.on_key = _ui_layout_internal__key;
         widget_registry__register(GUI_NODE_TYPE__BUTTON, &g_layout_button);
     }
+
+    // register the scroll handler
     scene__register_handler("on_scroll_tabs", _ui_layout_internal__scroll_tabs);
+
+    // replace all press functions
     for (type = 0; type < GUI_NODE_TYPE__COUNT; type++)
     {
         original = widget_registry__get((gui_node_type_e)type);

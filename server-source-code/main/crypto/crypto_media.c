@@ -69,6 +69,7 @@ static void _crypto_media_internal__write_u64(ubyte *out, uint64 value)
 {
     uint64 i = 0;
 
+    // write highest byte first
     for (i = 0; i < 8; i++)
     {
         out[i] = (ubyte)(value >> (56 - i * 8));
@@ -87,6 +88,7 @@ static uint64 _crypto_media_internal__read_u64(const ubyte *in)
     uint64 value = 0;
     uint64 i = 0;
 
+    // read highest byte first
     for (i = 0; i < 8; i++)
     {
         value = (value << 8) | in[i];
@@ -106,7 +108,10 @@ static uint64 _crypto_media_internal__read_u64(const ubyte *in)
  */
 static void _crypto_media_internal__session_block(uint64 frame_counter, int64 direction, int64 stream, ubyte *out_block)
 {
+    // clear the block
     clib__null_memory(out_block, 16);
+
+    // write counter, direction, stream
     _crypto_media_internal__write_u64(out_block, frame_counter);
     out_block[8] = (ubyte)direction;
     out_block[9] = (ubyte)stream;
@@ -128,7 +133,10 @@ void crypto_media__inner_block(uint64 sender_id, uint64 sender_counter, const ub
 {
     uint64 i = 0;
 
+    // clear the block
     clib__null_memory(out_block, 16);
+
+    // write sender and counter
     out_block[0] = (ubyte)sender_id;
     out_block[1] = (ubyte)(sender_id >> 8);
     out_block[2] = (ubyte)(sender_id >> 16);
@@ -182,10 +190,13 @@ boole crypto_media__apply_inner_layer(const crypto_key_t *key, const ubyte *laye
 // writes the first 12 bytes of a body that the server builds itself (the music bot frames)
 void crypto_media__write_body_header(ubyte *body, uint64 sender_id, uint64 sender_counter)
 {
+    // write the sender ID
     body[0] = (ubyte)sender_id;
     body[1] = (ubyte)(sender_id >> 8);
     body[2] = (ubyte)(sender_id >> 16);
     body[3] = (ubyte)(sender_id >> 24);
+
+    // write the sender counter
     _crypto_media_internal__write_u64(body + 4, sender_counter);
 }
 
@@ -220,6 +231,7 @@ uint64 crypto_media__decrypt_from_client(client_t *sender, int64 stream, const u
     boole status1 = FALSE;
     boole status2 = FALSE;
 
+    // check keys, size, version
     status0 = sender->session_keys.is_ready == FALSE;
     status1 = size <= MEDIA_FRAME_OVERHEAD;
     if (status0 == FALSE && status1 == FALSE)
@@ -231,6 +243,8 @@ uint64 crypto_media__decrypt_from_client(client_t *sender, int64 stream, const u
         DBG_MEDIA_AUTH log_info("%s %llu %s", "frame of client", sender->client_id, "refused: the client has no keys yet, or the frame is too short, or its version byte is wrong");
         return 0;
     }
+
+    // check the buffer size
     body_size = size - MEDIA_FRAME_HEADER - MEDIA_FRAME_CODE;
     if (body_size > out_capacity)
     {
@@ -255,9 +269,9 @@ uint64 crypto_media__decrypt_from_client(client_t *sender, int64 stream, const u
         return 0;
     }
 
-    // Remove the encryption used between this client and the server. Recreate
+    // remove the encryption used between this client and the server. recreate
     // its starting value from the packet number, direction and audio/video
-    // choice, then decrypt with the key agreed on when this client connected.
+    // choice, then decrypt with the key agreed on when this client connected
     clib__memcpy(out_body, frame + MEDIA_FRAME_HEADER, body_size);
     _crypto_media_internal__session_block(_crypto_media_internal__read_u64(frame + 1), MEDIA_DIRECTION_FROM_CLIENT, stream, block);
     if (!crypto_metadata__crypt_session(&sender->session_keys, block, sizeof(block), out_body, body_size, CRYPTO_DECRYPT))
@@ -273,6 +287,8 @@ uint64 crypto_media__decrypt_from_client(client_t *sender, int64 stream, const u
         DBG_MEDIA_AUTH log_info("%s %llu %s %llu", "frame of client", sender->client_id, "refused: it names sender", sender_id_in_body);
         return 0;
     }
+
+    // decrypt with password keys
     crypto_media__inner_block(sender_id_in_body, _crypto_media_internal__read_u64(out_body + 4), NULL_POINTER, block);
     if (sender->password_keys != NULL_POINTER && !crypto_metadata__crypt_layers(sender->password_keys->keys, sender->password_keys->count, block, sizeof(block), out_body + MEDIA_BODY_HEADER, body_size - MEDIA_BODY_HEADER, CRYPTO_DECRYPT))
     {
@@ -310,10 +326,11 @@ uint64 crypto_media__encrypt_for_client(client_t *receiver, int64 stream, const 
     boole status1 = FALSE;
     boole status2 = FALSE;
 
+    // check keys and sizes
     status0 = receiver->session_keys.is_ready == FALSE;
     status1 = body_size < MEDIA_BODY_HEADER;
 
-    // Check by subtraction before adding framing bytes or narrowing a copy length.
+    // check by subtraction before adding framing bytes or narrowing a copy length
     status2 = out_capacity < MEDIA_FRAME_HEADER + MEDIA_FRAME_CODE || body_size > out_capacity - MEDIA_FRAME_HEADER - MEDIA_FRAME_CODE || body_size > SIZE_MAX - MEDIA_FRAME_HEADER - MEDIA_FRAME_CODE || body_size > INT64_MAX;
     if (status0 == TRUE || status1 == TRUE || status2 == TRUE)
     {
@@ -321,18 +338,24 @@ uint64 crypto_media__encrypt_for_client(client_t *receiver, int64 stream, const 
     }
     frame_size = MEDIA_FRAME_HEADER + body_size + MEDIA_FRAME_CODE;
 
-    // Several threads can send to this client. Increase the counter in one atomic
-    // operation so they cannot assign the same packet number to different frames.
+    // several threads can send to this client. increase the counter in one atomic
+    // operation so they cannot assign the same packet number to different frames
     frame_counter = atomic_fetch_add_explicit(&receiver->media_send_counter, 1, memory_order_relaxed);
+
+    // write header and body
     out_frame[0] = MEDIA_FRAME_VERSION;
     _crypto_media_internal__write_u64(out_frame + 1, frame_counter);
     clib__memcpy(out_frame + MEDIA_FRAME_HEADER, body, body_size);
+
+    // encrypt with password keys
     sender_id = (uint64)body[0] | ((uint64)body[1] << 8) | ((uint64)body[2] << 16) | ((uint64)body[3] << 24);
     crypto_media__inner_block(sender_id, _crypto_media_internal__read_u64(body + 4), NULL_POINTER, block);
     if (receiver->password_keys != NULL_POINTER && !crypto_metadata__crypt_layers(receiver->password_keys->keys, receiver->password_keys->count, block, sizeof(block), out_frame + MEDIA_FRAME_HEADER + MEDIA_BODY_HEADER, body_size - MEDIA_BODY_HEADER, CRYPTO_ENCRYPT))
     {
         return 0;
     }
+
+    // encrypt with session keys
     _crypto_media_internal__session_block(frame_counter, MEDIA_DIRECTION_TO_CLIENT, stream, block);
     if (!crypto_metadata__crypt_session(&receiver->session_keys, block, sizeof(block), out_frame + MEDIA_FRAME_HEADER, body_size, CRYPTO_ENCRYPT))
     {

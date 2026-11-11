@@ -44,6 +44,8 @@ static void _ui_actions_internal__toolbar_hint(void)
     gui_node_t *node = NULL_POINTER;
     const char *hint = "";
     int64 index = 0;
+
+    // find the hovered button
     for (index = 0; index < 6; index++)
     {
         node = scene__find_by_id((char *)ids[index]);
@@ -53,6 +55,8 @@ static void _ui_actions_internal__toolbar_hint(void)
             break;
         }
     }
+
+    // update the hint text
     node = scene__find_by_id("toolbar-hint");
     if (node && clib__strcmp(node->text, hint) != 0)
     {
@@ -69,6 +73,8 @@ static void _ui_actions_internal__toolbar_hint(void)
 static void _ui_actions_internal__text(const char *id, const char *text)
 {
     gui_node_t *node = scene__find_by_id((char *)id);
+
+    // set the new text
     if (node)
     {
         scene__set_text(node, text, clib__strlen(text));
@@ -84,6 +90,8 @@ static void _ui_actions_internal__text(const char *id, const char *text)
 static void _ui_actions_internal__panel(const char *id, boole visible)
 {
     gui_node_t *node = scene__find_by_id((char *)id);
+
+    // change the visibility
     if (node)
     {
         clib__string_copy(node->klass, sizeof(node->klass), visible ? "column panel" : "column panel hidden");
@@ -93,6 +101,7 @@ static void _ui_actions_internal__panel(const char *id, boole visible)
         }
     }
 #ifdef _WIN32
+    // request a redraw
     platform_win32__request_render();
 #endif
 }
@@ -106,6 +115,8 @@ static void _ui_actions_internal__panel(const char *id, boole visible)
 static void _ui_actions_internal__enabled(const char *id, boole enabled)
 {
     gui_node_t *node = scene__find_by_id((char *)id);
+
+    // set the button state
     if (node)
     {
         if (!enabled)
@@ -126,6 +137,8 @@ static void _ui_actions_internal__enabled(const char *id, boole enabled)
 static const desktop_client_t *_ui_actions_internal__member(void)
 {
     int64 index = 0;
+
+    // find the selected member
     for (index = 0; g_actions_view->connected && index < g_actions_view->client_count; index++)
     {
         if (g_actions_view->clients[index].id == g_actions_member.peer && g_actions_view->clients[index].serial == g_actions_member.serial && g_actions_view->clients[index].channel == g_actions_member.channel)
@@ -143,10 +156,13 @@ static const desktop_client_t *_ui_actions_internal__member(void)
  */
 void desktop_ui_actions__select(const desktop_client_t *member)
 {
+    // store the selected member
     clib__null_memory(&g_actions_member, sizeof(g_actions_member));
     g_actions_member.peer = member->id;
     g_actions_member.serial = member->serial;
     g_actions_member.channel = member->channel;
+
+    // update the action buttons
     g_actions_access_time = 0;
     desktop_ui_actions__update();
 }
@@ -160,17 +176,25 @@ static void _ui_actions_internal__profile(gui_event_t *event)
 {
     int64 index = 0;
     (void)event;
+
+    // check rename is allowed
     if (!g_actions_view->connected || g_actions_view->idle || !g_actions_view->policy_rename)
     {
         return;
     }
+
+    // start the rename action
     _ui_actions_internal__close_forms();
     clib__null_memory(&g_actions_pending, sizeof(g_actions_pending));
     g_actions_pending.type = DESKTOP_ACTION_RENAME;
+
+    // set the form texts
     _ui_actions_internal__text("action-title", "Change username");
     _ui_actions_internal__text("action-label", "New username");
     _ui_actions_internal__text("action-submit", "Save changes");
     _ui_actions_internal__text("action-result", "Changes apply when saved.");
+
+    // show the current name
     for (index = 0; index < g_actions_view->client_count; index++)
     {
         if (g_actions_view->clients[index].id == g_actions_view->local_id)
@@ -178,6 +202,8 @@ static void _ui_actions_internal__profile(gui_event_t *event)
             _ui_actions_internal__text("action-value", g_actions_view->clients[index].name);
         }
     }
+
+    // show the action panel
     _ui_actions_internal__panel("action-panel", 1);
 }
 
@@ -190,8 +216,12 @@ static void _ui_actions_internal__idle(gui_event_t *event)
 {
     desktop_action_t action = { 0 };
     (void)event;
+
+    // choose idle or return
     action.type = g_actions_view->idle ? DESKTOP_ACTION_RETURN : DESKTOP_ACTION_IDLE;
     action.value = -1;
+
+    // queue the action
     if (!desktop_session__action(g_actions_session, &action))
     {
         _ui_actions_internal__text("connection-status", "Idle request could not be queued.");
@@ -208,10 +238,14 @@ static void _ui_actions_internal__destinations(void)
     gui_node_t *node = NULL_POINTER;
     gui_node_t *next = NULL_POINTER;
     int64 index = 0;
+
+    // check the destination list
     if (!parent)
     {
         return;
     }
+
+    // remove the old buttons
     node = parent->first_child;
     parent->first_child = NULL;
     parent->last_child = NULL;
@@ -224,9 +258,13 @@ static void _ui_actions_internal__destinations(void)
         scene__node_free(node);
         node = next;
     }
+
+    // free the old destinations
     free(g_actions_destinations);
     g_actions_destinations = NULL;
     g_actions_destination_count = 0;
+
+    // allocate the destination array
     if (g_actions_view->channel_count > 0)
     {
         g_actions_destinations = malloc((size_t)g_actions_view->channel_count * sizeof(*g_actions_destinations));
@@ -236,6 +274,8 @@ static void _ui_actions_internal__destinations(void)
             return;
         }
     }
+
+    // create the channel buttons
     g_actions_destination_count = g_actions_view->channel_count;
     for (index = 0; index < g_actions_destination_count; index++)
     {
@@ -243,6 +283,7 @@ static void _ui_actions_internal__destinations(void)
         node = scene__node_new(GUI_NODE_TYPE__BUTTON);
         if (node)
         {
+            // set the button values
             scene__set_text(node, g_actions_view->channels[index].name, clib__strlen(g_actions_view->channels[index].name));
             clib__string_copy(node->klass, sizeof(node->klass), "destination");
             scene__set_on_click(node, "on_action_move");
@@ -272,14 +313,21 @@ void desktop_ui_actions__activate(const char *id)
 {
     const desktop_client_t *member = _ui_actions_internal__member();
     char title[160] = { 0 };
+
+    // check the selected member
     if (!member || g_actions_view->idle || member->id == g_actions_view->local_id)
     {
         return;
     }
+
+    // prepare the pending action
     _ui_actions_internal__close_forms();
     g_actions_pending = g_actions_member;
+
+    // choose by button ID
     if (clib__strcmp(id, "member-poke") == 0 && !member->music)
     {
+        // show the poke form
         g_actions_pending.type = DESKTOP_ACTION_POKE;
         clib__string_format(title, sizeof(title), "Poke %s", member->name);
         _ui_actions_internal__text("action-title", title);
@@ -291,6 +339,7 @@ void desktop_ui_actions__activate(const char *id)
     }
     else if ((clib__strcmp(id, "member-kick") == 0 || clib__strcmp(id, "member-ban") == 0) && desktop_session__allows(g_actions_view, member, clib__strcmp(id, "member-ban") == 0 ? DESKTOP_ACTION_BAN : DESKTOP_ACTION_KICK_SERVER, 0))
     {
+        // show the confirmation question
         g_actions_pending.type = clib__strcmp(id, "member-ban") == 0 ? DESKTOP_ACTION_BAN : DESKTOP_ACTION_KICK_SERVER;
         clib__string_format(title, sizeof(title), "%s %s from server?", g_actions_pending.type == DESKTOP_ACTION_BAN ? "Ban" : "Kick", member->name);
         _ui_actions_internal__text("confirm-question", title);
@@ -301,6 +350,7 @@ void desktop_ui_actions__activate(const char *id)
     {
         if (clib__strcmp(id, "member-move") == 0 && (member->access & DESKTOP_ACCESS_MOVE))
         {
+            // show the move panel
             g_actions_pending.type = DESKTOP_ACTION_MOVE;
             clib__string_format(title, sizeof(title), "Move %s to channel", member->name);
             _ui_actions_internal__text("move-title", title);
@@ -309,6 +359,7 @@ void desktop_ui_actions__activate(const char *id)
         }
         else if (clib__strcmp(id, "member-kick-channel") == 0 && member->channel != 0 && (member->access & DESKTOP_ACCESS_KICK_CHANNEL))
         {
+            // show the confirmation question
             g_actions_pending.type = DESKTOP_ACTION_KICK_CHANNEL;
             clib__string_format(title, sizeof(title), "Kick %s from channel?", member->name);
             _ui_actions_internal__text("confirm-question", title);
@@ -317,6 +368,7 @@ void desktop_ui_actions__activate(const char *id)
         }
         else if (clib__strcmp(id, "member-mute-channel") == 0 && (member->access & DESKTOP_ACCESS_MUTE_CHANNEL))
         {
+            // show the mute form
             g_actions_pending.type = DESKTOP_ACTION_MUTE_CHANNEL;
             clib__string_format(title, sizeof(title), "Mute %s for everyone", member->name);
             _ui_actions_internal__text("action-title", title);
@@ -328,6 +380,7 @@ void desktop_ui_actions__activate(const char *id)
         }
         else if (clib__strcmp(id, "member-stop-stream") == 0 && (member->access & DESKTOP_ACCESS_STOP_STREAM))
         {
+            // queue the stop request
             g_actions_pending.type = DESKTOP_ACTION_STOP_STREAM;
             desktop_session__action(g_actions_session, &g_actions_pending);
         }
@@ -346,13 +399,18 @@ static void _ui_actions_internal__submit(gui_event_t *event)
     long minutes = 0;
     uint64 index = 0;
     (void)event;
+
+    // refuse an empty value
     if (!value || !value->text[0])
     {
         _ui_actions_internal__text("action-result", "Enter a value first.");
         return;
     }
+
+    // check the mute minutes
     if (g_actions_pending.type == DESKTOP_ACTION_MUTE_CHANNEL)
     {
+        // allow only digits
         for (index = 0; value->text[index]; index++)
         {
             if (!clib__isdigit((ubyte)value->text[index]) || index > 3)
@@ -361,6 +419,8 @@ static void _ui_actions_internal__submit(gui_event_t *event)
                 return;
             }
         }
+
+        // convert to seconds
         minutes = clib__strtol(value->text, &end, 10);
         if (!end || *end || minutes < 0 || minutes > 1440)
         {
@@ -373,12 +433,18 @@ static void _ui_actions_internal__submit(gui_event_t *event)
     {
         return;
     }
+
+    // check the name length
     if (g_actions_pending.type == DESKTOP_ACTION_RENAME && clib__strlen(value->text) > 100)
     {
         _ui_actions_internal__text("action-result", "The name must fit in 100 UTF-8 bytes.");
         return;
     }
+
+    // copy the value
     clib__string_copy(g_actions_pending.text, sizeof(g_actions_pending.text), value->text);
+
+    // queue the action
     if (desktop_session__action(g_actions_session, &g_actions_pending))
     {
         if (g_actions_pending.type == DESKTOP_ACTION_RENAME)
@@ -402,6 +468,8 @@ static void _ui_actions_internal__submit(gui_event_t *event)
 static void _ui_actions_internal__confirm(gui_event_t *event)
 {
     (void)event;
+
+    // queue the confirmed action
     if (g_actions_pending.type == DESKTOP_ACTION_KICK_CHANNEL || g_actions_pending.type == DESKTOP_ACTION_KICK_SERVER || g_actions_pending.type == DESKTOP_ACTION_BAN)
     {
         if (!desktop_session__action(g_actions_session, &g_actions_pending))
@@ -409,6 +477,8 @@ static void _ui_actions_internal__confirm(gui_event_t *event)
             _ui_actions_internal__text("connection-status", "The client moved or disconnected. Select them again.");
         }
     }
+
+    // close the confirm panel
     g_actions_pending.type = DESKTOP_ACTION_NONE;
     _ui_actions_internal__panel("confirm-panel", 0);
 }
@@ -421,15 +491,21 @@ static void _ui_actions_internal__confirm(gui_event_t *event)
 static void _ui_actions_internal__move(gui_event_t *event)
 {
     nuint index = event && event->sender ? (nuint)event->sender->user_data : 0;
+
+    // check the destination index
     if (g_actions_pending.type != DESKTOP_ACTION_MOVE || !index || index > g_actions_destination_count)
     {
         return;
     }
+
+    // queue the move
     g_actions_pending.value = g_actions_destinations[index - 1];
     if (!desktop_session__action(g_actions_session, &g_actions_pending))
     {
         _ui_actions_internal__text("connection-status", "The client moved or disconnected. Select them again.");
     }
+
+    // close the move panel
     g_actions_pending.type = DESKTOP_ACTION_NONE;
     _ui_actions_internal__panel("move-panel", 0);
 }
@@ -442,10 +518,14 @@ static void _ui_actions_internal__move(gui_event_t *event)
 static void _ui_actions_internal__close(gui_event_t *event)
 {
     gui_node_t *node = event ? event->sender : NULL;
+
+    // find the parent panel
     while (node && !clib__strstr(node->klass, "panel hidden") && clib__strcmp(node->klass, "column panel") != 0)
     {
         node = node->parent;
     }
+
+    // close the panel
     if (node)
     {
         _ui_actions_internal__panel(node->id, 0);
@@ -463,9 +543,12 @@ static void _ui_actions_internal__close(gui_event_t *event)
  */
 static void _ui_actions_internal__close_forms(void)
 {
+    // free the destinations
     free(g_actions_destinations);
     g_actions_destinations = NULL;
     g_actions_destination_count = 0;
+
+    // hide the action panels
     _ui_actions_internal__panel("action-panel", 0);
     _ui_actions_internal__panel("move-panel", 0);
     _ui_actions_internal__panel("confirm-panel", 0);
@@ -474,6 +557,7 @@ static void _ui_actions_internal__close_forms(void)
 
 void desktop_ui_actions__shutdown(void)
 {
+    // free the destinations
     free(g_actions_destinations);
     g_actions_destinations = NULL;
     g_actions_destination_count = 0;
@@ -493,14 +577,22 @@ void desktop_ui_actions__update(void)
     uint64 now = desktop_system__milliseconds();
     char title[160] = { 0 };
     desktop_action_t action = g_actions_member;
+
+    // update the toolbar buttons
     _ui_actions_internal__enabled("profile-rename", g_actions_view->connected && !g_actions_view->idle && g_actions_view->policy_rename);
     _ui_actions_internal__enabled("idle-button", g_actions_view->connected && (g_actions_view->policy_idle || g_actions_view->idle));
+
+    // update the toolbar hint
     _ui_actions_internal__toolbar_hint();
+
+    // update the member buttons
     _ui_actions_internal__enabled("member-poke", member && !member->music && !g_actions_view->idle && member->id != g_actions_view->local_id);
     _ui_actions_internal__enabled("member-move", (access & DESKTOP_ACCESS_MOVE) != 0);
     _ui_actions_internal__enabled("member-kick-channel", member && member->channel != 0 && (access & DESKTOP_ACCESS_KICK_CHANNEL));
     _ui_actions_internal__enabled("member-mute-channel", (access & DESKTOP_ACCESS_MUTE_CHANNEL) != 0);
     _ui_actions_internal__enabled("member-stop-stream", (access & DESKTOP_ACCESS_STOP_STREAM) != 0);
+
+    // request the member permissions
     if (member && !member->idle && !member->music && !g_actions_view->idle && ((panel && !clib__strstr(panel->klass, "hidden")) || (menu && !clib__strstr(menu->klass, "hidden"))) && now - g_actions_access_time >= 5000)
     {
         action.type = DESKTOP_ACTION_ACCESS;
@@ -509,16 +601,24 @@ void desktop_ui_actions__update(void)
             g_actions_access_time = now;
         }
     }
+
+    // close forms after disconnect
     if (!g_actions_view->connected && g_actions_connected)
     {
         _ui_actions_internal__close_forms();
     }
+
+    // reset on new connection
     if (g_actions_view->connected && !g_actions_connected)
     {
         g_actions_notice = 0;
         g_actions_rename[0] = 0;
     }
+
+    // store the connection state
     g_actions_connected = g_actions_view->connected;
+
+    // show a new poke
     if (g_actions_view->notice_sequence > g_actions_notice)
     {
         g_actions_notice = g_actions_view->notice_sequence;
@@ -527,6 +627,8 @@ void desktop_ui_actions__update(void)
         _ui_actions_internal__text("notice-text", g_actions_view->notice_text);
         _ui_actions_internal__panel("notice-panel", 1);
     }
+
+    // save the confirmed name
     for (index = 0; g_actions_rename[0] && index < g_actions_view->client_count; index++)
     {
         if (g_actions_view->clients[index].id == g_actions_view->local_id && clib__strcmp(g_actions_view->clients[index].name, g_actions_rename) == 0)
@@ -551,10 +653,13 @@ void desktop_ui_actions__update(void)
  */
 void desktop_ui_actions__initialize(desktop_session_t *session, const desktop_session_view_t *view, desktop_settings_t *settings)
 {
+    // store the arguments
     g_actions_session = session;
     g_actions_view = view;
     g_actions_settings = settings;
     g_actions_member.peer = -1;
+
+    // register the handlers
     scene__register_handler("on_profile", _ui_actions_internal__profile);
     scene__register_handler("on_idle", _ui_actions_internal__idle);
     scene__register_handler("on_member_action", _ui_actions_internal__member_action);

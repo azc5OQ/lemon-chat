@@ -53,6 +53,7 @@ static void _server_msg_delivery_internal__release_queued_text(void *context)
 {
     outgoing_metadata_t *outgoing = context;
 
+    // erase and free copy
     if (outgoing != NULL_POINTER)
     {
         crypto_metadata__release_passwords(outgoing->passwords);
@@ -93,22 +94,29 @@ int64 server_msg__delivery__queue_text(ws_cli_conn_t *socket, const crypto_sessi
     uint64 charged_bytes = 0;
     outgoing_metadata_t *outgoing = NULL_POINTER;
 
+    // check socket and text
     if (socket == NULL_POINTER || plaintext == NULL_POINTER)
     {
         return -1;
     }
+
+    // check the text size
     text_size = clib__strlen(plaintext);
     if (text_size > (uint64)g_server_settings.websocket_message_max_length || text_size > (SIZE_MAX - sizeof(*outgoing) - 8192) / 5)
     {
         ws_abort_client(socket);
         return -1;
     }
+
+    // allocate the copy
     outgoing = (outgoing_metadata_t *)memorymanager__allocate(sizeof(*outgoing) + text_size + 1, MEMALLOC_TYPE_ENCRYPT);
     if (outgoing == NULL_POINTER)
     {
         ws_abort_client(socket);
         return -1;
     }
+
+    // copy text and keys
     outgoing->passwords = crypto_metadata__retain_passwords(passwords);
     outgoing->text_size = text_size;
     clib__memcpy(outgoing->text, plaintext, text_size + 1);
@@ -117,9 +125,11 @@ int64 server_msg__delivery__queue_text(ws_cli_conn_t *socket, const crypto_sessi
         outgoing->session = *session;
     }
 
-    // Reserve room for the text, encryption buffers, base64 and WebSocket frame.
-    // The fixed allowance also covers padding when the message itself is short.
+    // reserve room for the text, encryption buffers, base64 and WebSocket frame.
+    // the fixed allowance also covers padding when the message itself is short
     charged_bytes = sizeof(*outgoing) + text_size * 5 + 8192;
+
+    // queue by message kind
     if (keepalive == TRUE)
     {
         return ws_queue_keepalive(socket, outgoing, charged_bytes, _server_msg_delivery_internal__encode_queued_text, _server_msg_delivery_internal__release_queued_text, server_msg__delivery__release_encoded_text);
@@ -147,14 +157,19 @@ boole server_msg__delivery__queue_text_to_client(client_t *client, const char *p
     crypto_session_keys_t session = { 0 };
     boole result = FALSE;
 
+    // check client and text
     if (client == NULL_POINTER || client->p_ws_connection == NULL_POINTER || plaintext == NULL_POINTER)
     {
         return FALSE;
     }
+
+    // use the ready keys
     if (client->session_keys.is_ready == TRUE)
     {
         return server_msg__delivery__queue_text(client->p_ws_connection, &client->session_keys, client->password_keys, plaintext, FALSE, FALSE) == 0;
     }
+
+    // derive keys from secret
     if (client->dh_shared_secret[0] != 0)
     {
         if (!crypto_metadata__derive_session_keys(client->dh_shared_secret, &session))
@@ -163,6 +178,8 @@ boole server_msg__delivery__queue_text_to_client(client_t *client, const char *p
             return FALSE;
         }
     }
+
+    // queue and clear keys
     result = server_msg__delivery__queue_text(client->p_ws_connection, session.is_ready ? &session : NULL_POINTER, client->password_keys, plaintext, FALSE, FALSE) == 0;
     crypto_metadata__clear_session_keys(&session);
     return result;
@@ -218,15 +235,20 @@ static void _server_msg_delivery_internal__send_text(client_t *client, char *dh_
     crypto_session_keys_t session = { 0 };
     ws_cli_conn_t *socket = client->p_ws_connection;
 
+    // check socket and text
     if (socket == NULL_POINTER || plaintext == NULL_POINTER)
     {
         return;
     }
+
+    // derive keys from secret
     if (dh_shared_secret != NULL_POINTER && dh_shared_secret[0] != 0 && !crypto_metadata__derive_session_keys(dh_shared_secret, &session))
     {
         ws_abort_client(socket);
         return;
     }
+
+    // queue and clear keys
     server_msg__delivery__queue_text(socket, session.is_ready ? &session : NULL_POINTER, client->password_keys, plaintext, FALSE, FALSE);
     crypto_metadata__clear_session_keys(&session);
 }
@@ -283,6 +305,7 @@ static void _server_msg_delivery_internal__send_text_to_all_clients(char *plaint
     uint64 i = 0;
     client_t *client = NULL_POINTER;
 
+    // send to authenticated clients
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
         client = &g_clients_array[i];
@@ -329,6 +352,7 @@ void server_msg__delivery__send_text_to_channel(char *plaintext, uint64 channel_
     uint64 i = 0;
     client_t *client = NULL_POINTER;
 
+    // send to channel members
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
         client = &g_clients_array[i];

@@ -66,6 +66,7 @@ void server_msg__connection__send_rsa_key_too_weak_to_single_client(client_t *re
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 
+    // build weak key message
     root = server_msg__delivery__new_message("rsa_key_too_weak", &message);
     cJSON_AddNumberToObject(message, "minimum_rsa_key_bits", (double)g_server_settings.minimum_rsa_key_bits);
 
@@ -75,6 +76,8 @@ void server_msg__connection__send_rsa_key_too_weak_to_single_client(client_t *re
     {
         ws_sendframe_txt(receiver->p_ws_connection, plaintext);
     }
+
+    // free message and text
     util__free_json_message(root, plaintext);
 }
 
@@ -94,11 +97,15 @@ void server_msg__connection__send_public_key_challenge_to_single_client(client_t
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // build the challenge message
     root = server_msg__delivery__new_message("public_key_challenge", &message);
     cJSON_AddStringToObject(message, "value", random_value_challenge_string);
     cJSON_AddStringToObject(message, "dh_public_mix", dh_public_mix_for_client);
+
+    // add the crypto copy
     if (crypto != NULL_POINTER)
     {
         copy = cJSON_Duplicate(crypto, TRUE);
@@ -130,10 +137,13 @@ void server_msg__connection__send_authentication_status_to_single_client(client_
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // create authentication status message
     root = server_msg__delivery__new_message("authentication_status", &message);
 
+    // add result, audio settings
     cJSON_AddStringToObject(message, "value", "success");
     cJSON_AddBoolToObject(message, "is_audio_over_websocket_allowed", g_server_settings.is_audio_over_websocket_allowed);
     cJSON_AddBoolToObject(message, "is_audio_over_webrtc_allowed", g_server_settings.is_audio_over_webrtc_allowed);
@@ -149,6 +159,8 @@ void server_msg__connection__send_authentication_status_to_single_client(client_
     cJSON_AddBoolToObject(message, "is_permission_system_enabled", g_server_settings.is_permission_system_enabled);
     cJSON_AddBoolToObject(message, "is_stored_client_list_allowed", g_server_settings.is_identity_storage_enabled && g_server_settings.is_stored_client_list_allowed);
     cJSON_AddBoolToObject(message, "is_connection_check_enforced", g_server_settings.is_connection_check_enforced);
+
+    // add channel key reuse
     cJSON_AddBoolToObject(message, "is_channel_key_reuse_enabled", g_server_settings.is_channel_key_reuse_enabled);
     cJSON_AddBoolToObject(message, "is_channel_key_reuse_on_join_allowed", g_server_settings.is_channel_key_reuse_on_join_allowed);
     cJSON_AddBoolToObject(message, "is_channel_key_reuse_on_leave_allowed", g_server_settings.is_channel_key_reuse_on_leave_allowed);
@@ -179,10 +191,11 @@ void server_msg__connection__send_authentication_status_to_single_client(client_
     cJSON_AddNumberToObject(message, "chat_picture_max_size", (double)g_server_settings.chat_picture_max_size_bytes);
     cJSON_AddBoolToObject(message, "is_chat_picture_allowed", g_server_settings.is_chat_picture_allowed);
 
-    // A masquerading tunnel cannot report the visitor's reflexive address.
-    // Clients initiate ICE toward our explicitly advertised public candidates instead.
+    // a masquerading tunnel cannot report the visitor's reflexive address.
+    // clients initiate ICE toward our explicitly advertised public candidates instead
     cJSON_AddNumberToObject(message, "stun_port", g_server_settings.is_wireguard_mode_active ? 0 : 3478);
 
+    // send to the receiver
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
 }
@@ -211,29 +224,37 @@ static char *_server_msg_connection_internal__encode_client_list(void *context, 
     uint64 byte_index = 0;
     uint64 x = 0;
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // create client list message
     root = server_msg__delivery__new_message("client_list", &message);
     json_client_array = cJSON_CreateArray();
 
     // create array of clients
     for (x = 0; x < outgoing->count; x++)
     {
+        // add username and key
         client_in_loop = &outgoing->clients[x];
         single_client = cJSON_CreateObject();
         cJSON_AddStringToObject(single_client, "username", client_in_loop->username);
         cJSON_AddStringToObject(single_client, "public_key", client_in_loop->public_key);
 
+        // add the channel ids
         cJSON_AddNumberToObject(single_client, "channel_id", (double)client_in_loop->channel_id);
         cJSON_AddNumberToObject(single_client, "channel_group_id", client_in_loop->channel_group_id);
 
+        // add the client id
         cJSON_AddNumberToObject(single_client, "client_id", (double)client_in_loop->client_id);
 
+        // add music bot data
         cJSON_AddBoolToObject(single_client, "is_music_bot", client_in_loop->is_music_bot);
         if (client_in_loop->has_music_keys == TRUE)
         {
             cJSON_AddNumberToObject(single_client, "music_bot_encryption", 1);
         }
+
+        // add keys as hex
         if (client_in_loop->include_music_keys == TRUE)
         {
             music_keys = cJSON_AddArrayToObject(single_client, "music_bot_keys");
@@ -246,8 +267,11 @@ static char *_server_msg_connection_internal__encode_client_list(void *context, 
                 util__json_add_owned_array(music_keys, cJSON_CreateString(key_hex));
             }
         }
+
+        // add the audio state
         cJSON_AddNumberToObject(single_client, "audio_state", (double)client_in_loop->audio_state);
 
+        // add the group ids
         if (client_in_loop->group_ids != NULL_POINTER)
         {
             json_group_ids_array = cJSON_CreateIntArray(client_in_loop->group_ids, (int)client_in_loop->group_count);
@@ -259,8 +283,10 @@ static char *_server_msg_connection_internal__encode_client_list(void *context, 
             util__json_add_owned_object(single_client, "group_ids", json_group_ids_array);
         }
 
+        // add the idle flag
         cJSON_AddBoolToObject(single_client, "is_idle", client_in_loop->is_idle);
 
+        // add the identity hash
         cJSON_AddStringToObject(single_client, "identity_hash", client_in_loop->identity_hash);
 
         // property country_iso_code will always be part of response; empty for an unknown country,
@@ -273,18 +299,26 @@ static char *_server_msg_connection_internal__encode_client_list(void *context, 
         cJSON_AddBoolToObject(single_client, "is_streaming_video", client_in_loop->is_streaming_video);
         cJSON_AddStringToObject(single_client, "song_name", client_in_loop->song_name);
 
+        // add client to array
         util__json_add_owned_array(json_client_array, single_client);
     }
 
+    // add clients and username
     util__json_add_owned_object(message, "clients", json_client_array);
     cJSON_AddStringToObject(message, "local_username", outgoing->local_username);
+
+    // convert to text, encrypt
     plaintext = cJSON_PrintUnformatted(root);
     if (plaintext != NULL_POINTER)
     {
         encoded = crypto_metadata__encrypt_for_connection(plaintext, &encoded_size, &outgoing->session, outgoing->passwords);
     }
+
+    // free text and message
     cJSON_free(plaintext);
     cJSON_Delete(root);
+
+    // set the result size
     *size = encoded_size > 0 ? (uint64)encoded_size - 1 : 0;
     return encoded;
 }
@@ -299,6 +333,7 @@ static void _server_msg_connection_internal__release_client_list(void *context)
     outgoing_client_list_t *outgoing = context;
     uint64 allocation_size = outgoing->allocation_size;
 
+    // erase and free copy
     crypto_metadata__release_passwords(outgoing->passwords);
     mbedtls_platform_zeroize(outgoing, allocation_size);
     memorymanager__free((nuint)outgoing);
@@ -321,33 +356,45 @@ void server_msg__connection__send_client_list_to_single_client(client_t *receive
     uint64 i = 0;
     int *groups = NULL_POINTER;
 
+    // count clients and size
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
+        // skip clients without login
         client = &g_clients_array[i];
         if (client->is_existing == FALSE || client->is_authenticated == FALSE)
         {
             continue;
         }
+
+        // check the size limits
         group_count = g_server_settings.is_permission_system_enabled ? cvector_size(client->group_ids) : 0;
         if (group_count > INT_MAX || allocation_size > SIZE_MAX - sizeof(listed_client_t) || group_count > (SIZE_MAX - allocation_size - sizeof(listed_client_t)) / sizeof(int))
         {
             ws_abort_client(receiver->p_ws_connection);
             return;
         }
+
+        // add to the totals
         allocation_size += sizeof(listed_client_t) + group_count * sizeof(int);
         count++;
     }
+
+    // check size and keys
     if (allocation_size > (SIZE_MAX - 8192) / 6 || !receiver->session_keys.is_ready)
     {
         ws_abort_client(receiver->p_ws_connection);
         return;
     }
+
+    // allocate the list copy
     outgoing = (outgoing_client_list_t *)memorymanager__allocate(allocation_size, MEMALLOC_TYPE_ENCRYPT);
     if (outgoing == NULL_POINTER)
     {
         ws_abort_client(receiver->p_ws_connection);
         return;
     }
+
+    // copy keys and username
     outgoing->allocation_size = allocation_size;
     outgoing->count = count;
     outgoing->session = receiver->session_keys;
@@ -355,13 +402,18 @@ void server_msg__connection__send_client_list_to_single_client(client_t *receive
     clib__memcpy(outgoing->local_username, receiver->username, sizeof(outgoing->local_username));
     groups = (int *)(outgoing->clients + count);
     count = 0;
+
+    // copy every listed client
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
+        // skip clients without login
         client = &g_clients_array[i];
         if (client->is_existing == FALSE || client->is_authenticated == FALSE)
         {
             continue;
         }
+
+        // copy the client fields
         listed = &outgoing->clients[count++];
         listed->client_id = client->client_id;
         listed->channel_id = (int64)client->channel_id;
@@ -371,11 +423,15 @@ void server_msg__connection__send_client_list_to_single_client(client_t *receive
         listed->is_idle = client->is_idle;
         listed->is_streaming_song = client->is_streaming_song;
         listed->is_streaming_video = client->is_streaming_video;
+
+        // copy the text fields
         clib__memcpy(listed->username, client->username, sizeof(listed->username));
         util__hash_password_to_base64(client->public_key, listed->identity_hash, sizeof(listed->identity_hash));
         clib__memcpy(listed->public_key, client->public_key, sizeof(listed->public_key));
         clib__memcpy(listed->song_name, client->song_name, sizeof(listed->song_name));
         clib__string_format(listed->country_iso_code, sizeof(listed->country_iso_code), "%s", server_msg__profile__country_code_to_send(client));
+
+        // copy the group ids
         listed->group_count = g_server_settings.is_permission_system_enabled ? (uint64)cvector_size(client->group_ids) : 0;
         if (listed->group_count != 0)
         {
@@ -384,16 +440,20 @@ void server_msg__connection__send_client_list_to_single_client(client_t *receive
             groups += listed->group_count;
         }
 
-        // Decide what this receiver may see while the channel settings are locked.
+        // decide what this receiver may see while the channel settings are locked
         if (channel__is_client_location_visible(receiver, client) == FALSE)
         {
             listed->channel_id = -1;
             listed->channel_group_id = 0;
         }
+
+        // hide the talking state
         if (listed->audio_state == AUDIO_STATE__PUSH_TO_TALK_ACTIVE && client->channel_id != ROOT_CHANNEL_ID)
         {
             listed->audio_state = AUDIO_STATE__PUSH_TO_TALK_ENABLED;
         }
+
+        // copy music bot keys
         if (client->is_music_bot == TRUE && client->music_bot_client_extension.audio_keys != NULL_POINTER)
         {
             listed->has_music_keys = TRUE;
@@ -404,6 +464,8 @@ void server_msg__connection__send_client_list_to_single_client(client_t *receive
             }
         }
     }
+
+    // queue the list copy
     ws_queue_text(receiver->p_ws_connection, outgoing, allocation_size * 6 + 8192, _server_msg_connection_internal__encode_client_list, _server_msg_connection_internal__release_client_list, server_msg__delivery__release_encoded_text);
 }
 
@@ -432,32 +494,39 @@ void server_msg__connection__send_client_connect_message_to_all_clients(client_t
     int64 audio_state_to_send = 0;
     boole is_location_visible = FALSE;
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // send the matching version
     for (x = 0; x < g_server_settings.max_client_count; x++)
     {
         client_in_loop = &g_clients_array[x];
 
+        // skip empty slots
         if (client_in_loop->is_existing == FALSE)
         {
             continue;
         }
 
+        // skip unauthenticated clients
         if (client_in_loop->is_authenticated == FALSE)
         {
             continue;
         }
 
+        // skip the new client
         if (client_in_loop == subject)
         {
             continue;
         }
 
+        // skip music bots
         if (client_in_loop->is_music_bot == TRUE)
         {
             continue;
         }
 
+        // choose the message version
         variant = 0;
         if (subject->audio_state == AUDIO_STATE__PUSH_TO_TALK_ACTIVE && client_in_loop->channel_id != subject->channel_id)
         {
@@ -474,17 +543,21 @@ void server_msg__connection__send_client_connect_message_to_all_clients(client_t
         {
             variant |= 4;
         }
+
+        // reuse the built text
         if (texts[variant] != NULL_POINTER)
         {
             server_msg__delivery__send_text_to_client(client_in_loop, texts[variant]);
             continue;
         }
 
+        // create client connect message
         root = server_msg__delivery__new_message("client_connect", &message);
 
         // carry the connecting client's groups so identity-restored groups show up on join without a page reload
         json_group_ids_array = cJSON_CreateIntArray(subject->group_ids, g_server_settings.is_permission_system_enabled ? (int)cvector_size(subject->group_ids) : 0);
 
+        // add keys, name, ids
         server_msg__musicbot__add_keys(message, client_in_loop, subject);
         cJSON_AddStringToObject(message, "username", subject->username);
         util__hash_password_to_base64(subject->public_key, identity_hash, sizeof(identity_hash));
@@ -495,6 +568,7 @@ void server_msg__connection__send_client_connect_message_to_all_clients(client_t
         cJSON_AddNumberToObject(message, "client_id", (double)subject->client_id);
         cJSON_AddBoolToObject(message, "is_music_bot", subject->is_music_bot);
 
+        // choose the audio state
         audio_state_to_send = subject->audio_state;
 
         // only send the "PUSH_TO_TALK_ACTIVE" state to the connected client for other clients in the same channel as the client (the root channel in this case)
@@ -504,10 +578,12 @@ void server_msg__connection__send_client_connect_message_to_all_clients(client_t
             audio_state_to_send = AUDIO_STATE__PUSH_TO_TALK_ENABLED;
         }
 
+        // add state, country, groups
         cJSON_AddNumberToObject(message, "audio_state", audio_state_to_send);
         cJSON_AddStringToObject(message, "country_iso_code", server_msg__profile__country_code_to_send(subject));
         util__json_add_owned_object(message, "group_ids", json_group_ids_array);
 
+        // store and send text
         texts[variant] = cJSON_PrintUnformatted(root);
         if (texts[variant] != NULL_POINTER)
         {
@@ -515,6 +591,8 @@ void server_msg__connection__send_client_connect_message_to_all_clients(client_t
         }
         cJSON_Delete(root);
     }
+
+    // free the stored texts
     for (variant = 0; variant < 8; variant++)
     {
         cJSON_free(texts[variant]);
@@ -544,13 +622,17 @@ void server_msg__connection__send_fast_reconnect_ok_to_single_client(client_t *r
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // create fast reconnect message
     root = server_msg__delivery__new_message("fast_reconnect_ok", &message);
 
+    // add client and channel
     cJSON_AddNumberToObject(message, "client_id", (double)receiver->client_id);
     cJSON_AddNumberToObject(message, "channel_id", (double)receiver->channel_id);
 
+    // send to the receiver
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
 }
@@ -569,17 +651,22 @@ void server_msg__connection__send_client_disconnect_message_to_all_clients(uint6
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 
+    // create client disconnect message
     root = server_msg__delivery__new_message("client_disconnect", &message);
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // add id and reason
     cJSON_AddNumberToObject(message, "client_id", client_index);
     if (reason != NULL_POINTER)
     {
         cJSON_AddStringToObject(message, "reason", reason);
     }
 
+    // send to other clients
     server_msg__delivery__send_json_to_all_clients(root, &g_clients_array[client_index]);
 
+    // free the message
     cJSON_Delete(root);
 }

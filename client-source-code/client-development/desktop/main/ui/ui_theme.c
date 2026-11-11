@@ -38,12 +38,17 @@ boole desktop_ui_theme__scale(int64 percent)
     gui_style_t style = { 0 };
     int64 index = 0;
     float scale = (float)percent / 100;
+
+    // refuse a wrong percent
     if (percent < 75 || percent > 150)
     {
         return FALSE;
     }
+
+    // scale every rule
     for (index = 0; index < (int64)(sizeof(g_theme_scale_rules) / sizeof(g_theme_scale_rules[0])); index++)
     {
+        // scale font and size
         clib__null_memory(&style, sizeof(style));
         style.font_size = g_theme_scale_rules[index].font * scale;
         style.font_size_explicit = style.font_size > 0;
@@ -51,11 +56,15 @@ boole desktop_ui_theme__scale(int64 percent)
         style.size_w_explicit = style.size_w > 0;
         style.size_h = g_theme_scale_rules[index].height * scale;
         style.size_h_explicit = style.size_h > 0;
+
+        // scale padding and gap
         style.pad_t = g_theme_scale_rules[index].padding * scale;
         style.pad_b = style.pad_t;
         style.pad_l = style.pad_t;
         style.pad_r = style.pad_t;
         style.gap = g_theme_scale_rules[index].gap * scale;
+
+        // update or add rule
         if (!scene__update_style(g_theme_scale_handles[index], &style))
         {
             g_theme_scale_handles[index] = scene__add_style((char *)g_theme_scale_rules[index].selector, &style, FALSE);
@@ -66,6 +75,8 @@ boole desktop_ui_theme__scale(int64 percent)
             }
         }
     }
+
+    // store the new scale
     clib__null_memory(&style, sizeof(style));
     g_theme_scale = percent;
     return TRUE;
@@ -79,10 +90,14 @@ boole desktop_ui_theme__scale(int64 percent)
 static void _ui_theme_internal__clear_node_styles(gui_node_t *node)
 {
     gui_node_t *child = NULL_POINTER;
+
+    // check the node
     if (!node)
     {
         return;
     }
+
+    // clear node and children
     clib__null_memory(node->style, sizeof(node->style));
     for (child = node->first_child; child; child = child->next_sibling)
     {
@@ -97,17 +112,23 @@ static void _ui_theme_internal__clear_node_styles(gui_node_t *node)
 void desktop_ui_theme__fonts(void)
 {
     char path[1024] = { 0 };
+
+    // register the regular font
     if (!desktop_system__font_path(path, sizeof(path), FALSE) || !font__register_from_file("Desktop", path))
     {
         font__register_from_file("Desktop", "fonts/SpaceGrotesk-Regular.ttf");
     }
+
+    // register the bold font
     clib__null_memory(path, sizeof(path));
     if (!desktop_system__font_path(path, sizeof(path), TRUE) || !font__register_from_file("Desktop-Bold", path))
     {
         font__register_from_file("Desktop-Bold", "fonts/SpaceGrotesk-Bold.ttf");
     }
+
+    // erase the path buffer
     desktop_memory__erase(path, sizeof(path));
-    // Register the neutral UI fallback first, so removing a theme font never selects a decorative face.
+    // register the neutral UI fallback first, so removing a theme font never selects a decorative face
     desktop_ui_fonts__scan(TRUE);
 }
 
@@ -117,8 +138,11 @@ void desktop_ui_theme__fonts(void)
  */
 void desktop_ui_theme__apply(void)
 {
+    // remove the old styles
     scene__clear_styles();
     _ui_theme_internal__clear_node_styles(scene__root());
+
+    // load the stored theme
     if (g_theme_length)
     {
         parser_style__load_styles_from_memory(g_theme_bytes, g_theme_length, "desktop theme");
@@ -138,25 +162,38 @@ static boole _ui_theme_internal__load(const char *name, const desktop_settings_t
     ubyte *bytes = NULL_POINTER;
     uint64 length = 0;
     boole loaded = FALSE;
+
+    // build the theme path
     if (!desktop_settings__valid_theme(name) || clib__string_format(path, sizeof(path), "assets/themes/%s", name[0] ? name : "classic.css") <= 0)
     {
         return FALSE;
     }
+
+    // read the theme file
     bytes = desktop_attachment_file__read(path, DESKTOP_THEME_BYTES - 1, &length);
+
+    // check the file bytes
     if (bytes && !clib__memchr(bytes, 0, length))
     {
+        // remove the old styles
         scene__clear_styles();
         _ui_theme_internal__clear_node_styles(scene__root());
+
+        // load the new styles
         loaded = parser_style__load_styles_from_memory((const char *)bytes, (int64)length, path);
         if (loaded)
         {
-            // Keep enough rule slots for the application before committing a custom theme.
+            // keep enough rule slots for the application before committing a custom theme
             loaded = desktop_ui_theme__scale(g_theme_scale);
         }
+
+        // save the settings
         if (loaded && settings)
         {
             loaded = desktop_settings__save(settings);
         }
+
+        // store or restore theme
         if (loaded)
         {
             desktop_memory__erase(g_theme_bytes, sizeof(g_theme_bytes));
@@ -169,11 +206,15 @@ static boole _ui_theme_internal__load(const char *name, const desktop_settings_t
             desktop_ui_theme__apply();
         }
     }
+
+    // free the file bytes
     if (bytes)
     {
         desktop_memory__erase(bytes, length);
         free(bytes);
     }
+
+    // erase the path buffer
     desktop_memory__erase(path, sizeof(path));
     return loaded;
 }
@@ -204,6 +245,7 @@ boole desktop_ui_theme__save(const desktop_settings_t *settings)
  */
 void desktop_ui_theme__shutdown(void)
 {
+    // reset the theme state
     desktop_memory__erase(g_theme_bytes, sizeof(g_theme_bytes));
     g_theme_length = 0;
     g_theme_scale = 100;

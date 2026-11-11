@@ -46,6 +46,7 @@ void client_msg__attachments__process_attachment_receive_preferences(cJSON *json
     cJSON *channel_files = cJSON_GetObjectItemCaseSensitive(message, "block_channel_chat_files");
     client_t *client = NULL_POINTER;
 
+    // check the four flags
     if (!cJSON_IsBool(direct_pictures) ||
         !cJSON_IsBool(direct_files) ||
         !cJSON_IsBool(channel_pictures) ||
@@ -54,8 +55,12 @@ void client_msg__attachments__process_attachment_receive_preferences(cJSON *json
     {
         return;
     }
+
+    // lock the clients
     clib__write_lock(&g_clients_global_rwlock_guard);
     client = &g_clients_array[sender_client_id];
+
+    // store the four flags
     if ((base__is_current_client_request(sender_client_id)) != FALSE &&
         (client->is_existing) != FALSE &&
         (client->is_authenticated) != FALSE &&
@@ -74,10 +79,13 @@ void client_msg__attachments__process_attachment_receive_preferences(cJSON *json
  */
 static attachment_intent_t _client_msg_attachments_internal__read_intent(cstring intent)
 {
+    // refuse a missing intent
     if (intent == NULL_POINTER)
     {
         return ATTACHMENT_INTENT_INVALID;
     }
+
+    // compare the intent names
     if (clib__strcmp(intent, "musicbot_file") == 0)
     {
         return ATTACHMENT_INTENT_MUSIC;
@@ -108,14 +116,19 @@ static char *_client_msg_attachments_internal__policy_error(attachment_intent_t 
 {
     uint64 maximum_length = MAX_CLIENT_FILE_UPLOAD_LENGTH;
 
+    // refuse an invalid intent
     if (intent == ATTACHMENT_INTENT_INVALID)
     {
         return "invalid_upload_intent";
     }
+
+    // check private messages setting
     if ((intent == ATTACHMENT_INTENT_DIRECT_PICTURE || intent == ATTACHMENT_INTENT_DIRECT_FILE) && g_server_settings.is_private_messaging_allowed == FALSE)
     {
         return "private_messages_disabled";
     }
+
+    // check setting, choose limit
     if (intent == ATTACHMENT_INTENT_DIRECT_PICTURE || intent == ATTACHMENT_INTENT_CHANNEL_PICTURE)
     {
         if (g_server_settings.is_chat_picture_allowed == FALSE)
@@ -132,6 +145,8 @@ static char *_client_msg_attachments_internal__policy_error(attachment_intent_t 
         }
         maximum_length = file_transfer__get_max_chat_file_encrypted_length();
     }
+
+    // check the file length
     if (length == 0 || length > maximum_length)
     {
         return "file_too_large";
@@ -145,10 +160,13 @@ static char *_client_msg_attachments_internal__policy_error(attachment_intent_t 
  */
 static void _client_msg_attachments_internal__discard_upload(client_t *client)
 {
+    // free the upload buffer
     if (client->file_upload_extension.file_upload_buffer != NULL_POINTER)
     {
         memorymanager__free((nuint)client->file_upload_extension.file_upload_buffer);
     }
+
+    // clear the upload state
     clib__null_memory(&client->file_upload_extension, sizeof(client->file_upload_extension));
 }
 
@@ -186,7 +204,7 @@ void client_msg__attachments__process_file_send_request(cJSON *json_root, uint64
     uint64 maximum_chunk_length = 0;
     int64 data_length = 0;
 
-    // Require a valid chunk and a positive whole-number upload length.
+    // require a valid chunk and a positive whole-number upload length
     if (cJSON_IsObject(message) == FALSE ||
         cJSON_IsBool(new_file) == FALSE ||
         data == NULL_POINTER ||
@@ -196,22 +214,30 @@ void client_msg__attachments__process_file_send_request(cJSON *json_root, uint64
         return;
     }
 
-    // Keep the sender and upload buffer stable while accepting this chunk.
+    // keep the sender and upload buffer stable while accepting this chunk
     clib__write_lock(&g_clients_global_rwlock_guard);
+
+    // check the sender connection
     if (sender_client_id >= g_server_settings.max_client_count || base__is_current_client_request(sender_client_id) == FALSE)
     {
         goto end;
     }
+
+    // discard an expired upload
     sender = &g_clients_array[sender_client_id];
     client_msg__attachments__expire_upload(sender, _client_msg_attachments_internal__upload_time());
+
+    // check the sender state
     if (sender->is_authenticated == FALSE || sender->is_existing == FALSE || sender->is_idle == TRUE)
     {
         goto end;
     }
 
-    // Read the upload type once; later chunks use the stored type.
+    // read the upload type once; later chunks use the stored type
     intent_name = cJSON_IsTrue(new_file) ? cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(message, "file_send_intent")) : sender->file_upload_extension.intent;
     intent = _client_msg_attachments_internal__read_intent(intent_name);
+
+    // check the upload policy
     policy_error = _client_msg_attachments_internal__policy_error(intent, total_length);
     if (policy_error != NULL_POINTER)
     {
@@ -220,7 +246,7 @@ void client_msg__attachments__process_file_send_request(cJSON *json_root, uint64
         goto end;
     }
 
-    // Check the sender has permission for this kind of upload.
+    // check the sender has permission for this kind of upload
     if (permissions__can_upload(sender, intent_name) == FALSE)
     {
         server_msg__administration__send_permission_denied_to_single_client(sender, permissions__name(permissions__upload_permission(intent_name)));
@@ -229,12 +255,14 @@ void client_msg__attachments__process_file_send_request(cJSON *json_root, uint64
         goto end;
     }
 
-    // Limit each chunk before scanning or copying its contents.
+    // limit each chunk before scanning or copying its contents
     maximum_chunk_length = file_transfer__get_max_file_upload_length() / 400 + 1;
     if (maximum_chunk_length < 16384)
     {
         maximum_chunk_length = 16384;
     }
+
+    // check the chunk length
     data_length = clib__utf8_string_length_check_max_length(data, maximum_chunk_length);
     if (data_length <= 0 || (uint64)data_length > total_length)
     {
@@ -242,14 +270,17 @@ void client_msg__attachments__process_file_send_request(cJSON *json_root, uint64
         goto end;
     }
 
-    // For a new upload, replace the old buffer after checking the RAM budget.
+    // for a new upload, replace the old buffer after checking the RAM budget
     if (cJSON_IsTrue(new_file))
     {
+        // check the RAM limit
         if (base__is_server_ram_budget_reached() != FALSE)
         {
             server_msg__attachments__send_file_send_error_to_single_client(sender, "server_ram_budget_reached", 0);
             goto end;
         }
+
+        // allocate the new buffer
         _client_msg_attachments_internal__discard_upload(sender);
         sender->file_upload_extension.file_upload_buffer = (ubyte *)memorymanager__allocate(total_length + 1, MEMALLOC_FILE_UPLOAD_BY_PARTS);
         if (sender->file_upload_extension.file_upload_buffer == NULL_POINTER)
@@ -257,6 +288,8 @@ void client_msg__attachments__process_file_send_request(cJSON *json_root, uint64
             server_msg__attachments__send_file_send_error_to_single_client(sender, "server_busy", 0);
             goto end;
         }
+
+        // store the upload details
         clib__string_copy(sender->file_upload_extension.intent, sizeof(sender->file_upload_extension.intent), intent_name);
         sender->file_upload_extension.expected_file_length = total_length;
         sender->file_upload_extension.started_ms = _client_msg_attachments_internal__upload_time();
@@ -267,25 +300,26 @@ void client_msg__attachments__process_file_send_request(cJSON *json_root, uint64
         goto end;
     }
 
-    // Check the remaining space by subtraction to avoid an overflowing sum.
+    // check the remaining space by subtraction to avoid an overflowing sum
     if (sender->file_upload_extension.buffer_cursor > total_length || (uint64)data_length > total_length - sender->file_upload_extension.buffer_cursor)
     {
         _client_msg_attachments_internal__discard_upload(sender);
         goto end;
     }
 
-    // Append the chunk and refresh the upload progress time.
+    // append the chunk and refresh the upload progress time
     clib__copy_memory(data, sender->file_upload_extension.file_upload_buffer + sender->file_upload_extension.buffer_cursor, data_length, data_length);
     sender->file_upload_extension.buffer_cursor += (uint64)data_length;
     sender->file_upload_extension.last_progress_ms = _client_msg_attachments_internal__upload_time();
 
-    // Acknowledge completion only after all declared bytes have arrived.
+    // acknowledge completion only after all declared bytes have arrived
     if (sender->file_upload_extension.buffer_cursor == total_length)
     {
         server_msg__attachments__send_file_send_completed_status_to_single_client(sender);
     }
 
 end:
+    // unlock the clients
     clib__unlock(&g_clients_global_rwlock_guard);
 }
 
@@ -301,16 +335,21 @@ static boole _client_msg_attachments_internal__read_completion(cJSON *json_root,
     uint64 receiver_count = g_server_settings.max_client_count;
     int64 string_length = 0;
 
+    // check both objects
     if (cJSON_IsObject(message) == FALSE || cJSON_IsObject(extra) == FALSE)
     {
         return FALSE;
     }
+
+    // read the intent
     completion->intent_name = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(message, "file_send_intent"));
     completion->intent = _client_msg_attachments_internal__read_intent(completion->intent_name);
     if (completion->intent == ATTACHMENT_INTENT_INVALID)
     {
         return FALSE;
     }
+
+    // read the song fields
     if (completion->intent == ATTACHMENT_INTENT_MUSIC)
     {
         completion->song_name = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(extra, "song_name"));
@@ -323,16 +362,22 @@ static boole _client_msg_attachments_internal__read_completion(cJSON *json_root,
         string_length = clib__utf8_string_length_check_max_length(completion->song_name, SONG_NAME_MAX_LENGTH - 1);
         return string_length > 0;
     }
+
+    // choose the receiver count
     if (completion->intent == ATTACHMENT_INTENT_CHANNEL_PICTURE || completion->intent == ATTACHMENT_INTENT_CHANNEL_FILE)
     {
         receiver_count = g_server_settings.max_channel_count;
     }
+
+    // read the two ids
     if (receiver_count == 0 ||
         util__json_read_uint64(cJSON_GetObjectItemCaseSensitive(extra, "receiver_id"), receiver_count - 1, &completion->receiver_id) == FALSE ||
         util__json_read_uint64(cJSON_GetObjectItemCaseSensitive(extra, "local_message_id"), 9007199254740991ULL, &completion->local_message_id) == FALSE)
     {
         return FALSE;
     }
+
+    // read the file header
     if (completion->intent == ATTACHMENT_INTENT_DIRECT_FILE || completion->intent == ATTACHMENT_INTENT_CHANNEL_FILE)
     {
         completion->file_header = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(extra, "file_header"));
@@ -362,33 +407,48 @@ void client_msg__attachments__process_file_send_completed_request(cJSON *json_ro
     cstring refusal = NULL_POINTER;
     permission_power_t channel_power = PERMISSION_CHANNEL_PICTURE_POWER;
 
+    // lock the clients
     clib__write_lock(&g_clients_global_rwlock_guard);
+
+    // check the sender connection
     if (sender_client_id >= g_server_settings.max_client_count || base__is_current_client_request(sender_client_id) == FALSE)
     {
         goto end;
     }
+
+    // discard an expired upload
     sender = &g_clients_array[sender_client_id];
     client_msg__attachments__expire_upload(sender, _client_msg_attachments_internal__upload_time());
+
+    // check the sender state
     if (sender->is_authenticated == FALSE || sender->is_existing == FALSE || sender->is_idle == TRUE)
     {
         goto end;
     }
+
+    // read the completion fields
     if (_client_msg_attachments_internal__read_completion(json_root, &completion) == FALSE)
     {
         goto end;
     }
+
+    // check upload is complete
     if (sender->file_upload_extension.file_upload_buffer == NULL_POINTER ||
         sender->file_upload_extension.expected_file_length == 0 ||
         sender->file_upload_extension.buffer_cursor != sender->file_upload_extension.expected_file_length)
     {
         goto end;
     }
+
+    // check the upload policy
     policy_error = _client_msg_attachments_internal__policy_error(completion.intent, sender->file_upload_extension.expected_file_length);
     if (policy_error != NULL_POINTER)
     {
         server_msg__attachments__send_file_send_error_to_single_client(sender, policy_error, completion.local_message_id);
         goto discard;
     }
+
+    // check the upload permission
     if (clib__strcmp(sender->file_upload_extension.intent, completion.intent_name) != 0 || permissions__can_upload(sender, completion.intent_name) == FALSE)
     {
         server_msg__administration__send_permission_denied_to_single_client(sender, permissions__name(permissions__upload_permission(completion.intent_name)));
@@ -396,7 +456,7 @@ void client_msg__attachments__process_file_send_completed_request(cJSON *json_ro
         goto discard;
     }
 
-    // The receiver is named only in this last request, so the receiver's protection is checked here.
+    // the receiver is named only in this last request, so the receiver's protection is checked here
     if ((completion.intent == ATTACHMENT_INTENT_DIRECT_PICTURE || completion.intent == ATTACHMENT_INTENT_DIRECT_FILE) && completion.receiver_id < g_server_settings.max_client_count)
     {
         refusal = permissions__contact_refusal(sender, &g_clients_array[completion.receiver_id], completion.intent == ATTACHMENT_INTENT_DIRECT_PICTURE ? PERMISSION_SEND_DIRECT_PICTURES : PERMISSION_SEND_DIRECT_FILES);
@@ -408,18 +468,24 @@ void client_msg__attachments__process_file_send_completed_request(cJSON *json_ro
         }
     }
 
+    // send upload to receiver
     if (completion.intent == ATTACHMENT_INTENT_MUSIC)
     {
+        // check the music bot
         music_bot = &g_clients_array[completion.receiver_id];
         if (music_bot->is_existing == FALSE || music_bot->is_music_bot == FALSE)
         {
             goto discard;
         }
+
+        // allocate the song arguments
         arguments = (musicbot_add_song_arg_struct_t *)memorymanager__allocate(sizeof(musicbot_add_song_arg_struct_t), MEMALLOC_MUSICBOT_SONG);
         if (arguments == NULL_POINTER)
         {
             goto discard;
         }
+
+        // fill the song arguments
         arguments->music_bot = music_bot;
         arguments->mp3_data_buffer_length = sender->file_upload_extension.expected_file_length;
         arguments->mp3_data_buffer = sender->file_upload_extension.file_upload_buffer;
@@ -427,6 +493,8 @@ void client_msg__attachments__process_file_send_completed_request(cJSON *json_ro
         arguments->sender_client_id = sender_client_id;
         clib__memcpy(arguments->sender_identity, sender->public_key, sizeof(arguments->sender_identity));
         clib__string_copy(arguments->song_name, sizeof(arguments->song_name), completion.song_name);
+
+        // start the song decoding
         file_transfer__add_uploaded_song(arguments);
     }
     else if (completion.intent == ATTACHMENT_INTENT_DIRECT_PICTURE)
@@ -439,9 +507,13 @@ void client_msg__attachments__process_file_send_completed_request(cJSON *json_ro
     }
     else
     {
-        // A channel picture needs the channel's picture power and a channel file its file power.
+        // a channel picture needs the channel's picture power and a channel file its file power
         channel_power = completion.intent == ATTACHMENT_INTENT_CHANNEL_PICTURE ? PERMISSION_CHANNEL_PICTURE_POWER : PERMISSION_CHANNEL_FILE_POWER;
+
+        // lock the channels
         clib__read_lock(&g_channels_global_rwlock_guard);
+
+        // check the channel power
         if (sender->channel_id < g_server_settings.max_channel_count &&
             g_channel_array[sender->channel_id].is_existing == TRUE &&
             permissions__can_use_channel(sender, &g_channel_array[sender->channel_id], channel_power) == TRUE)
@@ -464,7 +536,9 @@ void client_msg__attachments__process_file_send_completed_request(cJSON *json_ro
     }
 
 discard:
+    // discard the upload
     _client_msg_attachments_internal__discard_upload(sender);
 end:
+    // unlock the clients
     clib__unlock(&g_clients_global_rwlock_guard);
 }

@@ -19,16 +19,19 @@
  */
 cstring server_msg__profile__country_code_to_send(client_t *client)
 {
+    // country flags are off
     if (g_server_settings.is_display_country_flags_active == FALSE)
     {
         return "";
     }
 
+    // hide admin country code
     if (g_server_settings.is_admin_country_flag_hidden == TRUE && client->is_admin == TRUE)
     {
         return "";
     }
 
+    // return the real code
     return client->country_iso_code;
 }
 
@@ -47,15 +50,20 @@ void server_msg__profile__send_client_rename_message_to_all_clients(client_t *su
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // create client rename message
     root = server_msg__delivery__new_message("client_rename", &message);
 
+    // add name and id
     cJSON_AddStringToObject(message, "new_username", new_username);
     cJSON_AddNumberToObject(message, "client_id", (double)subject->client_id);
 
+    // send to all clients
     server_msg__delivery__send_json_to_all_clients(root, NULL_POINTER);
 
+    // free the message
     cJSON_Delete(root);
 }
 
@@ -76,15 +84,20 @@ void server_msg__profile__send_client_country_code_changed_to_all_clients(client
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // create country code message
     root = server_msg__delivery__new_message("client_country_code_changed", &message);
 
+    // add id and code
     cJSON_AddNumberToObject(message, "client_id", (double)subject->client_id);
     cJSON_AddStringToObject(message, "country_iso_code", server_msg__profile__country_code_to_send(subject));
 
+    // send to all clients
     server_msg__delivery__send_json_to_all_clients(root, NULL_POINTER);
 
+    // free the message
     cJSON_Delete(root);
 }
 
@@ -101,6 +114,7 @@ void server_msg__profile__send_admin_country_codes_to_all_clients(void)
     uint64 i = 0;
     client_t *client = NULL_POINTER;
 
+    // send every admin code
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
         client = &g_clients_array[i];
@@ -130,12 +144,16 @@ void server_msg__profile__send_avatar_changed_event_to_all_clients(client_t *sub
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 
+    // create avatar changed message
     root = server_msg__delivery__new_message("avatar_changed", &message);
 
+    // add the client id
     cJSON_AddNumberToObject(message, "client_id", (double)subject->client_id);
 
+    // send to all clients
     server_msg__delivery__send_json_to_all_clients(root, NULL_POINTER);
 
+    // free the message
     cJSON_Delete(root);
 }
 
@@ -155,18 +173,23 @@ void server_msg__profile__send_client_avatar_to_single_client(client_t *receiver
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 
+    // check the receiver
     if (receiver == NULL_POINTER)
     {
         return;
     }
 
+    // create client avatar message
     root = server_msg__delivery__new_message("client_avatar", &message);
 
+    // add owner and avatar
     cJSON_AddNumberToObject(message, "client_id", (double)avatar_owner_client_id);
     cJSON_AddStringToObject(message, "base64_avatar", (base64_avatar != NULL_POINTER) ? base64_avatar : "");
 
+    // send to the receiver
     server_msg__delivery__send_json_to_client(receiver, root);
 
+    // free the message
     cJSON_Delete(root);
 }
 
@@ -188,34 +211,42 @@ void server_msg__profile__send_stored_clients_to_single_client(client_t *receive
     uint64 group_id = 0;
     boole has_assigned_group = FALSE;
 
+    // check the receiver
     if (receiver == NULL_POINTER)
     {
         return;
     }
 
+    // check settings and permission
     if (g_server_settings.is_identity_storage_enabled == FALSE || g_server_settings.is_stored_client_list_allowed == FALSE || permissions__is_allowed(receiver, PERMISSION_VIEW_STORED_USERS) == FALSE)
     {
         return;
     }
 
+    // create stored clients message
     root = server_msg__delivery__new_message("stored_clients_list", &message);
     json_stored_clients = cJSON_CreateArray();
 
+    // lock groups and identities
     clib__read_lock(&g_groups_global_rwlock_guard);
     pthread_mutex_lock(&g_client_stored_data_mutex);
 
+    // add every stored client
     for (i = 0; i < MAX_CLIENT_STORED_DATA; i++)
     {
+        // skip empty slots
         if (g_client_stored_data[i].public_key[0] == 0)
         {
             continue;
         }
 
+        // add hash, name, avatar
         json_stored_client = cJSON_CreateObject();
         cJSON_AddStringToObject(json_stored_client, "identity_hash", g_client_stored_data[i].public_key);
         cJSON_AddStringToObject(json_stored_client, "username", g_client_stored_data[i].username);
         cJSON_AddStringToObject(json_stored_client, "base64_avatar", &g_client_stored_data[i].base64_avatar[0]);
 
+        // add key if allowed
         if (g_server_settings.is_offline_messaging_allowed == TRUE && g_client_stored_data[i].raw_public_key[0] != 0 && permissions__is_allowed_in_groups(receiver, PERMISSION_SEND_OFFLINE_MESSAGES) == TRUE && permissions__is_stored_client_allowed(&g_client_stored_data[i], PERMISSION_RECEIVE_OFFLINE_MESSAGES) == TRUE)
         {
             cJSON_AddStringToObject(json_stored_client, "public_key", &g_client_stored_data[i].raw_public_key[0]);
@@ -228,6 +259,7 @@ void server_msg__profile__send_stored_clients_to_single_client(client_t *receive
             cJSON_AddNumberToObject(json_stored_client, "last_seen", (double)g_client_stored_data[i].last_seen_unix_seconds);
         }
 
+        // add assigned group ids
         json_group_ids = cJSON_CreateArray();
         has_assigned_group = FALSE;
         for (t = 0; g_server_settings.is_permission_system_enabled == TRUE && t < g_client_stored_data[i].group_id_count; t++)
@@ -240,21 +272,28 @@ void server_msg__profile__send_stored_clients_to_single_client(client_t *receive
             util__json_add_owned_array(json_group_ids, cJSON_CreateNumber((double)group_id));
             has_assigned_group = TRUE;
         }
+
+        // use the guest group
         if (g_server_settings.is_permission_system_enabled == TRUE && has_assigned_group == FALSE && g_guest_group_id < MAX_GROUPS)
         {
             util__json_add_owned_array(json_group_ids, cJSON_CreateNumber((double)g_guest_group_id));
         }
         util__json_add_owned_object(json_stored_client, "group_ids", json_group_ids);
 
+        // add client to array
         util__json_add_owned_array(json_stored_clients, json_stored_client);
     }
 
+    // unlock identities and groups
     pthread_mutex_unlock(&g_client_stored_data_mutex);
     clib__unlock(&g_groups_global_rwlock_guard);
 
+    // add the client array
     util__json_add_owned_object(message, "stored_clients", json_stored_clients);
 
+    // send to the receiver
     server_msg__delivery__send_json_to_client(receiver, root);
 
+    // free the message
     cJSON_Delete(root);
 }

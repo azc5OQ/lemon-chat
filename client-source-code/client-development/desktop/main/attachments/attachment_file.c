@@ -37,20 +37,27 @@ ubyte *desktop_attachment_file__read(const char *path, uint64 limit, uint64 *siz
     struct stat measured = { 0 };
     ssize_t received = 0;
 #endif
+
+    // check the size pointer
     if (!size)
     {
         return NULL;
     }
     *size = 0;
+
+    // check path and limit
     if (!path || !path[0] || !limit)
     {
         return NULL;
     }
 #ifdef _WIN32
+    // convert the path
     if (!MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, wide, 32768))
     {
         goto label_finished;
     }
+
+    // open and measure file
     file = CreateFileW(wide, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN, NULL);
     if (file == INVALID_HANDLE_VALUE || GetFileType(file) != FILE_TYPE_DISK || !GetFileSizeEx(file, &measured) || measured.QuadPart <= 0)
     {
@@ -58,6 +65,7 @@ ubyte *desktop_attachment_file__read(const char *path, uint64 limit, uint64 *siz
     }
     length = (uint64)measured.QuadPart;
 #else
+    // open and measure file
     file = open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
     if (file < 0 || fstat(file, &measured) || !S_ISREG(measured.st_mode) || measured.st_size <= 0)
     {
@@ -65,20 +73,26 @@ ubyte *desktop_attachment_file__read(const char *path, uint64 limit, uint64 *siz
     }
     length = (uint64)measured.st_size;
 #endif
+
+    // check the file size
     if (length > limit || length > SIZE_MAX || length > INT64_MAX)
     {
         goto label_finished;
     }
+
+    // read the whole file
     bytes = calloc(1, length);
     while (bytes && offset < length)
     {
 #ifdef _WIN32
+        // read one chunk
         chunk = (DWORD)(length - offset > 65536 ? 65536 : length - offset);
         if (!ReadFile(file, bytes + offset, chunk, &received, NULL) || !received)
         {
             break;
         }
 #else
+        // read one chunk
         received = read(file, bytes + offset, length - offset > 65536 ? 65536 : length - offset);
         if (received < 0 && errno == EINTR)
         {
@@ -89,21 +103,27 @@ ubyte *desktop_attachment_file__read(const char *path, uint64 limit, uint64 *siz
             break;
         }
 #endif
+
+        // count the read bytes
         offset += (uint64)received;
     }
 label_finished:
 #ifdef _WIN32
+    // erase path, close file
     mbedtls_platform_zeroize(wide, sizeof(wide));
     if (file != INVALID_HANDLE_VALUE)
     {
         CloseHandle(file);
     }
 #else
+    // close the file
     if (file >= 0)
     {
         close(file);
     }
 #endif
+
+    // refuse a partial read
     if (!bytes || offset != length)
     {
         if (bytes)
@@ -113,6 +133,8 @@ label_finished:
         free(bytes);
         return NULL;
     }
+
+    // store the size
     *size = length;
     return bytes;
 }
@@ -137,22 +159,29 @@ boole desktop_attachment_file__save(const char *path, const ubyte *bytes, uint64
     int file = -1;
     ssize_t written = 0;
 #endif
+
+    // check arguments
     if (!path || !path[0] || !bytes || !size)
     {
         return FALSE;
     }
 #ifdef _WIN32
+    // convert the path
     if (!MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, wide, 32768))
     {
         mbedtls_platform_zeroize(wide, sizeof(wide));
         return FALSE;
     }
+
+    // create a new file
     file = CreateFileW(wide, GENERIC_WRITE, 0, NULL, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL);
     mbedtls_platform_zeroize(wide, sizeof(wide));
     if (file == INVALID_HANDLE_VALUE)
     {
         return FALSE;
     }
+
+    // check the file type
     if (GetFileType(file) != FILE_TYPE_DISK)
     {
         CloseHandle(file);
@@ -160,21 +189,26 @@ boole desktop_attachment_file__save(const char *path, const ubyte *bytes, uint64
         return FALSE;
     }
 #else
+    // create a new file
     file = open(path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
     if (file < 0)
     {
         return FALSE;
     }
 #endif
+
+    // write all bytes
     while (offset < size)
     {
 #ifdef _WIN32
+        // write one chunk
         chunk = (DWORD)(size - offset > 65536 ? 65536 : size - offset);
         if (!WriteFile(file, bytes + offset, chunk, &written, NULL) || !written)
         {
             break;
         }
 #else
+        // write one chunk
         written = write(file, bytes + offset, size - offset > 65536 ? 65536 : size - offset);
         if (written < 0 && errno == EINTR)
         {
@@ -185,12 +219,16 @@ boole desktop_attachment_file__save(const char *path, const ubyte *bytes, uint64
             break;
         }
 #endif
+
+        // count the written bytes
         offset += (uint64)written;
     }
 #ifdef _WIN32
+    // flush and close file
     complete = offset == size && FlushFileBuffers(file);
     CloseHandle(file);
 #else
+    // flush and close file
     complete = offset == size && fsync(file) == 0;
     close(file);
 #endif
@@ -209,13 +247,20 @@ void desktop_attachment_file__name(char *name, uint64 capacity, const char *sour
     const char *start = source;
     uint64 index = 0;
     uint64 length = 0;
+
+    // check the destination
     if (!name || !capacity)
     {
         return;
     }
+
+    // clear the name
     clib__null_memory(name, capacity);
+
+    // build the display name
     if (source)
     {
+        // find the last separator
         for (index = 0; source[index]; index++)
         {
             if (source[index] == '/' || source[index] == '\\')
@@ -223,6 +268,8 @@ void desktop_attachment_file__name(char *name, uint64 capacity, const char *sour
                 start = source + index + 1;
             }
         }
+
+        // limit the name length
         length = clib__strlen(start);
         if (length >= capacity)
         {
@@ -232,7 +279,11 @@ void desktop_attachment_file__name(char *name, uint64 capacity, const char *sour
                 length--;
             }
         }
+
+        // copy the name
         clib__string_copy_n(name, capacity, start, length);
+
+        // replace forbidden characters
         for (index = 0; index < length; index++)
         {
             if ((ubyte)name[index] < 32 || clib__strchr(":*?\"<>|", name[index]))
@@ -240,11 +291,15 @@ void desktop_attachment_file__name(char *name, uint64 capacity, const char *sour
                 name[index] = '_';
             }
         }
+
+        // remove trailing dots, spaces
         while (length && (name[length - 1] == '.' || name[length - 1] == ' '))
         {
             name[--length] = 0;
         }
     }
+
+    // use the default name
     if (!name[0])
     {
         clib__string_copy(name, capacity, "attachment");
@@ -263,6 +318,8 @@ boole desktop_attachment_file__home(char *path, uint64 capacity)
     wchar_t wide[32768] = { 0 };
     DWORD length = GetEnvironmentVariableW(L"USERPROFILE", wide, 32768);
     boole copied = FALSE;
+
+    // convert the home path
     copied = length && length < 32768 && capacity <= 2147483647 && WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, wide, -1, path, (int)capacity, NULL, NULL) > 0;
     mbedtls_platform_zeroize(wide, sizeof(wide));
     return copied;

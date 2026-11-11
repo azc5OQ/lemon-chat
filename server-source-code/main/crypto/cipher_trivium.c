@@ -12,10 +12,12 @@ static uint _cipher_trivium_internal__next_word(uint state[10])
     uint third = ((state[8] << 30) | (state[7] >> 2)) ^ ((state[9] << 17) | (state[8] >> 15));
     uint output = first ^ second ^ third;
 
+    // calculate the feedback words
     first ^= (((state[2] << 5) | (state[1] >> 27)) & ((state[2] << 4) | (state[1] >> 28))) ^ ((state[5] << 18) | (state[4] >> 14));
     second ^= (((state[5] << 14) | (state[4] >> 18)) & ((state[5] << 13) | (state[4] >> 19))) ^ ((state[8] << 9) | (state[7] >> 23));
     third ^= (((state[9] << 19) | (state[8] >> 13)) & ((state[9] << 18) | (state[8] >> 14))) ^ ((state[2] << 27) | (state[1] >> 5));
 
+    // shift the registers
     state[2] = state[1];
     state[1] = state[0];
     state[0] = third;
@@ -40,21 +42,28 @@ boole cipher_trivium__crypt(const ubyte *key, uint64 key_size, ubyte *data, uint
     uint state[10] = { 0 };
     uint word = 0;
 
+    // hash the key
     if (key == NULL || data == NULL || !ciphers__sha256(key, key_size, digest))
     {
         ciphers__clear(digest, sizeof(digest));
         return 0;
     }
+
+    // set the start state
     for (setup_index = 0; setup_index < 10; setup_index++)
     {
         state[setup_index / 4] |= (uint)digest[setup_index] << ((setup_index % 4) * 8);
         state[3 + setup_index / 4] |= (uint)(setup_index + 1) << ((setup_index % 4) * 8);
     }
     state[9] = 0x7000;
+
+    // run the setup rounds
     for (round = 0; round < 36; round++)
     {
         _cipher_trivium_internal__next_word(state);
     }
+
+    // XOR data with keystream
     for (index = 0; index < size; index++)
     {
         if (index % 4 == 0)
@@ -64,6 +73,8 @@ boole cipher_trivium__crypt(const ubyte *key, uint64 key_size, ubyte *data, uint
         data[index] ^= (ubyte)word;
         word >>= 8;
     }
+
+    // clear the cipher state
     ciphers__clear(digest, sizeof(digest));
     ciphers__clear(state, sizeof(state));
     ciphers__clear(&word, sizeof(word));

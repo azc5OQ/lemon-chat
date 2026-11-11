@@ -27,26 +27,37 @@
  */
 const char *desktop_attachment_image__mime(const ubyte *bytes, uint64 size)
 {
+    // check arguments
     if (!bytes || size < 12)
     {
         return NULL;
     }
+
+    // check for PNG
     if (clib__memcmp(bytes, "\x89PNG\r\n\x1a\n", 8) == 0)
     {
         return "image/png";
     }
+
+    // check for JPEG
     if (bytes[0] == 0xff && bytes[1] == 0xd8 && bytes[2] == 0xff)
     {
         return "image/jpeg";
     }
+
+    // check for GIF
     if (clib__memcmp(bytes, "GIF87a", 6) == 0 || clib__memcmp(bytes, "GIF89a", 6) == 0)
     {
         return "image/gif";
     }
+
+    // check for BMP
     if (bytes[0] == 'B' && bytes[1] == 'M')
     {
         return "image/bmp";
     }
+
+    // check for WebP
     if (clib__memcmp(bytes, "RIFF", 4) == 0 && clib__memcmp(bytes + 8, "WEBP", 4) == 0)
     {
         return "image/webp";
@@ -96,24 +107,34 @@ ubyte *desktop_attachment_image__decode_bounded(const ubyte *bytes, uint64 size,
     int64 y = 0;
     int64 source_x = 0;
     int64 source_y = 0;
+
+    // check the output pointers
     if (!width || !height)
     {
         return NULL;
     }
     *width = 0;
     *height = 0;
+
+    // check type and limits
     if (!mime || size > DESKTOP_ATTACHMENT_IMAGE_LIMIT || maximum <= 0 || maximum > 8192 || preview_limit <= 0 || preview_limit > 1024)
     {
         return NULL;
     }
+
+    // read the image size
     if (webp ? !twp_get_info_from_memory((void *)bytes, (int)size, &w, &h, &lossless, &alpha) : !stbi_info_from_memory(bytes, (int)size, &w, &h, &components))
     {
         return NULL;
     }
+
+    // check the image size
     if (w <= 0 || h <= 0 || w > maximum || h > maximum || (uint64)w * (uint64)h > 16ULL * 1024 * 1024)
     {
         return NULL;
     }
+
+    // decode the image
     decoded = webp ? twp_read_from_memory((void *)bytes, (int)size, &decoded_w, &decoded_h, twp_FORMAT_RGBA, 0) : stbi_load_from_memory(bytes, (int)size, &decoded_w, &decoded_h, &components, 4);
     if (!decoded || decoded_w != w || decoded_h != h)
     {
@@ -124,6 +145,8 @@ ubyte *desktop_attachment_image__decode_bounded(const ubyte *bytes, uint64 size,
         free(decoded);
         return NULL;
     }
+
+    // choose the preview size
     target_w = w;
     target_h = h;
     if (target_w > preview_limit || target_h > preview_limit)
@@ -141,9 +164,12 @@ ubyte *desktop_attachment_image__decode_bounded(const ubyte *bytes, uint64 size,
     }
     target_w = target_w > 0 ? target_w : 1;
     target_h = target_h > 0 ? target_h : 1;
+
+    // build the scaled preview
     preview = calloc(1, (uint64)target_w * (uint64)target_h * 4);
     if (preview)
     {
+        // copy the nearest pixels
         for (y = 0; y < target_h; y++)
         {
             source_y = y * h / target_h;
@@ -153,9 +179,13 @@ ubyte *desktop_attachment_image__decode_bounded(const ubyte *bytes, uint64 size,
                 clib__memcpy(preview + (y * target_w + x) * 4, decoded + (source_y * w + source_x) * 4, 4);
             }
         }
+
+        // store the preview size
         *width = target_w;
         *height = target_h;
     }
+
+    // free the decoded image
     mbedtls_platform_zeroize(decoded, (uint64)w * (uint64)h * 4);
     free(decoded);
     return preview;

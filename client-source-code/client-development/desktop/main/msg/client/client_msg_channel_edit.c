@@ -15,15 +15,21 @@ static boole _client_msg_channel_edit_internal__allowed(const desktop_channel_t 
 {
     const desktop_channel_t *draft = &request->channel;
     uint64 changed = 0;
+
+    // collect the changed fields
     changed |= clib__strcmp(current->name, draft->name) ? DESKTOP_CHANNEL_NAME : 0;
     changed |= clib__strcmp(current->description, draft->description) ? DESKTOP_CHANNEL_DESCRIPTION : 0;
     changed |= request->replace_password ? DESKTOP_CHANNEL_PASSWORD : 0;
     changed |= clib__memcmp(current->powers, draft->powers, sizeof(current->powers)) ? DESKTOP_CHANNEL_POWERS : 0;
     changed |= current->audio != draft->audio || current->video != draft->video || current->limited != draft->limited || current->capacity != draft->capacity ? DESKTOP_CHANNEL_OPTIONS : 0;
+
+    // check the temporary flag
     if (current->temporary != draft->temporary && !(draft->temporary ? current->can_temporary : current->can_permanent))
     {
         return 0;
     }
+
+    // check the access bits
     return current->access_known && !(changed & ~current->access);
 }
 
@@ -43,11 +49,15 @@ void client_msg__channel__send_change(desktop_session_t *session, const desktop_
     int64 index = 0;
     const char *type = NULL_POINTER;
     const char *names[4] = { "required_talk_power", "required_message_power", "required_picture_power", "required_stream_power" };
+
+    // check channel and revision
     if (!current || current->revision != draft->revision || session->model.idle)
     {
         desktop_session__detail(session, "This channel changed or was removed. Reopen its settings before saving.", 0);
         return;
     }
+
+    // send an access request
     if (request->action == DESKTOP_CHANNEL_ACCESS)
     {
         message = client_msg__delivery__new_message("channel_access_request");
@@ -55,20 +65,28 @@ void client_msg__channel__send_change(desktop_session_t *session, const desktop_
         client_msg__delivery__send(session, message, complete);
         return;
     }
+
+    // send a delete request
     if (request->action == DESKTOP_CHANNEL_REMOVE)
     {
+        // check the delete access
         if (!current->id || !current->access_known || !(current->access & DESKTOP_CHANNEL_DELETE))
         {
             desktop_session__detail(session, "This channel cannot be deleted with your current permissions.", 0);
             return;
         }
+
+        // build and send request
         message = client_msg__delivery__new_message("delete_channel_request");
         complete = message && cJSON_AddNumberToObject(message, "channel_id", (double)current->id);
         client_msg__delivery__send(session, message, complete);
         return;
     }
+
+    // choose the message type
     if (request->action == DESKTOP_CHANNEL_CREATE)
     {
+        // check create permission
         if (current->temporary || (!session->model.can_create_channel && !session->model.can_create_temp_channel))
         {
             desktop_session__detail(session, "You cannot create a channel here with your current permissions.", 0);
@@ -78,6 +96,7 @@ void client_msg__channel__send_change(desktop_session_t *session, const desktop_
     }
     else if (request->action == DESKTOP_CHANNEL_EDIT)
     {
+        // check edit permission
         if (!_client_msg_channel_edit_internal__allowed(current, request))
         {
             desktop_session__detail(session, "Your permissions do not allow these channel changes.", 0);
@@ -89,11 +108,15 @@ void client_msg__channel__send_change(desktop_session_t *session, const desktop_
     {
         return;
     }
+
+    // check the draft values
     if (!draft->name[0] || clib__utf8_string_length_check_max_length(draft->name, 50) < 0 || clib__utf8_string_length_check_max_length(request->password, 30) < 0 || draft->capacity < 0 || (draft->limited && !draft->capacity))
     {
         desktop_session__detail(session, "Use a name up to 50 characters, a password up to 30, and a positive member limit.", 0);
         return;
     }
+
+    // check the power values
     for (index = 0; index < 4; index++)
     {
         if (draft->powers[index] < 0 || draft->powers[index] > 1000)
@@ -102,25 +125,37 @@ void client_msg__channel__send_change(desktop_session_t *session, const desktop_
             return;
         }
     }
+
+    // check the server capacity
     if (session->model.server_capacity > 0 && draft->capacity > session->model.server_capacity)
     {
         desktop_session__detail(session, "The channel member limit cannot exceed the server's slot limit.", 0);
         return;
     }
+
+    // build the request
     message = client_msg__delivery__new_message(type);
     complete = message && cJSON_AddNumberToObject(message, request->action == DESKTOP_CHANNEL_CREATE ? "parent_channel_id" : "channel_id", (double)current->id) && cJSON_AddStringToObject(message, "channel_name", draft->name) && cJSON_AddStringToObject(message, "channel_description", draft->description) && cJSON_AddBoolToObject(message, "is_audio_enabled", draft->audio != 0) && cJSON_AddBoolToObject(message, "is_video_stream_enabled", draft->video != 0) && cJSON_AddBoolToObject(message, "is_client_limit_active", draft->limited != 0) && cJSON_AddNumberToObject(message, "max_client_count", draft->capacity);
+
+    // add the password
     if (request->action == DESKTOP_CHANNEL_CREATE || request->replace_password)
     {
         complete = complete && cJSON_AddStringToObject(message, "channel_password", request->password);
     }
+
+    // add the temporary flag
     if (request->action == DESKTOP_CHANNEL_EDIT && current->temporary != draft->temporary)
     {
         complete = complete && cJSON_AddBoolToObject(message, "is_temp_channel", draft->temporary != 0);
     }
+
+    // add the power values
     for (index = 0; index < 4; index++)
     {
         complete = complete && cJSON_AddNumberToObject(message, names[index], draft->powers[index]);
     }
+
+    // send the request
     if (client_msg__delivery__send(session, message, complete))
     {
         desktop_session__detail(session, "Channel changes sent. Waiting for the server.", 0);

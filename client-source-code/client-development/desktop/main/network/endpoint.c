@@ -29,20 +29,28 @@ boole desktop_endpoint__compose(const char *host, const char *port, const char *
     boole ipv6 = FALSE;
     boole numeric = TRUE;
     boole valid = FALSE;
+
+    // check the output
     if (!output || !capacity)
     {
         return FALSE;
     }
     clib__null_memory(output, capacity);
+
+    // check host, port, path
     if (!host || !port || !path || !host[0] || !port[0] || path[0] != '/')
     {
         return FALSE;
     }
+
+    // check the host length
     length = clib__strlen(host);
     if (length > 253)
     {
         return FALSE;
     }
+
+    // check the host format
     ipv6 = clib__strchr(host, ':') != NULL;
     if (ipv6)
     {
@@ -53,8 +61,10 @@ boole desktop_endpoint__compose(const char *host, const char *port, const char *
     }
     else
     {
+        // check every host character
         for (cursor = host; *cursor; cursor++)
         {
+            // check the label end
             if (*cursor == '.')
             {
                 if (!label || cursor[-1] == '-')
@@ -64,21 +74,31 @@ boole desktop_endpoint__compose(const char *host, const char *port, const char *
                 label = 0;
                 continue;
             }
+
+            // allow letters, digits, hyphens
             if (!((*cursor >= 'a' && *cursor <= 'z') || (*cursor >= 'A' && *cursor <= 'Z') || (*cursor >= '0' && *cursor <= '9') || (*cursor == '-' && label)))
             {
                 return FALSE;
             }
+
+            // update the numeric flag
             numeric &= *cursor >= '0' && *cursor <= '9';
+
+            // limit the label length
             if (++label > 63)
             {
                 return FALSE;
             }
         }
+
+        // check end and IPv4
         if (host[length - 1] == '-' || (numeric && inet_pton(AF_INET, host, address) != 1))
         {
             return FALSE;
         }
     }
+
+    // read the port number
     for (cursor = port; *cursor; cursor++)
     {
         if (*cursor < '0' || *cursor > '9')
@@ -91,16 +111,22 @@ boole desktop_endpoint__compose(const char *host, const char *port, const char *
             return FALSE;
         }
     }
+
+    // refuse port zero
     if (!number)
     {
         return FALSE;
     }
+
+    // build the URL
     written = clib__string_format(output, capacity, ipv6 ? "wss://[%s]:%lld%s" : "wss://%s:%lld%s", host, number, path);
     valid = written > 0 && (uint64)written < capacity && desktop_endpoint__parse(output, &endpoint);
     if (!valid)
     {
         clib__null_memory(output, capacity);
     }
+
+    // clear the buffers
     clib__null_memory(address, sizeof(address));
     clib__null_memory(&endpoint, sizeof(endpoint));
     return valid;
@@ -123,16 +149,22 @@ boole desktop_endpoint__parse(const char *url, desktop_endpoint_t *endpoint)
     int64 port = 0;
 
     port = 0;
+
+    // check arguments
     if (!url || !endpoint)
     {
         return 0;
     }
+
+    // read the scheme
     clib__null_memory(endpoint, sizeof(*endpoint));
     endpoint->secure = clib__strncmp(url, "wss://", 6) == 0;
     if (!endpoint->secure && clib__strncmp(url, "ws://", 5) != 0)
     {
         return 0;
     }
+
+    // refuse forbidden characters
     for (cursor = url; *cursor; cursor++)
     {
         if ((ubyte)*cursor <= 32 || *cursor == '#' || *cursor == '\\' || (ubyte)*cursor == 127)
@@ -140,10 +172,13 @@ boole desktop_endpoint__parse(const char *url, desktop_endpoint_t *endpoint)
             return 0;
         }
     }
+
+    // find the host text
     cursor = url + (endpoint->secure ? 6 : 5);
     host = cursor;
     if (*cursor == '[')
     {
+        // find the closing bracket
         host = ++cursor;
         end = clib__strchr(cursor, ']');
         if (!end || end == host || !clib__strchr(host, ':'))
@@ -154,28 +189,38 @@ boole desktop_endpoint__parse(const char *url, desktop_endpoint_t *endpoint)
     }
     else
     {
+        // find the host end
         while (*cursor && *cursor != ':' && *cursor != '/' && *cursor != '?')
         {
             cursor++;
         }
         end = cursor;
     }
+
+    // copy the host
     if (end == host || !clib__string_copy_n(endpoint->host, sizeof(endpoint->host), host, end - host))
     {
         return 0;
     }
+
+    // refuse forbidden host characters
     if (clib__strchr(endpoint->host, '@') || clib__strchr(endpoint->host, '[') || clib__strchr(endpoint->host, ']'))
     {
         return 0;
     }
+
+    // read the port
     endpoint->port = endpoint->secure ? 443 : 80;
     if (*cursor == ':')
     {
+        // check the first digit
         cursor++;
         if (!clib__isdigit(*cursor))
         {
             return 0;
         }
+
+        // read the port digits
         while (clib__isdigit(*cursor))
         {
             port = port * 10 + (int64)(*cursor++ - '0');
@@ -184,20 +229,30 @@ boole desktop_endpoint__parse(const char *url, desktop_endpoint_t *endpoint)
                 return 0;
             }
         }
+
+        // refuse port zero
         if (!port)
         {
             return 0;
         }
+
+        // store the port
         endpoint->port = (unsigned short)port;
     }
+
+    // check the path start
     if (*cursor != 0 && *cursor != '/' && *cursor != '?')
     {
         return 0;
     }
+
+    // add a missing slash
     if (*cursor != '/')
     {
         clib__string_copy(endpoint->path, sizeof(endpoint->path), "/");
         return clib__string_append(endpoint->path, sizeof(endpoint->path), cursor);
     }
+
+    // copy the path
     return clib__string_copy(endpoint->path, sizeof(endpoint->path), cursor);
 }

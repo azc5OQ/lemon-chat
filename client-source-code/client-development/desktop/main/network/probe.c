@@ -21,23 +21,31 @@ int main(int argc, char **argv)
     int64 attempt = 0;
     desktop_transport_status_t status = { 0 };
 
+    // check arguments
     if (argc != 2)
     {
         fprintf(stderr, "Usage: lemon-chat-probe ws://host:port/path\nUse with a test WebSocket echo endpoint, not an authenticated chat session.\n");
         return 2;
     }
+
+    // connect the transport
     transport = desktop_transport__create();
     if (!transport || !desktop_transport__connect(transport, argv[1]))
     {
         desktop_transport__destroy(transport);
         return 2;
     }
+
+    // wait for the echo
     sent = 0;
     result = 1;
     for (attempt = 0; attempt < 500; attempt++)
     {
+        // read the status
         clib__null_memory(&status, sizeof(status));
         desktop_transport__status(transport, &status);
+
+        // send the probe once
         if (status.state == DESKTOP_TRANSPORT_CONNECTED && !sent)
         {
             sent = desktop_transport__send(transport, probe, sizeof(probe) - 1);
@@ -46,19 +54,27 @@ int main(int argc, char **argv)
                 break;
             }
         }
+
+        // message was received
         if (status.messages_received)
         {
             printf("Received message type: %s\n", status.last_type);
             result = 0;
             break;
         }
+
+        // report a failure
         if (status.state == DESKTOP_TRANSPORT_FAILED || status.state == DESKTOP_TRANSPORT_DISCONNECTED)
         {
             fprintf(stderr, "%s\n", status.detail);
             break;
         }
+
+        // wait before next check
         desktop_system__sleep(20);
     }
+
+    // destroy the transport
     desktop_transport__destroy(transport);
     return result;
 }

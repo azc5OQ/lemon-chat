@@ -16,10 +16,14 @@ boole cipher_twofish__crypt(const ubyte key[32], const ubyte iv[16], ubyte *data
     uint64 index = 0;
     boole status = FALSE;
 
+    // prepare counter and key
     memcpy(counter, iv, sizeof(counter));
     status = twofish_setup(key, 32, 0, &scheduled) == CRYPT_OK;
+
+    // apply the cipher
     for (index = 0; status && index < size; index++)
     {
+        // create next keystream block
         if (offset == 0)
         {
             position = 15;
@@ -28,6 +32,8 @@ boole cipher_twofish__crypt(const ubyte key[32], const ubyte iv[16], ubyte *data
             {
                 break;
             }
+
+            // increase the counter
             while (position >= 0)
             {
                 counter[position]++;
@@ -38,9 +44,13 @@ boole cipher_twofish__crypt(const ubyte key[32], const ubyte iv[16], ubyte *data
                 position--;
             }
         }
+
+        // XOR data with keystream
         data[index] ^= stream[offset];
         offset = (offset + 1) % 16;
     }
+
+    // clear the cipher state
     ciphers__clear(&scheduled, sizeof(scheduled));
     ciphers__clear(counter, sizeof(counter));
     ciphers__clear(stream, sizeof(stream));

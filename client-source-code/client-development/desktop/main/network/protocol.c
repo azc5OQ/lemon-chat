@@ -20,20 +20,27 @@ struct cJSON *desktop_protocol__parse_json(const char *bytes, uint64 size, uint6
     boole quoted = FALSE;
     boole escaped = FALSE;
 
+    // check arguments
     if (!bytes || !size || size > limit || limit > 40ULL * 1024 * 1024 || !maximum_depth || maximum_depth > CJSON_NESTING_LIMIT)
     {
         return NULL;
     }
+
+    // check the JSON structure
     for (index = 0; index < size; index++)
     {
+        // refuse control characters
         if (!bytes[index] || ((ubyte)bytes[index] < 32 && (quoted || (bytes[index] != ' ' && bytes[index] != '\t' && bytes[index] != '\r' && bytes[index] != '\n'))))
         {
             return NULL;
         }
+
+        // read one character
         if (quoted)
         {
             if (escaped)
             {
+                // refuse escaped zero character
                 if (size - index >= 5 && clib__strncmp(bytes + index, "u0000", 5) == 0)
                 {
                     return NULL;
@@ -51,10 +58,12 @@ struct cJSON *desktop_protocol__parse_json(const char *bytes, uint64 size, uint6
         }
         else if (bytes[index] == '"')
         {
+            // a string starts
             quoted = TRUE;
         }
         else if (bytes[index] == '{' || bytes[index] == '[')
         {
+            // limit the depth
             if (++depth > maximum_depth)
             {
                 return NULL;
@@ -62,6 +71,7 @@ struct cJSON *desktop_protocol__parse_json(const char *bytes, uint64 size, uint6
         }
         else if (bytes[index] == '}' || bytes[index] == ']')
         {
+            // refuse unmatched closing bracket
             if (!depth)
             {
                 return NULL;
@@ -69,15 +79,21 @@ struct cJSON *desktop_protocol__parse_json(const char *bytes, uint64 size, uint6
             depth--;
         }
     }
+
+    // refuse unclosed structure
     if (quoted || depth)
     {
         return NULL;
     }
+
+    // read the JSON
     root = cJSON_ParseWithLengthOpts(bytes, size, &end, FALSE);
     if (!root)
     {
         return NULL;
     }
+
+    // refuse trailing data
     while (end < bytes + size && (*end == ' ' || *end == '\t' || *end == '\r' || *end == '\n'))
     {
         end++;
@@ -109,14 +125,20 @@ boole desktop_protocol__message_type(const char *bytes, uint64 size, char *type,
     cJSON *field = NULL_POINTER;
 
     valid = 0;
+
+    // clear the output
     if (type && capacity)
     {
         clib__null_memory(type, capacity);
     }
+
+    // check arguments
     if (!bytes || !size || size > DESKTOP_MESSAGE_LIMIT || !type || !capacity || clib__memchr(bytes, 0, size))
     {
         return 0;
     }
+
+    // read the message type
     root = desktop_protocol__parse_json(bytes, size, DESKTOP_MESSAGE_LIMIT, CJSON_NESTING_LIMIT);
     if (cJSON_IsObject(root))
     {
@@ -127,6 +149,8 @@ boole desktop_protocol__message_type(const char *bytes, uint64 size, char *type,
             valid = clib__string_copy(type, capacity, field->valuestring);
         }
     }
+
+    // free the JSON
     cJSON_Delete(root);
     return valid;
 }

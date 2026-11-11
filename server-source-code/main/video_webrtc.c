@@ -37,9 +37,10 @@ static void RTC_API _video_webrtc_internal__datachannel_on_open_callback(int id,
 
     DBG_VIDEO_WEBRTC log_info("%s", "_video_webrtc_internal__datachannel_on_open_callback");
 
+    // lock the peers
     clib__write_lock(&g_webrtc_peers_rwlock_guard);
 
-    // A callback from a channel replaced during reconnect must not change the new channel's state.
+    // a callback from a channel replaced during reconnect must not change the new channel's state
     if (peer != NULL_POINTER)
     {
         status = peer->video_data_channel_handle == id;
@@ -49,6 +50,7 @@ static void RTC_API _video_webrtc_internal__datachannel_on_open_callback(int id,
         peer->is_video_channel_connected = TRUE;
     }
 
+    // unlock the peers
     clib__unlock(&g_webrtc_peers_rwlock_guard);
 }
 
@@ -73,15 +75,18 @@ static void RTC_API _video_webrtc_internal__datachannel_on_closed_callback(int i
 
     DBG_VIDEO_WEBRTC log_info("%s", "_video_webrtc_internal__datachannel_on_closed_callback");
 
+    // check the peer
     if (peer == NULL_POINTER)
     {
         return;
     }
 
+    // lock clients, peers, channels
     clib__write_lock(&g_clients_global_rwlock_guard);
     clib__write_lock(&g_webrtc_peers_rwlock_guard);
     clib__write_lock(&g_channels_global_rwlock_guard);
 
+    // mark current channel closed
     if (peer->is_existing == TRUE && peer->video_data_channel_handle == id)
     {
         is_current = TRUE;
@@ -89,11 +94,13 @@ static void RTC_API _video_webrtc_internal__datachannel_on_closed_callback(int i
         peer->is_video_channel_connected = FALSE;
     }
 
+    // report the lost connection
     if (is_current == TRUE)
     {
         video_channel__process_transport_lost(client_id);
     }
 
+    // unlock channels, peers, clients
     clib__unlock(&g_channels_global_rwlock_guard);
     clib__unlock(&g_webrtc_peers_rwlock_guard);
     clib__unlock(&g_clients_global_rwlock_guard);
@@ -113,6 +120,7 @@ static void RTC_API _video_webrtc_internal__datachannel_on_message_callback(int 
 {
     webrtc_peer_t *peer_sender = (webrtc_peer_t *)ptr;
 
+    // check arguments
     if (size <= 0 || peer_sender == NULL_POINTER)
     {
         return;
@@ -150,14 +158,17 @@ void video_webrtc__create_data_channel(webrtc_peer_t *peer)
 {
     rtcDataChannelInit video_init;
 
+    // set the channel options
     clib__null_memory(&video_init, sizeof(rtcDataChannelInit));
     video_init.reliability.unreliable = TRUE;
     video_init.reliability.unordered = FALSE;
     video_init.reliability.maxPacketLifeTime = 250;
 
+    // create the data channel
     peer->video_data_channel_handle = rtcCreateDataChannelEx(peer->peer_connection_handle, VIDEO_DATACHANNEL_LABEL, &video_init);
     peer->is_video_channel_connected = FALSE;
 
+    // set callbacks on success
     if (peer->video_data_channel_handle <= 0)
     {
         log_info("%s %d %s", "rtcCreateDataChannelEx for the video channel failed with", peer->video_data_channel_handle, "\n");
@@ -219,10 +230,13 @@ boole video_webrtc__can_send(uint64 client_id)
     webrtc_peer_t *peer = &g_webrtc_peers_array[client_id];
     int64 buffered = 0;
 
+    // refuse closed channel
     if (video_webrtc__is_connected(client_id) == FALSE || peer->video_data_channel_handle == 0)
     {
         return FALSE;
     }
+
+    // check the buffered amount
     buffered = rtcGetBufferedAmount(peer->video_data_channel_handle);
     return buffered >= 0 && buffered <= VIDEO_RELAY_MAX_BUFFERED_BYTES;
 }
@@ -242,14 +256,19 @@ boole video_webrtc__send(uint64 client_id, const ubyte *packet, uint64 size)
 {
     webrtc_peer_t *peer = &g_webrtc_peers_array[client_id];
 
+    // refuse closed channel
     if (video_webrtc__is_connected(client_id) == FALSE || peer->video_data_channel_handle == 0)
     {
         return FALSE;
     }
+
+    // send the packet
     if (rtcSendMessage(peer->video_data_channel_handle, (const char *)packet, (int)size) < 0)
     {
         return FALSE;
     }
+
+    // count the sent bytes
     base__count_webrtc_bytes(0, size);
     return TRUE;
 }

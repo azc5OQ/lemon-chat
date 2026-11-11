@@ -59,20 +59,24 @@ boole httpclient_internal__address_allowed(const struct sockaddr *address)
     const ubyte *ipv4 = NULL_POINTER;
     const ubyte *ipv6 = NULL_POINTER;
 
-    // Check IPv4 range
+    // check IPv4 range
     if (address->sa_family == AF_INET)
     {
         ipv4 = (const ubyte *)&((const struct sockaddr_in *)address)->sin_addr;
         return !(ipv4[0] == 0 || ipv4[0] == 10 || ipv4[0] == 127 || ipv4[0] >= 224 || (ipv4[0] == 100 && ipv4[1] >= 64 && ipv4[1] <= 127) || (ipv4[0] == 169 && ipv4[1] == 254) || (ipv4[0] == 172 && ipv4[1] >= 16 && ipv4[1] <= 31) || (ipv4[0] == 192 && ipv4[1] == 168) || (ipv4[0] == 192 && ipv4[1] == 0) || (ipv4[0] == 198 && (ipv4[1] == 18 || ipv4[1] == 19)) || (ipv4[0] == 198 && ipv4[1] == 51 && ipv4[2] == 100) || (ipv4[0] == 203 && ipv4[1] == 0 && ipv4[2] == 113));
     }
+
+    // check IPv6 range
     if (address->sa_family == AF_INET6)
     {
         ipv6 = (const ubyte *)&((const struct sockaddr_in6 *)address)->sin6_addr;
 
-        // Only ordinary global IPv6 addresses are useful for previews. This
-        // also excludes mapped IPv4, local addresses and tunnel prefixes.
+        // only ordinary global IPv6 addresses are useful for previews. this
+        // also excludes mapped IPv4, local addresses and tunnel prefixes
         return (ipv6[0] & 0xe0) == 0x20 && !(ipv6[0] == 0x20 && ipv6[1] == 0x02) && !(ipv6[0] == 0x20 && ipv6[1] == 0x01 && ipv6[2] <= 1) && !(ipv6[0] == 0x20 && ipv6[1] == 0x01 && ipv6[2] == 0x0d && ipv6[3] == 0xb8);
     }
+
+    // refuse other address types
     return 0;
 }
 
@@ -88,10 +92,13 @@ static uint64 _httpclient_internal__length(const char *text, uint64 maximum)
 {
     uint64 length = 0;
 
+    // no text given
     if (text == NULL)
     {
         return 0;
     }
+
+    // count the bytes
     while (length < maximum && text[length] != 0)
     {
         length++;
@@ -114,12 +121,13 @@ static boole _httpclient_internal__equal(const char *text, uint64 length, const 
     ubyte left = 0;
     ubyte right = 0;
 
+    // compare the lengths
     if (_httpclient_internal__length(literal, length + 1) != length)
     {
         return 0;
     }
 
-    // Compare lowercase letters
+    // compare lowercase letters
     for (index = 0; index < length; index++)
     {
         left = (ubyte)text[index];
@@ -154,6 +162,7 @@ static boole _httpclient_internal__token(const char *text, uint64 size)
     ubyte value = 0;
     boole valid = 0;
 
+    // check every character
     for (index = 0; index < size; index++)
     {
         value = (ubyte)text[index];
@@ -182,21 +191,24 @@ httpclient_error_t _httpclient_internal__append(http_buffer_t *buffer, const voi
     uint64 capacity = 0;
     void *allocation = NULL_POINTER;
 
-    // Check buffer limit
+    // check buffer limit
     if (limit >= SIZE_MAX || buffer->size > limit || size > limit - buffer->size)
     {
         return HTTPCLIENT_LIMIT;
     }
 
-    // Reserve ending zero
+    // reserve ending zero
     needed = buffer->size + size + 1;
     if (needed > buffer->capacity)
     {
+        // choose new capacity
         capacity = buffer->capacity > 0 ? buffer->capacity : 1024u;
         while (capacity < needed)
         {
             capacity = capacity > (limit + 1) / 2 ? limit + 1 : capacity * 2;
         }
+
+        // allocate the memory
         allocation = buffer->data != NULL ? realloc(buffer->data, capacity) : malloc(capacity);
         if (allocation == NULL)
         {
@@ -206,7 +218,7 @@ httpclient_error_t _httpclient_internal__append(http_buffer_t *buffer, const voi
         buffer->capacity = capacity;
     }
 
-    // Append new bytes
+    // append new bytes
     if (size != 0)
     {
         clib__memcpy(buffer->data + buffer->size, data, size);
@@ -226,11 +238,14 @@ httpclient_error_t _httpclient_internal__append(http_buffer_t *buffer, const voi
  */
 static void _httpclient_internal__consume(http_buffer_t *buffer, uint64 size)
 {
+    // move remaining bytes
     buffer->size -= size;
     if (buffer->size != 0)
     {
         clib__memmove(buffer->data, buffer->data + size, buffer->size);
     }
+
+    // write ending zero
     if (buffer->data != NULL)
     {
         buffer->data[buffer->size] = 0;
@@ -249,6 +264,7 @@ static int64 _httpclient_internal__line(const ubyte *bytes, uint64 size)
 {
     uint64 index = 0;
 
+    // find line ending
     for (index = 0; index + 1 < size; index++)
     {
         if (bytes[index] == '\r' && bytes[index + 1] == '\n')
@@ -276,18 +292,21 @@ static boole _httpclient_internal__number(const char *text, uint64 length, uint6
     uint64 result = 0;
     ubyte byte = 0;
 
+    // read every digit
     for (index = 0; index < length; index++)
     {
         byte = (ubyte)text[index];
         digit = byte >= '0' && byte <= '9' ? (uint64)(byte - '0') : byte >= 'a' && byte <= 'f' ? (uint64)(byte - 'a' + 10) : byte >= 'A' && byte <= 'F' ? (uint64)(byte - 'A' + 10) : base;
 
-        // Check numeric overflow
+        // check numeric overflow
         if (digit >= base || result > (UINT64_MAX - digit) / base)
         {
             return 0;
         }
         result = result * base + digit;
     }
+
+    // store the number
     *value = result;
     return length != 0;
 }
@@ -317,19 +336,21 @@ static httpclient_error_t _httpclient_internal__headers(http_parser_t *parser, h
     boole chunked = 0;
     boole no_body = 0;
 
-    // Check header limit
+    // check header limit
     if (size > HTTP_HEADER_LIMIT - parser->metadata_bytes)
     {
         return HTTPCLIENT_LIMIT;
     }
     parser->metadata_bytes += size;
 
-    // Read status line
+    // read status line
     line = _httpclient_internal__line(parser->pending.data, size);
     if (line < 12 || (line > 12 && text[12] != ' ') || (!_httpclient_internal__equal(text, 8, "HTTP/1.1") && !_httpclient_internal__equal(text, 8, "HTTP/1.0")) || text[8] != ' ' || !_httpclient_internal__number(text + 9, 3, 10, &status) || status < 100 || status > 599)
     {
         return HTTPCLIENT_HTTP;
     }
+
+    // refuse control characters
     for (index = 12; index < (uint64)line; index++)
     {
         if (((ubyte)text[index] < 32 && text[index] != '\t') || (ubyte)text[index] == 127)
@@ -339,14 +360,17 @@ static httpclient_error_t _httpclient_internal__headers(http_parser_t *parser, h
     }
     position = (uint64)line + 2;
 
-    // Read header fields
+    // read header fields
     while (position + 2 < size)
     {
+        // find line ending
         line = _httpclient_internal__line(parser->pending.data + position, size - position);
         if (line <= 0)
         {
             return HTTPCLIENT_HTTP;
         }
+
+        // check header name
         length = (uint64)line;
         colon = 0;
         while (colon < length && text[position + colon] != ':')
@@ -357,6 +381,8 @@ static httpclient_error_t _httpclient_internal__headers(http_parser_t *parser, h
         {
             return HTTPCLIENT_HTTP;
         }
+
+        // refuse control characters
         start = position + colon + 1;
         end = position + length;
         for (index = start; index < end; index++)
@@ -367,7 +393,7 @@ static httpclient_error_t _httpclient_internal__headers(http_parser_t *parser, h
             }
         }
 
-        // Trim surrounding spaces
+        // trim surrounding spaces
         while (start < end && (text[start] == ' ' || text[start] == '\t'))
         {
             start++;
@@ -376,6 +402,8 @@ static httpclient_error_t _httpclient_internal__headers(http_parser_t *parser, h
         {
             end--;
         }
+
+        // read known headers
         if (_httpclient_internal__equal(text + position, colon, "Content-Length"))
         {
             if (has_length || !_httpclient_internal__number(text + start, end - start, 10, &content_length))
@@ -399,20 +427,24 @@ static httpclient_error_t _httpclient_internal__headers(http_parser_t *parser, h
                 return HTTPCLIENT_UNSUPPORTED;
             }
         }
+
+        // go to next line
         position += length + 2;
     }
 
-    // Reject conflicting lengths
+    // reject conflicting lengths
     if (has_length && chunked)
     {
         return HTTPCLIENT_HTTP;
     }
+
+    // refuse protocol change
     if (status == 101)
     {
         return HTTPCLIENT_UNSUPPORTED;
     }
 
-    // Skip interim response
+    // skip interim response
     if (status < 200)
     {
         if (++parser->informational > 16 || has_length || chunked)
@@ -423,14 +455,14 @@ static httpclient_error_t _httpclient_internal__headers(http_parser_t *parser, h
         return HTTPCLIENT_OK;
     }
 
-    // Check body limit
+    // check body limit
     no_body = (boole)(parser->head || status == 204 || status == 304);
     if (!no_body && has_length && content_length > parser->limit)
     {
         return HTTPCLIENT_LIMIT;
     }
 
-    // Save response headers
+    // save response headers
     response->headers = (char *)malloc(size + 1);
     if (response->headers == NULL)
     {
@@ -440,7 +472,7 @@ static httpclient_error_t _httpclient_internal__headers(http_parser_t *parser, h
     response->headers[size] = 0;
     response->status_code = status;
 
-    // Choose body format
+    // choose body format
     parser->remaining = content_length;
     parser->state = no_body ? 7 : chunked ? 3 : has_length ? (content_length == 0 ? 7 : 1) : 2;
     _httpclient_internal__consume(&parser->pending, size);
@@ -464,9 +496,10 @@ httpclient_error_t _httpclient_internal__parse(http_parser_t *parser, httpclient
     ubyte value = 0;
     httpclient_error_t error = HTTPCLIENT_OK;
 
+    // read all received bytes
     for (;;)
     {
-        // Find complete headers
+        // find complete headers
         if (parser->state == 0)
         {
             amount = 0;
@@ -478,10 +511,14 @@ httpclient_error_t _httpclient_internal__parse(http_parser_t *parser, httpclient
                     break;
                 }
             }
+
+            // wait for more bytes
             if (amount == 0)
             {
                 return parser->pending.size >= HTTP_HEADER_LIMIT - parser->metadata_bytes ? HTTPCLIENT_LIMIT : HTTPCLIENT_OK;
             }
+
+            // read the headers
             error = _httpclient_internal__headers(parser, response, amount);
             if (error != HTTPCLIENT_OK)
             {
@@ -490,22 +527,28 @@ httpclient_error_t _httpclient_internal__parse(http_parser_t *parser, httpclient
         }
         else if (parser->state == 1 || parser->state == 2 || parser->state == 4)
         {
-            // Read body bytes
+            // read body bytes
             amount = parser->pending.size;
             if (parser->state != 2 && amount > parser->remaining)
             {
                 amount = parser->remaining;
             }
+
+            // wait for more bytes
             if (amount == 0)
             {
                 return HTTPCLIENT_OK;
             }
+
+            // add to the body
             error = _httpclient_internal__append(&parser->body, parser->pending.data, amount, parser->limit);
             if (error != HTTPCLIENT_OK)
             {
                 return error;
             }
             _httpclient_internal__consume(&parser->pending, amount);
+
+            // count remaining bytes
             if (parser->state != 2)
             {
                 parser->remaining -= amount;
@@ -517,17 +560,21 @@ httpclient_error_t _httpclient_internal__parse(http_parser_t *parser, httpclient
         }
         else if (parser->state == 3 || parser->state == 6)
         {
-            // Read chunk metadata
+            // read chunk metadata
             line = _httpclient_internal__line(parser->pending.data, parser->pending.size);
             if (line < 0)
             {
                 return parser->pending.size >= 8192 ? HTTPCLIENT_LIMIT : HTTPCLIENT_OK;
             }
+
+            // check line limits
             if (line > 8190 || (uint64)line + 2 > HTTP_HEADER_LIMIT - parser->metadata_bytes)
             {
                 return HTTPCLIENT_LIMIT;
             }
             parser->metadata_bytes += (uint64)line + 2;
+
+            // refuse control characters
             for (index = 0; index < (uint64)line; index++)
             {
                 value = parser->pending.data[index];
@@ -537,7 +584,7 @@ httpclient_error_t _httpclient_internal__parse(http_parser_t *parser, httpclient
                 }
             }
 
-            // Parse chunk length
+            // parse chunk length
             if (parser->state == 3)
             {
                 digits = 0;
@@ -550,7 +597,7 @@ httpclient_error_t _httpclient_internal__parse(http_parser_t *parser, httpclient
                     return HTTPCLIENT_HTTP;
                 }
 
-                // Check body limit
+                // check body limit
                 if (parser->remaining > parser->limit - parser->body.size)
                 {
                     return HTTPCLIENT_LIMIT;
@@ -563,23 +610,26 @@ httpclient_error_t _httpclient_internal__parse(http_parser_t *parser, httpclient
             }
             else
             {
+                // find the colon
                 digits = 0;
                 while (digits < (uint64)line && parser->pending.data[digits] != ':')
                 {
                     digits++;
                 }
 
-                // Validate trailing headers
+                // validate trailing headers
                 if (digits == (uint64)line || !_httpclient_internal__token((const char *)parser->pending.data, digits) || _httpclient_internal__equal((const char *)parser->pending.data, digits, "Content-Length") || _httpclient_internal__equal((const char *)parser->pending.data, digits, "Transfer-Encoding") || _httpclient_internal__equal((const char *)parser->pending.data, digits, "Content-Encoding"))
                 {
                     return HTTPCLIENT_HTTP;
                 }
             }
+
+            // remove the line
             _httpclient_internal__consume(&parser->pending, (uint64)line + 2);
         }
         else if (parser->state == 5)
         {
-            // Check chunk ending
+            // check chunk ending
             if (parser->pending.size < 2)
             {
                 return HTTPCLIENT_OK;
@@ -588,12 +638,14 @@ httpclient_error_t _httpclient_internal__parse(http_parser_t *parser, httpclient
             {
                 return HTTPCLIENT_HTTP;
             }
+
+            // continue with next chunk
             _httpclient_internal__consume(&parser->pending, 2);
             parser->state = 3;
         }
         else
         {
-            // There is no pipelined request. Any already-received excess plaintext is invalid.
+            // there is no pipelined request. any already-received excess plaintext is invalid
             return parser->pending.size == 0 ? HTTPCLIENT_OK : HTTPCLIENT_HTTP;
         }
     }
@@ -632,7 +684,7 @@ static httpclient_error_t _httpclient_internal__request_head(http_buffer_t *buff
     boole reserved = 0;
     httpclient_error_t error = HTTPCLIENT_OK;
 
-    // Choose supported method
+    // choose supported method
     length = _httpclient_internal__length(request->method, 16);
     for (index = 0; index < sizeof(methods) / sizeof(methods[0]); index++)
     {
@@ -642,12 +694,14 @@ static httpclient_error_t _httpclient_internal__request_head(http_buffer_t *buff
             break;
         }
     }
+
+    // check method and headers
     if (method == NULL || request->header_count > 128 || (request->header_count != 0 && request->headers == NULL))
     {
         return HTTPCLIENT_ARGUMENT;
     }
 
-    // Write body length
+    // write body length
     number[sizeof(number) - 1] = 0;
     remaining = request->body_size;
     do
@@ -656,7 +710,7 @@ static httpclient_error_t _httpclient_internal__request_head(http_buffer_t *buff
         remaining /= 10;
     } while (remaining != 0);
 
-    // Build request headers
+    // build request headers
     parts[0] = method;
     parts[1] = " ";
     parts[2] = target;
@@ -669,6 +723,8 @@ static httpclient_error_t _httpclient_internal__request_head(http_buffer_t *buff
     parts[9] = "\r\nConnection: close\r\nAccept-Encoding: identity\r\nContent-Length: ";
     parts[10] = number + offset;
     parts[11] = "\r\n";
+
+    // add parts to buffer
     for (index = 0; index < 12; index++)
     {
         error = _httpclient_internal__append(buffer, parts[index], _httpclient_internal__length(parts[index], 8193), HTTP_HEADER_LIMIT);
@@ -678,18 +734,22 @@ static httpclient_error_t _httpclient_internal__request_head(http_buffer_t *buff
         }
     }
 
-    // Validate extra headers
+    // validate extra headers
     for (field = 0; field < request->header_count; field++)
     {
         name = request->headers[field].name;
         value = request->headers[field].value;
         name_length = _httpclient_internal__length(name, 1024);
         value_length = _httpclient_internal__length(value, 8192);
+
+        // check name and value
         reserved = (boole)(_httpclient_internal__equal(name, name_length, "Host") || _httpclient_internal__equal(name, name_length, "Content-Length") || _httpclient_internal__equal(name, name_length, "Transfer-Encoding") || _httpclient_internal__equal(name, name_length, "Connection") || _httpclient_internal__equal(name, name_length, "Accept-Encoding") || _httpclient_internal__equal(name, name_length, "Expect") || _httpclient_internal__equal(name, name_length, "Upgrade"));
         if (name == NULL || value == NULL || name_length == 1024 || value_length == 8192 || !_httpclient_internal__token(name, name_length) || reserved)
         {
             return HTTPCLIENT_ARGUMENT;
         }
+
+        // refuse control characters
         for (index = 0; index < value_length; index++)
         {
             byte = (ubyte)value[index];
@@ -699,7 +759,7 @@ static httpclient_error_t _httpclient_internal__request_head(http_buffer_t *buff
             }
         }
 
-        // Append extra header
+        // append extra header
         parts[0] = name;
         parts[1] = ": ";
         parts[2] = value;
@@ -713,6 +773,8 @@ static httpclient_error_t _httpclient_internal__request_head(http_buffer_t *buff
             }
         }
     }
+
+    // add final empty line
     return _httpclient_internal__append(buffer, "\r\n", 2, HTTP_HEADER_LIMIT);
 }
 
@@ -743,17 +805,20 @@ httpclient_error_t httpclient__parse_url(const char *url, httpclient_url_t *pars
     ubyte value = 0;
     struct in6_addr address = { 0 };
 
+    // check the argument
     if (parsed == NULL)
     {
         return HTTPCLIENT_ARGUMENT;
     }
+
+    // clear the result
     clib__memset(parsed, 0, sizeof(*parsed));
     host = parsed->host;
     port = parsed->port;
     target = parsed->target;
     ipv6 = &parsed->is_ipv6;
 
-    // Check URL scheme
+    // check URL scheme
     length = _httpclient_internal__length(url, 8192);
     parsed->is_https = length >= 8 && _httpclient_internal__equal(url, 8, "https://");
     start = parsed->is_https ? 8 : 7;
@@ -761,6 +826,8 @@ httpclient_error_t httpclient__parse_url(const char *url, httpclient_url_t *pars
     {
         return HTTPCLIENT_ARGUMENT;
     }
+
+    // check URL characters
     for (index = start; index < length; index++)
     {
         value = (ubyte)url[index];
@@ -770,7 +837,7 @@ httpclient_error_t httpclient__parse_url(const char *url, httpclient_url_t *pars
         }
     }
 
-    // Find host name
+    // find host name
     *ipv6 = url[start] == '[';
     if (*ipv6)
     {
@@ -781,12 +848,18 @@ httpclient_error_t httpclient__parse_url(const char *url, httpclient_url_t *pars
     {
         end++;
     }
+
+    // check host length
     if (end == start || end - start > 253 || (*ipv6 && (end == length || url[end] != ']')))
     {
         return HTTPCLIENT_ARGUMENT;
     }
+
+    // copy the host
     clib__memcpy(host, url + start, end - start);
     host[end - start] = 0;
+
+    // check host format
     if (*ipv6)
     {
         if (inet_pton(AF_INET6, host, &address) != 1)
@@ -807,7 +880,7 @@ httpclient_error_t httpclient__parse_url(const char *url, httpclient_url_t *pars
         }
     }
 
-    // Read optional port
+    // read optional port
     clib__memcpy(port, parsed->is_https ? "443" : "80", parsed->is_https ? 4 : 3);
     if (end < length && url[end] == ':')
     {
@@ -824,12 +897,14 @@ httpclient_error_t httpclient__parse_url(const char *url, httpclient_url_t *pars
         clib__memcpy(port, url + port_start, port_end - port_start);
         port[port_end - port_start] = 0;
     }
+
+    // check the path start
     if (end < length && url[end] != '/' && url[end] != '?')
     {
         return HTTPCLIENT_ARGUMENT;
     }
 
-    // Copy request path
+    // copy request path
     index = 0;
     if (end == length || url[end] == '?')
     {
@@ -849,10 +924,13 @@ httpclient_error_t httpclient__parse_url(const char *url, httpclient_url_t *pars
  */
 void httpclient__response_free(httpclient_response_t *response)
 {
+    // nothing to free
     if (response == NULL)
     {
         return;
     }
+
+    // free headers and body
     if (response->headers != NULL)
     {
         free(response->headers);
@@ -861,6 +939,8 @@ void httpclient__response_free(httpclient_response_t *response)
     {
         free(response->body);
     }
+
+    // clear the response
     clib__memset(response, 0, sizeof(*response));
 }
 
@@ -887,21 +967,26 @@ httpclient_error_t httpclient__request(const httpclient_request_t *request, http
     boole closed = 0;
     httpclient_error_t error = HTTPCLIENT_ARGUMENT;
 
+    // check the response
     if (response == NULL)
     {
         return HTTPCLIENT_ARGUMENT;
     }
+
+    // clear the response
     clib__memset(response, 0, sizeof(*response));
 
-    // Validate request limits
+    // validate request limits
     if (request == NULL || request->url == NULL || (request->body_size != 0 && request->body == NULL) || request->body_size > BODY_LIMIT_MAX || request->max_response_bytes > BODY_LIMIT_MAX)
     {
         return HTTPCLIENT_ARGUMENT;
     }
+
+    // prepare the parser
     parser.limit = request->max_response_bytes == 0 ? 16u * 1024u * 1024u : request->max_response_bytes;
     parser.head = request->method != NULL && _httpclient_internal__equal(request->method, _httpclient_internal__length(request->method, 16), "HEAD");
 
-    // Prepare request headers
+    // prepare request headers
     error = httpclient__parse_url(request->url, &url);
     if (error == HTTPCLIENT_OK)
     {
@@ -909,21 +994,21 @@ httpclient_error_t httpclient__request(const httpclient_request_t *request, http
     }
     if (error == HTTPCLIENT_OK)
     {
-        // Open connection
+        // open connection
         error = httpclient_transport__open(request, &url, response, &connection);
     }
     if (error == HTTPCLIENT_OK)
     {
-        // Send request headers
+        // send request headers
         error = httpclient_transport__write(connection, header.data, header.size);
     }
     if (error == HTTPCLIENT_OK && request->body_size != 0)
     {
-        // Send request body
+        // send request body
         error = httpclient_transport__write(connection, request->body, request->body_size);
     }
 
-    // Read complete response
+    // read complete response
     while (error == HTTPCLIENT_OK && parser.state != 7)
     {
         error = httpclient_transport__read(connection, &parser, &closed);
@@ -939,26 +1024,28 @@ httpclient_error_t httpclient__request(const httpclient_request_t *request, http
             }
         }
     }
+
+    // write ending zero
     if (error == HTTPCLIENT_OK)
     {
         error = _httpclient_internal__append(&parser.body, NULL, 0, parser.limit);
         if (error == HTTPCLIENT_OK)
         {
-            // Transfer body ownership
+            // transfer body ownership
             response->body = parser.body.data;
             response->body_size = parser.body.size;
             parser.body.data = NULL;
         }
     }
 
-    // Release connection buffers
+    // release connection buffers
     free(parser.pending.data);
     free(parser.body.data);
     free(header.data);
     httpclient_transport__close(connection);
     if (error != HTTPCLIENT_OK)
     {
-        // Preserve failure details
+        // preserve failure details
         native = response->native_error;
         protocol = response->tls_protocol;
         httpclient__response_free(response);
@@ -977,6 +1064,7 @@ httpclient_error_t httpclient__request(const httpclient_request_t *request, http
  */
 const char *httpclient__error_text(httpclient_error_t error)
 {
+    // choose the text
     switch (error)
     {
     case HTTPCLIENT_OK:

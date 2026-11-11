@@ -27,6 +27,8 @@ static void _session_internal__worker(void *context);
 int64 desktop_session__client(desktop_session_t *session, int64 id)
 {
     int64 index = 0;
+
+    // find the matching client
     for (index = 0; index < session->model.client_count; index++)
     {
         if (session->model.clients[index].id == id)
@@ -46,6 +48,8 @@ int64 desktop_session__client(desktop_session_t *session, int64 id)
 int64 desktop_session__channel(desktop_session_t *session, int64 id)
 {
     int64 index = 0;
+
+    // find the matching channel
     for (index = 0; index < session->model.channel_count; index++)
     {
         if (session->model.channels[index].id == id)
@@ -63,11 +67,14 @@ int64 desktop_session__channel(desktop_session_t *session, int64 id)
  */
 void desktop_session__publish(desktop_session_t *session)
 {
+    // copy the changed model
     desktop_mutex__lock(session->mutex);
     session->model.revision = session->published.revision;
     if (!desktop_session__view_equal(&session->published, &session->model))
     {
         session->model.revision++;
+
+        // report a failed copy
         if (!desktop_session__view_copy(&session->published, &session->model))
         {
             session->failed = TRUE;
@@ -88,8 +95,11 @@ void desktop_session__publish(desktop_session_t *session)
  */
 void desktop_session__detail(desktop_session_t *session, const char *text, boole fatal)
 {
+    // store the status text
     clib__string_copy(session->model.detail, sizeof(session->model.detail), text);
     session->failed |= fatal;
+
+    // publish the new state
     desktop_session__publish(session);
 }
 
@@ -101,6 +111,8 @@ void desktop_session__detail(desktop_session_t *session, const char *text, boole
 boole desktop_session__stopping(desktop_session_t *session)
 {
     boole stop = 0;
+
+    // read the stop flag
     desktop_mutex__lock(session->mutex);
     stop = session->stop;
     desktop_mutex__unlock(session->mutex);
@@ -114,11 +126,16 @@ boole desktop_session__stopping(desktop_session_t *session)
  */
 void desktop_session__keys_reset(desktop_session_t *session)
 {
+    // reset the channel audio
     desktop_voice__channel_changed(session->voice);
+
+    // erase both key sets
     mbedtls_platform_zeroize(&session->keys, sizeof(session->keys));
     mbedtls_platform_zeroize(&session->previous_keys, sizeof(session->previous_keys));
     session->have_previous = 0;
     session->model.keys_ready = 0;
+
+    // reset the maintainer state
     session->maintainer = -1;
     session->generation = -1;
     session->key_channel = session->model.channel;
@@ -150,15 +167,20 @@ static void _session_internal__worker(void *context)
     boole fallback = session->connection.automatic_transport && clib__strncmp(session->connection.address, "wss://", 6) == 0;
     char fallback_address[sizeof(session->connection.address)] = { 0 };
 
+    // clear the session model
     desktop_session__view_release(&session->model);
     clib__null_memory(&session->model, sizeof(session->model));
     session->model.connection_serial = ++session->next_connection_serial;
+
+    // clear the tree icons
     desktop_mutex__lock(session->mutex);
     clib__null_memory(session->tree_icons, sizeof(session->tree_icons));
     clib__null_memory(session->tree_icon_present, sizeof(session->tree_icon_present));
     session->model.tree_revision = ++session->next_tree_revision;
     session->tree_icons_revision = session->model.tree_revision;
     desktop_mutex__unlock(session->mutex);
+
+    // set the model defaults
     session->model.local_id = -1;
     session->model.channel = -1;
     session->model.policy_idle = 1;
@@ -168,54 +190,83 @@ static void _session_internal__worker(void *context)
     session->model.policy_private = TRUE;
     session->model.picture_limit = DESKTOP_ATTACHMENT_IMAGE_LIMIT;
     session->model.file_limit = 10ULL * 1024 * 1024;
+
+    // reset the channel keys
     desktop_session__keys_reset(session);
+
+    // show the status text
     desktop_session__detail(session, "Calculating your identity...", 0);
+
+    // create the crypto state
     session->crypto = crypto_session__create();
     if (!session->crypto)
     {
         desktop_session__detail(session, "Could not initialize the secure random source.", 1);
         goto label_finished;
     }
+
+    // calculate the identity key
     if (!crypto_session__identity(session->crypto, session->connection.identity, session->connection.key_bits, session->public_key, sizeof(session->public_key)))
     {
         desktop_session__detail(session, "Could not calculate and validate the identity key.", 1);
         goto label_finished;
     }
+
+    // read the server keys
     if (!crypto_session__server_keys(session->crypto, session->connection.server_keys))
     {
         desktop_session__detail(session, "Invalid server keys: use up to eight nonempty key rows.", 1);
         goto label_finished;
     }
+
+    // start the key exchange
     if (!crypto_session__begin_dh(session->crypto, mix, sizeof(mix)))
     {
         desktop_session__detail(session, "Could not prepare the ephemeral session key exchange.", 1);
         goto label_finished;
     }
+
+    // stop was requested
     if (desktop_session__stopping(session))
     {
         goto label_finished;
     }
+
+    // start the connection
     if (!desktop_transport__connect(session->transport, session->connection.address))
     {
         desktop_session__detail(session, "Could not start the WebSocket connection.", 1);
         goto label_finished;
     }
+
+    // set the login deadline
     desktop_session__detail(session, fallback ? "Connecting securely..." : "Connecting...", 0);
     deadline = desktop_system__milliseconds() + 30000;
+
+    // loop until stopped
     while (!desktop_session__stopping(session))
     {
+        // read the transport status
         desktop_transport__status(session->transport, &status);
+
+        // connection failed or closed
         if (status.state == DESKTOP_TRANSPORT_FAILED || status.state == DESKTOP_TRANSPORT_DISCONNECTED)
         {
+            // try once without TLS
             if (phase == 0 && fallback)
             {
+                // wait until transport finished
                 if (!status.finished)
                 {
                     desktop_system__sleep(5);
                     continue;
                 }
+
+                // store the TLS result
                 fallback = FALSE;
                 session->model.tls_certificate_rejected = status.certificate_rejected;
+
+                // connect with plain WS
                 if (clib__string_format(fallback_address, sizeof(fallback_address), "ws://%s", session->connection.address + 6) && !desktop_session__stopping(session) && desktop_transport__connect(session->transport, fallback_address))
                 {
                     session->model.ws_fallback = TRUE;
@@ -227,6 +278,8 @@ static void _session_internal__worker(void *context)
                 }
                 clib__null_memory(fallback_address, sizeof(fallback_address));
             }
+
+            // report the close reason
             if (status.close_code == DESKTOP_SERVER_CLOSE_KICKED)
             {
                 desktop_session__detail(session, "You were kicked from the server.", 1);
@@ -241,6 +294,8 @@ static void _session_internal__worker(void *context)
             }
             break;
         }
+
+        // send the public key
         if (status.state == DESKTOP_TRANSPORT_CONNECTED && phase == 0)
         {
             if (!client_msg__connection__send_public_key(session, mix))
@@ -250,19 +305,27 @@ static void _session_internal__worker(void *context)
             phase = 1;
             desktop_session__detail(session, "Verifying identity...", 0);
         }
+
+        // read the received frames
         for (batch = 0; batch < 16 && desktop_transport__receive(session->transport, &frame); batch++)
         {
+            // skip binary frames
             if (frame.binary)
             {
                 desktop_message__release(&frame);
                 continue;
             }
+
+            // decrypt and parse frame
             plaintext = crypto_session__decrypt(session->crypto, frame.data, frame.size);
             root = plaintext ? desktop_protocol__parse_json(plaintext, clib__strlen(plaintext), DESKTOP_MESSAGE_LIMIT, CJSON_NESTING_LIMIT) : NULL;
             incoming = cJSON_GetObjectItemCaseSensitive(root, "message");
             type = server_msg__read_string(incoming, "type");
+
+            // choose by login phase
             if (phase == 1 && clib__strcmp(type, "crypto_policy") == 0)
             {
+                // answer the crypto policy
                 cJSON *request = crypto_session__negotiate(session->crypto, incoming, session->public_key);
                 if (!request || !client_msg__delivery__send(session, request, 1))
                 {
@@ -271,6 +334,7 @@ static void _session_internal__worker(void *context)
             }
             else if (phase == 1 && clib__strcmp(type, "public_key_challenge") == 0)
             {
+                // answer the identity challenge
                 server_msg__connection__process_challenge(session, incoming);
                 phase = 2;
             }
@@ -278,18 +342,27 @@ static void _session_internal__worker(void *context)
             {
                 if (clib__strcmp(server_msg__read_string(incoming, "value"), "success") == 0)
                 {
+                    // set the connected state
                     phase = 3;
                     session->model.connected = 1;
                     desktop_voice__sound(session->voice, DESKTOP_SOUND_CONNECTED);
+
+                    // start the attachments
                     if (!desktop_attachments__start(session->attachments, session->crypto))
                     {
                         desktop_session__detail(session, "Could not initialize attachment encryption.", TRUE);
                     }
+
+                    // read the login settings
                     desktop_voice__message(session, incoming);
                     server_msg__actions__receive(session, incoming);
                     server_msg__channel__read_key_policy(session, incoming);
                     server_msg__tree__receive(session, incoming);
+
+                    // request the server info
                     client_msg__delivery__send(session, client_msg__delivery__new_message("load_server_info"), 1);
+
+                    // store the keepalive time
                     keepalive = desktop_system__milliseconds();
                     desktop_session__detail(session, "Connected. Waiting for channel keys...", 0);
                 }
@@ -306,53 +379,79 @@ static void _session_internal__worker(void *context)
             {
                 desktop_session__detail(session, "The server reply could not be verified. Check its encryption keys and required identity size.", 1);
             }
+
+            // free the frame data
             crypto_session__free_json(root);
             root = NULL;
             crypto_session__free_text(plaintext);
             plaintext = NULL;
             desktop_message__release(&frame);
+
+            // stop was requested
             if (desktop_session__stopping(session))
             {
                 break;
             }
         }
+
+        // stop was requested
         if (desktop_session__stopping(session))
         {
             break;
         }
+
+        // check the login deadline
         if (phase < 3 && desktop_system__milliseconds() >= deadline)
         {
             desktop_session__detail(session, "Login timed out. Check the address and server encryption keys.", 1);
         }
+
+        // run the connected tasks
         if (phase == 3)
         {
+            // update the voice state
             desktop_voice__tick(session);
+
+            // send a keepalive
             if (desktop_system__milliseconds() - keepalive >= 5000)
             {
                 client_msg__connection__send_keepalive(session);
                 keepalive = desktop_system__milliseconds();
             }
+
+            // distribute the channel keys
             if (!client_msg__channel__distribute_keys(session))
             {
                 desktop_session__detail(session, "Could not distribute channel keys safely. Disconnected.", 1);
             }
+
+            // send queued requests
             client_msg__dispatch_command(session);
             client_msg__attachments__tick(session);
+
+            // copy the attachment view
             desktop_attachments__view(session->attachments, &session->model.attachments);
+
+            // request a maintainer reset
             if (!session->model.idle && !session->model.keys_ready && session->model.channel >= 0 && desktop_system__milliseconds() - session->waiting_since >= 15000)
             {
                 client_msg__channel__send_reset_maintainer(session);
                 session->waiting_since = desktop_system__milliseconds();
             }
         }
+
+        // publish the changes
         if (batch || (phase == 3 && desktop_system__milliseconds() - published >= 25))
         {
             desktop_session__publish(session);
             published = desktop_system__milliseconds();
         }
+
+        // wait 5 milliseconds
         desktop_system__sleep(5);
     }
 label_finished:
+    // play the end sound
     desktop_mutex__lock(session->mutex);
     if (session->model.connected)
     {
@@ -374,17 +473,27 @@ label_finished:
         desktop_voice__sound(session->voice, DESKTOP_SOUND_ERROR);
     }
     desktop_mutex__unlock(session->mutex);
+
+    // stop the attachment transfers
     desktop_attachments__disconnect(session->attachments);
     desktop_attachments__view(session->attachments, &session->model.attachments);
+
+    // stop voice and transport
     desktop_voice__stop(session->voice);
     desktop_transport__disconnect(session->transport);
+
+    // destroy the crypto state
     crypto_session__destroy(session->crypto);
     session->crypto = NULL;
+
+    // clear the session model
     session->model.connected = 0;
     session->model.client_count = 0;
     desktop_session__view_release(&session->model);
     session->model.local_id = -1;
     session->model.channel = -1;
+
+    // reset the status fields
     session->model.audio_ready = 0;
     session->model.microphone_ready = 0;
     session->model.talking = 0;
@@ -392,14 +501,20 @@ label_finished:
     session->model.input_level = -90;
     session->model.idle = 0;
     clib__string_copy(session->model.audio_detail, sizeof(session->model.audio_detail), "Disconnected");
+
+    // erase keys and connection
     desktop_session__keys_reset(session);
     mbedtls_platform_zeroize(&session->connection, sizeof(session->connection));
     clib__null_memory(session->client_keys, sizeof(session->client_keys));
+
+    // show the final status
     if (!session->failed)
     {
         desktop_session__detail(session, "Disconnected", 0);
     }
     desktop_session__publish(session);
+
+    // clear the running flag
     desktop_mutex__lock(session->mutex);
     session->running = 0;
     desktop_mutex__unlock(session->mutex);
@@ -412,22 +527,32 @@ label_finished:
 desktop_session_t *desktop_session__create(void)
 {
     desktop_session_t *session = calloc(1, sizeof(*session));
+
+    // check the allocation
     if (!session)
     {
         return NULL;
     }
+
+    // create the session parts
     session->mutex = desktop_mutex__create();
     session->transport = desktop_transport__create();
     session->voice = desktop_voice__create(1);
     session->attachments = desktop_attachments__create();
+
+    // set the default options
     session->push_to_talk_key = DESKTOP_HOTKEY_DEFAULT;
     session->audio_options.volume = 100;
     session->audio_options.gain = 100;
+
+    // check the created parts
     if (!session->mutex || !session->transport || !session->voice || !session->attachments)
     {
         desktop_session__destroy(session);
         return NULL;
     }
+
+    // fill the published view
     session->published.local_id = -1;
     session->published.channel = -1;
     session->published.revision = 1;
@@ -442,6 +567,7 @@ desktop_session_t *desktop_session__create(void)
  */
 void desktop_session__disconnect(desktop_session_t *session)
 {
+    // set the stop flag
     if (session && session->mutex)
     {
         desktop_mutex__lock(session->mutex);
@@ -457,16 +583,24 @@ void desktop_session__disconnect(desktop_session_t *session)
  */
 void desktop_session__destroy(desktop_session_t *session)
 {
+    // only an existing session
     if (session)
     {
+        // stop the worker thread
         desktop_session__disconnect(session);
         desktop_thread__join(session->thread);
+
+        // destroy the session parts
         desktop_voice__destroy(session->voice);
         desktop_attachments__destroy(session->attachments);
         desktop_transport__destroy(session->transport);
         desktop_mutex__destroy(session->mutex);
+
+        // free the views
         desktop_session__view_release(&session->model);
         desktop_session__view_release(&session->published);
+
+        // erase and free session
         mbedtls_platform_zeroize(session, sizeof(*session));
         free(session);
     }
@@ -481,6 +615,7 @@ void desktop_session__destroy(desktop_session_t *session)
  */
 void desktop_session__audio(desktop_session_t *session, const desktop_audio_options_t *options, int64 key)
 {
+    // store the audio options
     desktop_mutex__lock(session->mutex);
     session->audio_options = *options;
     session->push_to_talk_key = desktop_hotkey__index(key) >= 0 ? key : DESKTOP_HOTKEY_DEFAULT;
@@ -509,24 +644,36 @@ boole desktop_session__connect(desktop_session_t *session, const desktop_connect
 {
     desktop_endpoint_t endpoint = { 0 };
     boole running = 0;
+
+    // check the connection settings
     if (!session || !connection || !clib__memchr(connection->address, 0, sizeof(connection->address)) || !clib__memchr(connection->identity, 0, sizeof(connection->identity)) || !connection->identity[0] || !clib__memchr(connection->username, 0, sizeof(connection->username)) || !clib__memchr(connection->server_keys, 0, sizeof(connection->server_keys)) || connection->key_bits < 2048 || connection->key_bits > 8192 || connection->key_bits % 256 || !desktop_endpoint__parse(connection->address, &endpoint))
     {
         return 0;
     }
+
+    // read the running flag
     desktop_mutex__lock(session->mutex);
     running = session->running;
     desktop_mutex__unlock(session->mutex);
+
+    // refuse a second connection
     if (running)
     {
         return 0;
     }
+
+    // wait for old thread
     desktop_thread__join(session->thread);
     session->thread = NULL;
+
+    // store settings and flags
     session->connection = *connection;
     session->failed = 0;
     session->stop = 0;
     session->command_count = 0;
     session->running = 1;
+
+    // start the worker thread
     session->thread = desktop_thread__start(_session_internal__worker, session);
     if (!session->thread)
     {
@@ -545,6 +692,8 @@ boole desktop_session__connect(desktop_session_t *session, const desktop_connect
 boole desktop_session__busy(desktop_session_t *session)
 {
     boole busy = FALSE;
+
+    // read the running flag
     desktop_mutex__lock(session->mutex);
     busy = session->running;
     desktop_mutex__unlock(session->mutex);
@@ -560,6 +709,8 @@ boole desktop_session__busy(desktop_session_t *session)
 boole desktop_session__view(desktop_session_t *session, desktop_session_view_t *view)
 {
     boole changed = 0;
+
+    // copy a newer snapshot
     desktop_mutex__lock(session->mutex);
     changed = view->revision != session->published.revision;
     if (changed)
@@ -581,12 +732,18 @@ boole desktop_session__join(desktop_session_t *session, int64 channel, const cha
 {
     boole queued = 0;
     desktop_session_command_t command = { 0 };
+
+    // fill the command
     command.join = 1;
     command.channel = channel;
+
+    // check and copy password
     if (channel < 0 || !clib__string_copy(command.text, sizeof(command.text), password))
     {
         return 0;
     }
+
+    // queue the command
     desktop_mutex__lock(session->mutex);
     if (session->running && !session->stop && session->published.connected && session->command_count < 8)
     {
@@ -594,6 +751,8 @@ boole desktop_session__join(desktop_session_t *session, int64 channel, const cha
         queued = 1;
     }
     desktop_mutex__unlock(session->mutex);
+
+    // erase the command copy
     mbedtls_platform_zeroize(&command, sizeof(command));
     return queued;
 }
@@ -608,10 +767,14 @@ boole desktop_session__chat(desktop_session_t *session, const char *text)
 {
     boole queued = 0;
     desktop_session_command_t command = { 0 };
+
+    // check and copy text
     if (!text || !text[0] || !clib__string_copy(command.text, sizeof(command.text), text))
     {
         return 0;
     }
+
+    // queue the command
     desktop_mutex__lock(session->mutex);
     if (session->running && !session->stop && session->published.keys_ready && session->command_count < 8)
     {
@@ -621,6 +784,8 @@ boole desktop_session__chat(desktop_session_t *session, const char *text)
         queued = 1;
     }
     desktop_mutex__unlock(session->mutex);
+
+    // erase the command copy
     mbedtls_platform_zeroize(&command, sizeof(command));
     return queued;
 }
@@ -638,13 +803,19 @@ boole desktop_session__direct(desktop_session_t *session, int64 peer, uint64 ser
     desktop_session_command_t command = { 0 };
     int64 index = 0;
     boole queued = 0;
+
+    // check and copy text
     if (!text || !text[0] || !clib__string_copy(command.text, sizeof(command.text), text))
     {
         return 0;
     }
+
+    // fill the command
     command.direct = 1;
     command.peer = peer;
     command.peer_serial = serial;
+
+    // find the peer client
     desktop_mutex__lock(session->mutex);
     for (index = 0; index < session->published.client_count; index++)
     {
@@ -653,6 +824,8 @@ boole desktop_session__direct(desktop_session_t *session, int64 peer, uint64 ser
             break;
         }
     }
+
+    // queue the command
     if (session->running && !session->stop && session->published.connected && !session->published.idle && session->command_count < 8 && peer != session->published.local_id && index < session->published.client_count && !session->published.clients[index].music)
     {
         command.format = session->chat_format;
@@ -660,6 +833,8 @@ boole desktop_session__direct(desktop_session_t *session, int64 peer, uint64 ser
         queued = 1;
     }
     desktop_mutex__unlock(session->mutex);
+
+    // erase the command copy
     mbedtls_platform_zeroize(&command, sizeof(command));
     return queued;
 }
@@ -678,12 +853,12 @@ boole desktop_session__direct_closed(desktop_session_t *session, int64 peer, uin
     desktop_session_command_t command = { 0 };
     boole queued = 0;
 
-    // Fill the command.
+    // fill the command
     command.is_direct_closed = 1;
     command.peer = peer;
     command.peer_serial = serial;
 
-    // Queue the command.
+    // queue the command
     desktop_mutex__lock(session->mutex);
     if (session->running && !session->stop && session->published.connected && session->command_count < 8 && peer >= 0 && peer != session->published.local_id)
     {
@@ -698,11 +873,15 @@ boole desktop_session__direct_closed(desktop_session_t *session, int64 peer, uin
 void desktop_session__set_chat_format(desktop_session_t *session, const desktop_chat_format_t *format)
 {
     desktop_chat_format_t selected;
+
+    // choose a valid format
     desktop_chat_format__default(&selected);
     if (desktop_chat_format__valid(format))
     {
         selected = *format;
     }
+
+    // store the format
     desktop_mutex__lock(session->mutex);
     session->chat_format = selected;
     desktop_mutex__unlock(session->mutex);
@@ -720,10 +899,14 @@ boole desktop_session__mute(desktop_session_t *session, int64 peer, uint64 seria
 {
     desktop_session_command_t command = { 0 };
     boole queued = 0;
+
+    // fill the command
     command.mute = 1;
     command.muted = muted != 0;
     command.peer = peer;
     command.peer_serial = serial;
+
+    // queue the command
     desktop_mutex__lock(session->mutex);
     if (session->running && !session->stop && session->published.connected && session->command_count < 8 && peer >= 0 && peer != session->published.local_id)
     {
@@ -746,11 +929,17 @@ void desktop_session__overlay(const desktop_session_view_t *view, desktop_overla
     boole speaking = 0;
     const desktop_client_t *client = NULL_POINTER;
     desktop_overlay_member_t *member = NULL_POINTER;
+
+    // clear the overlay data
     desktop_overlay_data__clear(overlay);
+
+    // nothing to show
     if (!view->connected || view->idle || view->channel < 0)
     {
         return;
     }
+
+    // copy the channel name
     for (index = 0; index < view->channel_count; index++)
     {
         if (view->channels[index].id == view->channel)
@@ -758,6 +947,8 @@ void desktop_session__overlay(const desktop_session_view_t *view, desktop_overla
             clib__string_copy(overlay->channel, sizeof(overlay->channel), view->channels[index].name);
         }
     }
+
+    // count the channel members
     for (index = 0; index < view->client_count; index++)
     {
         if (view->clients[index].channel == view->channel && !view->clients[index].idle)
@@ -765,15 +956,20 @@ void desktop_session__overlay(const desktop_session_view_t *view, desktop_overla
             overlay->total_member_count++;
         }
     }
+
+    // add speaking members first
     for (speaking = 1; speaking >= 0; speaking--)
     {
         for (index = 0; index < view->client_count && overlay->member_count < DESKTOP_OVERLAY_MEMBERS; index++)
         {
+            // skip other clients
             client = &view->clients[index];
             if (client->channel != view->channel || client->idle || ((client->audio == 1) != speaking))
             {
                 continue;
             }
+
+            // fill the member entry
             member = &overlay->members[overlay->member_count++];
             member->id = (uint)index;
             member->flags = (client->audio == 1 ? DESKTOP_OVERLAY_SPEAKING : 0) | (client->audio >= 3 ? DESKTOP_OVERLAY_MUTED : 0) | (client->id == view->local_id ? DESKTOP_OVERLAY_LOCAL : 0) | (client->audio == 4 ? DESKTOP_OVERLAY_DEAFENED : 0) | (client->muted ? DESKTOP_OVERLAY_LOCAL_MUTE : 0);
@@ -783,6 +979,8 @@ void desktop_session__overlay(const desktop_session_view_t *view, desktop_overla
             }
         }
     }
+
+    // enable the overlay
     overlay->enabled = 1;
 }
 

@@ -446,8 +446,10 @@
     box-shadow: 0 0 0 2px var(--set-accent-soft, rgba(90, 140, 255, 0.25));
 }
 
+/* The buttons of the window: the input buttons, and the button elements that had no rule of their own. */
 #server-settings-tab #server-settings-open-groups,
 #server-settings-tab input[type="button"],
+#server-settings-tab :is(.server-banner-actions button, #server-settings-groups-button, #server-encryption-add-password, #server-music-snapshot-add-key, #server-music-snapshot-retry, #server-music-snapshot-delete),
 #server-settings-tab .custom-file-upload-button {
     box-sizing: border-box;
     padding: 6px 13px;
@@ -463,6 +465,7 @@
 }
 #server-settings-tab #server-settings-open-groups:hover,
 #server-settings-tab input[type="button"]:hover,
+#server-settings-tab :is(.server-banner-actions button, #server-settings-groups-button, #server-encryption-add-password, #server-music-snapshot-add-key, #server-music-snapshot-retry, #server-music-snapshot-delete):hover,
 #server-settings-tab .custom-file-upload-button:hover {
     filter: var(--set-button-hover-filter, brightness(1.14));
     background: var(--set-button-hover-bg, var(--set-button-bg, var(--set-accent, #5a8cff)));
@@ -471,11 +474,24 @@
 }
 #server-settings-tab #server-settings-open-groups:active,
 #server-settings-tab input[type="button"]:active,
+#server-settings-tab :is(.server-banner-actions button, #server-settings-groups-button, #server-encryption-add-password, #server-music-snapshot-add-key, #server-music-snapshot-retry, #server-music-snapshot-delete):active,
 #server-settings-tab .custom-file-upload-button:active {
     filter: brightness(0.92);
     border: var(--set-button-border-active, var(--set-button-border, 1px solid transparent));
 }
 
+/* A button that cannot be used now. */
+#server-settings-tab :is(.server-banner-actions button, #server-settings-groups-button, #server-encryption-add-password, #server-music-snapshot-add-key, #server-music-snapshot-retry, #server-music-snapshot-delete):disabled {
+    opacity: 0.5;
+    filter: none;
+}
+/* A help text under a setting: muted, and nearer to its setting than to the next one. */
+#server-settings-tab :is(.server-settings-general-help, .server-settings-help, .server-settings-page p:not([class]):not([id])) {
+    margin: -6px 2px 14px 2px;
+    color: var(--set-muted, #aeb6c2);
+    font-size: 12px;
+    line-height: 1.45;
+}
 #server-settings-tab .server-settings-general-row {
     display: flex;
     align-items: center;

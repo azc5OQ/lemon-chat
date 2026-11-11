@@ -43,6 +43,8 @@ struct desktop_hotkey_t
 desktop_hotkey_t *desktop_hotkey__create(void)
 {
     desktop_hotkey_t *hotkey = calloc(1, sizeof(*hotkey));
+
+    // open the X11 display
     if (hotkey)
     {
         hotkey->display = desktop_hotkey__initialize() ? XOpenDisplay(NULL) : NULL;
@@ -63,6 +65,7 @@ desktop_hotkey_t *desktop_hotkey__create(void)
  */
 void desktop_hotkey__destroy(desktop_hotkey_t *hotkey)
 {
+    // close and free context
     if (hotkey)
     {
         XCloseDisplay(hotkey->display);
@@ -83,18 +86,26 @@ boole desktop_hotkey__down(desktop_hotkey_t *hotkey, int64 key)
     KeyCode code = 0;
     KeySym symbol = 0;
     boole down = FALSE;
+
+    // check arguments
     if (!hotkey || desktop_hotkey__index(key) < 0)
     {
         return 0;
     }
+
+    // choose the key symbol
     symbol = (KeySym)(key >= 1 && key <= 12 ? XK_F1 + key - 1 : key);
     if (key >= 'A' && key <= 'Z')
     {
         symbol = (KeySym)(XK_a + key - 'A');
     }
+
+    // read the key state
     code = XKeysymToKeycode(hotkey->display, symbol);
     XQueryKeymap(hotkey->display, keys);
     down = code && (keys[code >> 3] & (1 << (code & 7))) != 0;
+
+    // erase the key states
     desktop_memory__erase(keys, sizeof(keys));
     return down;
 }

@@ -61,6 +61,8 @@ static void _ui_window_internal__join_channel(int64 id);
 static const desktop_client_t *_ui_window_internal__member(void)
 {
     int64 index = 0;
+
+    // find the selected client
     for (index = 0; index < g_view->client_count; index++)
     {
         if (g_view->connected && g_view->clients[index].id == g_member && g_view->clients[index].serial == g_member_serial)
@@ -82,22 +84,32 @@ static void _ui_window_internal__member_controls(void)
     gui_node_t *mute = scene__find_by_id("member-mute");
     int64 index = 0;
     char text[192] = { 0 };
+
+    // update the message button
     if (message)
     {
         message->state = !member || member->music || member->id == g_view->local_id ? GUI_NODE_STATE__DISABLED : GUI_NODE_STATE__DEFAULT;
     }
+
+    // update the mute button
     if (mute)
     {
         mute->state = !member || member->id == g_view->local_id ? GUI_NODE_STATE__DISABLED : GUI_NODE_STATE__DEFAULT;
     }
     _ui_window_internal__set_text("member-mute", member && member->muted ? "Unmute locally" : "Mute locally");
+
+    // report a disconnected client
     if (!member)
     {
         _ui_window_internal__set_text("member-detail", "This client has disconnected.");
         return;
     }
+
+    // show the client name
     clib__string_format(text, sizeof(text), "%s%s", member->name, member->id == g_view->local_id ? " (you)" : "");
     _ui_window_internal__set_text("member-title", text);
+
+    // show the channel name
     for (index = 0; index < g_view->channel_count; index++)
     {
         if (g_view->channels[index].id == member->channel)
@@ -117,12 +129,18 @@ static void _ui_window_internal__member_controls(void)
 static void _ui_window_internal__on_member(gui_event_t *event)
 {
     nuint index = event && event->sender ? (nuint)event->sender->user_data : 0;
+
+    // check the row index
     if (!index || index > g_view->client_count)
     {
         return;
     }
+
+    // select the client row
     desktop_session_view__select_member(&g_view->clients[index - 1]);
     g_refresh = TRUE;
+
+    // open menu or conversation
     if (event->mouse.button == 1)
     {
         g_member = g_view->clients[index - 1].id;
@@ -169,6 +187,8 @@ static void _ui_window_internal__on_private_message(gui_event_t *event)
 {
     const desktop_client_t *member = _ui_window_internal__member();
     (void)event;
+
+    // open the private conversation
     if (member && !member->music && member->id != g_view->local_id)
     {
         if (!desktop_session_view__open(member))
@@ -204,6 +224,8 @@ static void _ui_window_internal__on_mute_member(gui_event_t *event)
 static void _ui_window_internal__on_choose_conversation(gui_event_t *event)
 {
     nuint index = event && event->sender ? (nuint)event->sender->user_data : 0;
+
+    // select the conversation tab
     if (index)
     {
         desktop_session_view__select((int64)index - 1);
@@ -223,7 +245,7 @@ static void _ui_window_internal__on_close_conversation(gui_event_t *event)
     uint64 serial = 0;
     boole is_closed = FALSE;
 
-    // Close the tab.
+    // close the tab
     if (event && event->sender)
     {
         is_closed = desktop_session_view__close_tab((int64)(nuint)event->sender->user_data, &peer, &serial);
@@ -233,14 +255,14 @@ static void _ui_window_internal__on_close_conversation(gui_event_t *event)
         is_closed = desktop_session_view__close(&peer, &serial);
     }
 
-    // Send the notice.
+    // send the notice
     if (is_closed)
     {
         // the other client then shows that this user closed the conversation
         desktop_session__direct_closed(g_session, peer, serial);
     }
 
-    // Draw again.
+    // draw again
     g_refresh = 1;
     _ui_window_internal__request_render();
 }
@@ -259,7 +281,10 @@ static void _ui_window_internal__panel(const char *id, boole visible)
 {
     gui_node_t *node = NULL_POINTER;
 
+    // find the panel
     node = scene__find_by_id((char *)id);
+
+    // change the visibility
     if (node)
     {
         clib__string_copy(node->klass, sizeof(node->klass), visible ? "column panel" : "column panel hidden");
@@ -336,7 +361,10 @@ static void _ui_window_internal__set_text(const char *id, const char *text)
 {
     gui_node_t *node = NULL_POINTER;
 
+    // find the control
     node = scene__find_by_id((char *)id);
+
+    // set the new text
     if (node && clib__strcmp(node->text, text) != 0)
     {
         scene__set_text(node, text, clib__strlen(text));
@@ -359,66 +387,93 @@ static void _ui_window_internal__on_connect(gui_event_t *event)
     boole connect_now = !event || !event->sender || clib__strcmp(event->sender->id, "connection-save") != 0;
 
     (void)event;
+
+    // find the name field
     username = scene__find_by_id("username");
     if (!username)
     {
         return;
     }
+
+    // refuse a second connection
     if (connect_now && desktop_session__busy(g_session))
     {
         _ui_window_internal__set_text("login-result", "Disconnect and wait for the current connection to finish first.");
         return;
     }
+
+    // copy identity and name
     if (!clib__string_copy(connection.identity, sizeof(connection.identity), g_settings->identity) || !clib__string_copy(connection.username, sizeof(connection.username), username->text))
     {
         _ui_window_internal__set_text("login-result", "The connection details are too long.");
         goto label_finished;
     }
+
+    // read the server keys
     if (!desktop_ui_connection__keys(connection.server_keys, sizeof(connection.server_keys)))
     {
         goto label_finished;
     }
+
+    // read the server address
     if (!desktop_ui_connection__address(connection.address, sizeof(connection.address)))
     {
         _ui_window_internal__set_text("login-result", "Enter a domain name or IP address and a port from 1 to 65535.");
         goto label_finished;
     }
+
+    // check the identity
     if (connection.identity[0] && !desktop_ui_connection__identity_valid(connection.identity))
     {
         _ui_window_internal__set_text("login-result", "An identity must contain 199 to 512 printable characters. Leave it empty to create one.");
         goto label_finished;
     }
+
+    // set the connection options
     connection.automatic_transport = TRUE;
     connection.key_bits = g_settings->key_bits ? g_settings->key_bits : 2048;
+
+    // create a missing identity
     if (!connection.identity[0] && !crypto_session__new_identity(connection.identity, sizeof(connection.identity)))
     {
         _ui_window_internal__set_text("login-result", "Could not create a random identity.");
         goto label_finished;
     }
+
+    // fill the new settings
     settings = *g_settings;
     clib__string_copy(settings.address, sizeof(settings.address), connection.address);
     clib__string_copy(settings.username, sizeof(settings.username), connection.username);
     clib__string_copy(settings.identity, sizeof(settings.identity), connection.identity);
     clib__string_copy(settings.server_keys, sizeof(settings.server_keys), connection.server_keys);
     settings.key_bits = connection.key_bits;
+
+    // save the settings
     if (!desktop_settings__save(&settings))
     {
         _ui_window_internal__set_text("login-result", "Could not save the connection details. Check the settings directory permissions.");
     }
     else
     {
+        // use the saved settings
         *g_settings = settings;
         _ui_window_internal__set_text("identity-string", settings.identity);
+
+        // stop after saving
         if (!connect_now)
         {
             _ui_window_internal__set_text("login-result", "Connection details saved.");
             goto label_finished;
         }
+
+        // start the connection
         if (!desktop_session__connect(g_session, &connection))
         {
             _ui_window_internal__set_text("login-result", "Could not start the connection. Your saved identity is retained.");
             goto label_finished;
         }
+
+        // close the connection panel
         g_preview = 0;
         g_refresh = 1;
         _ui_window_internal__set_text("login-result", "Connecting...");
@@ -426,6 +481,7 @@ static void _ui_window_internal__on_connect(gui_event_t *event)
         _ui_window_internal__panel("connection-panel", 0);
     }
 label_finished:
+    // erase the local copies
     desktop_memory__erase(&connection, sizeof(connection));
     desktop_memory__erase(&settings, sizeof(settings));
 }
@@ -456,6 +512,8 @@ static void _ui_window_internal__on_send_chat(gui_event_t *event)
     uint64 serial = 0;
     int64 peer = desktop_session_view__peer(&serial);
     (void)event;
+
+    // queue the message
     if (input && (peer >= 0 ? desktop_session__direct(g_session, peer, serial, input->text) : desktop_session__chat(g_session, input->text)))
     {
         _ui_window_internal__set_text("message-input", "");
@@ -483,12 +541,18 @@ static void _ui_window_internal__submit(void)
 static void _ui_window_internal__on_join_channel(gui_event_t *event)
 {
     nuint index = event && event->sender ? (nuint)event->sender->user_data : 0;
+
+    // check the row index
     if (!index || index > g_view->channel_count)
     {
         return;
     }
+
+    // select the channel row
     desktop_session_view__select_channel(&g_view->channels[index - 1]);
     g_refresh = TRUE;
+
+    // open the context menu
     if (event->mouse.button == 1)
     {
         desktop_ui_context__channel(&g_view->channels[index - 1], event->mouse.x, event->mouse.y);
@@ -506,6 +570,8 @@ static void _ui_window_internal__join_channel(int64 id)
     const desktop_channel_t *channel = NULL_POINTER;
     desktop_action_t action = { 0 };
     int64 index = 0;
+
+    // find the channel
     for (index = 0; index < g_view->channel_count; index++)
     {
         if (g_view->channels[index].id == id)
@@ -514,10 +580,14 @@ static void _ui_window_internal__join_channel(int64 id)
             break;
         }
     }
+
+    // nothing to join
     if (!channel || (!g_view->idle && channel->id == g_view->channel))
     {
         return;
     }
+
+    // send the return action
     if (g_view->idle)
     {
         action.type = DESKTOP_ACTION_RETURN;
@@ -525,6 +595,8 @@ static void _ui_window_internal__join_channel(int64 id)
         desktop_session__action(g_session, &action);
         return;
     }
+
+    // join or request password
     if (channel->password)
     {
         g_join_channel = channel->id;
@@ -547,6 +619,8 @@ static void _ui_window_internal__on_join_password(gui_event_t *event)
 {
     gui_node_t *password = scene__find_by_id("channel-password");
     (void)event;
+
+    // send the join request
     if (password && desktop_session__join(g_session, g_join_channel, password->text))
     {
         _ui_window_internal__set_text("channel-password", "");
@@ -578,6 +652,8 @@ static void _ui_window_internal__on_close_join(gui_event_t *event)
 static void _ui_window_internal__on_overlay_preview(gui_event_t *event)
 {
     (void)event;
+
+    // switch the overlay preview
     g_preview = !g_preview;
     g_refresh = 1;
     _ui_window_internal__set_text("preview-button", g_preview ? "Stop overlay preview" : "Preview channel and speakers");
@@ -597,24 +673,34 @@ static void _ui_window_internal__on_save_overlay(gui_event_t *event)
     desktop_settings_t settings = { 0 };
 
     (void)event;
+
+    // find both controls
     enabled = scene__find_by_id("overlay-enabled");
     game = scene__find_by_id("game-executable");
     if (!enabled || !game)
     {
         return;
     }
+
+    // copy the new values
     settings = *g_settings;
     settings.overlay_enabled = enabled->value != 0;
+
+    // check the executable name
     if (!clib__string_copy(settings.game_executable, sizeof(settings.game_executable), game->text) || (settings.overlay_enabled && !desktop_settings__valid_game(settings.game_executable)))
     {
         _ui_window_internal__set_text("settings-result", "Enter an executable name, for example game.exe.");
         return;
     }
+
+    // save the settings
     if (!desktop_settings__save(&settings))
     {
         _ui_window_internal__set_text("settings-result", "Could not save settings. The previous settings remain active.");
         return;
     }
+
+    // apply the settings
     *g_settings = settings;
     desktop_overlay_controller__configure(g_overlay, g_settings);
     _ui_window_internal__set_text("settings-result", "Settings saved");
@@ -651,6 +737,7 @@ static void _ui_window_internal__request_render(void)
 // alive while actions or updates run; main stops it before freeing UI resources.
 boole desktop_ui_window__initialize(desktop_session_t *session, desktop_session_view_t *view, desktop_settings_t *settings, desktop_overlay_controller_t *overlay, boole preview, boole native_devices)
 {
+    // store the arguments
     g_session = session;
     g_view = view;
     g_settings = settings;
@@ -658,8 +745,11 @@ boole desktop_ui_window__initialize(desktop_session_t *session, desktop_session_
     g_preview = preview;
     g_refresh = TRUE;
 
+    // set icon and fonts
     desktop_system__window_icon();
     desktop_ui_theme__fonts();
+
+    // register the handlers
     scene__register_handler("on_show_connection", _ui_window_internal__on_show_connection);
     scene__register_handler("on_close_connection", _ui_window_internal__on_close_connection);
     scene__register_handler("on_show_settings", _ui_window_internal__on_show_settings);
@@ -678,6 +768,8 @@ boole desktop_ui_window__initialize(desktop_session_t *session, desktop_session_
     scene__register_handler("on_mute_member", _ui_window_internal__on_mute_member);
     scene__register_handler("on_choose_conversation", _ui_window_internal__on_choose_conversation);
     scene__register_handler("on_close_conversation", _ui_window_internal__on_close_conversation);
+
+    // initialize the UI modules
     desktop_ui_actions__initialize(g_session, g_view, g_settings);
     desktop_ui_bookmarks__initialize(g_settings);
     desktop_ui_channels__initialize(g_session, g_view);
@@ -694,16 +786,16 @@ boole desktop_ui_window__initialize(desktop_session_t *session, desktop_session_
     desktop_ui_effects__register();
     desktop_ui_context__initialize(g_session, g_view, _ui_window_internal__show_member, _ui_window_internal__join_channel);
 
-    // Each widget extension calls the implementation registered before it. Voice
+    // each widget extension calls the implementation registered before it. voice
     // indicators must precede images and tree rows; pointer handling comes last
-    // so right-clicks retain all of those drawing and input functions.
+    // so right-clicks retain all of those drawing and input functions
     if (!desktop_ui_pointer__initialize())
     {
         return FALSE;
     }
 
-    // Register actions and widget extensions before parsing the layout that uses them.
-    // Keeping the stylesheet separate allows a theme change without replacing controls.
+    // register actions and widget extensions before parsing the layout that uses them.
+    // keeping the stylesheet separate allows a theme change without replacing controls
     return desktop_ui_theme__load("") && hot_reload__watch_ui("assets/main.ui") && desktop_ui_input__limits();
 }
 
@@ -717,25 +809,35 @@ void desktop_ui_window__apply_settings(void)
 {
     gui_node_t *enabled = NULL_POINTER;
 
+    // load the saved theme
     if (g_settings->theme[0] && !desktop_ui_theme__load(g_settings->theme))
     {
         _ui_window_internal__set_text("chat-settings-result", "Saved theme could not be loaded; using Classic.");
     }
+
+    // apply the saved settings
     desktop_ui_audio__apply();
     desktop_ui_attachments__apply();
     desktop_overlay_controller__configure(g_overlay, g_settings);
     desktop_ui_chat_format__apply();
 #ifndef LEMON_GAME_OVERLAY_AVAILABLE
+    // report the missing overlay
     _ui_window_internal__set_text("overlay-support", "Game injection is unavailable in this build. Preview channel and speakers works in this window.");
 #endif
+
+    // fill the saved fields
     _ui_window_internal__set_text("game-executable", g_settings->game_executable);
     desktop_ui_connection__load_address(g_settings->address[0] ? g_settings->address : "wss://127.0.0.1:3000/");
     _ui_window_internal__set_text("username", g_settings->username);
     desktop_ui_connection__apply_identity();
+
+    // load the server keys
     if (!desktop_ui_connection__load_keys(g_settings->server_keys))
     {
         _ui_window_internal__set_text("login-result", "Saved server keys are invalid. Enter them again before connecting.");
     }
+
+    // set the overlay controls
     _ui_window_internal__set_text("preview-button", g_preview ? "Stop overlay preview" : "Preview channel and speakers");
     enabled = scene__find_by_id("overlay-enabled");
     if (enabled)
@@ -750,13 +852,18 @@ void desktop_ui_window__apply_settings(void)
  */
 void desktop_ui_window__reload(void)
 {
+    // apply the settings again
     desktop_ui_theme__apply();
     desktop_ui_attachments__apply();
     desktop_ui_chat_format__apply();
+
+    // check the text limits
     if (!desktop_ui_input__limits())
     {
         _ui_window_internal__set_text("connection-status", "Reloaded fields exceed their text limits; drafts have been retained.");
     }
+
+    // request a refresh
     g_refresh = TRUE;
 }
 
@@ -768,19 +875,30 @@ void desktop_ui_window__reload(void)
 void desktop_ui_window__update(boole changed)
 {
     char detail[128] = { 0 };
+
+    // update the chat format
     g_refresh |= desktop_ui_chat_format__tick();
 
-    // Discard outdated picture textures before rebuilding rows that may use them.
-    // A local click can request a refresh even when no server message has arrived.
+    // discard outdated picture textures before rebuilding rows that may use them.
+    // a local click can request a refresh even when no server message has arrived
     if (changed || g_refresh)
     {
+        // release old pictures
         desktop_ui_images__refresh(&g_view->attachments);
+
+        // show the connection status
         _ui_window_internal__set_text("connection-status", g_view->detail);
         _ui_window_internal__set_text("login-result", g_view->detail);
+
+        // update audio and client
         desktop_ui_audio__update(g_view);
         _ui_window_internal__member_controls();
+
+        // show the counts
         clib__string_format(detail, sizeof(detail), "%lld members / %lld channels", g_view->client_count, g_view->channel_count);
         _ui_window_internal__set_text("received-status", detail);
+
+        // update tree and messages
         if (!g_preview)
         {
             desktop_session_view__update(g_view, g_refresh);
@@ -789,11 +907,15 @@ void desktop_ui_window__update(boole changed)
         }
         g_refresh = 0;
     }
+
+    // update the other panels
     desktop_ui_connection__state(g_view->connected, desktop_session__busy(g_session));
     desktop_ui_actions__update();
     desktop_ui_channels__update();
     desktop_ui_server__update();
     desktop_ui_audio__tick();
+
+    // update menu and tree
     if (desktop_ui_context__tick())
     {
         _ui_window_internal__request_render();
@@ -812,7 +934,10 @@ void desktop_ui_window__update(boole changed)
  */
 void desktop_ui_window__overlay(const desktop_overlay_snapshot_t *snapshot, const char *status)
 {
+    // show the overlay status
     _ui_window_internal__set_text("overlay-status", status);
+
+    // show a changed snapshot
     if (clib__memcmp(&g_displayed, snapshot, sizeof(*snapshot)) != 0)
     {
         _ui_window_internal__set_text("channel-title", snapshot->channel);
@@ -845,6 +970,7 @@ boole desktop_ui_window__preview(void)
  */
 void desktop_ui_window__shutdown(void)
 {
+    // stop the UI modules
     desktop_ui_context__close();
     desktop_ui_actions__shutdown();
     desktop_ui_channels__shutdown();
@@ -853,7 +979,11 @@ void desktop_ui_window__shutdown(void)
     desktop_ui_attachments__shutdown();
     desktop_ui_connection__shutdown();
     desktop_session_view__shutdown();
+
+    // erase the shown snapshot
     desktop_memory__erase(&g_displayed, sizeof(g_displayed));
+
+    // clear the pointers
     g_session = NULL;
     g_view = NULL;
     g_settings = NULL;

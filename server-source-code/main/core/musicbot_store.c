@@ -45,10 +45,13 @@ static boole _musicbot_store_internal__valid_name(const char *filename)
 {
     uint64 index = 0;
 
+    // check prefix and suffix
     if (filename == NULL_POINTER || strlen(filename) != 47 || memcmp(filename, "music-bots-", 11) != 0 || strcmp(filename + 43, ".bin") != 0)
     {
         return FALSE;
     }
+
+    // check the hex digits
     for (index = 11; index < 43; index++)
     {
         if (strchr("0123456789abcdef", filename[index]) == NULL_POINTER)
@@ -78,7 +81,7 @@ boole musicbot_store__remove_file(const char *filename)
     uint64 remaining = 0;
     uint64 amount = 0;
     boole success = FALSE;
-    int descriptor = -1; // Native descriptor passed to fdopen.
+    int descriptor = -1; // native descriptor passed to fdopen
 #ifdef WIN32
     HANDLE handle = INVALID_HANDLE_VALUE;
     BY_HANDLE_FILE_INFORMATION information = { 0 };
@@ -89,16 +92,19 @@ boole musicbot_store__remove_file(const char *filename)
     struct stat current = { 0 };
 #endif
 
+    // nothing to remove
     if (filename[0] == 0)
     {
         return TRUE;
     }
+
+    // refuse invalid name
     if (!_musicbot_store_internal__valid_name(filename))
     {
         return _musicbot_store_internal__error("The snapshot filename is invalid; no file was deleted.");
     }
 
-    // Open only this regular file
+    // open only this regular file
 #ifdef WIN32
     handle = CreateFileA(filename, GENERIC_READ | GENERIC_WRITE | DELETE, FILE_SHARE_READ, NULL_POINTER, OPEN_EXISTING, FILE_FLAG_OPEN_REPARSE_POINT, NULL_POINTER);
     if (handle == INVALID_HANDLE_VALUE)
@@ -106,11 +112,15 @@ boole musicbot_store__remove_file(const char *filename)
         open_error = GetLastError();
         return open_error == ERROR_FILE_NOT_FOUND || _musicbot_store_internal__error("The saved music could not be opened for overwriting. Check file permissions and try Clear from disk again.");
     }
+
+    // check the file type
     if (GetFileType(handle) != FILE_TYPE_DISK || !GetFileInformationByHandle(handle, &information) || (information.dwFileAttributes & (FILE_ATTRIBUTE_REPARSE_POINT | FILE_ATTRIBUTE_DIRECTORY)) != 0 || information.nNumberOfLinks != 1)
     {
         CloseHandle(handle);
         return _musicbot_store_internal__error("The saved music path is not a regular file with one link. No file was overwritten or deleted.");
     }
+
+    // open a file stream
     descriptor = _open_osfhandle((intptr_t)handle, _O_RDWR | _O_BINARY);
     if (descriptor < 0)
     {
@@ -125,28 +135,35 @@ boole musicbot_store__remove_file(const char *filename)
         }
     }
 #else
+    // open the file
     descriptor = open(filename, O_RDWR | O_NOFOLLOW | O_NONBLOCK);
     if (descriptor < 0)
     {
         return errno == ENOENT || _musicbot_store_internal__error("The saved music could not be opened for overwriting. Check file permissions and try Clear from disk again.");
     }
+
+    // check the file type
     if (fstat(descriptor, &information) != 0 || !S_ISREG(information.st_mode) || information.st_nlink != 1)
     {
         close(descriptor);
         return _musicbot_store_internal__error("The saved music path is not a regular file with one link. No file was overwritten or deleted.");
     }
+
+    // open a file stream
     file = fdopen(descriptor, "r+b");
     if (file == NULL_POINTER)
     {
         close(descriptor);
     }
 #endif
+
+    // report the failure
     if (file == NULL_POINTER)
     {
         return _musicbot_store_internal__error("The saved music could not be opened for overwriting. No file was deleted.");
     }
 
-    // Overwrite saved bytes
+    // overwrite saved bytes
     if (fseek(file, 0, SEEK_END) == 0)
     {
         length = ftell(file);
@@ -160,7 +177,7 @@ boole musicbot_store__remove_file(const char *filename)
         remaining -= amount;
     }
 
-    // Flush before deleting
+    // flush before deleting
     success = success && fflush(file) == 0;
 #ifdef WIN32
     success = success && _commit(_fileno(file)) == 0;
@@ -173,16 +190,20 @@ boole musicbot_store__remove_file(const char *filename)
         return _musicbot_store_internal__error("The saved music could not be fully overwritten and flushed. The file was not deleted; try Clear from disk again.");
     }
 
-    // Remove the opened file
+    // remove the opened file
 #ifdef WIN32
     success = SetFileInformationByHandle(handle, FileDispositionInfo, &disposition, sizeof(disposition)) != 0;
 #else
     success = lstat(filename, &current) == 0 && current.st_dev == information.st_dev && current.st_ino == information.st_ino && remove(filename) == 0;
 #endif
+
+    // close the file
     if (fclose(file) != 0)
     {
         success = FALSE;
     }
+
+    // report the failure
     if (!success)
     {
         return _musicbot_store_internal__error("The saved music was overwritten, but clearing its file did not finish successfully. Check file permissions and try Clear from disk again.");
@@ -192,11 +213,14 @@ boole musicbot_store__remove_file(const char *filename)
 
 static void _musicbot_store_internal__write(musicbot_store_buffer_t *buffer, const void *data, uint64 size)
 {
+    // check the free space
     if (!buffer->valid || size > buffer->size - buffer->position)
     {
         buffer->valid = FALSE;
         return;
     }
+
+    // copy the bytes
     if (buffer->data != NULL_POINTER)
     {
         memcpy(buffer->data + buffer->position, data, size);
@@ -209,6 +233,7 @@ static void _musicbot_store_internal__number(musicbot_store_buffer_t *buffer, ui
     uint64 index = 0;
     ubyte bytes[8] = { 0 };
 
+    // write as eight bytes
     for (index = 0; index < 8; index++)
     {
         bytes[index] = (ubyte)(value >> (8 * index));
@@ -236,6 +261,7 @@ static boole _musicbot_store_internal__serialize(musicbot_store_buffer_t *buffer
     music_bot_single_song_data_t *song = NULL_POINTER;
     uint64 count = 0;
 
+    // count the music bots
     for (count_index = 0; count_index < g_server_settings.max_client_count; count_index++)
     {
         count_bot = &g_clients_array[count_index];
@@ -248,17 +274,26 @@ static boole _musicbot_store_internal__serialize(musicbot_store_buffer_t *buffer
             count++;
         }
     }
+
+    // write the bot count
     _musicbot_store_internal__number(buffer, count);
+
+    // write every bot
     for (index = 0; index < g_server_settings.max_client_count; index++)
     {
+        // skip other clients
         bot = &g_clients_array[index];
         if (!bot->is_existing || !bot->is_music_bot)
         {
             continue;
         }
+
+        // write the bot fields
         _musicbot_store_internal__number(buffer, bot->channel_id);
         _musicbot_store_internal__string(buffer, bot->username);
         _musicbot_store_internal__number(buffer, atomic_load(&bot->music_bot_client_extension.is_playback_paused));
+
+        // count the songs
         count = 0;
         for (count_slot = 0; count_slot < MUSIC_BOT_MAX_FILE_COUNT; count_slot++)
         {
@@ -268,14 +303,21 @@ static boole _musicbot_store_internal__serialize(musicbot_store_buffer_t *buffer
                 count++;
             }
         }
+
+        // write the song count
         _musicbot_store_internal__number(buffer, count);
+
+        // write every song
         for (slot = 0; slot < MUSIC_BOT_MAX_FILE_COUNT; slot++)
         {
+            // skip songs not saved
             song = &bot->music_bot_client_extension.songs[slot];
             if (!song->is_existing || song->is_this_song_scheduled_for_deletion)
             {
                 continue;
             }
+
+            // write the song data
             _musicbot_store_internal__number(buffer, slot);
             _musicbot_store_internal__string(buffer, song->song_name);
             _musicbot_store_internal__number(buffer, song->length_seconds);
@@ -283,6 +325,8 @@ static boole _musicbot_store_internal__serialize(musicbot_store_buffer_t *buffer
             _musicbot_store_internal__write(buffer, song->mp3_data_buffer, song->mp3_data_buffer_length);
         }
     }
+
+    // check the size limit
     return buffer->valid || _musicbot_store_internal__error("The music snapshot exceeds the 1 GiB limit.");
 }
 
@@ -290,12 +334,12 @@ static boole _musicbot_store_internal__serialize(musicbot_store_buffer_t *buffer
 boole musicbot_store__prepare(char filename[64])
 {
 #ifndef WIN32
-    int descriptor = 0; // Native file descriptor used by fdopen and close.
+    int descriptor = 0; // native file descriptor used by fdopen and close
 #endif
 
     uint64 index = 0;
 #ifdef WIN32
-    int descriptor = 0; // Native file descriptor used by fdopen and close.
+    int descriptor = 0; // native file descriptor used by fdopen and close
 #endif
 
     musicbot_store_buffer_t buffer = { NULL_POINTER, MUSICBOT_SNAPSHOT_MAX_BYTES, 0, TRUE };
@@ -305,18 +349,25 @@ boole musicbot_store__prepare(char filename[64])
     FILE *file = NULL_POINTER;
     boole success = FALSE;
 
+    // clear the file name
     filename[0] = 0;
+
+    // refuse pending snapshot
     if (g_server_settings.music_bot_snapshot_previous[0] != 0 || g_musicbot_store_recovery_pending)
     {
         return _musicbot_store_internal__error("Restore or delete the pending snapshot before saving a new one.");
     }
+
+    // measure the snapshot size
     if (!_musicbot_store_internal__serialize(&buffer))
     {
         return FALSE;
     }
+
+    // no bots to save
     if (buffer.position == sizeof(uint64))
     {
-        // Keep any earlier saved playlist
+        // keep any earlier saved playlist
         if (g_server_settings.music_bot_snapshot[0] != 0)
         {
             return _musicbot_store_internal__error("There are no music bots in RAM to save. The saved copy was kept; choose Clear from disk to remove it.");
@@ -324,6 +375,8 @@ boole musicbot_store__prepare(char filename[64])
         g_musicbot_store_error[0] = 0;
         return TRUE;
     }
+
+    // allocate the buffer
     buffer.size = buffer.position;
     buffer.position = 0;
     buffer.data = malloc(buffer.size);
@@ -331,11 +384,15 @@ boole musicbot_store__prepare(char filename[64])
     {
         return _musicbot_store_internal__error("Not enough RAM to prepare the music snapshot.");
     }
+
+    // build and encrypt snapshot
     if (!_musicbot_store_internal__serialize(&buffer) || !crypto_storage__seal(g_server_settings.keys, g_server_settings.keys_count, buffer.data, buffer.size, &encrypted, &encrypted_size) || !util__fill_secure_random_bytes(random, sizeof(random)))
     {
         _musicbot_store_internal__error("The music snapshot could not be encrypted.");
         goto done;
     }
+
+    // build the file name
     strcpy(filename, "music-bots-");
     for (index = 0; index < sizeof(random); index++)
     {
@@ -343,6 +400,7 @@ boole musicbot_store__prepare(char filename[64])
     }
     strcpy(filename + 43, ".bin");
 #ifdef WIN32
+    // create the new file
     descriptor = _open(filename, _O_CREAT | _O_EXCL | _O_WRONLY | _O_BINARY, _S_IREAD | _S_IWRITE);
     if (descriptor >= 0)
     {
@@ -353,6 +411,7 @@ boole musicbot_store__prepare(char filename[64])
         }
     }
 #else
+    // create the new file
     descriptor = open(filename, O_CREAT | O_EXCL | O_WRONLY, S_IRUSR | S_IWUSR);
     if (descriptor >= 0)
     {
@@ -363,6 +422,8 @@ boole musicbot_store__prepare(char filename[64])
         }
     }
 #endif
+
+    // write the snapshot file
     if (file != NULL_POINTER)
     {
         success = fwrite(encrypted, 1, encrypted_size, file) == encrypted_size && fflush(file) == 0;
@@ -376,12 +437,14 @@ boole musicbot_store__prepare(char filename[64])
             success = FALSE;
         }
     }
+
+    // report the write result
     if (!success)
     {
-        // An exclusive-create failure must never delete a file we did not create.
+        // an exclusive-create failure must never delete a file we did not create
         if (descriptor >= 0 && !musicbot_store__remove_file(filename))
         {
-            // Keep the name so the caller can expose the failed cleanup in settings.
+            // keep the name so the caller can expose the failed cleanup in settings
             goto done;
         }
         filename[0] = 0;
@@ -392,6 +455,7 @@ boole musicbot_store__prepare(char filename[64])
         g_musicbot_store_error[0] = 0;
     }
 done:
+    // clear and free buffers
     ciphers__clear(buffer.data, buffer.size);
     free(buffer.data);
     if (encrypted != NULL_POINTER)
@@ -405,8 +469,8 @@ done:
 // Publish prepared-snapshot state only after its settings reference was saved.
 void musicbot_store__commit(void)
 {
-    // Preparation can precede a failed settings write. Only a committed reference
-    // confirms that this saved playlist already exists in this process's RAM.
+    // preparation can precede a failed settings write. only a committed reference
+    // confirms that this saved playlist already exists in this process's RAM
     g_musicbot_store_restored = TRUE;
 }
 
@@ -415,11 +479,14 @@ static uint64 _musicbot_store_internal__read_number(musicbot_store_buffer_t *buf
     uint64 index = 0;
     uint64 value = 0;
 
+    // check remaining bytes
     if (!buffer->valid || buffer->size - buffer->position < 8)
     {
         buffer->valid = FALSE;
         return 0;
     }
+
+    // read eight bytes
     for (index = 0; index < 8; index++)
     {
         value |= (uint64)buffer->data[buffer->position++] << (8 * index);
@@ -431,10 +498,13 @@ static boole _musicbot_store_internal__read_string(musicbot_store_buffer_t *buff
 {
     uint64 size = _musicbot_store_internal__read_number(buffer);
 
+    // check size and content
     if (!buffer->valid || size == 0 || size >= capacity || size > buffer->size - buffer->position || memchr(buffer->data + buffer->position, 0, (uint64)size) != NULL_POINTER)
     {
         return FALSE;
     }
+
+    // copy the text
     memcpy(output, buffer->data + buffer->position, (uint64)size);
     output[size] = 0;
     buffer->position += (uint64)size;
@@ -464,17 +534,23 @@ static boole _musicbot_store_internal__restore_payload(ubyte *data, uint64 size)
     client_t **bots = NULL_POINTER;
     boole success = FALSE;
 
+    // check the bot count
     if (!buffer.valid || count > g_server_settings.max_client_count)
     {
         return FALSE;
     }
+
+    // allocate the bot list
     bots = calloc(count != 0 ? (uint64)count : 1, sizeof(*bots));
     if (bots == NULL_POINTER)
     {
         return FALSE;
     }
+
+    // read every bot
     for (restore_index = 0; restore_index < count; restore_index++)
     {
+        // read the bot fields
         clib__memset(name, 0, sizeof(name));
         channel = _musicbot_store_internal__read_number(&buffer);
         if (!_musicbot_store_internal__read_string(&buffer, name, sizeof(name)))
@@ -487,6 +563,8 @@ static boole _musicbot_store_internal__restore_payload(ubyte *data, uint64 size)
         {
             goto done;
         }
+
+        // create the bot
         bot = musicbot__allocate(channel, name);
         if (bot == NULL_POINTER)
         {
@@ -495,29 +573,40 @@ static boole _musicbot_store_internal__restore_payload(ubyte *data, uint64 size)
         bots[allocated++] = bot;
         atomic_store(&bot->music_bot_client_extension.is_restore_pending, TRUE);
         atomic_store(&bot->music_bot_client_extension.is_playback_paused, (boole)paused);
+
+        // read every song
         for (track = 0; track < songs; track++)
         {
+            // read the slot number
             slot = _musicbot_store_internal__read_number(&buffer);
             if (!buffer.valid || slot >= MUSIC_BOT_MAX_FILE_COUNT)
             {
                 goto done;
             }
+
+            // read the song name
             song = &bot->music_bot_client_extension.songs[slot];
             if (song->is_existing || !_musicbot_store_internal__read_string(&buffer, song->song_name, sizeof(song->song_name)))
             {
                 goto done;
             }
+
+            // read and check lengths
             song->length_seconds = _musicbot_store_internal__read_number(&buffer);
             length = _musicbot_store_internal__read_number(&buffer);
             if (!buffer.valid || length == 0 || length > MAX_CLIENT_FILE_UPLOAD_LENGTH || length > buffer.size - buffer.position)
             {
                 goto done;
             }
+
+            // allocate the song buffer
             song->mp3_data_buffer = (ubyte *)memorymanager__allocate(length, MEMALLOC_MUSICBOT_SONG);
             if (song->mp3_data_buffer == NULL_POINTER)
             {
                 goto done;
             }
+
+            // copy the song data
             memcpy(song->mp3_data_buffer, buffer.data + buffer.position, (uint64)length);
             buffer.position += (uint64)length;
             song->mp3_data_buffer_length = length;
@@ -526,10 +615,14 @@ static boole _musicbot_store_internal__restore_payload(ubyte *data, uint64 size)
             bot->music_bot_client_extension.music_bot_songs_count++;
         }
     }
+
+    // refuse extra bytes
     if (!buffer.valid || buffer.position != buffer.size)
     {
         goto done;
     }
+
+    // start the bot threads
     for (; started < count; started++)
     {
         if (!musicbot__start(bots[started]))
@@ -539,16 +632,22 @@ static boole _musicbot_store_internal__restore_payload(ubyte *data, uint64 size)
     }
     success = TRUE;
 done:
+    // undo a failed restore
     if (!success)
     {
+        // stop started bots
         for (stop_index = 0; stop_index < started; stop_index++)
         {
             atomic_store(&bots[stop_index]->music_bot_client_extension.is_music_bot_running, FALSE);
         }
+
+        // wait for the threads
         for (join_index = 0; join_index < started; join_index++)
         {
             pthread_join((pthread_t)bots[join_index]->music_bot_client_extension.music_bot_pthread_handle, NULL_POINTER);
         }
+
+        // free the bots
         for (free_index = 0; free_index < allocated; free_index++)
         {
             musicbot__free_unstarted(bots[free_index]);
@@ -556,12 +655,15 @@ done:
     }
     else
     {
+        // send connect messages
         for (index = 0; index < count; index++)
         {
             atomic_store(&bots[index]->music_bot_client_extension.is_restore_pending, FALSE);
             server_msg__connection__send_client_connect_message_to_all_clients(bots[index]);
         }
     }
+
+    // free the bot list
     free(bots);
     return success;
 }
@@ -577,23 +679,30 @@ boole musicbot_store__restore(const crypto_key_t *keys, uint64 count)
     uint64 file_size = 0;
     boole success = FALSE;
 
+    // refuse second restore
     if (g_musicbot_store_restored)
     {
         return _musicbot_store_internal__error("The saved songs are already in RAM and cannot be restored twice during this server run.");
     }
+
+    // check the snapshot name
     if (!_musicbot_store_internal__valid_name(g_server_settings.music_bot_snapshot))
     {
         return _musicbot_store_internal__error("There is no valid saved music snapshot to restore.");
     }
+
+    // open the snapshot file
     g_musicbot_store_recovery_pending = TRUE;
     file = fopen(g_server_settings.music_bot_snapshot, "rb");
+
+    // opening the file failed
     if (file == NULL_POINTER)
     {
         if (errno == ENOENT)
         {
-            // A missing current file may have been consumed on an earlier startup,
-            // but it may also have been lost. Never erase a surviving previous
-            // snapshot on that assumption, and never replay it automatically.
+            // a missing current file may have been consumed on an earlier startup,
+            // but it may also have been lost. never erase a surviving previous
+            // snapshot on that assumption, and never replay it automatically
             if (_musicbot_store_internal__valid_name(g_server_settings.music_bot_snapshot_previous))
             {
                 previous_may_exist = _musicbot_store_internal__reference_may_exist(g_server_settings.music_bot_snapshot_previous);
@@ -604,14 +713,18 @@ boole musicbot_store__restore(const crypto_key_t *keys, uint64 count)
                     return _musicbot_store_internal__error("The current music snapshot is missing. A previous snapshot was kept for recovery. Restore it explicitly to recover that playlist, or choose Clear from disk.");
                 }
             }
+
+            // clear the reference
             g_server_settings.music_bot_snapshot[0] = 0;
             g_musicbot_store_error[0] = 0;
             g_musicbot_store_recovery_pending = FALSE;
             return TRUE;
         }
+
+        // report other errors
         return _musicbot_store_internal__error("The saved music snapshot could not be opened. Check permissions, then retry or choose Clear from disk.");
     }
-    // The 1 GiB snapshot limit also fits a native 32-bit ftell result.
+    // the 1 GiB snapshot limit also fits a native 32-bit ftell result
     if (fseek(file, 0, SEEK_END) == 0)
     {
         length = ftell(file);
@@ -623,27 +736,36 @@ boole musicbot_store__restore(const crypto_key_t *keys, uint64 count)
         }
     }
     fclose(file);
+
+    // report read failure
     if (!success)
     {
         _musicbot_store_internal__error("The snapshot could not be read or is too large. It has been kept on disk.");
         goto done;
     }
+
+    // decrypt the snapshot
     success = FALSE;
     if (!crypto_storage__open(keys, count, file_data, file_size, &data, &size))
     {
         _musicbot_store_internal__error("Music restoration failed: wrong keys or a damaged snapshot. Supply the original keys, or choose Clear from disk.");
         goto done;
     }
+
+    // restore the bots
     if (!_musicbot_store_internal__restore_payload(data, size))
     {
         _musicbot_store_internal__error("Music restoration failed: invalid playlist, missing/occupied channel, insufficient slots or RAM. The snapshot was kept; fix the problem and retry, or choose Clear from disk.");
         goto done;
     }
+
+    // record the success
     g_musicbot_store_restored = TRUE;
     g_musicbot_store_error[0] = 0;
     g_musicbot_store_recovery_pending = FALSE;
     success = TRUE;
 done:
+    // free the file data
     if (file_data != NULL_POINTER)
     {
         ciphers__clear(file_data, file_size);
@@ -657,18 +779,24 @@ void musicbot_store__load_reference(cJSON *settings)
     const char *filename = NULL_POINTER;
     const char *previous = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(settings, "music_bot_snapshot_previous"));
 
+    // store previous snapshot name
     if (previous != NULL_POINTER && _musicbot_store_internal__valid_name(previous))
     {
         strcpy(g_server_settings.music_bot_snapshot_previous, previous);
     }
+
+    // read the snapshot name
     filename = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(settings, "music_bot_snapshot"));
     if (filename != NULL_POINTER && filename[0] != 0)
     {
+        // refuse invalid name
         if (!_musicbot_store_internal__valid_name(filename))
         {
             _musicbot_store_internal__error("Invalid music snapshot reference in server_settings.json; no file was opened.");
             return;
         }
+
+        // restore the music bots
         strcpy(g_server_settings.music_bot_snapshot, filename);
         clib__write_lock(&g_clients_global_rwlock_guard);
         clib__write_lock(&g_channels_global_rwlock_guard);
@@ -679,9 +807,11 @@ void musicbot_store__load_reference(cJSON *settings)
         clib__unlock(&g_channels_global_rwlock_guard);
         clib__unlock(&g_clients_global_rwlock_guard);
     }
+
+    // check previous reference
     if (g_server_settings.music_bot_snapshot_previous[0] != 0)
     {
-        // Drop only missing references
+        // drop only missing references
         if (!_musicbot_store_internal__reference_may_exist(g_server_settings.music_bot_snapshot_previous))
         {
             g_server_settings.music_bot_snapshot_previous[0] = 0;
@@ -699,6 +829,7 @@ boole musicbot_store__action(cJSON *message)
     uint64 count = 0;
     const char *action = cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(message, "music_bot_snapshot_action"));
 
+    // delete both snapshots
     if (action != NULL_POINTER && strcmp(action, "delete") == 0)
     {
         if (!musicbot_store__remove_file(g_server_settings.music_bot_snapshot) || !musicbot_store__remove_file(g_server_settings.music_bot_snapshot_previous))
@@ -711,10 +842,14 @@ boole musicbot_store__action(cJSON *message)
         g_musicbot_store_recovery_pending = FALSE;
         return TRUE;
     }
+
+    // refuse unknown action
     if (action == NULL_POINTER || strcmp(action, "restore") != 0)
     {
         return _musicbot_store_internal__error("Unknown music snapshot action.");
     }
+
+    // prepare the keys
     supplied = cJSON_GetObjectItemCaseSensitive(message, "music_bot_snapshot_keys");
     wrapper = cJSON_CreateObject();
     keys = g_server_settings.keys;
@@ -723,6 +858,8 @@ boole musicbot_store__action(cJSON *message)
     {
         return FALSE;
     }
+
+    // use the supplied keys
     if (supplied != NULL_POINTER)
     {
         if (!cJSON_AddItemReferenceToObject(wrapper, "connection_passwords", supplied) || !settings__read_connection_encryption(wrapper, &recovery))
@@ -733,10 +870,13 @@ boole musicbot_store__action(cJSON *message)
         keys = recovery.keys;
         count = recovery.keys_count;
     }
+
+    // restore the music bots
     clib__write_lock(&g_channels_global_rwlock_guard);
     success = musicbot_store__restore(keys, count);
     clib__unlock(&g_channels_global_rwlock_guard);
 done:
+    // clear the temporary keys
     ciphers__clear(&recovery, sizeof(recovery));
     cJSON_Delete(wrapper);
     return success;
@@ -744,6 +884,7 @@ done:
 
 void musicbot_store__write_status(cJSON *message)
 {
+    // add three status fields
     cJSON_AddBoolToObject(message, "music_bot_snapshot_present", g_server_settings.music_bot_snapshot[0] != 0 || g_server_settings.music_bot_snapshot_previous[0] != 0);
     cJSON_AddBoolToObject(message, "music_bot_snapshot_can_restore", !g_musicbot_store_restored && g_musicbot_store_recovery_pending && g_server_settings.music_bot_snapshot[0] != 0);
     cJSON_AddStringToObject(message, "music_bot_snapshot_error", g_musicbot_store_error);

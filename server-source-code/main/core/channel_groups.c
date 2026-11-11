@@ -20,14 +20,19 @@ void channel_groups__init(void)
 {
     uint64 i = 0;
 
+    // reset all groups
     clib__memset(g_channel_groups, 0, sizeof(g_channel_groups));
     for (i = 0; i < CHANNEL_GROUP_LIMIT; i++)
     {
         permissions__init_grants(&g_channel_groups[i].permissions);
     }
+
+    // create the admin group
     g_channel_groups[CHANNEL_GROUP_ADMIN].is_existing = TRUE;
     g_channel_groups[CHANNEL_GROUP_ADMIN].icon_id = -2;
     clib__string_copy(g_channel_groups[CHANNEL_GROUP_ADMIN].name, sizeof(g_channel_groups[CHANNEL_GROUP_ADMIN].name), "Channel Admin");
+
+    // grant channel permissions
     for (i = 0; i < PERMISSION_COUNT; i++)
     {
         if (channel_groups__supports((permission_t)i))
@@ -35,6 +40,8 @@ void channel_groups__init(void)
             g_channel_groups[CHANNEL_GROUP_ADMIN].permissions.values[i] = PERMISSION_GRANT;
         }
     }
+
+    // set maximum powers
     for (i = PERMISSION_GROUP_MANAGEMENT_POWER; i < PERMISSION_POWER_COUNT; i++)
     {
         if (g_channel_group_power_names[i] != NULL_POINTER)
@@ -57,31 +64,46 @@ boole channel_groups__can_edit_definition(const client_t *actor, permission_t pe
     uint64 management = 0;
     uint64 limit = 0;
 
+    // check the permission
     if (permissions__is_allowed(actor, permission) == FALSE)
     {
         return FALSE;
     }
+
+    // no limits for admins
     if (actor->is_admin)
     {
         return TRUE;
     }
+
+    // read management power
     management = permissions__power(actor, PERMISSION_GROUP_MANAGEMENT_POWER);
+
+    // refuse groups with flags
     if ((previous && permissions__has_flags(&previous->permissions)) || (proposed && permissions__has_flags(&proposed->permissions)))
     {
         return FALSE;
     }
+
+    // check group protection
     if (previous != NULL_POINTER && previous->permissions.powers[PERMISSION_GROUP_PROTECTION] > management)
     {
         return FALSE;
     }
+
+    // allow the deletion
     if (proposed == NULL_POINTER)
     {
         return TRUE;
     }
+
+    // check the edit power
     if (!permissions__can_edit_values(permissions__power(actor, PERMISSION_EDIT_POWER), previous ? &previous->permissions : NULL_POINTER, &proposed->permissions, TRUE))
     {
         return FALSE;
     }
+
+    // check granted permissions
     for (i = 0; i < PERMISSION_COUNT; i++)
     {
         if ((!previous || previous->permissions.values[i] != proposed->permissions.values[i]) && proposed->permissions.values[i] == PERMISSION_GRANT && !permissions__is_allowed(actor, (permission_t)i))
@@ -89,6 +111,8 @@ boole channel_groups__can_edit_definition(const client_t *actor, permission_t pe
             return FALSE;
         }
     }
+
+    // check changed powers
     for (i = 0; i < PERMISSION_POWER_COUNT; i++)
     {
         limit = i == PERMISSION_GROUP_PROTECTION ? management : permissions__power(actor, (permission_power_t)i);
@@ -107,10 +131,13 @@ boole channel_groups__can_edit_definition(const client_t *actor, permission_t pe
  */
 uint64 channel_groups__role(const client_t *client, const channel_t *channel)
 {
+    // check client and channel
     if (client == NULL_POINTER || channel == NULL_POINTER || client->is_idle || client->channel_id != channel->channel_id)
     {
         return CHANNEL_GROUP_MEMBER;
     }
+
+    // find the assigned group
     return channel_groups__assigned_role(client, channel);
 }
 
@@ -120,15 +147,19 @@ uint64 channel_groups__assigned_role(const client_t *client, const channel_t *ch
     uint64 i = 0;
     char identity[IDENTITY_HASH_MAX_LENGTH] = { 0 };
 
+    // check setting and arguments
     if (!g_server_settings.is_permission_system_enabled || channel == NULL_POINTER || client == NULL_POINTER)
     {
         return CHANNEL_GROUP_MEMBER;
     }
 
+    // check temporary channel admin
     if (client->is_temp_admin_channel == TRUE && client->temp_channel_id == channel->channel_id && channel->is_temp_channel == TRUE)
     {
         return CHANNEL_GROUP_ADMIN;
     }
+
+    // find the saved role
     util__hash_password_to_base64(client->public_key, identity, sizeof(identity));
     for (i = 0; i < cvector_size(channel->group_members); i++)
     {
@@ -146,6 +177,7 @@ uint64 channel_groups__assigned_role(const client_t *client, const channel_t *ch
  */
 boole channel_groups__supports(permission_t permission)
 {
+    // match channel permissions
     switch (permission)
     {
     case PERMISSION_KICK_FROM_CHANNEL:
@@ -177,48 +209,71 @@ boole channel_groups__read_permissions(cJSON *object, group_permissions_t *permi
     uint64 i = 0;
     uint64 known = 0;
 
+    // set default thresholds
     permissions__init_grants(&parsed);
+
+    // check the JSON object
     if (!cJSON_IsObject(object))
     {
         return FALSE;
     }
+
+    // read the permissions
     for (i = 0; i < PERMISSION_COUNT; i++)
     {
+        // skip unsupported permissions
         if (!channel_groups__supports((permission_t)i))
         {
             continue;
         }
+
+        // read the value
         parsed.values[i] = PERMISSION_DENY;
         value = cJSON_GetObjectItemCaseSensitive(object, permissions__name((permission_t)i));
         if (value == NULL_POINTER)
         {
             continue;
         }
+
+        // check the text
         known++;
         if (!cJSON_IsString(value) || (clib__strcmp(value->valuestring, "grant") && clib__strcmp(value->valuestring, "deny") && clib__strcmp(value->valuestring, "default")))
         {
             return FALSE;
         }
+
+        // store the value
         parsed.values[i] = !clib__strcmp(value->valuestring, "grant") ? PERMISSION_GRANT : PERMISSION_DENY;
     }
+
+    // read the powers
     for (i = 0; i < PERMISSION_POWER_COUNT; i++)
     {
+        // skip unsupported powers
         if (g_channel_group_power_names[i] == NULL_POINTER)
         {
             continue;
         }
+
+        // read the value
         value = cJSON_GetObjectItemCaseSensitive(object, g_channel_group_power_names[i]);
         if (value == NULL_POINTER)
         {
             continue;
         }
+
+        // check the number
         known++;
         if (!cJSON_IsNumber(value) || !(value->valuedouble >= 0 && value->valuedouble <= PERMISSION_POWER_MAX) || value->valuedouble != value->valueint)
         {
             return FALSE;
         }
+
+        // store the power
         parsed.powers[i] = (uint64)value->valueint;
     }
+
+    // read the grants
     value = cJSON_GetObjectItemCaseSensitive(object, "grants");
     if (value != NULL_POINTER)
     {
@@ -228,6 +283,8 @@ boole channel_groups__read_permissions(cJSON *object, group_permissions_t *permi
             return FALSE;
         }
     }
+
+    // read the flags
     value = cJSON_GetObjectItemCaseSensitive(object, "flags");
     if (value != NULL_POINTER)
     {
@@ -237,10 +294,14 @@ boole channel_groups__read_permissions(cJSON *object, group_permissions_t *permi
             return FALSE;
         }
     }
+
+    // refuse unknown keys
     if (known != (uint64)cJSON_GetArraySize(object))
     {
         return FALSE;
     }
+
+    // copy the result
     *permissions = parsed;
     return TRUE;
 }
@@ -254,6 +315,7 @@ cJSON *channel_groups__write_permissions(const group_permissions_t *permissions)
     cJSON *object = cJSON_CreateObject();
     uint64 i = 0;
 
+    // write the permissions
     for (i = 0; i < PERMISSION_COUNT; i++)
     {
         if (channel_groups__supports((permission_t)i))
@@ -264,6 +326,8 @@ cJSON *channel_groups__write_permissions(const group_permissions_t *permissions)
             }
         }
     }
+
+    // write the powers
     for (i = 0; i < PERMISSION_POWER_COUNT; i++)
     {
         if (g_channel_group_power_names[i] != NULL_POINTER)
@@ -274,6 +338,8 @@ cJSON *channel_groups__write_permissions(const group_permissions_t *permissions)
             }
         }
     }
+
+    // write flags and grants
     if (!permissions__write_flags(object, permissions, TRUE) || !permissions__write_grants(object, permissions, TRUE))
     {
         goto json_failure;
@@ -281,6 +347,7 @@ cJSON *channel_groups__write_permissions(const group_permissions_t *permissions)
     return object;
 
 json_failure:
+    // free the JSON
     util__json_delete_secure(object);
     return NULL_POINTER;
 }
@@ -326,11 +393,13 @@ boole channel_groups__can_assign(const client_t *actor, const client_t *target, 
     uint64 available = 0;
     uint64 i = 0;
 
-    // Check the group index; zero means removing the channel assignment.
+    // check the group index; zero means removing the channel assignment
     if (group_id >= CHANNEL_GROUP_LIMIT)
     {
         return FALSE;
     }
+
+    // check the group exists
     if (group_id != 0)
     {
         if (g_channel_groups[group_id].is_existing == FALSE)
@@ -338,31 +407,39 @@ boole channel_groups__can_assign(const client_t *actor, const client_t *target, 
             return FALSE;
         }
     }
+
+    // check the permission
     if (channel_groups__is_allowed(actor, channel, PERMISSION_ASSIGN_CHANNEL_GROUPS) == FALSE)
     {
         return FALSE;
     }
+
+    // no limits for admins
     if (actor->is_admin)
     {
         return TRUE;
     }
+
+    // refuse groups with flags
     if (permissions__has_flags(&g_channel_groups[group_id].permissions) || permissions__has_flags(&g_channel_groups[target_group].permissions))
     {
         return FALSE;
     }
+
+    // refuse self and admins
     if (actor == target || target->is_admin)
     {
         return FALSE;
     }
 
-    // Require enough management power to change this user.
+    // require enough management power to change this user
     available = permissions__power_in_channel(actor, channel, PERMISSION_GROUP_MANAGEMENT_POWER);
     if (available < permissions__power_in_channel(target, channel, PERMISSION_GROUP_PROTECTION))
     {
         return FALSE;
     }
 
-    // Do not grant an action the sender cannot perform.
+    // do not grant an action the sender cannot perform
     for (i = 0; i < PERMISSION_COUNT; i++)
     {
         if (channel_groups__allows(group_id, (permission_t)i) && !channel_groups__is_allowed(actor, channel, (permission_t)i))
@@ -371,7 +448,7 @@ boole channel_groups__can_assign(const client_t *actor, const client_t *target, 
         }
     }
 
-    // Do not grant power levels above the sender's own levels.
+    // do not grant power levels above the sender's own levels
     for (i = 0; i < PERMISSION_POWER_COUNT; i++)
     {
         available = permissions__power_in_channel(actor, channel, (permission_power_t)i);
@@ -403,22 +480,31 @@ boole channel_groups__is_allowed(const client_t *client, const channel_t *channe
  */
 boole channel_groups__can_moderate(const client_t *actor, const client_t *target, const channel_t *channel, permission_t permission)
 {
+    // check arguments
     if (actor == NULL_POINTER || target == NULL_POINTER)
     {
         return FALSE;
     }
+
+    // check both clients
     if (actor->is_authenticated == FALSE || target->is_authenticated == FALSE || actor->is_existing == FALSE || target->is_existing == FALSE || target->is_music_bot != FALSE || actor == target)
     {
         return FALSE;
     }
+
+    // no limits for admins
     if (actor->is_admin)
     {
         return TRUE;
     }
+
+    // check moving server-wide
     if (permission == PERMISSION_MOVE_CLIENTS)
     {
         return permissions__can_moderate(actor, target, permission);
     }
+
+    // check with channel groups
     return permissions__can_moderate_in_channel(actor, target, channel, permission);
 }
 
@@ -433,18 +519,25 @@ boole channel_groups__set(channel_t *channel, cstring identity, uint64 role)
     uint64 i = 0;
     channel_group_member_t member;
 
+    // check arguments
     if (role >= CHANNEL_GROUP_LIMIT || identity == NULL_POINTER)
     {
         return FALSE;
     }
+
+    // refuse empty identity
     if (clib__strlen(identity) == 0)
     {
         return FALSE;
     }
+
+    // refuse long identity
     if (clib__strlen(identity) >= sizeof(member.identity))
     {
         return FALSE;
     }
+
+    // update existing member
     for (i = 0; i < cvector_size(channel->group_members); i++)
     {
         if (clib__strcmp(channel->group_members[i].identity, identity) == 0)
@@ -460,14 +553,20 @@ boole channel_groups__set(channel_t *channel, cstring identity, uint64 role)
             return TRUE;
         }
     }
+
+    // nothing to store
     if (role == CHANNEL_GROUP_MEMBER)
     {
         return TRUE;
     }
+
+    // check the member limit
     if (cvector_size(channel->group_members) >= MAX_SERVER_SLOTS)
     {
         return FALSE;
     }
+
+    // add new member
     clib__memset(&member, 0, sizeof(member));
     clib__memcpy(member.identity, identity, clib__strlen(identity));
     member.role = role;
@@ -486,6 +585,7 @@ boole channel_groups__set(channel_t *channel, cstring identity, uint64 role)
  */
 void channel_groups__refresh(client_t *client)
 {
+    // lock groups and update
     clib__read_lock(&g_groups_global_rwlock_guard);
     channel_groups__refresh_locked(client);
     clib__unlock(&g_groups_global_rwlock_guard);
@@ -501,10 +601,13 @@ void channel_groups__refresh_locked(client_t *client)
     uint64 now = 0;
     char identity[IDENTITY_HASH_MAX_LENGTH] = { 0 };
 
+    // check the client
     if (client == NULL_POINTER)
     {
         return;
     }
+
+    // reset role without channel
     if (client->channel_id >= g_server_settings.max_channel_count || client->is_idle)
     {
         client->channel_group_role = CHANNEL_GROUP_MEMBER;
@@ -512,8 +615,12 @@ void channel_groups__refresh_locked(client_t *client)
         permissions__refresh_client_powers(client);
         return;
     }
+
+    // read the channel role
     client->channel_group_role = channel_groups__role(client, &g_channel_array[client->channel_id]);
     client->muted_until_ms = 0;
+
+    // read the mute time
     util__hash_password_to_base64(client->public_key, identity, sizeof(identity));
     util__get_monotonic_ms(&now);
     for (i = 0; i < cvector_size(g_channel_array[client->channel_id].group_members); i++)
@@ -523,6 +630,8 @@ void channel_groups__refresh_locked(client_t *client)
             client->muted_until_ms = g_channel_array[client->channel_id].group_members[i].muted_until_ms;
         }
     }
+
+    // update client powers
     permissions__refresh_client_powers(client);
 }
 
@@ -537,18 +646,25 @@ boole channel_groups__mute(channel_t *channel, cstring identity, uint64 until_ms
     uint64 i = 0;
     channel_group_member_t member;
 
+    // check the identity
     if (identity == NULL_POINTER)
     {
         return FALSE;
     }
+
+    // refuse empty identity
     if (identity[0] == 0)
     {
         return FALSE;
     }
+
+    // refuse long identity
     if (clib__strlen(identity) >= sizeof(member.identity))
     {
         return FALSE;
     }
+
+    // update existing member
     for (i = 0; i < cvector_size(channel->group_members); i++)
     {
         if (clib__strcmp(channel->group_members[i].identity, identity) == 0)
@@ -557,14 +673,20 @@ boole channel_groups__mute(channel_t *channel, cstring identity, uint64 until_ms
             return TRUE;
         }
     }
+
+    // nothing to store
     if (until_ms == 0)
     {
         return TRUE;
     }
+
+    // check the member limit
     if (cvector_size(channel->group_members) >= MAX_SERVER_SLOTS)
     {
         return FALSE;
     }
+
+    // add new member
     clib__memset(&member, 0, sizeof(member));
     clib__memcpy(member.identity, identity, clib__strlen(identity));
     member.muted_until_ms = until_ms;
@@ -598,10 +720,13 @@ void channel_groups__read(channel_t *channel, cJSON *members)
     cJSON *identity = NULL_POINTER;
     cJSON *role = NULL_POINTER;
 
+    // check the array
     if (!cJSON_IsArray(members))
     {
         return;
     }
+
+    // read each member
     cJSON_ArrayForEach(member, members)
     {
         identity = cJSON_GetObjectItemCaseSensitive(member, "identity");
@@ -623,12 +748,16 @@ cJSON *channel_groups__write(const channel_t *channel)
     cJSON *member = NULL_POINTER;
     uint64 i = 0;
 
+    // write each member
     for (i = 0; i < cvector_size(channel->group_members); i++)
     {
+        // skip members without group
         if (channel->group_members[i].role == CHANNEL_GROUP_MEMBER || !g_channel_groups[channel->group_members[i].role].is_existing)
         {
             continue;
         }
+
+        // add the member object
         member = cJSON_CreateObject();
         if (!util__json_add_owned_array(members, member))
         {
@@ -646,6 +775,7 @@ cJSON *channel_groups__write(const channel_t *channel)
     return members;
 
 json_failure:
+    // free the JSON
     util__json_delete_secure(members);
     return NULL_POINTER;
 }
@@ -663,24 +793,34 @@ boole channel_groups__load_catalog(cJSON *catalog)
     group_permissions_t parsed;
     uint64 index = 0;
 
+    // nothing to load
     if (catalog == NULL_POINTER)
     {
         return TRUE;
     }
+
+    // check the array
     if (!cJSON_IsArray(catalog))
     {
         return FALSE;
     }
+
+    // read each group
     cJSON_ArrayForEach(entry, catalog)
     {
+        // read the fields
         id = cJSON_GetObjectItemCaseSensitive(entry, "group_id");
         name = cJSON_GetObjectItemCaseSensitive(entry, "name");
         icon = cJSON_GetObjectItemCaseSensitive(entry, "icon_id");
+
+        // check id and name
         if (!cJSON_IsNumber(id) || !(id->valuedouble >= 1 && id->valuedouble < CHANNEL_GROUP_LIMIT) || id->valuedouble != id->valueint || !cJSON_IsString(name) || !name->valuestring[0] || clib__strlen(name->valuestring) >= GROUP_MAX_NAME_LENGTH)
         {
             return FALSE;
         }
         index = (uint64)id->valueint;
+
+        // read the permissions
         if (cJSON_GetObjectItemCaseSensitive(entry, "permissions") != NULL_POINTER)
         {
             if (!channel_groups__read_permissions(cJSON_GetObjectItemCaseSensitive(entry, "permissions"), &parsed))
@@ -693,6 +833,8 @@ boole channel_groups__load_catalog(cJSON *catalog)
             }
             g_channel_groups[index].permissions = parsed;
         }
+
+        // store name and icon
         g_channel_groups[index].is_existing = TRUE;
         clib__string_copy(g_channel_groups[index].name, sizeof(g_channel_groups[index].name), name->valuestring);
         g_channel_groups[index].icon_id = index == CHANNEL_GROUP_ADMIN ? -2 : -1;
@@ -714,17 +856,23 @@ cJSON *channel_groups__write_catalog(boole include_permissions)
     cJSON *entry = NULL_POINTER;
     uint64 i = 0;
 
+    // write each group
     for (i = 1; i < CHANNEL_GROUP_LIMIT; i++)
     {
+        // skip empty slots
         if (!g_channel_groups[i].is_existing)
         {
             continue;
         }
+
+        // add the group object
         entry = cJSON_CreateObject();
         if (!util__json_add_owned_array(catalog, entry))
         {
             goto json_failure;
         }
+
+        // write the fields
         if (!cJSON_AddNumberToObject(entry, "group_id", i))
         {
             goto json_failure;
@@ -737,6 +885,8 @@ cJSON *channel_groups__write_catalog(boole include_permissions)
         {
             goto json_failure;
         }
+
+        // write the permissions
         if (include_permissions)
         {
             if (!util__json_add_owned_object(entry, "permissions", channel_groups__write_permissions(&g_channel_groups[i].permissions)))
@@ -748,6 +898,7 @@ cJSON *channel_groups__write_catalog(boole include_permissions)
     return catalog;
 
 json_failure:
+    // free the JSON
     util__json_delete_secure(catalog);
     return NULL_POINTER;
 }
@@ -765,27 +916,37 @@ static boole _channel_groups_internal__append_member(channel_t *channel, const c
     cvector_metadata_t *old_storage = NULL_POINTER;
     cvector_metadata_t *new_storage = NULL_POINTER;
 
+    // check the member limit
     if (count >= MAX_SERVER_SLOTS)
     {
         return FALSE;
     }
+
+    // increase the capacity
     if (count == capacity)
     {
+        // choose new capacity
         new_capacity = capacity == 0 ? 8 : capacity * 2;
         if (new_capacity > MAX_SERVER_SLOTS)
         {
             new_capacity = MAX_SERVER_SLOTS;
         }
+
+        // check size overflow
         if (new_capacity > (SIZE_MAX - sizeof(cvector_metadata_t)) / sizeof(channel_group_member_t))
         {
             return FALSE;
         }
+
+        // allocate new storage
         bytes = sizeof(cvector_metadata_t) + new_capacity * sizeof(channel_group_member_t);
         new_storage = (cvector_metadata_t *)calloc(1, bytes);
         if (new_storage == NULL_POINTER)
         {
             return FALSE;
         }
+
+        // copy the old members
         if (channel->group_members != NULL_POINTER)
         {
             old_storage = cvector_vec_to_base(channel->group_members);
@@ -793,9 +954,13 @@ static boole _channel_groups_internal__append_member(channel_t *channel, const c
             clib__null_memory(old_storage, sizeof(cvector_metadata_t) + capacity * sizeof(channel_group_member_t));
             free(old_storage);
         }
+
+        // use the new storage
         new_storage->capacity = new_capacity;
         channel->group_members = cvector_base_to_vec(new_storage);
     }
+
+    // add the member
     channel->group_members[count] = *member;
     cvector_set_size(channel->group_members, count + 1);
     return TRUE;

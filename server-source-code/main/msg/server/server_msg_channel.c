@@ -21,10 +21,13 @@ void server_msg__channel__send_full_to_single_client(client_t *receiver, uint64 
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 
+    // create channel full message
     root = server_msg__delivery__new_message("channel_full", &message);
 
+    // add the channel id
     cJSON_AddNumberToObject(message, "channel_id", (double)channel_id);
 
+    // send to the receiver
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
 }
@@ -50,16 +53,16 @@ static void _server_msg_channel_internal__send_to_all_clients_with_visible_descr
     client_t *client_in_loop = NULL_POINTER;
     uint64 x = 0;
 
-    // Complete version.
+    // complete version
     cJSON_AddBoolToObject(message, "is_description_hidden", FALSE);
     plaintext = cJSON_PrintUnformatted(root);
 
-    // Version without description.
+    // version without description
     cJSON_ReplaceItemInObjectCaseSensitive(message, description_key, cJSON_CreateString(""));
     cJSON_ReplaceItemInObjectCaseSensitive(message, "is_description_hidden", cJSON_CreateBool(TRUE));
     plaintext_hidden = cJSON_PrintUnformatted(root);
 
-    // Send to clients.
+    // send to clients
     for (x = 0; x < g_server_settings.max_client_count; x++)
     {
         client_in_loop = &g_clients_array[x];
@@ -70,7 +73,7 @@ static void _server_msg_channel_internal__send_to_all_clients_with_visible_descr
         server_msg__delivery__send_text_to_client(client_in_loop, channel__is_description_visible(client_in_loop, channel) == TRUE ? plaintext : plaintext_hidden);
     }
 
-    // Free both texts.
+    // free both texts
     cJSON_free(plaintext);
     cJSON_free(plaintext_hidden);
 }
@@ -92,18 +95,18 @@ void server_msg__channel__send_description_to_single_client(client_t *receiver, 
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 
-    // Debug log.
+    // debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    // Create the message.
+    // create the message
     root = server_msg__delivery__new_message("channel_description", &message);
 
-    // Add the fields.
+    // add the fields
     cJSON_AddNumberToObject(message, "channel_id", (double)channel->channel_id);
     cJSON_AddStringToObject(message, "description", is_visible == TRUE ? channel->description : "");
     cJSON_AddBoolToObject(message, "is_description_hidden", is_visible == FALSE);
 
-    // Send and free.
+    // send and free
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
 }
@@ -125,18 +128,23 @@ void server_msg__channel__send_list_to_single_client(client_t *receiver)
     cJSON *single_channel = NULL_POINTER;
     boole is_description_visible = FALSE;
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // create channel list message
     root = server_msg__delivery__new_message("channel_list", &message);
     json_channel_array = cJSON_CreateArray();
 
+    // add every channel
     for (i = 0; i < g_server_settings.max_channel_count; i++)
     {
+        // skip empty slots
         if (g_channel_array[i].is_existing == FALSE)
         {
             continue;
         }
 
+        // add id and name
         single_channel = cJSON_CreateObject();
         cJSON_AddNumberToObject(single_channel, "channel_id", g_channel_array[i].channel_id);
         cJSON_AddNumberToObject(single_channel, "parent_channel_id", g_channel_array[i].parent_channel_id);
@@ -146,6 +154,8 @@ void server_msg__channel__send_list_to_single_client(client_t *receiver)
         is_description_visible = channel__is_description_visible(receiver, &g_channel_array[i]);
         cJSON_AddStringToObject(single_channel, "description", is_description_visible == TRUE ? g_channel_array[i].description : "");
         cJSON_AddBoolToObject(single_channel, "is_description_hidden", is_description_visible == FALSE);
+
+        // add the channel settings
         cJSON_AddBoolToObject(single_channel, "is_using_password", g_channel_array[i].is_using_password);
         cJSON_AddBoolToObject(single_channel, "is_audio_enabled", g_channel_array[i].is_audio_enabled);
         channel__write_required_powers(single_channel, &g_channel_array[i]);
@@ -157,11 +167,15 @@ void server_msg__channel__send_list_to_single_client(client_t *receiver)
         cJSON_AddNumberToObject(single_channel, "max_client_count", (double)g_channel_array[i].max_client_count);
         cJSON_AddBoolToObject(single_channel, "has_channel_icon", g_channel_array[i].has_channel_icon);
         cJSON_AddNumberToObject(single_channel, "channel_icon_id", (double)g_channel_array[i].icon_id);
+
+        // add channel to array
         util__json_add_owned_array(json_channel_array, single_channel);
     }
 
+    // add the channel array
     util__json_add_owned_object(message, "channels", json_channel_array);
 
+    // send to the receiver
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
 }
@@ -183,15 +197,19 @@ void server_msg__channel__send_maintainer_id_to_single_client(client_t *receiver
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // create maintainer message
     root = server_msg__delivery__new_message("channel_maintainer_id", &message);
 
+    // add maintainer and channel
     cJSON_AddNumberToObject(message, "maintainer_id", (double)maintainer_id);
     cJSON_AddNumberToObject(message, "maintainer_generation", (double)channel->maintainer_generation);
     cJSON_AddNumberToObject(message, "channel_id", (double)channel->channel_id);
     cJSON_AddBoolToObject(message, "has_maintainer", channel->is_channel_maintainer_present);
 
+    // send to the receiver
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
 }
@@ -211,15 +229,20 @@ void server_msg__channel__send_create_message_to_all_clients(channel_t *channel,
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 
+    // create new channel message
     root = server_msg__delivery__new_message("channel_create", &message);
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // add ids and texts
     cJSON_AddNumberToObject(message, "channel_id", channel->channel_id);
     cJSON_AddNumberToObject(message, "parent_channel_id", channel->parent_channel_id);
     cJSON_AddStringToObject(message, "name", channel->name);
     cJSON_AddStringToObject(message, "description", channel->description);
     cJSON_AddNumberToObject(message, "maintainer_id", channel->maintainer_id);
+
+    // add the channel settings
     cJSON_AddBoolToObject(message, "is_using_password", channel->is_using_password);
     cJSON_AddBoolToObject(message, "is_audio_enabled", channel->is_audio_enabled);
     channel__write_required_powers(message, channel);
@@ -231,11 +254,14 @@ void server_msg__channel__send_create_message_to_all_clients(channel_t *channel,
     cJSON_AddNumberToObject(message, "max_client_count", (double)channel->max_client_count);
     cJSON_AddBoolToObject(message, "has_channel_icon", channel->has_channel_icon);
     cJSON_AddNumberToObject(message, "channel_icon_id", (double)channel->icon_id);
+
+    // add the creator id
     cJSON_AddNumberToObject(message, "channel_creator_id", (double)creator->client_id);
 
-    // Send both versions.
+    // send both versions
     _server_msg_channel_internal__send_to_all_clients_with_visible_description(root, message, "description", channel);
 
+    // free the message
     cJSON_Delete(root);
 }
 
@@ -254,14 +280,19 @@ void server_msg__channel__send_edit_message_to_all_clients(channel_t *channel, c
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 
+    // create channel edit message
     root = server_msg__delivery__new_message("channel_edit", &message);
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // add id, name, description
     cJSON_AddNumberToObject(message, "channel_id", channel->channel_id);
     cJSON_AddBoolToObject(message, "is_temp_channel", channel->is_temp_channel);
     cJSON_AddStringToObject(message, "channel_name", channel->name);
     cJSON_AddStringToObject(message, "channel_description", channel->description);
+
+    // add the channel settings
     cJSON_AddBoolToObject(message, "is_using_password", (cJSON_bool)channel->is_using_password);
     cJSON_AddBoolToObject(message, "is_audio_enabled", (cJSON_bool)channel->is_audio_enabled);
     channel__write_required_powers(message, channel);
@@ -270,11 +301,14 @@ void server_msg__channel__send_edit_message_to_all_clients(channel_t *channel, c
     cJSON_AddNumberToObject(message, "max_client_count", (double)channel->max_client_count);
     cJSON_AddBoolToObject(message, "has_channel_icon", channel->has_channel_icon);
     cJSON_AddNumberToObject(message, "channel_icon_id", (double)channel->icon_id);
+
+    // add the editor id
     cJSON_AddNumberToObject(message, "channel_editor_id", (double)editor->client_id);
 
-    // Send both versions.
+    // send both versions
     _server_msg_channel_internal__send_to_all_clients_with_visible_description(root, message, "channel_description", channel);
 
+    // free the message
     cJSON_Delete(root);
 }
 
@@ -303,11 +337,16 @@ void server_msg__channel__send_join_message_to_all_clients(client_t *subject, ch
     boole is_streaming_song = FALSE;
     int64 audio_state = 0;
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // create the join message
     root = server_msg__delivery__new_message("channel_join", &message);
 
+    // create the hidden version
     root_hidden = server_msg__delivery__new_message("channel_join", &message_hidden);
+
+    // add reason to both
     if (reason != NULL_POINTER)
     {
         cJSON_AddStringToObject(message, "reason", reason);
@@ -319,6 +358,7 @@ void server_msg__channel__send_join_message_to_all_clients(client_t *subject, ch
     audio_state = subject->audio_state;
     song_name = subject->song_name;
 
+    // clear talking and song
     if (subject->channel_id != new_channel->channel_id)
     {
         if (audio_state == AUDIO_STATE__PUSH_TO_TALK_ACTIVE)
@@ -329,6 +369,7 @@ void server_msg__channel__send_join_message_to_all_clients(client_t *subject, ch
         song_name = "";
     }
 
+    // fill the visible version
     cJSON_AddNumberToObject(message, "channel_id", new_channel->channel_id);
     cJSON_AddNumberToObject(message, "channel_group_id", channel_groups__role(subject, new_channel));
     cJSON_AddNumberToObject(message, "client_id", subject->client_id);
@@ -336,8 +377,10 @@ void server_msg__channel__send_join_message_to_all_clients(client_t *subject, ch
     cJSON_AddBoolToObject(message, "is_streaming_song", is_streaming_song);
     cJSON_AddStringToObject(message, "song_name", song_name);
 
+    // convert it to text
     plaintext = cJSON_PrintUnformatted(root);
 
+    // fill the hidden version
     cJSON_AddNumberToObject(message_hidden, "channel_id", (double)-1);
     cJSON_AddNumberToObject(message_hidden, "channel_group_id", 0);
     cJSON_AddNumberToObject(message_hidden, "client_id", subject->client_id);
@@ -346,34 +389,39 @@ void server_msg__channel__send_join_message_to_all_clients(client_t *subject, ch
     cJSON_AddStringToObject(message_hidden, "song_name", song_name);
     plaintext_hidden = cJSON_PrintUnformatted(root_hidden);
 
+    // send the matching version
     for (x = 0; x < g_server_settings.max_client_count; x++)
     {
         is_hide_client_active = FALSE;
 
         client_in_loop = &g_clients_array[x];
 
+        // skip empty slots
         if (client_in_loop->is_existing == FALSE)
         {
             continue;
         }
 
+        // skip unauthenticated clients
         if (client_in_loop->is_authenticated == FALSE)
         {
             continue;
         }
 
+        // skip music bots
         if (client_in_loop->is_music_bot == TRUE)
         {
             continue;
         }
 
-        // Check member visibility.
+        // check member visibility
         is_hide_client_active = (boole)(channel__are_members_visible(client_in_loop, new_channel) == FALSE);
 
         // a client that may not see who is in the new channel gets the variant without the channel id
         server_msg__delivery__send_text_to_client(client_in_loop, is_hide_client_active == TRUE ? plaintext_hidden : plaintext);
     }
 
+    // free both versions
     util__free_json_message(root, plaintext);
     util__free_json_message(root_hidden, plaintext_hidden);
 }
@@ -404,8 +452,10 @@ void server_msg__channel__send_join_message_to_single_client(client_t *receiver,
     boole is_streaming_song = FALSE;
     int64 audio_state = 0;
 
+    // create the join message
     root = server_msg__delivery__new_message("channel_join", &message);
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
     // clients not in same channel will not receive real time microphone usage information from the client that switched the channel
@@ -413,6 +463,7 @@ void server_msg__channel__send_join_message_to_single_client(client_t *receiver,
     audio_state = subject->audio_state;
     song_name = subject->song_name;
 
+    // clear talking and song
     if (subject->channel_id != new_channel->channel_id)
     {
         if (audio_state == AUDIO_STATE__PUSH_TO_TALK_ACTIVE)
@@ -423,7 +474,7 @@ void server_msg__channel__send_join_message_to_single_client(client_t *receiver,
         song_name = "";
     }
 
-    // Add the fields.
+    // add the fields
     cJSON_AddStringToObject(message, "reason", "visibility");
     cJSON_AddNumberToObject(message, "channel_id", is_channel_visible == TRUE ? (double)new_channel->channel_id : (double)-1);
     cJSON_AddNumberToObject(message, "channel_group_id", is_channel_visible == TRUE ? (double)channel_groups__role(subject, new_channel) : 0);
@@ -432,6 +483,7 @@ void server_msg__channel__send_join_message_to_single_client(client_t *receiver,
     cJSON_AddBoolToObject(message, "is_streaming_song", is_streaming_song);
     cJSON_AddStringToObject(message, "song_name", song_name);
 
+    // send to the receiver
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
 }
@@ -451,17 +503,22 @@ void server_msg__channel__send_maintainer_id_to_clients_in_same_channel(channel_
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // create maintainer message
     root = server_msg__delivery__new_message("channel_maintainer_id", &message);
 
+    // add maintainer and channel
     cJSON_AddNumberToObject(message, "channel_id", (double)channel->channel_id);
     cJSON_AddNumberToObject(message, "maintainer_id", maintainer_id);
     cJSON_AddNumberToObject(message, "maintainer_generation", (double)channel->maintainer_generation);
     cJSON_AddBoolToObject(message, "has_maintainer", channel->is_channel_maintainer_present);
 
+    // send to channel members
     server_msg__delivery__send_json_to_channel(root, channel->channel_id, NULL_POINTER);
 
+    // free the message
     cJSON_Delete(root);
 }
 
@@ -480,10 +537,13 @@ void server_msg__channel__send_delete_message_to_all_clients(uint64 deleted_chan
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // create channel deleted message
     root = server_msg__delivery__new_message("channel_delete", &message);
 
+    // add the two ids
     cJSON_AddNumberToObject(message, "channel_id", deleted_channel_id);
     if (channel_deletor_id == UINT64_MAX)
     {
@@ -494,8 +554,10 @@ void server_msg__channel__send_delete_message_to_all_clients(uint64 deleted_chan
         cJSON_AddNumberToObject(message, "channel_deletor_id", channel_deletor_id);
     }
 
+    // send to all clients
     server_msg__delivery__send_json_to_all_clients(root, NULL_POINTER);
 
+    // free the message
     cJSON_Delete(root);
 }
 
@@ -514,16 +576,21 @@ void server_msg__channel__send_icon_changed_event_to_all_clients(uint64 channel_
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // create icon changed message
     root = server_msg__delivery__new_message("channel_icon_changed", &message);
 
+    // add channel and icon
     cJSON_AddNumberToObject(message, "channel_id", (double)channel_id);
     util__json_add_owned_object(message, "has_channel_icon", cJSON_CreateBool(has_channel_icon == TRUE));
     cJSON_AddNumberToObject(message, "channel_icon_id", (double)icon_id);
 
+    // send to all clients
     server_msg__delivery__send_json_to_all_clients(root, NULL_POINTER);
 
+    // free the message
     cJSON_Delete(root);
 }
 
@@ -540,12 +607,16 @@ void server_msg__channel__send_call_event_to_idle_client(client_t *receiver, cli
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // create the call message
     root = server_msg__delivery__new_message("call", &message);
 
+    // add the caller id
     cJSON_AddNumberToObject(message, "caller_client_id", caller->client_id);
 
+    // send to the receiver
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
 }
@@ -564,14 +635,19 @@ void server_msg__channel__send_client_going_to_idle_mode_info_to_all_clients(cli
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // create idle mode message
     root = server_msg__delivery__new_message("client_going_to_idle_mode", &message);
 
+    // add the client id
     cJSON_AddNumberToObject(message, "client_id", (double)subject->client_id);
 
+    // send to all clients
     server_msg__delivery__send_json_to_all_clients(root, NULL_POINTER);
 
+    // free the message
     cJSON_Delete(root);
 }
 
@@ -594,13 +670,13 @@ void server_msg__channel__send_client_coming_back_from_idle_mode_info_to_all_cli
     client_t *client_in_loop = NULL_POINTER;
     uint64 x = 0;
 
-    // Debug log.
+    // debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
-    // Create the message.
+    // create the message
     root = server_msg__delivery__new_message("client_coming_back_from_idle_mode", &message);
 
-    // Add the fields.
+    // add the fields
     cJSON_AddNumberToObject(message, "client_id", (double)subject->client_id);
     cJSON_AddNumberToObject(message, "channel_id", (double)channel_the_client_joins);
     cJSON_AddNumberToObject(message, "channel_group_id", subject->channel_group_role);
@@ -611,7 +687,7 @@ void server_msg__channel__send_client_coming_back_from_idle_mode_info_to_all_cli
     cJSON_ReplaceItemInObjectCaseSensitive(message, "channel_group_id", cJSON_CreateNumber(0));
     plaintext_hidden = cJSON_PrintUnformatted(root);
 
-    // Send to clients.
+    // send to clients
     for (x = 0; x < g_server_settings.max_client_count; x++)
     {
         client_in_loop = &g_clients_array[x];
@@ -622,7 +698,7 @@ void server_msg__channel__send_client_coming_back_from_idle_mode_info_to_all_cli
         server_msg__delivery__send_text_to_client(client_in_loop, channel__is_client_location_visible(client_in_loop, subject) == TRUE ? plaintext : plaintext_hidden);
     }
 
-    // Free both texts.
+    // free both texts
     cJSON_free(plaintext);
     cJSON_free(plaintext_hidden);
     cJSON_Delete(root);

@@ -36,6 +36,7 @@ static void _client_msg_administration_internal__refresh_guest_membership(client
     boole had_guest = FALSE;
     boole has_guest = FALSE;
 
+    // check old Guest membership
     for (i = 0; i < cvector_size(client->group_ids); i++)
     {
         if ((uint64)client->group_ids[i] == g_guest_group_id)
@@ -43,7 +44,11 @@ static void _client_msg_administration_internal__refresh_guest_membership(client
             had_guest = TRUE;
         }
     }
+
+    // update Guest membership
     permissions__refresh_guest_membership(client);
+
+    // check new Guest membership
     for (i = 0; i < cvector_size(client->group_ids); i++)
     {
         if ((uint64)client->group_ids[i] == g_guest_group_id)
@@ -51,6 +56,8 @@ static void _client_msg_administration_internal__refresh_guest_membership(client
             has_guest = TRUE;
         }
     }
+
+    // send the membership change
     if (had_guest == FALSE && has_guest == TRUE)
     {
         server_msg__administration__send_add_group_to_client_event_to_all_clients(client, g_guest_group_id);
@@ -72,8 +79,10 @@ static boole _client_msg_administration_internal__is_admin_password_message_vali
     cJSON *json_message_object = NULL_POINTER;
     int64 password_length = 0;
 
+    // read the message object
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
 
+    // check password is text
     json_admin_password = cJSON_GetObjectItemCaseSensitive(json_message_object, "value");
     if (cJSON_IsString(json_admin_password) == FALSE)
     {
@@ -81,12 +90,14 @@ static boole _client_msg_administration_internal__is_admin_password_message_vali
         return FALSE;
     }
 
+    // refuse missing text
     if (json_admin_password->valuestring == NULL_POINTER)
     {
         DBG_CLIENT_MESSAGE log_info("%s", "_client_msg_administration_internal__is_admin_password_message_valid json_admin_password->valuestring == NULL_POINTER \n");
         return FALSE;
     }
 
+    // check the password length
     password_length = clib__utf8_string_length_check_max_length(json_admin_password->valuestring, ADMIN_PASSWORD_MAX_LENGTH);
     if (password_length == -1 || password_length == 0)
     {
@@ -114,19 +125,24 @@ void client_msg__administration__process_admin_password_message(cJSON *json_root
     uint64 cvector_loop_index = 0;
     boole is_group_found = FALSE;
 
+    // check the password field
     if (_client_msg_administration_internal__is_admin_password_message_valid(json_root) == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s", "client_msg__administration__process_admin_password_message _client_msg_administration_internal__is_admin_password_message_valid == FALSE \n");
         return;
     }
 
+    // lock the clients
     clib__write_lock(&g_clients_global_rwlock_guard);
+
+    // check the sender connection
     if (base__is_current_client_request(sender_client_id) == FALSE)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
     }
 
+    // check sender is authenticated
     client = &g_clients_array[sender_client_id];
 
     if (client->is_authenticated == FALSE || client->is_existing == FALSE)
@@ -134,11 +150,13 @@ void client_msg__administration__process_admin_password_message(cJSON *json_root
         goto label_client_msg__process_admin_password_message_end;
     }
 
+    // skip admins, limit attempts
     if (client->is_admin == TRUE || server_admin__allow_admin_password_attempt(client->ip_address, util__get_timestamp_ms()) == FALSE)
     {
         goto label_client_msg__process_admin_password_message_end;
     }
 
+    // compare the password
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
     admin_password = cJSON_GetObjectItemCaseSensitive(json_message_object, "value");
 
@@ -149,16 +167,23 @@ void client_msg__administration__process_admin_password_message(cJSON *json_root
         goto label_client_msg__process_admin_password_message_end;
     }
 
+    // make the client admin
     if (client->is_admin == FALSE)
     {
+        // reserve group id memory
         if (!clib__int_vector_reserve(&client->group_ids, cvector_size(client->group_ids) + 1))
         {
             goto label_client_msg__process_admin_password_message_end;
         }
+
+        // set the admin flag
         client->is_admin = TRUE;
         server_msg__administration__send_admin_status_to_single_client(client);
+
+        // lock the groups
         clib__read_lock(&g_groups_global_rwlock_guard);
 
+        // add the admin group
         if (g_server_settings.is_permission_system_enabled == TRUE && g_server_settings.is_display_admin_group_active == TRUE)
         {
             // only add the admin group to the client if the client does not have it
@@ -174,11 +199,13 @@ void client_msg__administration__process_admin_password_message(cJSON *json_root
                 }
             }
 
+            // add the group id
             if (is_group_found == FALSE)
             {
                 cvector_push_back(client->group_ids, ADMIN_GROUP_ID);
             }
 
+            // send the group event
             server_msg__administration__send_add_group_to_client_event_to_all_clients(client, ADMIN_GROUP_ID);
         }
 
@@ -205,6 +232,7 @@ void client_msg__administration__process_admin_password_message(cJSON *json_root
 
     // send admin status to other clients possibly, or not, do they have to know you are an admin
 label_client_msg__process_admin_password_message_end:
+    // send the permission update
     server_msg__administration__send_permission_update_to_single_client(client);
 
     // an admin sees the members and the description of every channel
@@ -231,19 +259,24 @@ void client_msg__administration__process_change_admin_password_message(cJSON *js
     boole previous_initial_password = FALSE;
     boole saved = FALSE;
 
+    // check the password field
     if (_client_msg_administration_internal__is_admin_password_message_valid(json_root) == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s", "client_msg__administration__process_change_admin_password_message invalid message \n");
         return;
     }
 
+    // lock the clients
     clib__write_lock(&g_clients_global_rwlock_guard);
+
+    // check the sender connection
     if (base__is_current_client_request(sender_client_id) == FALSE)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
     }
 
+    // check sender is admin
     client = &g_clients_array[sender_client_id];
 
     if (client->is_admin == FALSE)
@@ -253,32 +286,42 @@ void client_msg__administration__process_change_admin_password_message(cJSON *js
         goto label_client_msg__process_change_admin_password_message_end;
     }
 
+    // read the new password
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
     new_password = cJSON_GetObjectItemCaseSensitive(json_message_object, "value");
 
+    // replace the password hash
     util__hash_password_to_base64(new_password->valuestring, replacement_password, sizeof(replacement_password));
     clib__memcpy(previous_password, g_server_settings.admin_password, sizeof(previous_password));
     previous_initial_password = g_server_settings.is_admin_password_initial;
     clib__memcpy(g_server_settings.admin_password, replacement_password, sizeof(replacement_password));
     g_server_settings.is_admin_password_initial = FALSE;
+
+    // lock the saved data
     clib__read_lock(&g_channels_global_rwlock_guard);
     clib__read_lock(&g_icons_global_rwlock_guard);
     clib__read_lock(&g_groups_global_rwlock_guard);
     clib__read_lock(&g_bans_global_rwlock_guard);
+
+    // save, restore on failure
     saved = settings__save_server_settings_to_file();
     if (saved == FALSE)
     {
         clib__memcpy(g_server_settings.admin_password, previous_password, sizeof(previous_password));
         g_server_settings.is_admin_password_initial = previous_initial_password;
     }
+
+    // unlock the saved data
     clib__unlock(&g_bans_global_rwlock_guard);
     clib__unlock(&g_groups_global_rwlock_guard);
     clib__unlock(&g_icons_global_rwlock_guard);
     clib__unlock(&g_channels_global_rwlock_guard);
 
+    // send the result
     server_msg__moderation__send_result(client, saved ? "Admin password changed." : "The admin password was not changed because the settings could not be saved.", saved);
 
 label_client_msg__process_change_admin_password_message_end:
+    // clear the password copies
     clib__null_memory(previous_password, sizeof(previous_password));
     clib__null_memory(replacement_password, sizeof(replacement_password));
     clib__unlock(&g_clients_global_rwlock_guard);
@@ -298,8 +341,10 @@ static boole _client_msg_administration_internal__is_add_group_to_client_valid(c
     cJSON *json_group_id = NULL_POINTER;
     cJSON *json_message_object = NULL_POINTER;
 
+    // read the message object
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
 
+    // check the client id
     json_client_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "client_id");
 
     if (cJSON_IsNumber(json_client_id) == FALSE || json_client_id->valuedouble != (double)json_client_id->valueint)
@@ -308,12 +353,14 @@ static boole _client_msg_administration_internal__is_add_group_to_client_valid(c
         return FALSE;
     }
 
+    // check client id range
     if (json_client_id->valueint < 0 || json_client_id->valueint >= g_server_settings.max_client_count)
     {
         DBG_CLIENT_MESSAGE log_info("%s %d %s", "_client_msg_administration_internal__is_add_group_to_client_valid json_client_id->valueint is not valid ", json_client_id->valueint, "\n");
         return FALSE;
     }
 
+    // check the group id
     json_group_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "group_id");
     if (cJSON_IsNumber(json_group_id) == FALSE || json_group_id->valuedouble != (double)json_group_id->valueint)
     {
@@ -321,6 +368,7 @@ static boole _client_msg_administration_internal__is_add_group_to_client_valid(c
         return FALSE;
     }
 
+    // check group id range
     if (json_group_id->valueint < 0 || json_group_id->valueint >= MAX_GROUPS)
     {
         DBG_CLIENT_MESSAGE log_info("%s %d %s", "_client_msg_administration_internal__is_add_group_to_client_valid json_group_id->valueint is not valid ", json_group_id->valueint, "\n");
@@ -348,18 +396,24 @@ void client_msg__administration__process_add_group_to_client_message(cJSON *json
     cJSON *json_client_id_to_add_group_to = NULL_POINTER;
     cJSON *json_group_id = NULL_POINTER;
 
+    // check both id fields
     if (_client_msg_administration_internal__is_add_group_to_client_valid(json_root) == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s", "client_msg__administration__process_add_group_to_client_message _client_msg_administration_internal__is_add_group_to_client_valid == FALSE \n");
         return;
     }
 
+    // lock the clients
     clib__write_lock(&g_clients_global_rwlock_guard);
+
+    // check the sender connection
     if (base__is_current_client_request(sender_client_id) == FALSE)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
     }
+
+    // check groups are enabled
     if (g_server_settings.is_permission_system_enabled == FALSE)
     {
         server_msg__administration__send_access_denied_to_single_client(&g_clients_array[sender_client_id], "Server groups and icons are disabled.");
@@ -367,6 +421,7 @@ void client_msg__administration__process_add_group_to_client_message(cJSON *json
         return;
     }
 
+    // lock the groups
     clib__read_lock(&g_groups_global_rwlock_guard);
 
     // check if the client that sent the message is valid: connected and existing.
@@ -388,10 +443,12 @@ void client_msg__administration__process_add_group_to_client_message(cJSON *json
         goto label_client_msg__process_add_group_to_client_message_end;
     }
 
+    // read both ids
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
     json_client_id_to_add_group_to = cJSON_GetObjectItemCaseSensitive(json_message_object, "client_id");
     json_group_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "group_id");
 
+    // check admin group setting
     if (g_server_settings.is_display_admin_group_active == FALSE && json_group_id->valueint == ADMIN_GROUP_ID)
     {
         goto label_client_msg__process_add_group_to_client_message_end;
@@ -405,6 +462,7 @@ void client_msg__administration__process_add_group_to_client_message(cJSON *json
         goto label_client_msg__process_add_group_to_client_message_end;
     }
 
+    // check assignment is allowed
     if ((uint64)json_group_id->valueint == g_guest_group_id || permissions__can_change_member(client, client_to_add_group_to, (uint64)json_group_id->valueint, TRUE) == FALSE)
     {
         server_msg__administration__send_access_denied_to_single_client(client, NULL_POINTER);
@@ -435,12 +493,14 @@ void client_msg__administration__process_add_group_to_client_message(cJSON *json
         goto label_client_msg__process_add_group_to_client_message_end;
     }
 
+    // set the admin flag
     if (json_group_id->valueint == ADMIN_GROUP_ID)
     {
         client_to_add_group_to->is_admin = TRUE;
         server_msg__administration__send_admin_status_to_single_client(client_to_add_group_to);
     }
 
+    // send event, update Guest
     server_msg__administration__send_add_group_to_client_event_to_all_clients(client_to_add_group_to, json_group_id->valueint);
     _client_msg_administration_internal__refresh_guest_membership(client_to_add_group_to);
     powers_changed = TRUE;
@@ -455,11 +515,15 @@ void client_msg__administration__process_add_group_to_client_message(cJSON *json
     // within this server run without needing an admin disk save
     identity_store__sync_client_identity_in_store(client_to_add_group_to);
 
+    // log the added group
     server_logs__group_added(json_group_id->valueint, client_to_add_group_to->username, client->username);
 
     // send admin status to other clients possibly, or not, do they have to know you are an admin
 label_client_msg__process_add_group_to_client_message_end:
+    // unlock the groups
     clib__unlock(&g_groups_global_rwlock_guard);
+
+    // apply the permission changes
     if (client_to_add_group_to != NULL_POINTER &&
         client_to_add_group_to->is_existing == TRUE &&
         client_to_add_group_to->is_authenticated == TRUE)
@@ -472,6 +536,8 @@ label_client_msg__process_add_group_to_client_message_end:
         }
         server_msg__administration__send_permission_update_to_single_client(client_to_add_group_to);
     }
+
+    // unlock the clients
     clib__unlock(&g_clients_global_rwlock_guard);
 }
 
@@ -489,8 +555,10 @@ static boole _client_msg_administration_internal__is_remove_group_from_client_va
     cJSON *json_group_id = NULL_POINTER;
     cJSON *json_message_object = NULL_POINTER;
 
+    // read the message object
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
 
+    // check the client id
     json_client_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "client_id");
     if (cJSON_IsNumber(json_client_id) == FALSE || json_client_id->valuedouble != (double)json_client_id->valueint)
     {
@@ -498,12 +566,14 @@ static boole _client_msg_administration_internal__is_remove_group_from_client_va
         return FALSE;
     }
 
+    // check client id range
     if (json_client_id->valueint < 0 || json_client_id->valueint >= g_server_settings.max_client_count)
     {
         DBG_CLIENT_MESSAGE log_info("%s %d %s", "_client_msg_administration_internal__is_remove_group_from_client_valid json_client_id->valueint is not valid ", json_client_id->valueint, "\n");
         return FALSE;
     }
 
+    // check the group id
     json_group_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "group_id");
     if (cJSON_IsNumber(json_group_id) == FALSE || json_group_id->valuedouble != (double)json_group_id->valueint)
     {
@@ -511,6 +581,7 @@ static boole _client_msg_administration_internal__is_remove_group_from_client_va
         return FALSE;
     }
 
+    // check group id range
     if (json_group_id->valueint < 0 || json_group_id->valueint >= MAX_GROUPS)
     {
         DBG_CLIENT_MESSAGE log_info("%s %d %s", "_client_msg_administration_internal__is_remove_group_from_client_valid json_group_id->valueint is not valid ", json_group_id->valueint, "\n");
@@ -539,18 +610,24 @@ void client_msg__administration__process_remove_group_from_client_message(cJSON 
     cJSON *json_group_id = NULL_POINTER;
     int64 group_id_index = 0;
 
+    // check both id fields
     if (_client_msg_administration_internal__is_remove_group_from_client_valid(json_root) == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s", "client_msg__administration__process_remove_group_from_client_message _client_msg_administration_internal__is_remove_group_from_client_valid == FALSE \n");
         return;
     }
 
+    // lock the clients
     clib__write_lock(&g_clients_global_rwlock_guard);
+
+    // check the sender connection
     if (base__is_current_client_request(sender_client_id) == FALSE)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
     }
+
+    // check groups are enabled
     if (g_server_settings.is_permission_system_enabled == FALSE)
     {
         server_msg__administration__send_access_denied_to_single_client(&g_clients_array[sender_client_id], "Server groups and icons are disabled.");
@@ -558,6 +635,7 @@ void client_msg__administration__process_remove_group_from_client_message(cJSON 
         return;
     }
 
+    // lock the groups
     clib__read_lock(&g_groups_global_rwlock_guard);
 
     // check if the client that sent the message is valid: connected and existing.
@@ -579,6 +657,7 @@ void client_msg__administration__process_remove_group_from_client_message(cJSON 
         goto label_client_msg__process_remove_group_from_client_message_end;
     }
 
+    // read both ids
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
     json_client_id_to_remove_group_id_from = cJSON_GetObjectItemCaseSensitive(json_message_object, "client_id");
     json_group_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "group_id");
@@ -597,6 +676,7 @@ void client_msg__administration__process_remove_group_from_client_message(cJSON 
         goto label_client_msg__process_remove_group_from_client_message_end;
     }
 
+    // check removal is allowed
     if ((uint64)json_group_id->valueint == g_guest_group_id || permissions__can_change_member(client, client_to_remove_group_id_from, (uint64)json_group_id->valueint, FALSE) == FALSE)
     {
         server_msg__administration__send_access_denied_to_single_client(client, NULL_POINTER);
@@ -626,14 +706,17 @@ void client_msg__administration__process_remove_group_from_client_message(cJSON 
 
     if (group_id_index != -1)
     {
+        // remove the group id
         cvector_erase(client_to_remove_group_id_from->group_ids, group_id_index);
 
+        // clear the admin flag
         if (json_group_id->valueint == ADMIN_GROUP_ID)
         {
             client_to_remove_group_id_from->is_admin = FALSE;
             server_msg__administration__send_admin_status_to_single_client(client_to_remove_group_id_from);
         }
 
+        // send event, update Guest
         server_msg__administration__send_remove_group_from_client_event_to_all_clients(client_to_remove_group_id_from, json_group_id->valueint);
         _client_msg_administration_internal__refresh_guest_membership(client_to_remove_group_id_from);
         powers_changed = TRUE;
@@ -650,7 +733,10 @@ void client_msg__administration__process_remove_group_from_client_message(cJSON 
     }
 
 label_client_msg__process_remove_group_from_client_message_end:
+    // unlock the groups
     clib__unlock(&g_groups_global_rwlock_guard);
+
+    // apply the permission changes
     if (client_to_remove_group_id_from != NULL_POINTER &&
         client_to_remove_group_id_from->is_existing == TRUE &&
         client_to_remove_group_id_from->is_authenticated == TRUE)
@@ -663,6 +749,8 @@ label_client_msg__process_remove_group_from_client_message_end:
         }
         server_msg__administration__send_permission_update_to_single_client(client_to_remove_group_id_from);
     }
+
+    // unlock the clients
     clib__unlock(&g_clients_global_rwlock_guard);
 }
 
@@ -681,6 +769,7 @@ static boole _client_msg_administration_internal__is_process_server_settings_ico
     uint64 base64_icon_length = 0;
     uint64 max_base64_length = 0;
 
+    // check icon is text
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
     base64_icon_value = cJSON_GetObjectItemCaseSensitive(json_message_object, "base64_icon_value");
     if (cJSON_IsString(base64_icon_value) == FALSE)
@@ -689,6 +778,7 @@ static boole _client_msg_administration_internal__is_process_server_settings_ico
         return FALSE;
     }
 
+    // read the icon length
     base64_icon_length = clib__utf8_string_length(base64_icon_value->valuestring);
 
     // the raw-bytes setting caps the upload: base64 is ~4/3 of raw plus a small data-url prefix.
@@ -720,21 +810,28 @@ void client_msg__administration__process_icon_upload(cJSON *json_root, uint64 se
     cJSON *base64_icon_value = NULL_POINTER;
     cJSON *json_message_object = NULL_POINTER;
 
+    // check the icon field
     if (_client_msg_administration_internal__is_process_server_settings_icon_upload_message_valid(json_root) == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s", "_client_msg_administration_internal__is_process_server_settings_icon_upload_message_valid is not valid");
         return;
     }
 
+    // read the icon text
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
     base64_icon_value = cJSON_GetObjectItemCaseSensitive(json_message_object, "base64_icon_value");
 
+    // lock the clients
     clib__write_lock(&g_clients_global_rwlock_guard);
+
+    // check the sender connection
     if (base__is_current_client_request(sender_client_id) == FALSE)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
     }
+
+    // check icons are enabled
     if (g_server_settings.is_permission_system_enabled == FALSE)
     {
         server_msg__administration__send_access_denied_to_single_client(&g_clients_array[sender_client_id], "Server groups and icons are disabled.");
@@ -742,8 +839,10 @@ void client_msg__administration__process_icon_upload(cJSON *json_root, uint64 se
         return;
     }
 
+    // lock the icons
     clib__write_lock(&g_icons_global_rwlock_guard);
 
+    // check the upload permission
     does_sender_have_permissions_to_upload_icon = permissions__is_allowed(&g_clients_array[sender_client_id], PERMISSION_UPLOAD_ICONS);
 
     if (does_sender_have_permissions_to_upload_icon == FALSE)
@@ -753,6 +852,7 @@ void client_msg__administration__process_icon_upload(cJSON *json_root, uint64 se
         goto label_client_msg__process_server_settings_icon_upload_end;
     }
 
+    // check the RAM limit
     if (base__is_server_ram_budget_reached() != FALSE)
     {
         server_msg__administration__send_access_denied_to_single_client(&g_clients_array[sender_client_id], "The server has reached its RAM budget. Try uploading again later.");
@@ -766,10 +866,13 @@ void client_msg__administration__process_icon_upload(cJSON *json_root, uint64 se
         icon = &g_icons_array[icon_index];
         if (icon->is_existing == FALSE)
         {
+            // store the icon data
             if (server_admin__set_icon_base64(icon, base64_icon_value->valuestring) == FALSE)
             {
                 break; // out of memory: the slot stays free and nothing is announced
             }
+
+            // mark the slot used
             found_icon = icon;
             found_icon->is_existing = TRUE;
             found_icon->id = icon_index;
@@ -778,6 +881,7 @@ void client_msg__administration__process_icon_upload(cJSON *json_root, uint64 se
         }
     }
 
+    // no icon was stored
     if (found_icon == NULL_POINTER)
     {
         DBG_CLIENT_MESSAGE log_info("%s", "found icon is null");
@@ -789,6 +893,7 @@ void client_msg__administration__process_icon_upload(cJSON *json_root, uint64 se
     server_msg__administration__send_add_new_icon_event_to_all_clients(found_icon->id, found_icon->base64);
 
 label_client_msg__process_server_settings_icon_upload_end:
+    // unlock icons and clients
     clib__unlock(&g_icons_global_rwlock_guard);
     clib__unlock(&g_clients_global_rwlock_guard);
 }
@@ -809,6 +914,7 @@ static boole _client_msg_administration_internal__is_process_server_settings_add
     cJSON *json_linked_icon_id = NULL_POINTER;
     uint64 new_group_name_length = 0;
 
+    // check name is text
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
     json_group_name = cJSON_GetObjectItemCaseSensitive(json_message_object, "group_name");
 
@@ -818,6 +924,7 @@ static boole _client_msg_administration_internal__is_process_server_settings_add
         return FALSE;
     }
 
+    // check the name length
     new_group_name_length = clib__utf8_string_length(json_group_name->valuestring);
 
     if (new_group_name_length >= GROUP_MAX_NAME_LENGTH || new_group_name_length == 0)
@@ -830,12 +937,14 @@ static boole _client_msg_administration_internal__is_process_server_settings_add
     json_linked_icon_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "linked_icon_id");
     if (json_linked_icon_id != NULL_POINTER)
     {
+        // check the icon id
         if (cJSON_IsNumber(json_linked_icon_id) == FALSE || json_linked_icon_id->valuedouble != (double)json_linked_icon_id->valueint)
         {
             DBG_CLIENT_MESSAGE log_info("%s", "_client_msg_administration_internal__is_process_server_settings_add_new_group_message_valid cJSON_IsNumber(json_linked_icon_id)");
             return FALSE;
         }
 
+        // check icon id range
         if (json_linked_icon_id->valueint < 0 || json_linked_icon_id->valueint >= MAX_ICONS)
         {
             DBG_CLIENT_MESSAGE log_info("%s", "icon id is invalid");
@@ -868,29 +977,40 @@ void client_msg__administration__process_add_group(cJSON *json_root, uint64 send
     uint64 group_index = 0;
     boole is_same_group_name_found = FALSE;
 
+    // check name and icon
     if (_client_msg_administration_internal__is_process_server_settings_add_new_group_message_valid(json_root) == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s", "client_msg__administration__process_add_group is not valid");
         return;
     }
 
+    // read the group fields
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
     json_linked_icon_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "linked_icon_id");
     json_group_name = cJSON_GetObjectItemCaseSensitive(json_message_object, "group_name");
     json_group_type = cJSON_GetObjectItemCaseSensitive(json_message_object, "group_type");
+
+    // check the group type
     if (json_group_type != NULL_POINTER &&
         (cJSON_IsString(json_group_type) == FALSE || permissions__parse_group_type(json_group_type->valuestring, &group_type) == FALSE))
     {
         return;
     }
+
+    // build the preset permissions
     permissions__set_preset(group_type, &preset_permissions);
 
+    // lock the clients
     clib__write_lock(&g_clients_global_rwlock_guard);
+
+    // check the sender connection
     if (base__is_current_client_request(sender_client_id) == FALSE)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
     }
+
+    // check groups are enabled
     if (g_server_settings.is_permission_system_enabled == FALSE)
     {
         server_msg__administration__send_access_denied_to_single_client(&g_clients_array[sender_client_id], "Server groups and icons are disabled.");
@@ -898,6 +1018,7 @@ void client_msg__administration__process_add_group(cJSON *json_root, uint64 send
         return;
     }
 
+    // lock the groups
     clib__write_lock(&g_groups_global_rwlock_guard);
 
     // the linked icon is optional. when one is given it must reference an existing icon (id equals icon index,
@@ -935,6 +1056,7 @@ void client_msg__administration__process_add_group(cJSON *json_root, uint64 send
         }
     }
 
+    // refuse a taken name
     if (is_same_group_name_found == TRUE)
     {
         DBG_CLIENT_MESSAGE log_info("%s %s %s", " is_same_group_name_found == TRUE", json_group_name->valuestring, "\n");
@@ -943,17 +1065,20 @@ void client_msg__administration__process_add_group(cJSON *json_root, uint64 send
 
     // at this point client is verified, icon id is correct, newly_added_group length is correct
     // start at index 1: id 0 is ADMIN_GROUP_ID (reserved for the admin group). a user group at id 0 would collide
-    // with it - adding it would grant admin, and adding/removing it would add/remove the admin group.
+    // with it - adding it would grant admin, and adding/removing it would add/remove the admin group
     for (group_index = 1; group_index < MAX_GROUPS; group_index++)
     {
         group_in_loop = &g_groups_array[group_index];
 
         if (group_in_loop->is_existing == FALSE)
         {
+            // fill the free slot
             clib__null_memory(group_in_loop, sizeof(*group_in_loop));
             group_in_loop->is_existing = TRUE;
             group_in_loop->group_type = group_type;
             group_in_loop->permissions = preset_permissions;
+
+            // set the group icon
             if (json_linked_icon_id != NULL_POINTER)
             {
                 group_in_loop->has_icon = TRUE;
@@ -964,6 +1089,8 @@ void client_msg__administration__process_add_group(cJSON *json_root, uint64 send
                 group_in_loop->has_icon = FALSE;
                 group_in_loop->icon_id = 0;
             }
+
+            // copy name and id
             clib__string_copy(group_in_loop->name, sizeof(group_in_loop->name), json_group_name->valuestring);
             group_in_loop->id = group_index;
 
@@ -972,16 +1099,21 @@ void client_msg__administration__process_add_group(cJSON *json_root, uint64 send
         }
     }
 
+    // no free group slot
     if (newly_added_group == NULL_POINTER)
     {
         DBG_CLIENT_MESSAGE log_info("%s", "newly_added_group == NULL_POINTER");
         goto label_client_msg__process_server_settings_add_new_group_end;
     }
 
+    // send the group event
     server_msg__administration__send_create_new_group_event_to_all_clients(group_in_loop->id, group_in_loop->name, group_in_loop->icon_id, group_in_loop->has_icon);
 
 label_client_msg__process_server_settings_add_new_group_end:
+    // unlock the groups
     clib__unlock(&g_groups_global_rwlock_guard);
+
+    // send the permission updates
     server_msg__administration__send_permission_updates_to_all_clients();
     clib__unlock(&g_clients_global_rwlock_guard);
 }
@@ -1007,6 +1139,7 @@ void client_msg__administration__process_delete_group(cJSON *json_root, uint64 s
     uint64 i = 0;
     int64 group_id_index = 0;
 
+    // check the group id
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
     json_group_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "group_id");
 
@@ -1016,14 +1149,20 @@ void client_msg__administration__process_delete_group(cJSON *json_root, uint64 s
         return;
     }
 
+    // copy the group id
     group_id = (uint64)json_group_id->valueint;
 
+    // lock the clients
     clib__write_lock(&g_clients_global_rwlock_guard);
+
+    // check the sender connection
     if (base__is_current_client_request(sender_client_id) == FALSE)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
     }
+
+    // check groups are enabled
     if (g_server_settings.is_permission_system_enabled == FALSE)
     {
         server_msg__administration__send_access_denied_to_single_client(&g_clients_array[sender_client_id], "Server groups and icons are disabled.");
@@ -1031,8 +1170,10 @@ void client_msg__administration__process_delete_group(cJSON *json_root, uint64 s
         return;
     }
 
+    // lock the groups
     clib__write_lock(&g_groups_global_rwlock_guard);
 
+    // check the delete permission
     sender_client = &g_clients_array[sender_client_id];
 
     if (permissions__can_delete_group(sender_client, group_id) == FALSE)
@@ -1041,13 +1182,14 @@ void client_msg__administration__process_delete_group(cJSON *json_root, uint64 s
         goto label_client_msg__process_set_server_settings_delete_group_end;
     }
 
-    // Admin and the automatic Guest group must remain available.
+    // admin and the automatic Guest group must remain available
     if (group_id == ADMIN_GROUP_ID || group_id == g_guest_group_id)
     {
         server_msg__administration__send_access_denied_to_single_client(sender_client, NULL_POINTER);
         goto label_client_msg__process_set_server_settings_delete_group_end;
     }
 
+    // check the group exists
     if (server_admin__is_group_id_real(group_id) == FALSE)
     {
         goto label_client_msg__process_set_server_settings_delete_group_end;
@@ -1056,6 +1198,7 @@ void client_msg__administration__process_delete_group(cJSON *json_root, uint64 s
     // remove the group from every client that currently holds it, so server state stays consistent
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
+        // skip unauthenticated clients
         client = &g_clients_array[i];
 
         if (client->is_existing == FALSE || client->is_authenticated == FALSE)
@@ -1063,6 +1206,7 @@ void client_msg__administration__process_delete_group(cJSON *json_root, uint64 s
             continue;
         }
 
+        // remove the group id
         group_id_index = server_admin__get_index_of_group_id_of_client(client->client_id, group_id);
         if (group_id_index != -1)
         {
@@ -1071,6 +1215,7 @@ void client_msg__administration__process_delete_group(cJSON *json_root, uint64 s
         }
     }
 
+    // remove from stored identities
     identity_store__remove_group_from_all_identities(group_id);
 
     // free the group's pool slot (a group id equals its index in g_groups_array)
@@ -1079,10 +1224,14 @@ void client_msg__administration__process_delete_group(cJSON *json_root, uint64 s
     g_groups_array[group_id].icon_id = 0;
     clib__null_memory(&g_groups_array[group_id].name[0], GROUP_MAX_NAME_LENGTH);
 
+    // send the removal event
     server_msg__administration__send_remove_group_event_to_all_clients(group_id);
 
 label_client_msg__process_set_server_settings_delete_group_end:
+    // unlock the groups
     clib__unlock(&g_groups_global_rwlock_guard);
+
+    // apply the permission changes
     if (powers_changed == TRUE)
     {
         audio_channel__apply_permission_changes();
@@ -1106,13 +1255,17 @@ void client_msg__administration__process_request_identity_list(cJSON *json_root,
 {
     client_t *sender_client = NULL_POINTER;
 
+    // lock the clients
     clib__write_lock(&g_clients_global_rwlock_guard);
+
+    // check the sender connection
     if (base__is_current_client_request(sender_client_id) == FALSE)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
     }
 
+    // check the view permission
     sender_client = &g_clients_array[sender_client_id];
 
     if (permissions__is_allowed(sender_client, PERMISSION_VIEW_GROUP_MEMBERS) == FALSE)
@@ -1121,9 +1274,11 @@ void client_msg__administration__process_request_identity_list(cJSON *json_root,
         goto label_client_msg__process_request_identity_list_end;
     }
 
+    // send the identity list
     server_msg__administration__send_identity_list_to_single_client(sender_client);
 
 label_client_msg__process_request_identity_list_end:
+    // unlock the clients
     clib__unlock(&g_clients_global_rwlock_guard);
 }
 
@@ -1156,6 +1311,7 @@ void client_msg__administration__process_delete_identity(cJSON *json_root, uint6
     uint64 c = 0;
     uint64 t = 0;
 
+    // check the hash field
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
     json_hash = cJSON_GetObjectItemCaseSensitive(json_message_object, "public_key_hash");
 
@@ -1165,16 +1321,21 @@ void client_msg__administration__process_delete_identity(cJSON *json_root, uint6
         return;
     }
 
+    // copy the hash
     clib__null_memory(target_hash, sizeof(target_hash));
     clib__string_copy(target_hash, sizeof(target_hash), json_hash->valuestring);
 
+    // lock the clients
     clib__write_lock(&g_clients_global_rwlock_guard);
+
+    // check the sender connection
     if (base__is_current_client_request(sender_client_id) == FALSE)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
     }
 
+    // check sender is admin
     sender_client = &g_clients_array[sender_client_id];
 
     if (sender_client->is_authenticated == FALSE || sender_client->is_existing == FALSE || sender_client->is_admin == FALSE)
@@ -1186,6 +1347,7 @@ void client_msg__administration__process_delete_identity(cJSON *json_root, uint6
     // if this identity is used by a connected client right now, remove every group from them
     for (c = 0; c < g_server_settings.max_client_count; c++)
     {
+        // skip clients without identity
         holder = &g_clients_array[c];
 
         if (holder->is_existing == FALSE || holder->is_authenticated == FALSE || holder->is_music_bot == TRUE)
@@ -1197,12 +1359,14 @@ void client_msg__administration__process_delete_identity(cJSON *json_root, uint6
             continue;
         }
 
+        // compare the key hash
         util__hash_password_to_base64(holder->public_key, client_hash, sizeof(client_hash));
         if (clib__is_string_equal(client_hash, target_hash) == FALSE)
         {
             continue;
         }
 
+        // store the holder id
         holder_client_id = holder->client_id;
         holder_found = TRUE;
 
@@ -1214,10 +1378,13 @@ void client_msg__administration__process_delete_identity(cJSON *json_root, uint6
             groups_to_remove_count++;
         }
 
+        // remove all groups
         while (cvector_size(holder->group_ids) > 0)
         {
             cvector_erase(holder->group_ids, 0);
         }
+
+        // clear the admin flag
         holder_was_admin = holder->is_admin;
         holder->is_admin = FALSE;
         server_msg__administration__send_admin_status_to_single_client(holder);
@@ -1234,6 +1401,7 @@ void client_msg__administration__process_delete_identity(cJSON *json_root, uint6
         server_msg__administration__send_remove_group_from_client_event_to_all_clients(&g_clients_array[holder_client_id], groups_to_remove[t]);
     }
 
+    // update Guest membership
     if (holder_found == TRUE)
     {
         clib__read_lock(&g_groups_global_rwlock_guard);
@@ -1251,6 +1419,7 @@ void client_msg__administration__process_delete_identity(cJSON *json_root, uint6
     server_msg__administration__send_identity_list_to_single_client(sender_client);
 
 label_client_msg__process_delete_identity_end:
+    // apply the permission changes
     if (holder_found == TRUE)
     {
         audio_channel__apply_permission_changes();
@@ -1291,7 +1460,10 @@ void client_msg__administration__process_modify_identity_group(cJSON *json_root,
     boole add = FALSE;
     boole changed = FALSE;
 
+    // clear the temporary client
     clib__memset(&stored_client, 0, sizeof(stored_client));
+
+    // check the three fields
     if (cJSON_IsString(hash) == FALSE ||
         hash->valuestring == NULL_POINTER ||
         clib__strlen(hash->valuestring) >= sizeof(client_hash) ||
@@ -1303,16 +1475,26 @@ void client_msg__administration__process_modify_identity_group(cJSON *json_root,
     {
         return;
     }
+
+    // copy the field values
     group_id = (uint64)id->valueint;
     add = (boole)cJSON_IsTrue(json_add);
+
+    // lock the clients
     clib__write_lock(&g_clients_global_rwlock_guard);
+
+    // check the sender connection
     if (base__is_current_client_request(sender_client_id) == FALSE)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
     }
+
+    // lock the groups
     clib__read_lock(&g_groups_global_rwlock_guard);
     sender = &g_clients_array[sender_client_id];
+
+    // find the connected client
     for (i = 0; i < (uint64)g_server_settings.max_client_count; i++)
     {
         if (g_clients_array[i].is_existing == FALSE || g_clients_array[i].is_authenticated == FALSE || g_clients_array[i].is_music_bot == TRUE)
@@ -1326,6 +1508,8 @@ void client_msg__administration__process_modify_identity_group(cJSON *json_root,
             break;
         }
     }
+
+    // load the stored identity
     if (target == NULL_POINTER)
     {
         pthread_mutex_lock(&g_client_stored_data_mutex);
@@ -1335,11 +1519,15 @@ void client_msg__administration__process_modify_identity_group(cJSON *json_root,
             {
                 continue;
             }
+
+            // reserve the group list
             if (g_client_stored_data[i].group_id_count > MAX_GROUPS_FOR_SINGLE_CLIENT || !clib__int_vector_reserve(&stored_client.group_ids, MAX_GROUPS_FOR_SINGLE_CLIENT))
             {
                 pthread_mutex_unlock(&g_client_stored_data_mutex);
                 goto label_modify_identity_group_end;
             }
+
+            // copy the stored groups
             stored_client.is_existing = TRUE;
             stored_client.is_authenticated = TRUE;
             for (t = 0; t < g_client_stored_data[i].group_id_count; t++)
@@ -1351,17 +1539,22 @@ void client_msg__administration__process_modify_identity_group(cJSON *json_root,
         }
         pthread_mutex_unlock(&g_client_stored_data_mutex);
     }
+
+    // check change is allowed
     if (group_id == g_guest_group_id || permissions__can_change_member(sender, target, group_id, add) == FALSE)
     {
         server_msg__administration__send_access_denied_to_single_client(sender, NULL_POINTER);
         goto label_modify_identity_group_end;
     }
+
+    // apply the group change
     if (target == &stored_client)
     {
         changed = identity_store__modify_identity_group_in_store(hash->valuestring, group_id, add);
     }
     else
     {
+        // add or remove group
         group_index = server_admin__get_index_of_group_id_of_client(target->client_id, group_id);
         if (add == TRUE && group_index == -1)
         {
@@ -1376,8 +1569,11 @@ void client_msg__administration__process_modify_identity_group(cJSON *json_root,
             cvector_erase(target->group_ids, group_index);
             changed = TRUE;
         }
+
+        // update after the change
         if (changed == TRUE)
         {
+            // update the admin flag
             if (group_id == ADMIN_GROUP_ID)
             {
                 target->is_admin = add;
@@ -1387,6 +1583,8 @@ void client_msg__administration__process_modify_identity_group(cJSON *json_root,
                     server_msg__profile__send_client_country_code_changed_to_all_clients(target);
                 }
             }
+
+            // send the group event
             if (add == TRUE)
             {
                 server_msg__administration__send_add_group_to_client_event_to_all_clients(target, group_id);
@@ -1395,12 +1593,17 @@ void client_msg__administration__process_modify_identity_group(cJSON *json_root,
             {
                 server_msg__administration__send_remove_group_from_client_event_to_all_clients(target, group_id);
             }
+
+            // update Guest and identity
             _client_msg_administration_internal__refresh_guest_membership(target);
             identity_store__sync_client_identity_in_store(target);
         }
     }
 label_modify_identity_group_end:
+    // unlock the groups
     clib__unlock(&g_groups_global_rwlock_guard);
+
+    // apply the permission changes
     if (target != NULL_POINTER && target != &stored_client)
     {
         if (changed == TRUE)
@@ -1411,10 +1614,14 @@ label_modify_identity_group_end:
         }
         server_msg__administration__send_permission_update_to_single_client(target);
     }
+
+    // send the identity list
     if (changed == TRUE)
     {
         server_msg__administration__send_identity_list_to_single_client(sender);
     }
+
+    // free the group list
     cvector_free(stored_client.group_ids);
     clib__unlock(&g_clients_global_rwlock_guard);
 }
@@ -1435,6 +1642,7 @@ void client_msg__administration__process_delete_icon(cJSON *json_root, uint64 se
     cJSON *json_icon_id = NULL_POINTER;
     uint64 icon_id = 0;
 
+    // check the icon id
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
     json_icon_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "icon_id");
 
@@ -1444,14 +1652,20 @@ void client_msg__administration__process_delete_icon(cJSON *json_root, uint64 se
         return;
     }
 
+    // copy the icon id
     icon_id = (uint64)json_icon_id->valueint;
 
+    // lock the clients
     clib__write_lock(&g_clients_global_rwlock_guard);
+
+    // check the sender connection
     if (base__is_current_client_request(sender_client_id) == FALSE)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
     }
+
+    // check icons are enabled
     if (g_server_settings.is_permission_system_enabled == FALSE)
     {
         server_msg__administration__send_access_denied_to_single_client(&g_clients_array[sender_client_id], "Server groups and icons are disabled.");
@@ -1459,8 +1673,10 @@ void client_msg__administration__process_delete_icon(cJSON *json_root, uint64 se
         return;
     }
 
+    // lock the icons
     clib__write_lock(&g_icons_global_rwlock_guard);
 
+    // check the delete permission
     sender_client = &g_clients_array[sender_client_id];
 
     if (permissions__is_allowed(sender_client, PERMISSION_DELETE_ICONS) == FALSE)
@@ -1469,6 +1685,7 @@ void client_msg__administration__process_delete_icon(cJSON *json_root, uint64 se
         goto label_client_msg__process_set_server_settings_delete_icon_end;
     }
 
+    // check the icon exists
     if (icon_id >= MAX_ICONS || g_icons_array[icon_id].is_existing == FALSE)
     {
         goto label_client_msg__process_set_server_settings_delete_icon_end;
@@ -1478,9 +1695,11 @@ void client_msg__administration__process_delete_icon(cJSON *json_root, uint64 se
     g_icons_array[icon_id].is_existing = FALSE;
     server_admin__free_icon_base64(&g_icons_array[icon_id]);
 
+    // send the removal event
     server_msg__administration__send_remove_icon_event_to_all_clients(icon_id);
 
 label_client_msg__process_set_server_settings_delete_icon_end:
+    // unlock icons and clients
     clib__unlock(&g_icons_global_rwlock_guard);
     clib__unlock(&g_clients_global_rwlock_guard);
 }
@@ -1505,6 +1724,7 @@ void client_msg__administration__process_set_group_icon(cJSON *json_root, uint64
     uint64 icon_id = 0;
     boole wants_icon = FALSE;
 
+    // check the group id
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
     json_group_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "group_id");
     json_icon_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "icon_id");
@@ -1514,11 +1734,16 @@ void client_msg__administration__process_set_group_icon(cJSON *json_root, uint64
         return;
     }
 
+    // copy the group id
     group_id = (uint64)json_group_id->valueint;
+
+    // check icon id type
     if (json_icon_id != NULL_POINTER && cJSON_IsNumber(json_icon_id) == FALSE)
     {
         return;
     }
+
+    // read the icon id
     wants_icon = cJSON_IsNumber(json_icon_id);
     if (wants_icon == TRUE)
     {
@@ -1529,12 +1754,17 @@ void client_msg__administration__process_set_group_icon(cJSON *json_root, uint64
         icon_id = (uint64)json_icon_id->valueint;
     }
 
+    // lock the clients
     clib__write_lock(&g_clients_global_rwlock_guard);
+
+    // check the sender connection
     if (base__is_current_client_request(sender_client_id) == FALSE)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
     }
+
+    // check groups are enabled
     if (g_server_settings.is_permission_system_enabled == FALSE)
     {
         server_msg__administration__send_access_denied_to_single_client(&g_clients_array[sender_client_id], "Server groups and icons are disabled.");
@@ -1542,8 +1772,10 @@ void client_msg__administration__process_set_group_icon(cJSON *json_root, uint64
         return;
     }
 
+    // lock the groups
     clib__write_lock(&g_groups_global_rwlock_guard);
 
+    // check the edit permission
     sender_client = &g_clients_array[sender_client_id];
 
     if (permissions__can_manage_group(sender_client, group_id, PERMISSION_EDIT_GROUPS) == FALSE)
@@ -1552,11 +1784,13 @@ void client_msg__administration__process_set_group_icon(cJSON *json_root, uint64
         goto label_client_msg__process_set_server_settings_set_group_icon_end;
     }
 
+    // check the group exists
     if (server_admin__is_group_id_real(group_id) == FALSE)
     {
         goto label_client_msg__process_set_server_settings_set_group_icon_end;
     }
 
+    // set or clear icon
     if (wants_icon == TRUE)
     {
         // the assigned icon must exist (an icon id equals its index)
@@ -1575,9 +1809,11 @@ void client_msg__administration__process_set_group_icon(cJSON *json_root, uint64
         g_groups_array[group_id].icon_id = 0;
     }
 
+    // send the icon change
     server_msg__administration__send_group_icon_changed_event_to_all_clients(group_id, g_groups_array[group_id].has_icon, g_groups_array[group_id].icon_id);
 
 label_client_msg__process_set_server_settings_set_group_icon_end:
+    // unlock groups and clients
     clib__unlock(&g_groups_global_rwlock_guard);
     clib__unlock(&g_clients_global_rwlock_guard);
 }
@@ -1599,13 +1835,18 @@ void client_msg__administration__process_admin_log_request(cJSON *json_root, uin
 
     // the reply is sent under the clients read lock, which also covers reading the sender's slot
     clib__read_lock(&g_clients_global_rwlock_guard);
+
+    // check the sender connection
     if (base__is_current_client_request(sender_client_id) == FALSE)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
     }
 
+    // check the log permission
     is_sender_admin = permissions__is_allowed(&g_clients_array[sender_client_id], PERMISSION_VIEW_SERVER_LOGS);
+
+    // send the server log
     if (is_sender_admin == TRUE)
     {
         server_msg__administration__send_admin_log_to_single_client(&g_clients_array[sender_client_id]);
@@ -1616,6 +1857,7 @@ void client_msg__administration__process_admin_log_request(cJSON *json_root, uin
         DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client_msg__administration__process_admin_log_request sender with sender_client_id", sender_client_id, "is not an admin");
     }
 
+    // unlock the clients
     clib__unlock(&g_clients_global_rwlock_guard);
 }
 
@@ -1636,14 +1878,20 @@ void client_msg__administration__process_admin_log_clear(cJSON *json_root, uint6
 
     (void)json_root; // the request has no fields to read
 
+    // lock the clients
     clib__read_lock(&g_clients_global_rwlock_guard);
+
+    // check the sender connection
     if (base__is_current_client_request(sender_client_id) == FALSE)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
     }
 
+    // check sender is admin
     is_sender_admin = base__is_client_valid_admin(sender_client_id);
+
+    // clear and send log
     if (is_sender_admin == TRUE)
     {
         server_logs__cleared_by(g_clients_array[sender_client_id].username);
@@ -1656,6 +1904,7 @@ void client_msg__administration__process_admin_log_clear(cJSON *json_root, uint6
         DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client_msg__administration__process_admin_log_clear sender with sender_client_id", sender_client_id, "is not an admin");
     }
 
+    // unlock the clients
     clib__unlock(&g_clients_global_rwlock_guard);
 }
 
@@ -1672,8 +1921,10 @@ static boole _client_msg_administration_internal__is_kick_ban_request_valid(cJSO
     cJSON *json_message_object = NULL_POINTER;
     cJSON *json_client_id = NULL_POINTER;
 
+    // read the message object
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
 
+    // check the client id
     json_client_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "client_id");
     if (cJSON_IsNumber(json_client_id) == FALSE || json_client_id->valuedouble != (double)json_client_id->valueint)
     {
@@ -1681,6 +1932,7 @@ static boole _client_msg_administration_internal__is_kick_ban_request_valid(cJSO
         return FALSE;
     }
 
+    // check client id range
     if (json_client_id->valueint < 0 || json_client_id->valueint >= g_server_settings.max_client_count)
     {
         DBG_CLIENT_MESSAGE log_info("%s", "json_client_id is invalid");
@@ -1705,16 +1957,21 @@ void client_msg__administration__process_kick_request(cJSON *json_root, uint64 s
     client_t *admin = NULL_POINTER;
     client_t *receiver = NULL_POINTER;
 
+    // check the target id
     if (_client_msg_administration_internal__is_kick_ban_request_valid(json_root) == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s", "client_msg__administration__process_kick_request is not valid");
         return;
     }
 
+    // read the target id
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
     json_client_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "client_id");
 
+    // lock the clients
     clib__write_lock(&g_clients_global_rwlock_guard);
+
+    // check the sender connection
     if (base__is_current_client_request(sender_client_id) == FALSE)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
@@ -1730,23 +1987,28 @@ void client_msg__administration__process_kick_request(cJSON *json_root, uint64 s
         goto label_client_msg__process_kick_request_end;
     }
 
+    // check target is authenticated
     receiver = &g_clients_array[json_client_id->valueint];
     if (receiver->is_authenticated == FALSE || receiver->is_existing == FALSE)
     {
         goto label_client_msg__process_kick_request_end;
     }
 
+    // check the kick permission
     if (permissions__can_moderate(admin, receiver, PERMISSION_KICK) == FALSE)
     {
         server_msg__administration__send_permission_denied_to_single_client(admin, permissions__name(PERMISSION_KICK));
         goto label_client_msg__process_kick_request_end;
     }
 
+    // log the kick
     server_logs__client_kicked(receiver->username, admin->username);
 
+    // close the target connection
     ws_close_client_with_code(receiver->p_ws_connection, SERVER_CLOSE_KICKED);
 
 label_client_msg__process_kick_request_end:
+    // unlock the clients
     clib__unlock(&g_clients_global_rwlock_guard);
 }
 
@@ -1768,16 +2030,21 @@ void client_msg__administration__process_ban_request(cJSON *json_root, uint64 se
     boole saved = FALSE;
     int64 added_index = -1;
 
+    // check the target id
     if (_client_msg_administration_internal__is_kick_ban_request_valid(json_root) == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s", "client_msg__administration__process_ban_request is not valid");
         return;
     }
 
+    // read the target id
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
     json_client_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "client_id");
 
+    // lock the clients
     clib__write_lock(&g_clients_global_rwlock_guard);
+
+    // check the sender connection
     if (base__is_current_client_request(sender_client_id) == FALSE)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
@@ -1793,24 +2060,28 @@ void client_msg__administration__process_ban_request(cJSON *json_root, uint64 se
         goto label_client_msg__process_ban_request_end;
     }
 
+    // check target is authenticated
     receiver = &g_clients_array[json_client_id->valueint];
     if (receiver->is_authenticated == FALSE || receiver->is_existing == FALSE)
     {
         goto label_client_msg__process_ban_request_end;
     }
 
+    // check the ban permission
     if (permissions__can_moderate(admin, receiver, PERMISSION_BAN) == FALSE)
     {
         server_msg__administration__send_permission_denied_to_single_client(admin, permissions__name(PERMISSION_BAN));
         goto label_client_msg__process_ban_request_end;
     }
 
-    // Persist the ban before announcing or disconnecting the target. The clients
-    // lock keeps the target identity stable; bans are last in the lock order.
+    // persist the ban before announcing or disconnecting the target. the clients
+    // lock keeps the target identity stable; bans are last in the lock order
     clib__read_lock(&g_channels_global_rwlock_guard);
     clib__read_lock(&g_icons_global_rwlock_guard);
     clib__read_lock(&g_groups_global_rwlock_guard);
     clib__write_lock(&g_bans_global_rwlock_guard);
+
+    // add and save ban
     recorded = server_admin__add_ban(receiver->ip_address, receiver->country_iso_code, receiver->public_key, "", &added_index);
     if (recorded == TRUE)
     {
@@ -1820,19 +2091,26 @@ void client_msg__administration__process_ban_request(cJSON *json_root, uint64 se
             clib__null_memory(&g_ban_array[added_index], sizeof(ban_entry_t));
         }
     }
+
+    // unlock the saved data
     clib__unlock(&g_bans_global_rwlock_guard);
     clib__unlock(&g_groups_global_rwlock_guard);
     clib__unlock(&g_icons_global_rwlock_guard);
     clib__unlock(&g_channels_global_rwlock_guard);
+
+    // disconnect the banned client
     if (saved == TRUE)
     {
         receiver->is_disconnect_ban = TRUE;
         server_logs__client_banned(receiver->username, receiver->ip_address, admin->username);
         ws_close_client_with_code(receiver->p_ws_connection, SERVER_CLOSE_BANNED);
     }
+
+    // send the result
     server_msg__moderation__send_result(admin, saved ? "Client banned." : recorded ? "The client was not banned because the settings could not be saved." : "The client was not banned because the ban list is full.", saved);
 
 label_client_msg__process_ban_request_end:
+    // unlock the clients
     clib__unlock(&g_clients_global_rwlock_guard);
 }
 
@@ -1854,6 +2132,7 @@ void client_msg__administration__process_remove_ban_request(cJSON *json_root, ui
     boole matching[MAX_BANS] = { 0 };
     uint64 i = 0;
 
+    // check the address field
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
     json_ip = cJSON_GetObjectItemCaseSensitive(json_message_object, "ip_address");
     if (cJSON_IsString(json_ip) == FALSE || json_ip->valuestring == NULL_POINTER)
@@ -1861,12 +2140,17 @@ void client_msg__administration__process_remove_ban_request(cJSON *json_root, ui
         return;
     }
 
+    // lock the clients
     clib__write_lock(&g_clients_global_rwlock_guard);
+
+    // check the sender connection
     if (base__is_current_client_request(sender_client_id) == FALSE)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
     }
+
+    // check the removal permission
     is_admin = permissions__is_allowed(&g_clients_array[sender_client_id], PERMISSION_REMOVE_BANS);
 
     if (is_admin == FALSE)
@@ -1876,13 +2160,14 @@ void client_msg__administration__process_remove_ban_request(cJSON *json_root, ui
         return;
     }
 
+    // lock the saved data
     clib__read_lock(&g_channels_global_rwlock_guard);
     clib__read_lock(&g_icons_global_rwlock_guard);
     clib__read_lock(&g_groups_global_rwlock_guard);
     clib__write_lock(&g_bans_global_rwlock_guard);
 
-    // Keep the original entries intact while the writer omits them. On a failed
-    // save, restoring these flags also preserves their identities and tokens.
+    // keep the original entries intact while the writer omits them. on a failed
+    // save, restoring these flags also preserves their identities and tokens
     for (i = 0; i < MAX_BANS; i++)
     {
         if (g_ban_array[i].is_existing == TRUE && clib__is_string_equal(g_ban_array[i].ip_address, json_ip->valuestring) == TRUE)
@@ -1892,9 +2177,13 @@ void client_msg__administration__process_remove_ban_request(cJSON *json_root, ui
             removed = TRUE;
         }
     }
+
+    // save the ban removal
     if (removed == TRUE)
     {
         saved = settings__save_server_settings_to_file();
+
+        // restore the ban flags
         for (i = 0; i < MAX_BANS; i++)
         {
             if (matching[i] == TRUE)
@@ -1902,16 +2191,21 @@ void client_msg__administration__process_remove_ban_request(cJSON *json_root, ui
                 g_ban_array[i].is_existing = TRUE;
             }
         }
+
+        // remove the bans
         if (saved == TRUE)
         {
             server_admin__remove_ban_by_ip(json_ip->valuestring);
         }
     }
 
+    // unlock the saved data
     clib__unlock(&g_bans_global_rwlock_guard);
     clib__unlock(&g_groups_global_rwlock_guard);
     clib__unlock(&g_icons_global_rwlock_guard);
     clib__unlock(&g_channels_global_rwlock_guard);
+
+    // send the result
     server_msg__moderation__send_result(&g_clients_array[sender_client_id], saved ? "Bans for this IP address removed." : removed ? "The bans were not removed because the settings could not be saved." : "No bans were found for this IP address.", saved);
     clib__unlock(&g_clients_global_rwlock_guard);
 }
@@ -1931,22 +2225,28 @@ void client_msg__administration__process_get_client_info_request(cJSON *json_roo
     client_t *receiver = NULL_POINTER;
     client_t *target = NULL_POINTER;
 
+    // check the target id
     if (_client_msg_administration_internal__is_kick_ban_request_valid(json_root) == FALSE)
     {
         DBG_CLIENT_MESSAGE log_info("%s", "client_msg__administration__process_get_client_info_request is not valid");
         return;
     }
 
+    // read the target id
     json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
     json_client_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "client_id");
 
+    // lock the clients
     clib__read_lock(&g_clients_global_rwlock_guard);
+
+    // check the sender connection
     if (base__is_current_client_request(sender_client_id) == FALSE)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
     }
 
+    // check the view permission
     receiver = &g_clients_array[sender_client_id];
 
     if (permissions__is_allowed(receiver, PERMISSION_VIEW_CLIENT_DETAILS) == FALSE && permissions__is_allowed(receiver, PERMISSION_VIEW_CLIENT_CONNECTION_TIME) == FALSE)
@@ -1955,15 +2255,18 @@ void client_msg__administration__process_get_client_info_request(cJSON *json_roo
         goto label_client_msg__process_get_client_info_request_end;
     }
 
+    // check target is authenticated
     target = &g_clients_array[json_client_id->valueint];
     if (target->is_authenticated == FALSE || target->is_existing == FALSE)
     {
         goto label_client_msg__process_get_client_info_request_end;
     }
 
+    // send the client info
     server_msg__administration__send_client_info_to_single_client(receiver, target, json_message_object);
 
 label_client_msg__process_get_client_info_request_end:
+    // unlock the clients
     clib__unlock(&g_clients_global_rwlock_guard);
 }
 
@@ -1982,31 +2285,48 @@ void client_msg__administration__process_set_group_permissions(cJSON *json_root,
     client_t *sender = NULL_POINTER;
     uint64 group_id = 0;
 
+    // check both ids
     status0 = (sender_client_id >= g_server_settings.max_client_count) || (cJSON_IsNumber(id) == FALSE);
+
+    // check group id range
     if (status0 == FALSE)
     {
         status0 = (id->valuedouble >= ADMIN_GROUP_ID) && (id->valuedouble < MAX_GROUPS);
         status0 = status0 == FALSE;
     }
+
+    // check for whole number
     if (status0 == FALSE)
     {
         status0 = id->valuedouble != (double)id->valueint;
     }
+
+    // read the new permissions
     if (status0 == FALSE)
     {
         status0 = permissions__read(cJSON_GetObjectItemCaseSensitive(message, "permissions"), &permissions) == FALSE;
     }
+
+    // refuse an invalid request
     if (status0 == TRUE)
     {
         return;
     }
+
+    // copy the group id
     group_id = (uint64)id->valueint;
+
+    // lock the clients
     clib__write_lock(&g_clients_global_rwlock_guard);
+
+    // check the sender connection
     if (base__is_current_client_request(sender_client_id) == FALSE)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
     }
+
+    // check groups are enabled
     if (g_server_settings.is_permission_system_enabled == FALSE)
     {
         server_msg__administration__send_access_denied_to_single_client(&g_clients_array[sender_client_id], "Server groups and icons are disabled.");
@@ -2014,20 +2334,28 @@ void client_msg__administration__process_set_group_permissions(cJSON *json_root,
         return;
     }
 
+    // lock the groups
     clib__write_lock(&g_groups_global_rwlock_guard);
     sender = &g_clients_array[sender_client_id];
+
+    // check the edit permission
     if (permissions__can_edit_group_permissions(sender, group_id, &permissions) == FALSE)
     {
         server_msg__administration__send_access_denied_to_single_client(sender, NULL_POINTER);
     }
     else if (sender->is_existing == TRUE && sender->is_authenticated == TRUE && g_groups_array[group_id].is_existing == TRUE)
     {
+        // store the new permissions
         g_groups_array[group_id].permissions = permissions;
         powers_changed = TRUE;
         permissions__refresh_all_client_powers();
         server_msg__administration__send_group_permissions_changed(group_id);
     }
+
+    // unlock the groups
     clib__unlock(&g_groups_global_rwlock_guard);
+
+    // apply the permission changes
     if (powers_changed == TRUE)
     {
         audio_channel__apply_permission_changes();
@@ -2050,6 +2378,7 @@ void client_msg__administration__process_rename_group(cJSON *json_root, uint64 s
     cJSON *name = cJSON_GetObjectItemCaseSensitive(message, "group_name");
     uint64 i = 0;
 
+    // check id and name
     if (cJSON_IsNumber(id) == FALSE ||
         id->valuedouble != (double)id->valueint ||
         id->valueint < 0 ||
@@ -2061,18 +2390,28 @@ void client_msg__administration__process_rename_group(cJSON *json_root, uint64 s
     {
         return;
     }
+
+    // lock the clients
     clib__write_lock(&g_clients_global_rwlock_guard);
+
+    // check the sender connection
     if (base__is_current_client_request(sender_client_id) == FALSE)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
     }
+
+    // lock the groups
     clib__write_lock(&g_groups_global_rwlock_guard);
+
+    // check the edit permission
     if (permissions__can_manage_group(&g_clients_array[sender_client_id], (uint64)id->valueint, PERMISSION_EDIT_GROUPS) == FALSE)
     {
         server_msg__administration__send_permission_denied_to_single_client(&g_clients_array[sender_client_id], permissions__name(PERMISSION_EDIT_GROUPS));
         goto label_rename_group_end;
     }
+
+    // refuse a taken name
     for (i = 0; i < MAX_GROUPS; i++)
     {
         if (i != (uint64)id->valueint && g_groups_array[i].is_existing == TRUE && clib__strcmp(g_groups_array[i].name, name->valuestring) == 0)
@@ -2080,10 +2419,15 @@ void client_msg__administration__process_rename_group(cJSON *json_root, uint64 s
             goto label_rename_group_end;
         }
     }
+
+    // copy the new name
     clib__memset(g_groups_array[id->valueint].name, 0, GROUP_MAX_NAME_LENGTH);
     clib__memcpy(g_groups_array[id->valueint].name, name->valuestring, clib__strlen(name->valuestring));
 label_rename_group_end:
+    // unlock the groups
     clib__unlock(&g_groups_global_rwlock_guard);
+
+    // send the permission updates
     server_msg__administration__send_permission_updates_to_all_clients();
     clib__unlock(&g_clients_global_rwlock_guard);
 }
@@ -2099,14 +2443,22 @@ void client_msg__administration__process_save_groups(cJSON *json_root, uint64 se
     boole allowed = FALSE;
 
     (void)json_root;
+
+    // lock the clients
     clib__write_lock(&g_clients_global_rwlock_guard);
+
+    // check the sender connection
     if (base__is_current_client_request(sender_client_id) == FALSE)
     {
         clib__unlock(&g_clients_global_rwlock_guard);
         return;
     }
+
+    // check the group permissions
     sender = &g_clients_array[sender_client_id];
     allowed = (boole)(g_server_settings.is_permission_system_enabled == TRUE && (permissions__is_allowed(sender, PERMISSION_CREATE_GROUPS) == TRUE || permissions__is_allowed(sender, PERMISSION_EDIT_GROUPS) == TRUE || permissions__is_allowed(sender, PERMISSION_DELETE_GROUPS) == TRUE || permissions__is_allowed(sender, PERMISSION_ASSIGN_GROUPS) == TRUE || permissions__is_allowed(sender, PERMISSION_REMOVE_GROUPS) == TRUE || permissions__is_allowed(sender, PERMISSION_EDIT_GROUP_PERMISSIONS) == TRUE || permissions__is_allowed(sender, PERMISSION_UPLOAD_ICONS) == TRUE || permissions__is_allowed(sender, PERMISSION_DELETE_ICONS) == TRUE));
+
+    // save the settings
     if (allowed == TRUE)
     {
         settings__save_server_settings_to_file();
@@ -2115,5 +2467,7 @@ void client_msg__administration__process_save_groups(cJSON *json_root, uint64 se
     {
         server_msg__administration__send_access_denied_to_single_client(sender, NULL_POINTER);
     }
+
+    // unlock the clients
     clib__unlock(&g_clients_global_rwlock_guard);
 }

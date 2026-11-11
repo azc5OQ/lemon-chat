@@ -42,12 +42,17 @@ desktop_thread_t *desktop_thread__start(desktop_thread_function_t function, void
 {
     desktop_thread_t *thread = calloc(1, sizeof(*thread));
 
+    // check the allocation
     if (!thread)
     {
         return NULL;
     }
+
+    // store function and context
     thread->function = function;
     thread->context = context;
+
+    // start the thread
     if (pthread_create(&thread->handle, NULL, _thread_internal__run, thread) != 0)
     {
         desktop_memory__erase(thread, sizeof(*thread));
@@ -64,6 +69,7 @@ desktop_thread_t *desktop_thread__start(desktop_thread_function_t function, void
  */
 void desktop_thread__join(desktop_thread_t *thread)
 {
+    // wait and free thread
     if (thread)
     {
         pthread_join(thread->handle, NULL);
@@ -80,6 +86,7 @@ desktop_mutex_t *desktop_mutex__create(void)
 {
     desktop_mutex_t *mutex = calloc(1, sizeof(*mutex));
 
+    // create the mutex
     if (mutex && pthread_mutex_init(&mutex->lock, NULL) != 0)
     {
         desktop_memory__erase(mutex, sizeof(*mutex));
@@ -96,6 +103,7 @@ desktop_mutex_t *desktop_mutex__create(void)
  */
 void desktop_mutex__destroy(desktop_mutex_t *mutex)
 {
+    // delete and free mutex
     if (mutex)
     {
         pthread_mutex_destroy(&mutex->lock);

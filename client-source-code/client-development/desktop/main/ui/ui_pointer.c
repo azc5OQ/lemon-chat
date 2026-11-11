@@ -29,6 +29,8 @@ static void _ui_pointer_internal__down(gui_node_t *node, int64 x, int64 y, int64
     boole row = FALSE;
     boole tree = FALSE;
     boole menu = FALSE;
+
+    // search the parent nodes
     while (parent)
     {
         row |= clib__strncmp(parent->klass, "member", 6) == 0 || clib__strncmp(parent->klass, "channel-row", 11) == 0;
@@ -36,10 +38,14 @@ static void _ui_pointer_internal__down(gui_node_t *node, int64 x, int64 y, int64
         menu |= clib__strcmp(parent->id, "context-menu") == 0 || clib__strcmp(parent->id, "context-submenu") == 0;
         parent = parent->parent;
     }
+
+    // close the context menu
     if (!menu)
     {
         desktop_ui_context__close();
     }
+
+    // check the mouse button
     if (button != 0)
     {
         if (button == 1 && clib__strcmp(node->id, "message-input") == 0)
@@ -52,6 +58,8 @@ static void _ui_pointer_internal__down(gui_node_t *node, int64 x, int64 y, int64
         }
         return;
     }
+
+    // call the original function
     if (g_pointer_down[node->type])
     {
         g_pointer_down[node->type](node, x, y, button);
@@ -81,6 +89,8 @@ static LRESULT CALLBACK _ui_pointer_internal__window(HWND window, UINT message, 
     int64 x = (SHORT)LOWORD(data);
     int64 y = (SHORT)HIWORD(data);
     (void)context;
+
+    // send the right press
     if (message == WM_RBUTTONDOWN)
     {
         g_pointer_pressed = TRUE;
@@ -89,6 +99,8 @@ static LRESULT CALLBACK _ui_pointer_internal__window(HWND window, UINT message, 
         scene__on_mouse_button(1, TRUE, x, y);
         return 0;
     }
+
+    // send the right release
     if (message == WM_RBUTTONUP)
     {
         g_pointer_pressed = FALSE;
@@ -99,17 +111,23 @@ static LRESULT CALLBACK _ui_pointer_internal__window(HWND window, UINT message, 
         scene__on_mouse_button(1, FALSE, x, y);
         return 0;
     }
+
+    // cancel a lost press
     if ((message == WM_CAPTURECHANGED || message == WM_CANCELMODE) && g_pointer_pressed)
     {
         g_pointer_pressed = FALSE;
         scene__cancel_press();
     }
+
+    // remove the window subclass
     if (message == WM_NCDESTROY)
     {
         g_pointer_pressed = FALSE;
         g_pointer_installed = FALSE;
         RemoveWindowSubclass(window, _ui_pointer_internal__window, identifier);
     }
+
+    // call the default procedure
     return DefSubclassProc(window, message, word, data);
 }
 
@@ -123,10 +141,14 @@ static BOOL CALLBACK _ui_pointer_internal__attach(HWND window, LPARAM context)
 {
     wchar_t name[64] = { 0 };
     (void)context;
+
+    // attach to the window
     if (GetClassNameW(window, name, 64) && lstrcmpW(name, L"GuiDemoWindowClass") == 0)
     {
         g_pointer_installed = SetWindowSubclass(window, _ui_pointer_internal__window, 1, 0) != 0;
     }
+
+    // erase the class name
     desktop_memory__erase(name, sizeof(name));
     return !g_pointer_installed;
 }
@@ -140,6 +162,8 @@ boole desktop_ui_pointer__initialize(void)
 {
     const widget_vtable_t *original = NULL_POINTER;
     int64 type = 0;
+
+    // replace every press function
     for (type = 0; type < GUI_NODE_TYPE__COUNT; type++)
     {
         original = widget_registry__get((gui_node_type_e)type);
@@ -152,6 +176,7 @@ boole desktop_ui_pointer__initialize(void)
         }
     }
 #ifdef _WIN32
+    // search the thread windows
     if (!g_pointer_installed)
     {
         EnumThreadWindows(GetCurrentThreadId(), _ui_pointer_internal__attach, 0);

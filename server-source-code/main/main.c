@@ -74,11 +74,14 @@ static void _main_internal__print_browser_addresses(boole is_stunnel_started)
     uint64 count = 0;
     uint64 index = 0;
 
+    // HTTP server is off
     if (g_server_settings.is_client_http_enabled == FALSE)
     {
         printf("  %s  browser page       hosted separately\n", g_mark_info);
         return;
     }
+
+    // print the HTTPS address
     if (g_server_settings.is_stunnel_enabled == TRUE && g_server_settings.is_https_enabled == TRUE)
     {
         if (is_stunnel_started == FALSE)
@@ -100,12 +103,15 @@ static void _main_internal__print_browser_addresses(boole is_stunnel_started)
         return;
     }
 
+    // print the HTTP addresses
     printf("  %s  browser (this PC)  http://127.0.0.1:%lld/\n", g_mark_info, g_server_settings.http_port);
     count = ip_tools__get_local_ipv4_addresses(addresses, sizeof(addresses) / sizeof(addresses[0]));
     for (index = 0; index < count; index++)
     {
         printf("  %s  browser (network)  http://%s:%lld/\n", g_mark_info, addresses[index], g_server_settings.http_port);
     }
+
+    // print the public address
     if (g_server_settings.is_tailscale_funnel_enabled == TRUE)
     {
         tailscale__print_addresses();
@@ -144,6 +150,7 @@ static void _main_internal__print_startup_summary(void)
     }
 #endif
 
+    // print the title
     printf("\n");
     printf("  %s%s%s\n", g_color_banner, "lemon-chat is running - services and ports", g_color_reset);
     printf("\n");
@@ -151,7 +158,7 @@ static void _main_internal__print_startup_summary(void)
     // the websocket listener is always running
     printf("  %s  %-18s port %lld\n", g_mark_ok, "websocket (ws)", g_server_settings.websocket_port);
 
-    // Another program can provide WSS even when the bundled stunnel is disabled.
+    // another program can provide WSS even when the bundled stunnel is disabled
     if (g_server_settings.is_tailscale_funnel_enabled == TRUE)
     {
         if (tailscale__is_ready() == TRUE)
@@ -180,9 +187,10 @@ static void _main_internal__print_startup_summary(void)
         printf("  %s  %-18s not enabled\n", g_mark_off, "websocket (wss)");
     }
 
-    // The bundled STUN/TURN listener uses UDP port 3478 for WebRTC connections.
+    // the bundled STUN/TURN listener uses UDP port 3478 for WebRTC connections
     printf("  %s  %-18s port 3478 (udp)\n", g_mark_ok, "webrtc + stun/turn");
 
+    // print the WireGuard mode
     if (g_server_settings.is_wireguard_mode_active == TRUE)
     {
         printf("  %s  %-18s on, public address %s, udp %lld-%lld forwarded by the router\n", g_mark_ok, "wireguard mode", g_server_settings.webrtc_public_address, (int64)g_server_settings.webrtc_port_range_begin, (int64)g_server_settings.webrtc_port_range_end);
@@ -198,7 +206,7 @@ static void _main_internal__print_startup_summary(void)
         printf("  %s  %-18s not enabled\n", g_mark_off, "http server");
     }
 
-    // Report the bundled stunnel program separately from the WSS connection.
+    // report the bundled stunnel program separately from the WSS connection
     if (is_stunnel_started == TRUE)
     {
         printf("  %s  %-18s started\n", g_mark_ok, "stunnel");
@@ -221,6 +229,7 @@ static void _main_internal__print_startup_summary(void)
         printf("  %s  %-18s not enabled\n", g_mark_off, "stunnel");
     }
 
+    // print the HTTPS state
     if (g_server_settings.is_client_http_enabled == TRUE && g_server_settings.is_stunnel_enabled == TRUE && g_server_settings.is_https_enabled == TRUE)
     {
         if (is_stunnel_started == TRUE)
@@ -233,11 +242,14 @@ static void _main_internal__print_startup_summary(void)
         }
     }
 
+    // print the ready message
     printf("\n");
     printf("  ============================================================\n");
     printf("  %s%s%s\n", g_color_banner, " your chat server is ready", g_color_reset);
     printf("  ============================================================\n");
     _main_internal__print_browser_addresses(is_stunnel_started);
+
+    // print the admin password
     if (is_stunnel_started == TRUE && g_server_settings.is_client_http_enabled == TRUE && g_server_settings.is_https_enabled == TRUE && g_server_settings.stunnel_domain[0] != 0)
     {
         if (g_first_run_admin_password[0] != 0)
@@ -275,15 +287,19 @@ static void _main_internal__log_handler(juice_log_level_t level, const char *mes
     struct tm lt;
     char buffer[32] = { 0 };
 
+    // write the time text
     clib__null_memory(buffer, sizeof(buffer));
     if (localtime_r(&t, &lt) == NULL_POINTER || strftime(buffer, 32, "%Y-%m-%d %H:%M:%S", &lt) == 0)
     {
         buffer[0] = '\0';
     }
+
+    // print the log line
     fprintf(file, "%s %-7s %s\n", buffer, log_level_to_string(level), message);
     fflush(file);
 #endif
 
+    // write to the log
     DBG_VIOLET log_info("%s %s %s", "[violet]", message, "\n");
 }
 
@@ -299,6 +315,8 @@ static void *_main_internal__start_stun_turn_listener_for_webrtc_datachannel(voi
     juice_server_t *server = NULL_POINTER;
 
     (void)argument;
+
+    // set the default options
     violet_options_init(&vopts);
 
     // printf("%s", "[important] start_stun_turn_listener_for_webrtc_datachannel started \n");
@@ -320,11 +338,14 @@ static void *_main_internal__start_stun_turn_listener_for_webrtc_datachannel(voi
         goto error;
     }
 
+    // set the log settings
     juice_set_log_handler(_main_internal__log_handler);
     juice_set_log_level(vopts.log_level);
 
+    // set the port
     vopts.config.port = 3478;
 
+    // create the STUN server
     server = juice_server_create(&vopts.config);
     if (server == NULL_POINTER)
     {
@@ -352,6 +373,7 @@ error:
  */
 static void _main_internal__print_debug_information(void)
 {
+    // print active debug switches
     DBG_DLLMAIN printf("%s", "DBG_DLLMAIN active \n");
     DBG_CLIENT_MESSAGE printf("%s", "DBG_CLIENT_MESSAGE active \n");
     DBG_CLIENT_MESSAGE_MAIN_FUNCTION printf("%s", "DBG_CLIENT_MESSAGE_MAIN_FUNCTION active \n");
@@ -388,11 +410,12 @@ static void _main_internal__init_terminal(void)
 
 #ifdef WIN32
     {
+        // read the output handle
         stdout_handle = GetStdHandle(STD_OUTPUT_HANDLE);
         console_mode = 0;
 
         // GetConsoleMode only succeeds for a real console (not a redirected file/pipe), which also keeps
-        // escape codes out of redirected output. ENABLE_VIRTUAL_TERMINAL_PROCESSING turns on ANSI.
+        // escape codes out of redirected output. ENABLE_VIRTUAL_TERMINAL_PROCESSING turns on ANSI
         if (stdout_handle != INVALID_HANDLE_VALUE && GetConsoleMode(stdout_handle, &console_mode) != 0)
         {
             if (SetConsoleMode(stdout_handle, console_mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING) != 0)
@@ -402,9 +425,11 @@ static void _main_internal__init_terminal(void)
         }
     }
 #else
+    // check for a terminal
     use_color = (isatty(1) != 0) ? TRUE : FALSE;
 #endif
 
+    // set the colored marks
     if (use_color == TRUE)
     {
         g_mark_info = "\033[1;36m[*]\033[0m"; // cyan
@@ -430,6 +455,7 @@ static void _main_internal__log_lock(bool lock, void *udata)
 {
     (void)udata;
 
+    // lock or unlock mutex
     if (lock)
     {
         pthread_mutex_lock(&g_log_mutex);
@@ -469,6 +495,7 @@ int main(void)
     char client_html_path[640] = { 0 };
     FILE *client_html_file = NULL_POINTER;
 
+    // store the start time
     base__start_server_uptime();
 
     // flush logs line-by-line even when stdout/stderr are piped (tee / file);
@@ -479,11 +506,13 @@ int main(void)
     // serialize log output so threads cannot interleave their lines on the console
     log_set_lock(_main_internal__log_lock, NULL_POINTER);
 
+    // set colors, print banner
     _main_internal__init_terminal();
     _main_internal__print_banner();
     DBG_CONNECTION_PROGRESS puts("Connection timing logs enabled; message contents and keys are not logged.");
 
 #ifdef DEBUG_ACTIVE
+    // print the debug switches
     printf("%s", "this is debug build \n");
     _main_internal__print_debug_information();
 #endif
@@ -491,6 +520,7 @@ int main(void)
     // run this so rand() gives random output every time
     srand(time(0));
 
+    // create the locks
     clib__rwlock_init(&g_clients_global_rwlock_guard);
     clib__rwlock_init(&g_webrtc_peers_rwlock_guard);
     clib__rwlock_init(&g_channels_global_rwlock_guard);
@@ -498,23 +528,29 @@ int main(void)
     clib__rwlock_init(&g_icons_global_rwlock_guard);
     clib__rwlock_init(&g_bans_global_rwlock_guard);
 
-    // g_chat_message_id_mutex already uses PTHREAD_MUTEX_INITIALIZER in base.c.
+    // g_chat_message_id_mutex already uses PTHREAD_MUTEX_INITIALIZER in base.c
 
     memorymanager__init();
 
+    // allocate the password buffer
     g_first_run_admin_password = calloc(ADMIN_PASSWORD_MAX_LENGTH, 1);
     if (g_first_run_admin_password == NULL_POINTER)
     {
         exit(EXIT_FAILURE);
     }
+
+    // load the settings
     settings__load();
     login_admission__set_limit((uint64)g_server_settings.max_concurrent_logins);
 
+    // check the channel count
     if (g_server_settings.max_channel_count < 1 || g_server_settings.max_channel_count > MAX_CHANNEL_COUNT || g_server_settings.max_channel_count > SIZE_MAX / sizeof(channel_t))
     {
         fprintf(stderr, "The configured channel array cannot be represented on this platform.\n");
         exit(EXIT_FAILURE);
     }
+
+    // allocate the arrays
     g_clients_array = (client_t *)memorymanager__allocate(sizeof(client_t) * g_server_settings.max_client_count, MEMALLOC_CLIENTS_ARRAY);
     g_channel_array = (channel_t *)memorymanager__allocate(sizeof(channel_t) * g_server_settings.max_channel_count, MEMALLOC_CHANNELS_ARRAY);
     g_client_stored_data = (client_stored_data_t *)memorymanager__allocate(sizeof(client_stored_data_t) * MAX_CLIENT_STORED_DATA, MEMALLOC_CLIENT_STORED_DATA_ARRAY);
@@ -528,8 +564,11 @@ int main(void)
     {
         g_offline_messages = (offline_chat_message_t *)memorymanager__allocate(sizeof(offline_chat_message_t) * MAX_OFFLINE_MESSAGES, MEMALLOC_OFFLINE_MESSAGES_ARRAY);
     }
+
+    // allocate the peers array
     g_webrtc_peers_array = (webrtc_peer_t *)memorymanager__allocate(sizeof(webrtc_peer_t) * g_server_settings.max_client_count, MEMALLOC_WEBRTC_PEERS);
 
+    // check the allocations
     status = g_clients_array == NULL_POINTER || g_channel_array == NULL_POINTER || g_client_stored_data == NULL_POINTER || g_icons_array == NULL_POINTER || g_groups_array == NULL_POINTER || g_ban_array == NULL_POINTER || g_webrtc_peers_array == NULL_POINTER || (g_server_settings.is_offline_messaging_allowed == TRUE && g_offline_messages == NULL_POINTER);
     if (status || ws_init_client_slots((uint)g_server_settings.max_client_count * WEBSOCKET_CONNECTIONS_PER_CLIENT) != 0)
     {
@@ -538,24 +577,29 @@ int main(void)
         exit(EXIT_FAILURE);
     }
 
+    // warn about audio settings
     if ((g_server_settings.is_voice_chat_active == TRUE || g_server_settings.is_music_bot_audio_active == TRUE) && g_server_settings.is_audio_over_websocket_allowed == FALSE && g_server_settings.is_audio_over_webrtc_allowed == FALSE)
     {
         printf("Warning: audio is enabled but no audio connection is allowed (is_audio_over_websocket_allowed and is_audio_over_webrtc_allowed are both false in server_settings.json); no client can send or receive audio.\n");
     }
 
+    // load the stored state
     settings__init_channel_list();
     settings__init_groups_and_icons();
     settings__load_persisted_state();
+
+    // create the default groups
     if (settings__ensure_default_groups() == FALSE && g_server_settings.is_permission_system_enabled == TRUE)
     {
         fprintf(stderr, "Cannot create the Guest group because all server group slots are in use.\n");
         return EXIT_FAILURE;
     }
 
-    // Resolve the root even when HTTP starts disabled, for later live enabling.
-    // Startup diagnostics still precede the worker threads.
+    // resolve the root even when HTTP starts disabled, for later live enabling.
+    // startup diagnostics still precede the worker threads
 
     {
+        // choose the webroot folder
         if (g_server_settings.http_webroot[0] != 0)
         {
             clib__string_copy(http_webroot_resolved, sizeof(http_webroot_resolved), g_server_settings.http_webroot);
@@ -600,20 +644,24 @@ int main(void)
     // launch stunnel (on the main thread) and print the startup summary BEFORE
     // any worker thread is started, so they cannot interleave on the console with thread log output
     stunnel__launch();
+
+    // configure the Tailscale Funnel
     status = tailscale__configure();
     if (status == FALSE && g_server_settings.is_tailscale_funnel_enabled == TRUE)
     {
         printf("%s Funnel is not verified. Forwarded client IP headers will be ignored.\n", g_mark_warn);
     }
 
+    // print the startup summary
     _main_internal__print_startup_summary();
 
 #ifndef DEBUG_ACTIVE
-    // Console writes can block network threads on a slow Windows terminal.
-    // Release builds show the startup summary, then stop writing runtime logs.
+    // console writes can block network threads on a slow Windows terminal.
+    // release builds show the startup summary, then stop writing runtime logs
     log_set_quiet(true);
 #endif
 
+    // start the chat threads
     status = util__start_detached_thread(chat_websocket__listen_thread, NULL_POINTER);
     if (status == TRUE)
     {
@@ -625,6 +673,7 @@ int main(void)
         return EXIT_FAILURE;
     }
 
+    // start the HTTP server
     http_server__set_https_redirect(g_server_settings.is_stunnel_enabled && g_server_settings.is_https_enabled, g_server_settings.https_port);
     http_server__initialize(g_server_settings.http_port, http_webroot_resolved);
     if (!http_server__set_mode(g_server_settings.is_client_http_enabled, g_server_settings.is_client_http_blank_when_disabled))
@@ -641,6 +690,7 @@ int main(void)
         return EXIT_FAILURE;
     }
 
+    // read input until closed
     for (;;)
     {
         clib__null_memory(input, sizeof(input));
@@ -651,8 +701,10 @@ int main(void)
         clib__string_trim_newline(input, sizeof(input));
     }
 
+    // log the closed input
     log_info("%s", "stdin closed, console input is off");
 
+    // keep the process running
     for (;;)
     {
         sleep(3600);

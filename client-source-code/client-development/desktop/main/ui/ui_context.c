@@ -116,6 +116,8 @@ static int64 _ui_context_internal__index(gui_node_t *node)
 static const desktop_client_t *_ui_context_internal__member(void)
 {
     int64 index = 0;
+
+    // find the target client
     for (index = 0; g_context_view->connected && index < g_context_view->client_count; index++)
     {
         if (g_context_view->clients[index].id == g_context_target.peer && g_context_view->clients[index].serial == g_context_target.serial && g_context_view->clients[index].channel == g_context_target.channel)
@@ -137,12 +139,17 @@ static boole _ui_context_internal__allowed(int64 kind, const desktop_client_t *m
     const desktop_channel_t *channel = g_context_is_channel ? _ui_context_internal__channel() : NULL;
     boole remote = member && member->id != g_context_view->local_id;
     uint64 access = remote && !member->music && !member->idle && !g_context_view->idle && member->access_known ? member->access : 0;
+
+    // target is a channel
     if (g_context_is_channel)
     {
+        // refuse a missing channel
         if (!channel)
         {
             return FALSE;
         }
+
+        // check the channel action
         switch (kind)
         {
         case CONTEXT_CHANNEL_CREATE:
@@ -159,10 +166,14 @@ static boole _ui_context_internal__allowed(int64 kind, const desktop_client_t *m
             return FALSE;
         }
     }
+
+    // refuse a missing member
     if (!member)
     {
         return FALSE;
     }
+
+    // check the member action
     switch (kind)
     {
     case CONTEXT_RENAME:
@@ -204,6 +215,8 @@ void desktop_ui_context__close(void)
 {
     gui_node_t *node = scene__find_by_id("context-menu");
     gui_node_t *submenu = scene__find_by_id("context-submenu");
+
+    // hide both menus
     if (node)
     {
         clib__string_copy(node->klass, sizeof(node->klass), "context-menu hidden");
@@ -212,6 +225,8 @@ void desktop_ui_context__close(void)
     {
         clib__string_copy(submenu->klass, sizeof(submenu->klass), "context-menu hidden");
     }
+
+    // erase the menu data
     desktop_memory__erase(g_menus, sizeof(g_menus));
     desktop_memory__erase(&g_context_target, sizeof(g_context_target));
     desktop_memory__erase(&g_context_channel, sizeof(g_context_channel));
@@ -226,6 +241,8 @@ void desktop_ui_context__close(void)
 static const desktop_channel_t *_ui_context_internal__channel(void)
 {
     int64 index = 0;
+
+    // find the target channel
     for (index = 0; g_context_view->connected && index < g_context_view->channel_count; index++)
     {
         if (g_context_view->channels[index].id == g_context_channel.id && g_context_view->channels[index].revision == g_context_channel.revision)
@@ -250,28 +267,42 @@ void desktop_ui_context__channel(const desktop_channel_t *channel, int64 x, int6
     gui_node_t *node = scene__find_by_id("context-menu");
     desktop_channel_request_t request = { 0 };
     int64 index = 0;
+
+    // close the open menu
     desktop_ui_context__close();
+
+    // check arguments
     if (!channel || !node || !g_context_view->connected)
     {
         return;
     }
+
+    // store the target channel
     g_context_is_channel = TRUE;
     g_context_channel = *channel;
     g_context_revision = g_context_view->tree_revision;
+
+    // set the menu position
     g_menus[0].open = TRUE;
     g_menus[0].x = (float)x;
     g_menus[0].y = (float)y;
     g_menus[0].count = channel->id == 0 ? 7 : 5;
     g_menus[0].hover = -1;
+
+    // fill the menu entries
     for (index = 0; index < g_menus[0].count; index++)
     {
         g_menus[0].entries[index].value = kinds[index];
         clib__string_copy(g_menus[0].entries[index].label, sizeof(g_menus[0].entries[index].label), labels[index]);
         g_menus[0].entries[index].enabled = _ui_context_internal__allowed(kinds[index], NULL);
     }
+
+    // request channel access
     request.action = DESKTOP_CHANNEL_ACCESS;
     request.channel = *channel;
     desktop_session__channel_request(g_context_session, &request);
+
+    // show the menu
     node->scroll_y = node->scroll_y_target = 0;
     clib__string_copy(node->klass, sizeof(node->klass), "context-menu");
     scene__set_focus(node);
@@ -294,20 +325,30 @@ void desktop_ui_context__open(const desktop_client_t *member, int64 x, int64 y)
     int64 local_items[6] = { CONTEXT_RENAME, CONTEXT_AVATAR_SET, CONTEXT_AVATAR_DELETE, CONTEXT_SERVER_GROUPS, CONTEXT_CHANNEL_GROUPS, CONTEXT_INFO };
     int64 idle_items[10] = { CONTEXT_CALL, CONTEXT_POKE, CONTEXT_MOVE, CONTEXT_MUTE, CONTEXT_KICK_CHANNEL, CONTEXT_STOP, CONTEXT_KICK, CONTEXT_BAN, CONTEXT_SERVER_GROUPS, CONTEXT_CHANNEL_GROUPS };
     int64 music_items[5] = { CONTEXT_MUSIC_MANAGE, CONTEXT_MUTE_LOCAL, CONTEXT_VOLUME, CONTEXT_MUSIC_DELETE, CONTEXT_MUSIC_RENAME };
+
+    // close the open menu
     desktop_ui_context__close();
+
+    // check arguments
     if (!member || !node || !g_context_view->connected)
     {
         return;
     }
+
+    // store the target client
     g_context_target.peer = member->id;
     g_context_target.serial = member->serial;
     g_context_target.channel = member->channel;
     g_context_revision = g_context_view->tree_revision;
+
+    // set the menu position
     g_menus[0].open = TRUE;
     g_menus[0].x = (float)x;
     g_menus[0].y = (float)y;
     g_menus[0].hover = -1;
     g_menus[0].count = member->id == g_context_view->local_id ? 6 : member->music ? 5 : member->idle ? 10 : CONTEXT_RENAME;
+
+    // fill the menu entries
     for (index = 0; index < g_menus[0].count; index++)
     {
         kind = member->id == g_context_view->local_id ? local_items[index] : member->music ? music_items[index] : member->idle ? idle_items[index] : index;
@@ -315,6 +356,8 @@ void desktop_ui_context__open(const desktop_client_t *member, int64 x, int64 y)
         clib__string_copy(g_menus[0].entries[index].label, sizeof(g_menus[0].entries[index].label), kind == CONTEXT_MUTE_LOCAL && member->muted ? "unmute locally" : kind == CONTEXT_IGNORE && member->ignored ? "stop ignoring" : labels[kind]);
         g_menus[0].entries[index].enabled = _ui_context_internal__allowed(kind, member);
     }
+
+    // show the menu
     node->scroll_y = node->scroll_y_target = 0;
     clib__string_copy(node->klass, sizeof(node->klass), "context-menu");
     desktop_ui_actions__select(member);
@@ -339,32 +382,46 @@ static void _ui_context_internal__submenu(int64 kind)
     int64 limit = kind == CONTEXT_SERVER_GROUPS ? DESKTOP_TREE_GROUPS : kind == CONTEXT_CHANNEL_GROUPS ? DESKTOP_TREE_CHANNEL_GROUPS : kind == CONTEXT_MOVE ? g_context_view->channel_count : 6;
     int64 durations[6] = { 0, 60, 300, 900, 3600, 86400 };
     const char *duration_names[6] = { "remove mute", "1 minute", "5 minutes", "15 minutes", "1 hour", "24 hours" };
+
+    // check member and nodes
     if (!member || !node || !parent || !_ui_context_internal__allowed(kind, member))
     {
         return;
     }
+
+    // reset the submenu
     desktop_memory__erase(menu, sizeof(*menu));
     menu->kind = kind;
     menu->hover = -1;
     menu->open = TRUE;
     menu->x = parent->bounds.x + parent->bounds.w - 1;
+
+    // set the vertical position
     for (index = 0; index < g_menus[0].count && g_menus[0].entries[index].value != kind; index++)
     {
-        // Find the actual parent row; the local-client menu has a different ordering.
+        // find the actual parent row; the local-client menu has a different ordering
     }
     menu->y = parent->bounds.y + 4 * scene__scale() + (float)index * _ui_context_internal__row_height(parent) * scene__scale() - parent->scroll_y;
+
+    // fill the submenu entries
     for (index = 0; index < limit; index++)
     {
+        // skip missing groups
         group = kind == CONTEXT_SERVER_GROUPS ? &g_context_view->groups[index] : kind == CONTEXT_CHANNEL_GROUPS ? &g_context_view->channel_groups[index] : NULL;
         if (group && (!group->exists || (kind == CONTEXT_CHANNEL_GROUPS && index == 0)))
         {
             continue;
         }
+
+        // add a new entry
         entry = &menu->entries[menu->count++];
         entry->value = index;
         entry->icon = -1;
+
+        // fill by menu kind
         if (group)
         {
+            // fill a group entry
             entry->checked = kind == CONTEXT_CHANNEL_GROUPS ? member->channel_group == index : (member->groups[index / 64] & (1ULL << (index % 64))) != 0;
             entry->enabled = desktop_session__allows(g_context_view, member, kind == CONTEXT_CHANNEL_GROUPS ? DESKTOP_ACTION_CHANNEL_GROUP : entry->checked ? DESKTOP_ACTION_GROUP_REMOVE : DESKTOP_ACTION_GROUP_ADD, kind == CONTEXT_CHANNEL_GROUPS && entry->checked ? 0 : index);
             entry->icon = group->icon;
@@ -373,23 +430,29 @@ static void _ui_context_internal__submenu(int64 kind)
         }
         else if (kind == CONTEXT_MOVE)
         {
+            // fill a channel entry
             entry->value = g_context_view->channels[index].id;
             entry->enabled = entry->value != member->channel;
             clib__string_copy(entry->label, sizeof(entry->label), g_context_view->channels[index].name);
         }
         else
         {
+            // fill a duration entry
             entry->value = durations[index];
             entry->enabled = TRUE;
             clib__string_copy(entry->label, sizeof(entry->label), duration_names[index]);
         }
     }
+
+    // no groups to show
     if (!menu->count)
     {
         menu->count = 1;
         menu->entries[0].value = -1;
         clib__string_copy(menu->entries[0].label, sizeof(menu->entries[0].label), "No groups available");
     }
+
+    // show the submenu
     node->scroll_y = node->scroll_y_target = 0;
     clib__string_copy(node->klass, sizeof(node->klass), "context-menu");
 }
@@ -408,6 +471,8 @@ static void _ui_context_internal__activate(int64 menu, int64 row)
     gui_node_t *node = NULL_POINTER;
     int64 kind = menu ? g_menus[1].kind : row >= 0 && row < g_menus[0].count ? g_menus[0].entries[row].value : -1;
     const char *action_ids[CONTEXT_COUNT] = { "", "", "", "", "", "", "member-poke", "", "", "member-kick-channel", "member-stop-stream", "member-kick", "member-ban" };
+
+    // run a channel action
     if (g_context_is_channel && !menu && row >= 0 && row < g_menus[0].count && _ui_context_internal__allowed(kind, NULL))
     {
         if (kind == CONTEXT_CHANNEL_JOIN && g_context_join)
@@ -426,25 +491,36 @@ static void _ui_context_internal__activate(int64 menu, int64 row)
         {
             desktop_ui_channels__open(g_context_channel.id, kind == CONTEXT_CHANNEL_CREATE ? DESKTOP_CHANNEL_CREATE : kind == CONTEXT_CHANNEL_DELETE ? DESKTOP_CHANNEL_REMOVE : DESKTOP_CHANNEL_EDIT);
         }
+
+        // close the menu later
         g_context_pending_close = TRUE;
         g_context_changed = TRUE;
         return;
     }
+
+    // no other channel actions
     if (g_context_is_channel)
     {
         return;
     }
+
+    // check the chosen entry
     if (!member || menu < 0 || menu > 1 || row < 0 || row >= g_menus[menu].count || !g_menus[menu].entries[row].enabled || !_ui_context_internal__allowed(kind, member))
     {
         return;
     }
+
+    // open a submenu
     if (!menu && (kind == CONTEXT_SERVER_GROUPS || kind == CONTEXT_CHANNEL_GROUPS || kind == CONTEXT_MOVE || kind == CONTEXT_MUTE))
     {
         _ui_context_internal__submenu(kind);
         return;
     }
+
+    // run the member action
     if (menu)
     {
+        // send the submenu action
         entry = &g_menus[menu].entries[row];
         action.catalog_revision = g_context_view->tree_revision;
         action.value = entry->value;
@@ -457,6 +533,7 @@ static void _ui_context_internal__activate(int64 menu, int64 row)
     }
     else if (kind == CONTEXT_RENAME)
     {
+        // click the rename node
         node = scene__find_by_id("profile-rename");
         if (node)
         {
@@ -471,14 +548,19 @@ static void _ui_context_internal__activate(int64 menu, int64 row)
     }
     else if (kind == CONTEXT_VOLUME)
     {
+        // store the volume target
         g_context_volume_target = g_context_target;
         g_context_volume_target.type = DESKTOP_ACTION_VOLUME;
+
+        // show the volume panel
         node = scene__find_by_id("member-volume-panel");
         if (node)
         {
             clib__string_copy(node->klass, sizeof(node->klass), "column panel");
             desktop_ui_layout__raise(node);
         }
+
+        // set name and value
         node = scene__find_by_id("member-volume-name");
         if (node)
         {
@@ -489,6 +571,8 @@ static void _ui_context_internal__activate(int64 menu, int64 row)
         {
             node->value = (float)(100 + member->volume_offset);
         }
+
+        // update the volume label
         _ui_context_internal__volume_change(NULL);
     }
     else if (kind == CONTEXT_MUTE_LOCAL)
@@ -503,6 +587,8 @@ static void _ui_context_internal__activate(int64 menu, int64 row)
     {
         desktop_ui_actions__activate(action_ids[kind]);
     }
+
+    // close the menu later
     g_context_pending_close = TRUE;
     g_context_changed = TRUE;
 }
@@ -516,6 +602,8 @@ static void _ui_context_internal__click(gui_event_t *event)
 {
     int64 menu = _ui_context_internal__index(event ? event->sender : NULL);
     int64 row = -1;
+
+    // run the clicked row
     if (menu >= 0 && event->mouse.button == 0)
     {
         row = (int64)(((float)event->mouse.y - event->sender->bounds.y + event->sender->scroll_y - 4 * scene__scale()) / (_ui_context_internal__row_height(event->sender) * scene__scale()));
@@ -550,14 +638,20 @@ static void _ui_context_internal__layout(gui_node_t *node, float x, float y, flo
     int64 viewport_h = 0;
     gui_node_t *parent = scene__find_by_id("context-menu");
     float desired_x = 0;
+
+    // use the original layout
     if (index < 0)
     {
         g_context_original.layout(node, x, y, width, height, scale);
         return;
     }
+
+    // calculate the menu size
     scene__viewport(&viewport_w, &viewport_h);
     node->bounds.w = clib__fmaxf(1, clib__fminf(clib__fmaxf(180, node->resolved.size_w) * scale, (float)viewport_w - 16 * scale));
     node->bounds.h = clib__fmaxf(1, clib__fminf((8 + _ui_context_internal__row_height(node) * g_menus[index].count) * scale, (float)viewport_h - 16 * scale));
+
+    // calculate the menu position
     desired_x = g_menus[index].x;
     if (index && parent && desired_x + node->bounds.w > viewport_w - 8 * scale)
     {
@@ -565,6 +659,8 @@ static void _ui_context_internal__layout(gui_node_t *node, float x, float y, flo
     }
     node->bounds.x = clib__fmaxf(8 * scale, clib__fminf(desired_x, viewport_w - node->bounds.w - 8 * scale));
     node->bounds.y = clib__fmaxf(8 * scale, clib__fminf(g_menus[index].y, viewport_h - node->bounds.h - 8 * scale));
+
+    // set content and scroll
     node->content_w = node->bounds.w;
     node->content_h = (8 + _ui_context_internal__row_height(node) * g_menus[index].count) * scale;
     node->scroll_y = node->scroll_y_target = clib__fmaxf(0, clib__fminf(node->scroll_y_target, node->content_h - node->bounds.h));
@@ -582,8 +678,11 @@ static void _ui_context_internal__glyph(int64 kind, gui_rect_t rect, gui_color_t
     float x = rect.x;
     float y = rect.y;
     float unit = rect.w / 20;
+
+    // choose the symbol
     if (kind == CONTEXT_VOLUME)
     {
+        // symbol for volume
         renderer__submit_rect((gui_rect_t){ x + 2 * unit, y + 8 * unit, 4 * unit, 5 * unit }, color, unit);
         renderer__submit_triangle((gui_vec2_t){ x + 5 * unit, y + 10.5f * unit }, (gui_vec2_t){ x + 11 * unit, y + 4 * unit }, (gui_vec2_t){ x + 11 * unit, y + 17 * unit }, color);
         renderer__submit_line((gui_vec2_t){ x + 15 * unit, y + 7 * unit }, (gui_vec2_t){ x + 15 * unit, y + 14 * unit }, 1.5f * unit, color);
@@ -591,6 +690,7 @@ static void _ui_context_internal__glyph(int64 kind, gui_rect_t rect, gui_color_t
     }
     else if (kind == CONTEXT_POKE)
     {
+        // symbol for poke
         renderer__submit_rect((gui_rect_t){ x + 3 * unit, y + 3 * unit, 14 * unit, 12 * unit }, color, 3 * unit);
         renderer__submit_triangle((gui_vec2_t){ x + 5 * unit, y + 13 * unit }, (gui_vec2_t){ x + 5 * unit, y + 19 * unit }, (gui_vec2_t){ x + 11 * unit, y + 13 * unit }, color);
         renderer__submit_line((gui_vec2_t){ x + 10 * unit, y + 5 * unit }, (gui_vec2_t){ x + 10 * unit, y + 9 * unit }, 1.5f * unit, background);
@@ -598,11 +698,13 @@ static void _ui_context_internal__glyph(int64 kind, gui_rect_t rect, gui_color_t
     }
     else if (kind == CONTEXT_RENAME || kind == CONTEXT_CHANNEL_EDIT || kind == CONTEXT_MUSIC_RENAME)
     {
+        // symbol for rename, edit
         renderer__submit_line((gui_vec2_t){ x + 5 * unit, y + 15 * unit }, (gui_vec2_t){ x + 15 * unit, y + 5 * unit }, 3 * unit, color);
         renderer__submit_triangle((gui_vec2_t){ x + 2 * unit, y + 18 * unit }, (gui_vec2_t){ x + 3 * unit, y + 13 * unit }, (gui_vec2_t){ x + 7 * unit, y + 17 * unit }, color);
     }
     else if (kind == CONTEXT_SERVER_GROUPS || kind == CONTEXT_CHANNEL_GROUPS)
     {
+        // symbol for groups
         renderer__submit_circle((gui_vec2_t){ x + 7 * unit, y + 5 * unit }, 3 * unit, color);
         renderer__submit_circle((gui_vec2_t){ x + 15 * unit, y + 6 * unit }, 2.5f * unit, color);
         renderer__submit_rect((gui_rect_t){ x + 2 * unit, y + 10 * unit, 10 * unit, 7 * unit }, color, 3 * unit);
@@ -610,6 +712,7 @@ static void _ui_context_internal__glyph(int64 kind, gui_rect_t rect, gui_color_t
     }
     else if (kind == CONTEXT_MOVE || kind == CONTEXT_KICK || kind == CONTEXT_KICK_CHANNEL || kind == CONTEXT_CHANNEL_JOIN)
     {
+        // symbol for move, kick
         renderer__submit_line((gui_vec2_t){ x + 3 * unit, y + 3 * unit }, (gui_vec2_t){ x + 3 * unit, y + 17 * unit }, 1.5f * unit, color);
         renderer__submit_line((gui_vec2_t){ x + 6 * unit, y + 10 * unit }, (gui_vec2_t){ x + 18 * unit, y + 10 * unit }, 1.5f * unit, color);
         renderer__submit_line((gui_vec2_t){ x + 13 * unit, y + 5 * unit }, (gui_vec2_t){ x + 18 * unit, y + 10 * unit }, 1.5f * unit, color);
@@ -617,11 +720,13 @@ static void _ui_context_internal__glyph(int64 kind, gui_rect_t rect, gui_color_t
     }
     else if (kind == CONTEXT_CHANNEL_CREATE)
     {
+        // symbol for new channel
         renderer__submit_line((gui_vec2_t){ x + 10 * unit, y + 3 * unit }, (gui_vec2_t){ x + 10 * unit, y + 17 * unit }, 2 * unit, color);
         renderer__submit_line((gui_vec2_t){ x + 3 * unit, y + 10 * unit }, (gui_vec2_t){ x + 17 * unit, y + 10 * unit }, 2 * unit, color);
     }
     else if (kind == CONTEXT_CHANNEL_DELETE || kind == CONTEXT_AVATAR_DELETE || kind == CONTEXT_MUSIC_DELETE)
     {
+        // symbol for delete
         renderer__submit_line((gui_vec2_t){ x + 3 * unit, y + 5 * unit }, (gui_vec2_t){ x + 17 * unit, y + 5 * unit }, 1.5f * unit, color);
         renderer__submit_line((gui_vec2_t){ x + 7 * unit, y + 2 * unit }, (gui_vec2_t){ x + 13 * unit, y + 2 * unit }, 1.5f * unit, color);
         renderer__submit_rect((gui_rect_t){ x + 5 * unit, y + 7 * unit, 10 * unit, 11 * unit }, color, unit);
@@ -630,6 +735,7 @@ static void _ui_context_internal__glyph(int64 kind, gui_rect_t rect, gui_color_t
     }
     else if (kind == CONTEXT_AVATAR_SET)
     {
+        // symbol for avatar
         renderer__submit_rect((gui_rect_t){ x + 2 * unit, y + 3 * unit, 16 * unit, 14 * unit }, color, unit);
         renderer__submit_rect((gui_rect_t){ x + 3.5f * unit, y + 4.5f * unit, 13 * unit, 11 * unit }, background, 0);
         renderer__submit_circle((gui_vec2_t){ x + 7 * unit, y + 8 * unit }, 2 * unit, color);
@@ -637,6 +743,7 @@ static void _ui_context_internal__glyph(int64 kind, gui_rect_t rect, gui_color_t
     }
     else if (kind == CONTEXT_MUSIC_CREATE || kind == CONTEXT_MUSIC_MANAGE)
     {
+        // symbol for music
         renderer__submit_line((gui_vec2_t){ x + 7 * unit, y + 5 * unit }, (gui_vec2_t){ x + 7 * unit, y + 15 * unit }, 1.5f * unit, color);
         renderer__submit_line((gui_vec2_t){ x + 7 * unit, y + 5 * unit }, (gui_vec2_t){ x + 16 * unit, y + 3 * unit }, 2 * unit, color);
         renderer__submit_line((gui_vec2_t){ x + 16 * unit, y + 3 * unit }, (gui_vec2_t){ x + 16 * unit, y + 13 * unit }, 1.5f * unit, color);
@@ -645,6 +752,7 @@ static void _ui_context_internal__glyph(int64 kind, gui_rect_t rect, gui_color_t
     }
     else if (kind == CONTEXT_SERVER_MODERATION)
     {
+        // symbol for moderation
         renderer__submit_line((gui_vec2_t){ x + 2 * unit, y + 5 * unit }, (gui_vec2_t){ x + 18 * unit, y + 5 * unit }, 1.5f * unit, color);
         renderer__submit_line((gui_vec2_t){ x + 2 * unit, y + 10 * unit }, (gui_vec2_t){ x + 18 * unit, y + 10 * unit }, 1.5f * unit, color);
         renderer__submit_line((gui_vec2_t){ x + 2 * unit, y + 15 * unit }, (gui_vec2_t){ x + 18 * unit, y + 15 * unit }, 1.5f * unit, color);
@@ -654,14 +762,18 @@ static void _ui_context_internal__glyph(int64 kind, gui_rect_t rect, gui_color_t
     }
     else if (kind == CONTEXT_STOP)
     {
+        // symbol for stop
         renderer__submit_rect((gui_rect_t){ x + 2 * unit, y + 3 * unit, 16 * unit, 12 * unit }, color, unit);
         renderer__submit_rect((gui_rect_t){ x + 7 * unit, y + 6 * unit, 6 * unit, 6 * unit }, background, 0);
         renderer__submit_line((gui_vec2_t){ x + 6 * unit, y + 18 * unit }, (gui_vec2_t){ x + 14 * unit, y + 18 * unit }, unit, color);
     }
     else
     {
+        // draw two circles
         renderer__submit_circle((gui_vec2_t){ x + 10 * unit, y + 10 * unit }, 7 * unit, color);
         renderer__submit_circle((gui_vec2_t){ x + 10 * unit, y + 10 * unit }, 5.5f * unit, background);
+
+        // line for mute, ban
         if (kind == CONTEXT_MUTE || kind == CONTEXT_MUTE_LOCAL || kind == CONTEXT_BAN || kind == CONTEXT_IGNORE)
         {
             renderer__submit_line((gui_vec2_t){ x + 5 * unit, y + 15 * unit }, (gui_vec2_t){ x + 15 * unit, y + 5 * unit }, 1.5f * unit, color);
@@ -695,18 +807,25 @@ static void _ui_context_internal__draw(gui_node_t *node, float scale)
     float baseline = 0;
     float row_height = _ui_context_internal__row_height(node);
     gui_color_t background = node->resolved.background_color;
+
+    // use the original draw
     if (index < 0)
     {
         g_context_original.emit_draws(node, scale);
         return;
     }
+
+    // draw the menu background
     menu = &g_menus[index];
     font = font__at(node->resolved.font_family, node->resolved.font_size * scale);
     desktop_ui_effects__border(node, scale);
     scene__emit_default_bg(node, scale);
     renderer__push_scissor((gui_rect_t){ node->bounds.x + 2 * scale, node->bounds.y + 2 * scale, node->bounds.w - 4 * scale, node->bounds.h - 4 * scale });
+
+    // draw every row
     for (row = 0; row < menu->count; row++)
     {
+        // skip rows outside view
         entry = &menu->entries[row];
         kind = entry->value;
         rect = (gui_rect_t){ node->bounds.x + 4 * scale, node->bounds.y + (4 + row * row_height) * scale - node->scroll_y, node->bounds.w - 8 * scale, row_height * scale };
@@ -714,27 +833,36 @@ static void _ui_context_internal__draw(gui_node_t *node, float scale)
         {
             continue;
         }
+
+        // draw the hover background
         background = node->resolved.background_color;
         if (menu->hover == row && entry->enabled)
         {
             background = node->resolved.accent_color;
             renderer__submit_rect(rect, background, 0);
         }
+
+        // choose color and positions
         color = node->resolved.font_color;
         color.a *= entry->enabled ? 1 : 0.45f;
         icon = (gui_rect_t){ rect.x + 5 * scale, rect.y + (row_height - 16) * scale * 0.5f, 16 * scale, 16 * scale };
         text_x = rect.x + 28 * scale;
+
+        // draw the row icon
         if (!index)
         {
             _ui_context_internal__glyph(kind, icon, color, background);
         }
         else if (menu->kind == CONTEXT_SERVER_GROUPS || menu->kind == CONTEXT_CHANNEL_GROUPS)
         {
+            // draw the check mark
             if (entry->checked)
             {
                 renderer__submit_line((gui_vec2_t){ icon.x, icon.y + 10 * scale }, (gui_vec2_t){ icon.x + 4 * scale, icon.y + 14 * scale }, 1.5f * scale, color);
                 renderer__submit_line((gui_vec2_t){ icon.x + 4 * scale, icon.y + 14 * scale }, (gui_vec2_t){ icon.x + 12 * scale, icon.y + 5 * scale }, 1.5f * scale, color);
             }
+
+            // draw the group icon
             icon.x += 18 * scale;
             if (entry->texture)
             {
@@ -746,6 +874,8 @@ static void _ui_context_internal__draw(gui_node_t *node, float scale)
             }
             text_x += 18 * scale;
         }
+
+        // draw the label
         if (font)
         {
             baseline = rect.y + (rect.h - font__line_height(font)) * 0.5f + font__ascent(font);
@@ -753,16 +883,22 @@ static void _ui_context_internal__draw(gui_node_t *node, float scale)
             font__draw(font, text_x, baseline, color, entry->label);
             renderer__pop_scissor();
         }
+
+        // draw the submenu arrow
         if (!index && !g_context_is_channel && (kind == CONTEXT_SERVER_GROUPS || kind == CONTEXT_CHANNEL_GROUPS || kind == CONTEXT_MOVE || kind == CONTEXT_MUTE))
         {
             renderer__submit_line((gui_vec2_t){ rect.x + rect.w - 13 * scale, rect.y + rect.h * 0.5f - 4 * scale }, (gui_vec2_t){ rect.x + rect.w - 9 * scale, rect.y + rect.h * 0.5f }, scale, color);
             renderer__submit_line((gui_vec2_t){ rect.x + rect.w - 9 * scale, rect.y + rect.h * 0.5f }, (gui_vec2_t){ rect.x + rect.w - 13 * scale, rect.y + rect.h * 0.5f + 4 * scale }, scale, color);
         }
     }
+
+    // draw the scroll bar
     if (node->content_h > node->bounds.h)
     {
         renderer__submit_rect((gui_rect_t){ node->bounds.x + node->bounds.w - 4 * scale, node->bounds.y + node->scroll_y / node->content_h * node->bounds.h, 3 * scale, node->bounds.h * node->bounds.h / node->content_h }, node->resolved.border_color, scale);
     }
+
+    // restore the clip area
     renderer__pop_scissor();
 }
 
@@ -813,6 +949,8 @@ static void _ui_context_internal__key(gui_node_t *node, int64 key, boole down)
     int64 attempts = 0;
     desktop_menu_t *menu = index >= 0 ? &g_menus[index] : NULL;
     gui_node_t *submenu = scene__find_by_id("context-submenu");
+
+    // use the original handler
     if (!menu)
     {
         if (g_context_original.on_key)
@@ -821,22 +959,29 @@ static void _ui_context_internal__key(gui_node_t *node, int64 key, boole down)
         }
         return;
     }
+
+    // skip key release
     if (!down)
     {
         return;
     }
+
+    // choose the key action
     if (key == 27)
     {
+        // close on Escape key
         g_context_pending_close = TRUE;
     }
     else if (key == 37 && index)
     {
+        // left arrow closes submenu
         menu->open = FALSE;
         clib__string_copy(node->klass, sizeof(node->klass), "context-menu hidden");
         scene__set_focus(scene__find_by_id("context-menu"));
     }
     else if (key == 38 || key == 40)
     {
+        // move to enabled row
         for (attempts = 0; attempts < menu->count; attempts++)
         {
             menu->hover = (menu->hover + (key == 38 ? menu->count - 1 : 1)) % menu->count;
@@ -845,6 +990,8 @@ static void _ui_context_internal__key(gui_node_t *node, int64 key, boole down)
                 break;
             }
         }
+
+        // keep the row visible
         node->scroll_y_target = clib__fmaxf(0, clib__fminf(node->scroll_y_target, (4 + menu->hover * _ui_context_internal__row_height(node)) * scene__scale()));
         if ((4 + (menu->hover + 1) * _ui_context_internal__row_height(node)) * scene__scale() > node->scroll_y_target + node->bounds.h)
         {
@@ -853,6 +1000,7 @@ static void _ui_context_internal__key(gui_node_t *node, int64 key, boole down)
     }
     else if (key == 13 || key == 32 || (key == 39 && !index))
     {
+        // run the hovered entry
         _ui_context_internal__activate(index, menu->hover);
         if (g_menus[1].open && submenu)
         {
@@ -882,23 +1030,33 @@ boole desktop_ui_context__tick(void)
     boole checked = FALSE;
     boole enabled = FALSE;
     int64 kind = 0;
+
+    // clear the change flag
     g_context_changed = FALSE;
+
+    // no menu is open
     if (!g_menus[0].open)
     {
         return changed;
     }
+
+    // check the close conditions
     member = _ui_context_internal__member();
     if (g_context_pending_close || (g_context_is_channel ? !_ui_context_internal__channel() : !member) || g_context_view->tree_revision != g_context_revision || (pressed && _ui_context_internal__index(pressed) < 0))
     {
         desktop_ui_context__close();
         return TRUE;
     }
+
+    // update the enabled flags
     for (row = 0; row < g_menus[0].count; row++)
     {
         kind = g_menus[0].entries[row].value;
         changed |= g_menus[0].entries[row].enabled != _ui_context_internal__allowed(kind, member);
         g_menus[0].entries[row].enabled = _ui_context_internal__allowed(kind, member);
     }
+
+    // update the submenu entries
     for (row = 0; g_menus[1].open && row < g_menus[1].count; row++)
     {
         entry = &g_menus[1].entries[row];
@@ -908,33 +1066,48 @@ boole desktop_ui_context__tick(void)
             {
                 continue;
             }
+
+            // update the check mark
             checked = g_menus[1].kind == CONTEXT_CHANNEL_GROUPS ? member->channel_group == entry->value : (member->groups[entry->value / 64] & (1ULL << (entry->value % 64))) != 0;
             changed |= entry->checked != checked;
             entry->checked = checked;
+
+            // update the enabled flag
             action = g_menus[1].kind == CONTEXT_CHANNEL_GROUPS ? DESKTOP_ACTION_CHANNEL_GROUP : entry->checked ? DESKTOP_ACTION_GROUP_REMOVE : DESKTOP_ACTION_GROUP_ADD;
             enabled = desktop_session__allows(g_context_view, member, action, action == DESKTOP_ACTION_CHANNEL_GROUP && entry->checked ? 0 : entry->value);
             changed |= entry->enabled != enabled;
             entry->enabled = enabled;
         }
     }
+
+    // store the pointer position
     g_context_pointer_x = x;
     g_context_pointer_y = y;
+
+    // update the hovered row
     for (index = 1; index >= 0 && moved; index--)
     {
+        // skip a closed menu
         if (!g_menus[index].open)
         {
             continue;
         }
+
+        // pointer must be inside
         node = scene__find_by_id(index ? "context-submenu" : "context-menu");
         if (!node || x < node->bounds.x || x >= node->bounds.x + node->bounds.w || y < node->bounds.y || y >= node->bounds.y + node->bounds.h)
         {
             continue;
         }
+
+        // find the hovered row
         row = (int64)(((float)y - node->bounds.y + node->scroll_y - 4 * scene__scale()) / (_ui_context_internal__row_height(node) * scene__scale()));
         if (row >= 0 && row < g_menus[index].count && g_menus[index].hover != row)
         {
             g_menus[index].hover = row;
             changed = TRUE;
+
+            // replace the submenu
             if (!index)
             {
                 node = scene__find_by_id("context-submenu");
@@ -966,6 +1139,8 @@ static void _ui_context_internal__volume_change(gui_event_t *event)
     gui_node_t *label = scene__find_by_id("member-volume-label");
     char caption[64] = { 0 };
     (void)event;
+
+    // set the volume label
     if (value && label)
     {
         clib__string_format(caption, sizeof(caption), "Listening volume: %lld%%", (int64)value->value);
@@ -983,10 +1158,14 @@ static void _ui_context_internal__volume_close(gui_event_t *event)
 {
     gui_node_t *panel = scene__find_by_id("member-volume-panel");
     (void)event;
+
+    // hide the volume panel
     if (panel)
     {
         clib__string_copy(panel->klass, sizeof(panel->klass), "column panel hidden");
     }
+
+    // erase the volume target
     desktop_memory__erase(&g_context_volume_target, sizeof(g_context_volume_target));
 }
 
@@ -1000,10 +1179,14 @@ static void _ui_context_internal__volume_save(gui_event_t *event)
     gui_node_t *value = scene__find_by_id("member-volume");
     gui_node_t *result = scene__find_by_id("member-volume-result");
     (void)event;
+
+    // check the volume target
     if (!value || g_context_volume_target.type != DESKTOP_ACTION_VOLUME)
     {
         return;
     }
+
+    // send the volume action
     g_context_volume_target.value = (int64)value->value;
     if (desktop_session__action(g_context_session, &g_context_volume_target))
     {
@@ -1026,10 +1209,14 @@ static void _ui_context_internal__volume_save(gui_event_t *event)
 void desktop_ui_context__initialize(desktop_session_t *session, const desktop_session_view_t *view, void (*show_info)(void), void (*join_channel)(int64))
 {
     const widget_vtable_t *original = widget_registry__get(GUI_NODE_TYPE__DIV);
+
+    // store session and callbacks
     g_context_session = session;
     g_context_view = view;
     g_context_info = show_info;
     g_context_join = join_channel;
+
+    // register the menu widget
     g_context_original = *original;
     g_context_widget = *original;
     g_context_widget.layout = _ui_context_internal__layout;
@@ -1038,6 +1225,8 @@ void desktop_ui_context__initialize(desktop_session_t *session, const desktop_se
     g_context_widget.on_mouse_down = _ui_context_internal__down;
     g_context_widget.on_key = _ui_context_internal__key;
     widget_registry__register(GUI_NODE_TYPE__DIV, &g_context_widget);
+
+    // register the event handlers
     scene__register_handler("on_context_choose", _ui_context_internal__click);
     scene__register_handler("on_context_volume_change", _ui_context_internal__volume_change);
     scene__register_handler("on_context_volume_save", _ui_context_internal__volume_save);

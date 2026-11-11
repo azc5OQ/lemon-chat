@@ -19,6 +19,7 @@ static boole _crypto_storage_internal__mac_key(const crypto_key_t *keys, uint64 
     ubyte entry[33] = { 0 };
     boole success = FALSE;
 
+    // combine all keys
     for (index = 0; index < count; index++)
     {
         entry[0] = (ubyte)keys[index].type;
@@ -28,8 +29,11 @@ static boole _crypto_storage_internal__mac_key(const crypto_key_t *keys, uint64 
             goto done;
         }
     }
+
+    // create the MAC key
     success = keys_session__hkdf(combined, salt, "lemonchat/music-bots/auth/v1", result);
 done:
+    // clear the buffers
     ciphers__clear(combined, sizeof(combined));
     ciphers__clear(entry, sizeof(entry));
     return success;
@@ -43,12 +47,13 @@ static boole _crypto_storage_internal__layers(const crypto_key_t *keys, uint64 c
     char purpose[80] = { 0 };
     boole success = FALSE;
 
+    // apply every cipher layer
     for (step = 0; step < count; step++)
     {
         index = encrypt ? step : count - 1 - step;
         snprintf(purpose, sizeof(purpose), "lemonchat/music-bots/layer/v1/%llu/%u", (uint64)index, (uint)keys[index].type);
 
-        // Each snapshot has fresh derived keys, including for fixed-IV ciphers.
+        // each snapshot has fresh derived keys, including for fixed-IV ciphers
         if (!keys_session__hkdf(keys[index].material.raw, file + STORAGE_SALT_OFFSET, purpose, key) || !ciphers__crypt(keys[index].type, key, file + STORAGE_IV_OFFSET, file + STORAGE_HEADER_SIZE, size))
         {
             goto done;
@@ -56,6 +61,7 @@ static boole _crypto_storage_internal__layers(const crypto_key_t *keys, uint64 c
     }
     success = TRUE;
 done:
+    // clear the key
     ciphers__clear(key, sizeof(key));
     return success;
 }
@@ -70,29 +76,42 @@ boole crypto_storage__seal(const crypto_key_t *keys, uint64 count, const ubyte *
     uint64 total;
     boole success = FALSE;
 
+    // reset the outputs
     *output = NULL_POINTER;
     *output_size = 0;
+
+    // check count and size
     if (count > 100 || size > SIZE_MAX - STORAGE_HEADER_SIZE - 32)
     {
         return FALSE;
     }
+
+    // allocate the file buffer
     total = STORAGE_HEADER_SIZE + size + 32;
     file = calloc(total, 1);
     if (file == NULL_POINTER)
     {
         return FALSE;
     }
+
+    // write the header
     memcpy(file, "LCMUS01", 8);
     file[8] = (ubyte)count;
     for (index = 0; index < count; index++)
     {
         file[9 + index] = (ubyte)keys[index].type;
     }
+
+    // copy the data
     memcpy(file + STORAGE_HEADER_SIZE, data, size);
+
+    // create salt, then encrypt
     if (!util__fill_secure_random_bytes(file + STORAGE_SALT_OFFSET, 48) || !_crypto_storage_internal__layers(keys, count, file, size, TRUE))
     {
         goto done;
     }
+
+    // write the tag
     if (count != 0)
     {
         if (!_crypto_storage_internal__mac_key(keys, count, file + STORAGE_SALT_OFFSET, key) || !ciphers__hmac(key, file, total - 32, file + total - 32))
@@ -104,11 +123,16 @@ boole crypto_storage__seal(const crypto_key_t *keys, uint64 count, const ubyte *
     {
         goto done;
     }
+
+    // set the outputs
     *output = file;
     *output_size = total;
     success = TRUE;
 done:
+    // clear the key
     ciphers__clear(key, sizeof(key));
+
+    // free file on failure
     if (!success)
     {
         ciphers__clear(file, total);
@@ -127,18 +151,26 @@ boole crypto_storage__open(const crypto_key_t *keys, uint64 count, ubyte *file, 
     ubyte difference = 0;
     boole success = FALSE;
 
+    // reset the outputs
     *data = NULL_POINTER;
     *size = 0;
+
+    // check the header
     if (file_size > SIZE_MAX || file_size < STORAGE_HEADER_SIZE + 32 || memcmp(file, "LCMUS01", 8) != 0 || file[8] > 100)
     {
         return FALSE;
     }
+
+    // calculate the expected tag
     if (file[8] != 0)
     {
+        // compare the layer count
         if (count != file[8])
         {
             return FALSE;
         }
+
+        // compare the cipher types
         for (verification_index = 0; verification_index < count; verification_index++)
         {
             if (file[9 + verification_index] != keys[verification_index].type)
@@ -146,6 +178,8 @@ boole crypto_storage__open(const crypto_key_t *keys, uint64 count, ubyte *file, 
                 return FALSE;
             }
         }
+
+        // calculate the HMAC tag
         if (!_crypto_storage_internal__mac_key(keys, count, file + STORAGE_SALT_OFFSET, key) || !ciphers__hmac(key, file, file_size - 32, expected))
         {
             goto done;
@@ -155,18 +189,25 @@ boole crypto_storage__open(const crypto_key_t *keys, uint64 count, ubyte *file, 
     {
         goto done;
     }
+
+    // compare the tags
     for (index = 0; index < 32; index++)
     {
         difference |= expected[index] ^ file[file_size - 32 + index];
     }
+
+    // decrypt when tags match
     if (difference != 0 || !_crypto_storage_internal__layers(keys, file[8], file, file_size - STORAGE_HEADER_SIZE - 32, FALSE))
     {
         goto done;
     }
+
+    // set the outputs
     *data = file + STORAGE_HEADER_SIZE;
     *size = file_size - STORAGE_HEADER_SIZE - 32;
     success = TRUE;
 done:
+    // clear the buffers
     ciphers__clear(key, sizeof(key));
     ciphers__clear(expected, sizeof(expected));
     return success;

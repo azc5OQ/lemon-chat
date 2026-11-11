@@ -34,13 +34,20 @@ void permissions__set_preset(group_type_t type, group_permissions_t *permissions
 {
     uint64 i = 0;
 
+    // reset the permissions
     clib__memset(permissions, 0, sizeof(*permissions));
     permissions__init_grants(permissions);
+
+    // set the edit power
     permissions->powers[PERMISSION_EDIT_POWER] = type == GROUP_TYPE_ADMIN ? 1000 : type == GROUP_TYPE_MODERATOR ? 50 : type == GROUP_TYPE_NORMAL ? 25 : 0;
+
+    // deny every action
     for (i = 0; i < PERMISSION_COUNT; i++)
     {
         permissions->values[i] = PERMISSION_DENY;
     }
+
+    // grant for every preset
     permissions->values[PERMISSION_CREATE_TEMP_CHANNEL] = PERMISSION_GRANT;
     permissions->values[PERMISSION_VIEW_SERVER_INFO] = PERMISSION_GRANT;
     permissions->values[PERMISSION_VIEW_CLIENT_CONNECTION_TIME] = PERMISSION_GRANT;
@@ -53,10 +60,14 @@ void permissions__set_preset(group_type_t type, group_permissions_t *permissions
     permissions->values[PERMISSION_SEND_POKES] = PERMISSION_GRANT;
     permissions->values[PERMISSION_VIEW_CHANNEL_MEMBERS] = PERMISSION_GRANT;
     permissions->values[PERMISSION_VIEW_CHANNEL_DESCRIPTIONS] = PERMISSION_GRANT;
+
+    // set the usage powers
     for (i = 0; i < sizeof(g_permission_usage_powers) / sizeof(g_permission_usage_powers[0]); i++)
     {
         permissions->powers[g_permission_usage_powers[i]] = type == GROUP_TYPE_MODERATOR ? 50 : 25;
     }
+
+    // add non-guest actions
     if (type != GROUP_TYPE_GUEST)
     {
         permissions->values[PERMISSION_MESSAGE_IDLE_CLIENTS] = PERMISSION_GRANT;
@@ -67,6 +78,8 @@ void permissions__set_preset(group_type_t type, group_permissions_t *permissions
         permissions->values[PERMISSION_SEND_OFFLINE_MESSAGES] = PERMISSION_GRANT;
         permissions->values[PERMISSION_RECEIVE_OFFLINE_MESSAGES] = PERMISSION_GRANT;
     }
+
+    // add the moderator rights
     if (type == GROUP_TYPE_MODERATOR)
     {
         permissions->values[PERMISSION_KICK] = PERMISSION_GRANT;
@@ -88,18 +101,23 @@ void permissions__set_preset(group_type_t type, group_permissions_t *permissions
         permissions->powers[PERMISSION_BAN_PROTECTION] = 50;
         permissions->powers[PERMISSION_GROUP_PROTECTION] = 50;
     }
+
+    // fill the Admin preset
     if (type == GROUP_TYPE_ADMIN)
     {
+        // grant every action
         for (i = 0; i < PERMISSION_COUNT; i++)
         {
             permissions->values[i] = PERMISSION_GRANT;
         }
+
+        // set powers to maximum
         for (i = 0; i < PERMISSION_POWER_COUNT; i++)
         {
             permissions->powers[i] = PERMISSION_POWER_MAX;
         }
 
-        // A member of this group stays reachable by messages and pokes until an admin raises these values.
+        // a member of this group stays reachable by messages and pokes until an admin raises these values
         permissions->powers[PERMISSION_DIRECT_MESSAGE_PROTECTION] = 0;
         permissions->powers[PERMISSION_DIRECT_PICTURE_PROTECTION] = 0;
         permissions->powers[PERMISSION_DIRECT_FILE_PROTECTION] = 0;
@@ -116,10 +134,13 @@ boole permissions__parse_group_type(cstring name, group_type_t *type)
 {
     uint64 i = 0;
 
+    // check arguments
     if (name == NULL_POINTER || type == NULL_POINTER)
     {
         return FALSE;
     }
+
+    // find the preset name
     for (i = GROUP_TYPE_NORMAL; i <= GROUP_TYPE_ADMIN; i++)
     {
         if (clib__strcmp(name, permissions__group_type_name((group_type_t)i)) == 0)
@@ -137,6 +158,7 @@ boole permissions__parse_group_type(cstring name, group_type_t *type)
  */
 cstring permissions__group_type_name(group_type_t type)
 {
+    // choose the saved name
     switch (type)
     {
     case GROUP_TYPE_GUEST:
@@ -163,10 +185,13 @@ boole permissions__refresh_guest_membership(client_t *client)
     boole has_guest = FALSE;
     boole changed = FALSE;
 
+    // check settings and client
     if (g_server_settings.is_permission_system_enabled == FALSE || g_guest_group_id >= MAX_GROUPS || client == NULL_POINTER || client->is_music_bot == TRUE)
     {
         return FALSE;
     }
+
+    // find other groups
     for (i = 0; i < cvector_size(client->group_ids); i++)
     {
         id = client->group_ids[i];
@@ -175,6 +200,8 @@ boole permissions__refresh_guest_membership(client_t *client)
             has_other = TRUE;
         }
     }
+
+    // remove wrong memberships
     i = 0;
     while (i < cvector_size(client->group_ids))
     {
@@ -191,10 +218,14 @@ boole permissions__refresh_guest_membership(client_t *client)
         }
         i++;
     }
+
+    // add the Guest group
     if (has_other == FALSE && has_guest == FALSE)
     {
         changed = clib__int_vector_push(&client->group_ids, (int)g_guest_group_id);
     }
+
+    // update the client powers
     permissions__refresh_client_powers(client);
     return changed;
 }
@@ -204,6 +235,7 @@ boole permissions__refresh_guest_membership(client_t *client)
  */
 static void _permissions_internal__combine_value(uint64 *result, uint64 *result_flags, uint64 value, uint64 flags)
 {
+    // update the result value
     if (flags & PERMISSION_FLAG_NEGATE)
     {
         if (!(*result_flags & PERMISSION_FLAG_NEGATE) || value < *result)
@@ -215,6 +247,8 @@ static void _permissions_internal__combine_value(uint64 *result, uint64 *result_
     {
         *result = value;
     }
+
+    // add the flags
     *result_flags |= flags;
 }
 
@@ -223,20 +257,25 @@ static void _permissions_internal__combine_value(uint64 *result, uint64 *result_
  */
 static uint64 _permissions_internal__action_value(permission_t permission, uint64 value)
 {
+    // value is already set
     if (value != PERMISSION_DEFAULT)
     {
         return value;
     }
+
+    // grant the default actions
     if (permission == PERMISSION_CREATE_TEMP_CHANNEL || permission == PERMISSION_VIEW_SERVER_INFO || permission == PERMISSION_VIEW_CLIENT_CONNECTION_TIME || permission == PERMISSION_MESSAGE_IDLE_CLIENTS || permission == PERMISSION_CALL_IDLE_CLIENTS || permission == PERMISSION_SEND_DIRECT_PICTURES || permission == PERMISSION_SEND_DIRECT_FILES || permission == PERMISSION_SEND_CHANNEL_PICTURES || permission == PERMISSION_SEND_CHANNEL_FILES)
     {
         return PERMISSION_GRANT;
     }
 
-    // These actions needed no permission before they were added, so a group saved without them allows them.
+    // these actions needed no permission before they were added, so a group saved without them allows them
     if (permission == PERMISSION_SEND_DIRECT_MESSAGES || permission == PERMISSION_SEND_CHANNEL_MESSAGES || permission == PERMISSION_SEND_POKES || permission == PERMISSION_VIEW_CHANNEL_MEMBERS || permission == PERMISSION_VIEW_CHANNEL_DESCRIPTIONS)
     {
         return PERMISSION_GRANT;
     }
+
+    // deny other actions
     return PERMISSION_DENY;
 }
 
@@ -249,14 +288,19 @@ static void _permissions_internal__combine(group_permissions_t *result, const gr
 {
     uint64 p = 0;
 
+    // check the group
     if (group == NULL_POINTER)
     {
         return;
     }
+
+    // combine the action values
     for (p = 0; p < PERMISSION_COUNT; p++)
     {
         _permissions_internal__combine_value(&result->values[p], &result->flags[p], group->values[p], group->flags[p]);
     }
+
+    // combine the powers
     for (p = 0; p < PERMISSION_POWER_COUNT; p++)
     {
         _permissions_internal__combine_value(&result->powers[p], &result->power_flags[p], group->powers[p], group->power_flags[p]);
@@ -277,13 +321,19 @@ static void _permissions_internal__resolve_change(const client_t *client, uint64
     int64 id = 0;
     const group_permissions_t *group = NULL_POINTER;
 
+    // clear the result
     clib__memset(result, 0, sizeof(*result));
+
+    // permission system is off
     if (g_server_settings.is_permission_system_enabled == FALSE)
     {
         return;
     }
+
+    // combine the client groups
     for (i = 0; i <= cvector_size(client->group_ids); i++)
     {
+        // choose the next group
         if (i == cvector_size(client->group_ids))
         {
             group = group_id == g_guest_group_id ? NULL_POINTER : replacement;
@@ -297,13 +347,19 @@ static void _permissions_internal__resolve_change(const client_t *client, uint64
             }
             group = &g_groups_array[id].permissions;
         }
+
+        // nothing to combine
         if (group == NULL_POINTER)
         {
             continue;
         }
+
+        // combine this group
         group_count++;
         _permissions_internal__combine(result, group);
     }
+
+    // use the Guest group
     if (group_count == 0 && g_guest_group_id < MAX_GROUPS && g_groups_array[g_guest_group_id].is_existing == TRUE)
     {
         group = group_id == g_guest_group_id ? replacement : &g_groups_array[g_guest_group_id].permissions;
@@ -330,10 +386,13 @@ static void _permissions_internal__combine_channel(group_permissions_t *result, 
     uint64 i = 0;
     const group_permissions_t *local = NULL_POINTER;
 
+    // check the channel group
     if (!g_server_settings.is_permission_system_enabled || role == CHANNEL_GROUP_MEMBER || role >= CHANNEL_GROUP_LIMIT || !g_channel_groups[role].is_existing)
     {
         return;
     }
+
+    // combine the actions
     local = &g_channel_groups[role].permissions;
     for (i = 0; i < PERMISSION_COUNT; i++)
     {
@@ -343,6 +402,8 @@ static void _permissions_internal__combine_channel(group_permissions_t *result, 
             _permissions_internal__combine_value(&result->values[i], &result->flags[i], _permissions_internal__action_value((permission_t)i, local->values[i]), local->flags[i]);
         }
     }
+
+    // combine the powers
     for (i = 0; i < PERMISSION_POWER_COUNT; i++)
     {
         if (channel_groups__power_name((permission_power_t)i) != NULL_POINTER && !(result->power_flags[i] & PERMISSION_FLAG_SKIP))
@@ -360,21 +421,26 @@ void permissions__refresh_client_powers(client_t *client)
 {
     group_permissions_t effective;
 
+    // check the client
     if (client == NULL_POINTER)
     {
         return;
     }
+
+    // combine the groups
     _permissions_internal__resolve(client, &effective);
     if (!client->is_idle)
     {
         _permissions_internal__combine_channel(&effective, client->channel_group_role);
     }
+
+    // store the client powers
     client->talk_power = client->is_admin ? PERMISSION_POWER_MAX : effective.powers[PERMISSION_TALK_POWER];
     client->channel_message_power = client->is_admin ? PERMISSION_POWER_MAX : effective.powers[PERMISSION_CHANNEL_MESSAGE_POWER];
     client->channel_picture_power = client->is_admin ? PERMISSION_POWER_MAX : effective.powers[PERMISSION_CHANNEL_PICTURE_POWER];
     client->stream_power = client->is_admin ? PERMISSION_POWER_MAX : effective.powers[PERMISSION_STREAM_POWER];
 
-    // Channel groups take no part in these three values: they describe channels the client is not in.
+    // channel groups take no part in these three values: they describe channels the client is not in
     _permissions_internal__resolve(client, &effective);
     client->channel_view_rights.is_admin = client->is_admin;
     client->channel_view_rights.is_viewing_members_allowed = (boole)(_permissions_internal__action_value(PERMISSION_VIEW_CHANNEL_MEMBERS, effective.values[PERMISSION_VIEW_CHANNEL_MEMBERS]) == PERMISSION_GRANT);
@@ -391,6 +457,7 @@ void permissions__refresh_all_client_powers(void)
 {
     uint64 i = 0;
 
+    // update connected clients
     for (i = 0; i < (uint64)g_server_settings.max_client_count; i++)
     {
         if (g_clients_array[i].is_existing == TRUE && g_clients_array[i].is_authenticated == TRUE)
@@ -412,10 +479,13 @@ boole permissions__can_use_channel(const client_t *client, const channel_t *chan
     uint64 required = 0;
     uint64 now = 0;
 
+    // check arguments
     if (client == NULL_POINTER || channel == NULL_POINTER)
     {
         return FALSE;
     }
+
+    // check client and channel
     if (client->is_existing == FALSE ||
         client->is_authenticated == FALSE ||
         channel->is_existing == FALSE ||
@@ -424,6 +494,8 @@ boole permissions__can_use_channel(const client_t *client, const channel_t *chan
     {
         return FALSE;
     }
+
+    // check mute time
     if (power == PERMISSION_TALK_POWER && client->muted_until_ms != 0)
     {
         if (util__get_monotonic_ms(&now) == TRUE)
@@ -434,6 +506,8 @@ boole permissions__can_use_channel(const client_t *client, const channel_t *chan
             }
         }
     }
+
+    // read both powers
     switch (power)
     {
     case PERMISSION_TALK_POWER:
@@ -453,17 +527,21 @@ boole permissions__can_use_channel(const client_t *client, const channel_t *chan
         required = channel->required_stream_power;
         break;
     case PERMISSION_CHANNEL_FILE_POWER:
-        // Files are sent rarely, so this power is calculated here instead of being saved in the client.
+        // files are sent rarely, so this power is calculated here instead of being saved in the client
         available = permissions__power_in_channel(client, channel, PERMISSION_CHANNEL_FILE_POWER);
         required = channel->required_file_power;
         break;
     default:
         return FALSE;
     }
+
+    // no limits apply
     if (g_server_settings.is_permission_system_enabled == FALSE || client->is_admin == TRUE)
     {
         return TRUE;
     }
+
+    // compare the powers
     return (boole)(available >= required);
 }
 
@@ -488,7 +566,7 @@ cstring permissions__contact_refusal(const client_t *sender, const client_t *tar
     permission_power_t power = PERMISSION_POWER_COUNT;
     cstring refusal = NULL_POINTER;
 
-    // Choose power pair.
+    // choose power pair
     switch (permission)
     {
     case PERMISSION_SEND_DIRECT_MESSAGES:
@@ -507,19 +585,19 @@ cstring permissions__contact_refusal(const client_t *sender, const client_t *tar
         return "";
     }
 
-    // Check both clients.
+    // check both clients
     if (sender == NULL_POINTER || target == NULL_POINTER || sender->is_existing == FALSE || sender->is_authenticated == FALSE || sender->is_music_bot == TRUE)
     {
         return g_permission_names[permission];
     }
 
-    // No limits apply.
+    // no limits apply
     if (g_server_settings.is_permission_system_enabled == FALSE || sender->is_admin == TRUE)
     {
         return NULL_POINTER;
     }
 
-    // Compare with protection.
+    // compare with protection
     clib__read_lock(&g_groups_global_rwlock_guard);
     _permissions_internal__resolve(sender, &actor);
     _permissions_internal__resolve(target, &protected_client);
@@ -545,14 +623,19 @@ cstring permissions__contact_refusal(const client_t *sender, const client_t *tar
  */
 boole permissions__can_create_channel_in(const client_t *client, const channel_t *parent)
 {
+    // check client and parent
     if (client == NULL_POINTER || parent == NULL_POINTER || parent->is_existing == FALSE)
     {
         return FALSE;
     }
+
+    // no limits apply
     if (g_server_settings.is_permission_system_enabled == FALSE || client->is_admin == TRUE)
     {
         return TRUE;
     }
+
+    // compare the powers
     return (boole)(permissions__power_in_channel(client, parent, PERMISSION_CHANNEL_CREATE_POWER) >= parent->required_create_power);
 }
 
@@ -564,14 +647,19 @@ boole permissions__can_create_channel_in(const client_t *client, const channel_t
  */
 static boole _permissions_internal__is_allowed(const client_t *client, const group_permissions_t *result, permission_t permission)
 {
+    // check the client state
     if (client->is_existing == FALSE || client->is_authenticated == FALSE || client->is_music_bot == TRUE)
     {
         return FALSE;
     }
+
+    // admins are allowed
     if (client->is_admin == TRUE)
     {
         return TRUE;
     }
+
+    // check the action value
     return (boole)(_permissions_internal__action_value(permission, result->values[permission]) == PERMISSION_GRANT);
 }
 
@@ -585,10 +673,13 @@ boole permissions__is_allowed(const client_t *client, permission_t permission)
     group_permissions_t result;
     boole allowed = FALSE;
 
+    // check arguments
     if (client == NULL_POINTER || permission < 0 || permission >= PERMISSION_COUNT)
     {
         return FALSE;
     }
+
+    // check the client groups
     clib__read_lock(&g_groups_global_rwlock_guard);
     _permissions_internal__resolve(client, &result);
     allowed = _permissions_internal__is_allowed(client, &result, permission);
@@ -604,10 +695,13 @@ boole permissions__is_allowed_in_channel(const client_t *client, const channel_t
     group_permissions_t effective;
     boole allowed = FALSE;
 
+    // check arguments
     if (client == NULL_POINTER || channel == NULL_POINTER || !channel->is_existing || permission < 0 || permission >= PERMISSION_COUNT)
     {
         return FALSE;
     }
+
+    // check with channel group
     clib__read_lock(&g_groups_global_rwlock_guard);
     _permissions_internal__resolve(client, &effective);
     _permissions_internal__combine_channel(&effective, channel_groups__role(client, channel));
@@ -625,10 +719,13 @@ boole permissions__can_bypass_channel_password(const client_t *client, const cha
     group_permissions_t effective;
     boole allowed = FALSE;
 
+    // check client and channel
     if (client == NULL_POINTER || channel == NULL_POINTER || !channel->is_existing || !client->is_existing || !client->is_authenticated || client->is_music_bot || (!g_server_settings.is_permission_system_enabled && !client->is_admin))
     {
         return FALSE;
     }
+
+    // check the assigned group
     clib__read_lock(&g_groups_global_rwlock_guard);
     _permissions_internal__resolve(client, &effective);
     _permissions_internal__combine_channel(&effective, channel_groups__assigned_role(client, channel));
@@ -644,14 +741,19 @@ uint64 permissions__power_in_channel(const client_t *client, const channel_t *ch
 {
     group_permissions_t effective;
 
+    // check arguments
     if (client == NULL_POINTER || !client->is_existing || !client->is_authenticated || channel == NULL_POINTER || !channel->is_existing || power < 0 || power >= PERMISSION_POWER_COUNT)
     {
         return 0;
     }
+
+    // admins get the maximum
     if (client->is_admin)
     {
         return PERMISSION_POWER_MAX;
     }
+
+    // read the combined power
     clib__read_lock(&g_groups_global_rwlock_guard);
     _permissions_internal__resolve(client, &effective);
     _permissions_internal__combine_channel(&effective, channel_groups__role(client, channel));
@@ -673,18 +775,26 @@ boole permissions__read_flags(cJSON *object, group_permissions_t *permissions, b
     uint64 known = 0;
     boole can_skip = FALSE;
 
+    // check the JSON
     if (!cJSON_IsObject(object))
     {
         return FALSE;
     }
+
+    // read every entry
     cJSON_ArrayForEach(entry, object)
     {
+        // reset for this entry
         destination = NULL_POINTER;
         can_skip = FALSE;
+
+        // check the entry
         if (!entry->string || cJSON_GetObjectItemCaseSensitive(object, entry->string) != entry || !cJSON_IsObject(entry))
         {
             return FALSE;
         }
+
+        // find the action
         for (i = 0; i < PERMISSION_COUNT; i++)
         {
             if (!clib__strcmp(entry->string, g_permission_names[i]) && (!channel || channel_groups__supports((permission_t)i)))
@@ -698,6 +808,8 @@ boole permissions__read_flags(cJSON *object, group_permissions_t *permissions, b
                 break;
             }
         }
+
+        // find the power
         for (i = 0; destination == NULL_POINTER && i < PERMISSION_POWER_COUNT; i++)
         {
             name = channel ? channel_groups__power_name((permission_power_t)i) : g_permission_power_names[i];
@@ -708,13 +820,19 @@ boole permissions__read_flags(cJSON *object, group_permissions_t *permissions, b
                 break;
             }
         }
+
+        // read both flags
         negate = cJSON_GetObjectItemCaseSensitive(entry, "negate");
         skip = cJSON_GetObjectItemCaseSensitive(entry, "skip");
         known = (negate != NULL_POINTER) + (skip != NULL_POINTER);
+
+        // refuse wrong flags
         if (destination == NULL_POINTER || known != (uint64)cJSON_GetArraySize(entry) || (negate && !cJSON_IsBool(negate)) || (skip && (!can_skip || !cJSON_IsBool(skip))))
         {
             return FALSE;
         }
+
+        // store the flags
         *destination = (cJSON_IsTrue(negate) ? PERMISSION_FLAG_NEGATE : 0) | (cJSON_IsTrue(skip) ? PERMISSION_FLAG_SKIP : 0);
     }
     return TRUE;
@@ -731,12 +849,16 @@ boole permissions__write_flags(cJSON *object, const group_permissions_t *permiss
     uint64 value = 0;
     uint64 i = 0;
 
+    // check the flags object
     if (flags == NULL_POINTER)
     {
         return FALSE;
     }
+
+    // write the active flags
     for (i = 0; i < PERMISSION_COUNT + PERMISSION_POWER_COUNT; i++)
     {
+        // choose name and value
         if (i < PERMISSION_COUNT)
         {
             name = !channel || channel_groups__supports((permission_t)i) ? g_permission_names[i] : NULL_POINTER;
@@ -747,15 +869,21 @@ boole permissions__write_flags(cJSON *object, const group_permissions_t *permiss
             name = channel ? channel_groups__power_name((permission_power_t)(i - PERMISSION_COUNT)) : g_permission_power_names[i - PERMISSION_COUNT];
             value = permissions->power_flags[i - PERMISSION_COUNT];
         }
+
+        // skip unused flags
         if (name == NULL_POINTER || value == 0)
         {
             continue;
         }
+
+        // add the entry object
         entry = cJSON_CreateObject();
         if (!util__json_add_owned_object(flags, name, entry))
         {
             goto json_failure;
         }
+
+        // add the negate flag
         if (value & PERMISSION_FLAG_NEGATE)
         {
             if (!cJSON_AddBoolToObject(entry, "negate", TRUE))
@@ -763,6 +891,8 @@ boole permissions__write_flags(cJSON *object, const group_permissions_t *permiss
                 goto json_failure;
             }
         }
+
+        // add the skip flag
         if (!channel && (value & PERMISSION_FLAG_SKIP))
         {
             if (!cJSON_AddBoolToObject(entry, "skip", TRUE))
@@ -771,6 +901,8 @@ boole permissions__write_flags(cJSON *object, const group_permissions_t *permiss
             }
         }
     }
+
+    // add flags if any
     if (cJSON_GetArraySize(flags))
     {
         return util__json_add_owned_object(object, "flags", flags);
@@ -782,6 +914,7 @@ boole permissions__write_flags(cJSON *object, const group_permissions_t *permiss
     return TRUE;
 
 json_failure:
+    // free the flags object
     util__json_delete_secure(flags);
     return FALSE;
 }
@@ -793,10 +926,13 @@ boole permissions__has_flags(const group_permissions_t *permissions)
 {
     uint64 i = 0;
 
+    // check the argument
     if (permissions == NULL_POINTER)
     {
         return FALSE;
     }
+
+    // find an action flag
     for (i = 0; i < PERMISSION_COUNT; i++)
     {
         if (permissions->flags[i])
@@ -804,6 +940,8 @@ boole permissions__has_flags(const group_permissions_t *permissions)
             return TRUE;
         }
     }
+
+    // find a power flag
     for (i = 0; i < PERMISSION_POWER_COUNT; i++)
     {
         if (permissions->power_flags[i])
@@ -839,10 +977,13 @@ boole permissions__can_moderate_in_channel(const client_t *sender, const client_
     uint64 power = 0;
     boole allowed = FALSE;
 
+    // check arguments
     if (sender == NULL_POINTER || target == NULL_POINTER)
     {
         return FALSE;
     }
+
+    // check both clients
     if (sender->is_existing == FALSE ||
         sender->is_authenticated == FALSE ||
         sender->is_music_bot != FALSE ||
@@ -852,6 +993,8 @@ boole permissions__can_moderate_in_channel(const client_t *sender, const client_
     {
         return FALSE;
     }
+
+    // choose the power
     switch (permission)
     {
     case PERMISSION_KICK:
@@ -871,6 +1014,8 @@ boole permissions__can_moderate_in_channel(const client_t *sender, const client_
     default:
         return FALSE;
     }
+
+    // combine the groups
     clib__read_lock(&g_groups_global_rwlock_guard);
     _permissions_internal__resolve(sender, &actor);
     _permissions_internal__resolve(target, &protected_client);
@@ -879,6 +1024,8 @@ boole permissions__can_moderate_in_channel(const client_t *sender, const client_
         _permissions_internal__combine_channel(&actor, channel_groups__role(sender, channel));
         _permissions_internal__combine_channel(&protected_client, channel_groups__role(target, channel));
     }
+
+    // compare with protection
     if (_permissions_internal__is_allowed(sender, &actor, permission) == TRUE)
     {
         if (sender->is_admin == TRUE || target->is_admin == FALSE && actor.powers[power] >= protected_client.powers[power + 1])
@@ -897,10 +1044,13 @@ void permissions__init_grants(group_permissions_t *permissions)
 {
     uint64 i = 0;
 
+    // set the action grants
     for (i = 0; i < PERMISSION_COUNT; i++)
     {
         permissions->grants[i] = PERMISSION_POWER_MAX;
     }
+
+    // set the power grants
     for (i = 0; i < PERMISSION_POWER_COUNT; i++)
     {
         permissions->power_grants[i] = PERMISSION_POWER_MAX;
@@ -917,17 +1067,25 @@ boole permissions__read_grants(cJSON *object, group_permissions_t *permissions, 
     uint64 *destination = NULL_POINTER;
     cstring name = NULL_POINTER;
 
+    // check the JSON
     if (!cJSON_IsObject(object))
     {
         return FALSE;
     }
+
+    // read every entry
     cJSON_ArrayForEach(entry, object)
     {
+        // reset the destination
         destination = NULL_POINTER;
+
+        // check the entry
         if (!entry->string || cJSON_GetObjectItemCaseSensitive(object, entry->string) != entry || !cJSON_IsNumber(entry) || !(entry->valuedouble >= 0 && entry->valuedouble <= PERMISSION_POWER_MAX) || entry->valuedouble != entry->valueint)
         {
             return FALSE;
         }
+
+        // find the action
         for (i = 0; i < PERMISSION_COUNT; i++)
         {
             if ((!channel || channel_groups__supports((permission_t)i)) && !clib__strcmp(entry->string, g_permission_names[i]))
@@ -936,6 +1094,8 @@ boole permissions__read_grants(cJSON *object, group_permissions_t *permissions, 
                 break;
             }
         }
+
+        // find the power
         for (i = 0; destination == NULL_POINTER && i < PERMISSION_POWER_COUNT; i++)
         {
             name = channel ? channel_groups__power_name((permission_power_t)i) : g_permission_power_names[i];
@@ -944,10 +1104,14 @@ boole permissions__read_grants(cJSON *object, group_permissions_t *permissions, 
                 destination = &permissions->power_grants[i];
             }
         }
+
+        // refuse unknown names
         if (destination == NULL_POINTER)
         {
             return FALSE;
         }
+
+        // store the grant
         *destination = (uint64)entry->valueint;
     }
     return TRUE;
@@ -962,6 +1126,13 @@ boole permissions__write_grants(cJSON *object, const group_permissions_t *permis
     uint64 i = 0;
     cstring name = NULL_POINTER;
 
+    // check the grants object
+    if (grants == NULL_POINTER)
+    {
+        return FALSE;
+    }
+
+    // write the action grants
     for (i = 0; i < PERMISSION_COUNT; i++)
     {
         if (!channel || channel_groups__supports((permission_t)i))
@@ -972,6 +1143,8 @@ boole permissions__write_grants(cJSON *object, const group_permissions_t *permis
             }
         }
     }
+
+    // write the power grants
     for (i = 0; i < PERMISSION_POWER_COUNT; i++)
     {
         name = channel ? channel_groups__power_name((permission_power_t)i) : g_permission_power_names[i];
@@ -983,9 +1156,12 @@ boole permissions__write_grants(cJSON *object, const group_permissions_t *permis
             }
         }
     }
+
+    // add the grants object
     return util__json_add_owned_object(object, "grants", grants);
 
 json_failure:
+    // free the grants object
     util__json_delete_secure(grants);
     return FALSE;
 }
@@ -1001,16 +1177,22 @@ boole permissions__can_edit_values(uint64 edit_power, const group_permissions_t 
     uint64 before = 0;
     uint64 after = 0;
 
+    // check the argument
     if (proposed == NULL_POINTER)
     {
         return FALSE;
     }
+
+    // check every action
     for (i = 0; i < PERMISSION_COUNT; i++)
     {
+        // skip unsupported actions
         if (channel && !channel_groups__supports((permission_t)i))
         {
             continue;
         }
+
+        // check a created group
         if (previous == NULL_POINTER)
         {
             if (proposed->grants[i] != PERMISSION_POWER_MAX && edit_power < PERMISSION_POWER_MAX)
@@ -1019,23 +1201,34 @@ boole permissions__can_edit_values(uint64 edit_power, const group_permissions_t 
             }
             continue;
         }
+
+        // read both values
         before = channel ? previous->values[i] : _permissions_internal__action_value((permission_t)i, previous->values[i]);
         after = channel ? proposed->values[i] : _permissions_internal__action_value((permission_t)i, proposed->values[i]);
+
+        // check the saved grant
         if ((before != after || previous->flags[i] != proposed->flags[i] || previous->grants[i] != proposed->grants[i]) && edit_power < previous->grants[i])
         {
             return FALSE;
         }
+
+        // check the new grant
         if (previous->grants[i] != proposed->grants[i] && edit_power < proposed->grants[i])
         {
             return FALSE;
         }
     }
+
+    // check every power
     for (i = 0; i < PERMISSION_POWER_COUNT; i++)
     {
+        // skip unsupported powers
         if (channel && channel_groups__power_name((permission_power_t)i) == NULL_POINTER)
         {
             continue;
         }
+
+        // check a created group
         if (previous == NULL_POINTER)
         {
             if (proposed->power_grants[i] != PERMISSION_POWER_MAX && edit_power < PERMISSION_POWER_MAX)
@@ -1044,10 +1237,14 @@ boole permissions__can_edit_values(uint64 edit_power, const group_permissions_t 
             }
             continue;
         }
+
+        // check the saved grant
         if ((previous->powers[i] != proposed->powers[i] || previous->power_flags[i] != proposed->power_flags[i] || previous->power_grants[i] != proposed->power_grants[i]) && edit_power < previous->power_grants[i])
         {
             return FALSE;
         }
+
+        // check the new grant
         if (previous->power_grants[i] != proposed->power_grants[i] && edit_power < proposed->power_grants[i])
         {
             return FALSE;
@@ -1067,28 +1264,38 @@ boole permissions__read(cJSON *object, group_permissions_t *permissions)
     uint64 known = 0;
     uint64 legacy_icons = PERMISSION_DEFAULT;
 
+    // set the defaults
     clib__memset(&parsed, 0, sizeof(parsed));
     permissions__init_grants(&parsed);
     for (i = 0; i < sizeof(g_permission_usage_powers) / sizeof(g_permission_usage_powers[0]); i++)
     {
         parsed.powers[g_permission_usage_powers[i]] = 25;
     }
+
+    // check the JSON
     if (cJSON_IsObject(object) == FALSE)
     {
         return FALSE;
     }
+
+    // read the actions
     for (i = 0; i < PERMISSION_COUNT; i++)
     {
+        // find the value
         value = cJSON_GetObjectItemCaseSensitive(object, g_permission_names[i]);
         if (value == NULL_POINTER)
         {
             continue;
         }
         known++;
+
+        // refuse wrong type
         if (cJSON_IsString(value) == FALSE)
         {
             return FALSE;
         }
+
+        // convert the text
         if (clib__strcmp(value->valuestring, "grant") == 0)
         {
             parsed.values[i] = PERMISSION_GRANT;
@@ -1102,20 +1309,29 @@ boole permissions__read(cJSON *object, group_permissions_t *permissions)
             return FALSE;
         }
     }
+
+    // read the powers
     for (i = 0; i < PERMISSION_POWER_COUNT; i++)
     {
+        // find the value
         value = cJSON_GetObjectItemCaseSensitive(object, g_permission_power_names[i]);
         if (value == NULL_POINTER)
         {
             continue;
         }
         known++;
+
+        // refuse wrong numbers
         if (cJSON_IsNumber(value) == FALSE || !(value->valuedouble >= 0 && value->valuedouble <= PERMISSION_POWER_MAX) || value->valuedouble != (double)value->valueint)
         {
             return FALSE;
         }
+
+        // store the power
         parsed.powers[i] = (uint64)value->valueint;
     }
+
+    // read the grants
     value = cJSON_GetObjectItemCaseSensitive(object, "grants");
     if (value != NULL_POINTER)
     {
@@ -1125,13 +1341,18 @@ boole permissions__read(cJSON *object, group_permissions_t *permissions)
             return FALSE;
         }
     }
+
+    // read old icon setting
     value = cJSON_GetObjectItemCaseSensitive(object, "manage_icons");
     if (value != NULL_POINTER)
     {
+        // refuse wrong type
         if (cJSON_IsString(value) == FALSE)
         {
             return FALSE;
         }
+
+        // convert the text
         if (clib__strcmp(value->valuestring, "grant") == 0)
         {
             legacy_icons = PERMISSION_GRANT;
@@ -1144,6 +1365,8 @@ boole permissions__read(cJSON *object, group_permissions_t *permissions)
         {
             return FALSE;
         }
+
+        // fill missing icon values
         if (cJSON_GetObjectItemCaseSensitive(object, "upload_icons") == NULL_POINTER)
         {
             parsed.values[PERMISSION_UPLOAD_ICONS] = legacy_icons;
@@ -1154,6 +1377,8 @@ boole permissions__read(cJSON *object, group_permissions_t *permissions)
         }
         known++;
     }
+
+    // read the flags
     value = cJSON_GetObjectItemCaseSensitive(object, "flags");
     if (value != NULL_POINTER)
     {
@@ -1163,10 +1388,14 @@ boole permissions__read(cJSON *object, group_permissions_t *permissions)
             return FALSE;
         }
     }
+
+    // refuse unknown fields
     if (known != (uint64)cJSON_GetArraySize(object))
     {
         return FALSE;
     }
+
+    // copy the result
     *permissions = parsed;
     return TRUE;
 }
@@ -1180,13 +1409,13 @@ boole permissions__read(cJSON *object, group_permissions_t *permissions)
  */
 permission_t permissions__upload_permission(cstring intent)
 {
-    // Check the argument.
+    // check the argument
     if (intent == NULL_POINTER)
     {
         return PERMISSION_COUNT;
     }
 
-    // Match the intent.
+    // match the intent
     if (clib__strcmp(intent, "direct_chat_picture_file") == 0)
     {
         return PERMISSION_SEND_DIRECT_PICTURES;
@@ -1233,6 +1462,13 @@ cJSON *permissions__write(const group_permissions_t *permissions)
     const char *value = NULL_POINTER;
     uint64 i = 0;
 
+    // check the object
+    if (object == NULL_POINTER)
+    {
+        return NULL_POINTER;
+    }
+
+    // write the actions
     for (i = 0; i < PERMISSION_COUNT; i++)
     {
         value = permissions->values[i] == PERMISSION_DENY ? "deny" : permissions->values[i] == PERMISSION_GRANT ? "grant" : "default";
@@ -1241,6 +1477,8 @@ cJSON *permissions__write(const group_permissions_t *permissions)
             goto json_failure;
         }
     }
+
+    // write the powers
     for (i = 0; i < PERMISSION_POWER_COUNT; i++)
     {
         if (!cJSON_AddNumberToObject(object, g_permission_power_names[i], permissions->powers[i]))
@@ -1248,6 +1486,8 @@ cJSON *permissions__write(const group_permissions_t *permissions)
             goto json_failure;
         }
     }
+
+    // write flags and grants
     if (!permissions__write_flags(object, permissions, FALSE) || !permissions__write_grants(object, permissions, FALSE))
     {
         goto json_failure;
@@ -1255,6 +1495,7 @@ cJSON *permissions__write(const group_permissions_t *permissions)
     return object;
 
 json_failure:
+    // free the object
     util__json_delete_secure(object);
     return NULL_POINTER;
 }
@@ -1290,14 +1531,19 @@ uint64 permissions__power(const client_t *client, permission_power_t power)
 {
     group_permissions_t effective;
 
+    // check arguments
     if (client == NULL_POINTER || !client->is_existing || !client->is_authenticated || power < 0 || power >= PERMISSION_POWER_COUNT)
     {
         return 0;
     }
+
+    // admins get the maximum
     if (client->is_admin)
     {
         return PERMISSION_POWER_MAX;
     }
+
+    // read the combined power
     clib__read_lock(&g_groups_global_rwlock_guard);
     _permissions_internal__resolve(client, &effective);
     clib__unlock(&g_groups_global_rwlock_guard);
@@ -1313,10 +1559,13 @@ boole permissions__is_allowed_in_groups(const client_t *client, permission_t per
 {
     group_permissions_t result;
 
+    // check arguments
     if (client == NULL_POINTER || permission < 0 || permission >= PERMISSION_COUNT)
     {
         return FALSE;
     }
+
+    // check the client groups
     _permissions_internal__resolve(client, &result);
     return _permissions_internal__is_allowed(client, &result, permission);
 }
@@ -1331,6 +1580,7 @@ static boole _permissions_internal__has_group(const client_t *client, uint64 gro
     uint64 i = 0;
     int64 id = 0;
 
+    // check the Guest group
     if (group_id == g_guest_group_id && g_guest_group_id < MAX_GROUPS)
     {
         for (i = 0; i < cvector_size(client->group_ids); i++)
@@ -1344,6 +1594,7 @@ static boole _permissions_internal__has_group(const client_t *client, uint64 gro
         return TRUE;
     }
 
+    // find the group
     for (i = 0; i < cvector_size(client->group_ids); i++)
     {
         if ((uint64)client->group_ids[i] == group_id)
@@ -1364,16 +1615,19 @@ boole permissions__can_manage_group(const client_t *sender, uint64 group_id, per
 {
     group_permissions_t actor;
 
+    // check arguments
     if (sender == NULL_POINTER || group_id >= MAX_GROUPS)
     {
         return FALSE;
     }
+
+    // check group and setting
     if (g_groups_array[group_id].is_existing == FALSE || g_server_settings.is_permission_system_enabled == FALSE)
     {
         return FALSE;
     }
 
-    // The guest group cannot be deleted, assigned or removed manually.
+    // the guest group cannot be deleted, assigned or removed manually
     if (group_id == g_guest_group_id)
     {
         if (permission == PERMISSION_DELETE_GROUPS || permission == PERMISSION_ASSIGN_GROUPS || permission == PERMISSION_REMOVE_GROUPS)
@@ -1382,26 +1636,32 @@ boole permissions__can_manage_group(const client_t *sender, uint64 group_id, per
         }
     }
 
-    // Combine the sender's group permissions before checking this action.
+    // combine the sender's group permissions before checking this action
     _permissions_internal__resolve(sender, &actor);
     if (_permissions_internal__is_allowed(sender, &actor, permission) == FALSE)
     {
         return FALSE;
     }
+
+    // admins skip the rest
     if (sender->is_admin == TRUE)
     {
         return TRUE;
     }
+
+    // refuse groups with flags
     if (permission != PERMISSION_EDIT_GROUPS && permissions__has_flags(&g_groups_array[group_id].permissions))
     {
         return FALSE;
     }
+
+    // compare with protection
     if (group_id == ADMIN_GROUP_ID || actor.powers[PERMISSION_GROUP_MANAGEMENT_POWER] < g_groups_array[group_id].permissions.powers[PERMISSION_GROUP_PROTECTION])
     {
         return FALSE;
     }
 
-    // Prevent non-admin users from editing permissions or deleting their own groups.
+    // prevent non-admin users from editing permissions or deleting their own groups
     if ((permission == PERMISSION_EDIT_GROUP_PERMISSIONS || permission == PERMISSION_DELETE_GROUPS) && _permissions_internal__has_group(sender, group_id) == TRUE)
     {
         return FALSE;
@@ -1423,25 +1683,36 @@ static boole _permissions_internal__allows_change(const client_t *sender, const 
     group_permissions_t after;
     uint64 i = 0;
 
+    // admins skip this
     if (sender->is_admin == TRUE)
     {
         return TRUE;
     }
+
+    // refuse self and admins
     if (target == sender || target->is_admin == TRUE)
     {
         return FALSE;
     }
+
+    // refuse Admin group members
     if (_permissions_internal__has_group(target, ADMIN_GROUP_ID) == TRUE)
     {
         return FALSE;
     }
+
+    // combine the permissions
     _permissions_internal__resolve(sender, &actor);
     _permissions_internal__resolve(target, &before);
     _permissions_internal__resolve_change(target, group_id, replacement, &after);
+
+    // compare with protection
     if (actor.powers[PERMISSION_GROUP_MANAGEMENT_POWER] < before.powers[PERMISSION_GROUP_PROTECTION])
     {
         return FALSE;
     }
+
+    // check the added actions
     for (i = 0; i < PERMISSION_COUNT; i++)
     {
         if (_permissions_internal__is_allowed(target, &after, (permission_t)i) == FALSE)
@@ -1457,6 +1728,8 @@ static boole _permissions_internal__allows_change(const client_t *sender, const 
             return FALSE;
         }
     }
+
+    // check the raised powers
     for (i = 0; i < PERMISSION_POWER_COUNT; i++)
     {
         if (after.powers[i] > before.powers[i] && after.powers[i] > actor.powers[i == PERMISSION_GROUP_PROTECTION ? PERMISSION_GROUP_MANAGEMENT_POWER : i])
@@ -1481,22 +1754,32 @@ boole permissions__can_change_member(const client_t *sender, const client_t *tar
     uint64 i = 0;
     uint64 limit = 0;
 
+    // check the target
     if (target == NULL_POINTER)
     {
         return FALSE;
     }
+
+    // check the target state
     if (target->is_existing == FALSE || target->is_authenticated == FALSE || target->is_music_bot == TRUE)
     {
         return FALSE;
     }
+
+    // check the group action
     if (permissions__can_manage_group(sender, group_id, add == TRUE ? PERMISSION_ASSIGN_GROUPS : PERMISSION_REMOVE_GROUPS) == FALSE)
     {
         return FALSE;
     }
+
+    // check the assigned group
     if (add == TRUE && sender->is_admin == FALSE)
     {
+        // combine the sender groups
         assigned = &g_groups_array[group_id].permissions;
         _permissions_internal__resolve(sender, &actor);
+
+        // compare the actions
         for (i = 0; i < PERMISSION_COUNT; i++)
         {
             if (assigned->values[i] == PERMISSION_GRANT && _permissions_internal__is_allowed(sender, &actor, (permission_t)i) == FALSE)
@@ -1504,6 +1787,8 @@ boole permissions__can_change_member(const client_t *sender, const client_t *tar
                 return FALSE;
             }
         }
+
+        // compare the powers
         for (i = 0; i < PERMISSION_POWER_COUNT; i++)
         {
             limit = i == PERMISSION_GROUP_PROTECTION ? actor.powers[PERMISSION_GROUP_MANAGEMENT_POWER] : actor.powers[i];
@@ -1513,6 +1798,8 @@ boole permissions__can_change_member(const client_t *sender, const client_t *tar
             }
         }
     }
+
+    // check the target rights
     return _permissions_internal__allows_change(sender, target, group_id, add == TRUE ? &g_groups_array[group_id].permissions : NULL_POINTER);
 }
 
@@ -1528,10 +1815,13 @@ boole permissions__can_edit_group_permissions(const client_t *sender, uint64 gro
     uint64 i = 0;
     uint64 limit = 0;
 
+    // check arguments
     if (sender == NULL_POINTER || proposed == NULL_POINTER || group_id == ADMIN_GROUP_ID)
     {
         return FALSE;
     }
+
+    // only admins set flags
     if (sender->is_admin == FALSE)
     {
         if (permissions__has_flags(proposed) == TRUE)
@@ -1539,19 +1829,27 @@ boole permissions__can_edit_group_permissions(const client_t *sender, uint64 gro
             return FALSE;
         }
     }
+
+    // check the edit permission
     if (permissions__can_manage_group(sender, group_id, PERMISSION_EDIT_GROUP_PERMISSIONS) == FALSE)
     {
         return FALSE;
     }
+
+    // admins skip the rest
     if (sender->is_admin == TRUE)
     {
         return TRUE;
     }
+
+    // check the edit power
     _permissions_internal__resolve(sender, &actor);
     if (permissions__can_edit_values(actor.powers[PERMISSION_EDIT_POWER], &g_groups_array[group_id].permissions, proposed, FALSE) == FALSE)
     {
         return FALSE;
     }
+
+    // check the changed actions
     for (i = 0; i < PERMISSION_COUNT; i++)
     {
         if (_permissions_internal__action_value((permission_t)i, proposed->values[i]) == _permissions_internal__action_value((permission_t)i, g_groups_array[group_id].permissions.values[i]))
@@ -1567,6 +1865,8 @@ boole permissions__can_edit_group_permissions(const client_t *sender, uint64 gro
             return FALSE;
         }
     }
+
+    // check the changed powers
     for (i = 0; i < PERMISSION_POWER_COUNT; i++)
     {
         limit = actor.powers[i];
@@ -1579,6 +1879,8 @@ boole permissions__can_edit_group_permissions(const client_t *sender, uint64 gro
             return FALSE;
         }
     }
+
+    // check the group members
     return _permissions_internal__allows_group_members_change(sender, group_id, proposed);
 }
 
@@ -1589,18 +1891,25 @@ boole permissions__can_edit_group_permissions(const client_t *sender, uint64 gro
  */
 boole permissions__can_delete_group(const client_t *sender, uint64 group_id)
 {
+    // refuse Admin and Guest
     if (group_id == ADMIN_GROUP_ID || group_id == g_guest_group_id)
     {
         return FALSE;
     }
+
+    // check the delete permission
     if (permissions__can_manage_group(sender, group_id, PERMISSION_DELETE_GROUPS) == FALSE)
     {
         return FALSE;
     }
+
+    // admins skip the rest
     if (sender->is_admin == TRUE)
     {
         return TRUE;
     }
+
+    // check the group members
     return _permissions_internal__allows_group_members_change(sender, group_id, NULL_POINTER);
 }
 
@@ -1615,23 +1924,32 @@ boole permissions__can_create_group(const client_t *sender, const group_permissi
     uint64 i = 0;
     uint64 limit = 0;
 
+    // check arguments and setting
     if (sender == NULL_POINTER || proposed == NULL_POINTER || g_server_settings.is_permission_system_enabled == FALSE)
     {
         return FALSE;
     }
+
+    // check the create permission
     _permissions_internal__resolve(sender, &actor);
     if (_permissions_internal__is_allowed(sender, &actor, PERMISSION_CREATE_GROUPS) == FALSE)
     {
         return FALSE;
     }
+
+    // admins skip the rest
     if (sender->is_admin == TRUE)
     {
         return TRUE;
     }
+
+    // check the edit power
     if (permissions__can_edit_values(actor.powers[PERMISSION_EDIT_POWER], NULL_POINTER, proposed, FALSE) == FALSE)
     {
         return FALSE;
     }
+
+    // compare the actions
     for (i = 0; i < PERMISSION_COUNT; i++)
     {
         if (_permissions_internal__is_allowed(sender, proposed, (permission_t)i) == TRUE && _permissions_internal__is_allowed(sender, &actor, (permission_t)i) == FALSE)
@@ -1639,6 +1957,8 @@ boole permissions__can_create_group(const client_t *sender, const group_permissi
             return FALSE;
         }
     }
+
+    // compare the powers
     for (i = 0; i < PERMISSION_POWER_COUNT; i++)
     {
         limit = actor.powers[i == PERMISSION_GROUP_PROTECTION ? PERMISSION_GROUP_MANAGEMENT_POWER : i];
@@ -1663,6 +1983,7 @@ static boole _permissions_internal__allows_group_members_change(const client_t *
     uint64 i = 0;
     boole allowed = TRUE;
 
+    // check connected clients
     for (c = 0; c < (uint64)g_server_settings.max_client_count; c++)
     {
         if (g_clients_array[c].is_existing == TRUE && g_clients_array[c].is_authenticated == TRUE && _permissions_internal__has_group(&g_clients_array[c], group_id) == TRUE && _permissions_internal__allows_change(sender, &g_clients_array[c], group_id, proposed) == FALSE)
@@ -1670,6 +1991,8 @@ static boole _permissions_internal__allows_group_members_change(const client_t *
             return FALSE;
         }
     }
+
+    // build a temporary client
     clib__memset(&stored, 0, sizeof(stored));
     stored.is_existing = TRUE;
     stored.is_authenticated = TRUE;
@@ -1677,23 +2000,32 @@ static boole _permissions_internal__allows_group_members_change(const client_t *
     {
         return FALSE;
     }
+
+    // check stored clients
     pthread_mutex_lock(&g_client_stored_data_mutex);
     for (c = 0; c < MAX_CLIENT_STORED_DATA; c++)
     {
+        // skip empty slots
         if (g_client_stored_data[c].public_key[0] == 0)
         {
             continue;
         }
+
+        // refuse too many groups
         if (g_client_stored_data[c].group_id_count > MAX_GROUPS_FOR_SINGLE_CLIENT)
         {
             allowed = FALSE;
             break;
         }
+
+        // copy the group ids
         cvector_clear(stored.group_ids);
         for (i = 0; i < g_client_stored_data[c].group_id_count; i++)
         {
             cvector_push_back(stored.group_ids, (int)g_client_stored_data[c].group_ids[i]);
         }
+
+        // check the change
         if (_permissions_internal__has_group(&stored, group_id) == TRUE && _permissions_internal__allows_change(sender, &stored, group_id, proposed) == FALSE)
         {
             allowed = FALSE;
@@ -1701,6 +2033,8 @@ static boole _permissions_internal__allows_group_members_change(const client_t *
         }
     }
     pthread_mutex_unlock(&g_client_stored_data_mutex);
+
+    // free the group ids
     cvector_free(stored.group_ids);
     return allowed;
 }
@@ -1716,27 +2050,38 @@ cJSON *permissions__write_access(const client_t *client)
     group_permissions_t effective;
     uint64 i = 0;
 
+    // check both objects
     if (object == NULL_POINTER || powers == NULL_POINTER || !cJSON_AddItemToObject(object, "powers", powers))
     {
         cJSON_Delete(powers);
         cJSON_Delete(object);
         return NULL_POINTER;
     }
+
+    // write the actions
     _permissions_internal__resolve(client, &effective);
     for (i = 0; i < PERMISSION_COUNT; i++)
     {
         cJSON_AddBoolToObject(object, g_permission_names[i], _permissions_internal__is_allowed(client, &effective, (permission_t)i));
     }
+
+    // write the powers
     for (i = 0; i < PERMISSION_POWER_COUNT; i++)
     {
         cJSON_AddNumberToObject(powers, g_permission_power_names[i], client->is_admin == TRUE ? PERMISSION_POWER_MAX : effective.powers[i]);
     }
+
+    // write channel and role
     cJSON_AddNumberToObject(object, "channel_id", (double)client->channel_id);
     cJSON_AddNumberToObject(object, "channel_group_role", client->channel_group_role);
+
+    // use saved channel powers
     cJSON_SetNumberValue(cJSON_GetObjectItemCaseSensitive(powers, "talk_power"), client->talk_power);
     cJSON_SetNumberValue(cJSON_GetObjectItemCaseSensitive(powers, "channel_message_power"), client->channel_message_power);
     cJSON_SetNumberValue(cJSON_GetObjectItemCaseSensitive(powers, "channel_picture_power"), client->channel_picture_power);
     cJSON_SetNumberValue(cJSON_GetObjectItemCaseSensitive(powers, "stream_power"), client->stream_power);
+
+    // write the temporary channel
     if (client->is_temp_admin_channel == TRUE)
     {
         cJSON_AddNumberToObject(object, "temp_channel_id", (double)client->temp_channel_id);
@@ -1759,6 +2104,13 @@ cJSON *permissions__write_group_access(const client_t *client, uint64 group_id)
     permission_t actions[] = { PERMISSION_EDIT_GROUPS, PERMISSION_DELETE_GROUPS, PERMISSION_ASSIGN_GROUPS, PERMISSION_REMOVE_GROUPS, PERMISSION_EDIT_GROUP_PERMISSIONS };
     uint64 i = 0;
 
+    // check the object
+    if (object == NULL_POINTER)
+    {
+        return NULL_POINTER;
+    }
+
+    // write the allowed actions
     for (i = 0; i < sizeof(actions) / sizeof(actions[0]); i++)
     {
         cJSON_AddBoolToObject(object, g_permission_names[actions[i]], permissions__can_manage_group(client, group_id, actions[i]));
@@ -1777,15 +2129,22 @@ boole permissions__is_stored_client_allowed(const client_stored_data_t *stored, 
     uint64 i = 0;
     boole allowed = FALSE;
 
+    // clear the client
     clib__memset(&client, 0, sizeof(client));
+
+    // check the stored client
     if (stored == NULL_POINTER || stored->public_key[0] == 0)
     {
         return FALSE;
     }
+
+    // reserve the group list
     if (stored->group_id_count > MAX_GROUPS_FOR_SINGLE_CLIENT || !clib__int_vector_reserve(&client.group_ids, MAX_GROUPS_FOR_SINGLE_CLIENT))
     {
         return FALSE;
     }
+
+    // build a temporary client
     client.is_existing = TRUE;
     client.is_authenticated = TRUE;
     for (i = 0; i < stored->group_id_count && i < MAX_GROUPS_FOR_SINGLE_CLIENT; i++)
@@ -1796,7 +2155,11 @@ boole permissions__is_stored_client_allowed(const client_stored_data_t *stored, 
             client.is_admin = TRUE;
         }
     }
+
+    // check the permission
     allowed = permissions__is_allowed_in_groups(&client, permission);
+
+    // free the group ids
     cvector_free(client.group_ids);
     return allowed;
 }
@@ -1811,6 +2174,7 @@ boole permissions__is_identity_allowed(const char *identity_hash, permission_t p
     uint64 i = 0;
     boole allowed = FALSE;
 
+    // check the saved identity
     clib__read_lock(&g_groups_global_rwlock_guard);
     pthread_mutex_lock(&g_client_stored_data_mutex);
     for (i = 0; i < MAX_CLIENT_STORED_DATA; i++)

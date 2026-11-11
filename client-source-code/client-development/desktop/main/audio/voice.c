@@ -77,17 +77,25 @@ boole desktop_voice__devices(desktop_voice_t *voice, desktop_devices_view_t *vie
 desktop_voice_t *desktop_voice__create(boole devices)
 {
     desktop_voice_t *voice = calloc(1, sizeof(*voice));
+
+    // check the allocation
     if (!voice)
     {
         return NULL;
     }
+
+    // create transport and audio
     voice->transport = desktop_transport__create();
     voice->audio = desktop_audio__create(devices);
+
+    // set the default values
     voice->devices = devices;
     voice->sent_state = -1;
     voice->policy_socket = 1;
     voice->policy_voice = 1;
     voice->policy_music = 1;
+
+    // destroy on failure
     if (!voice->transport || !voice->audio)
     {
         desktop_voice__destroy(voice);
@@ -103,6 +111,7 @@ desktop_voice_t *desktop_voice__create(boole devices)
  */
 void desktop_voice__destroy(desktop_voice_t *voice)
 {
+    // stop and free voice
     if (voice)
     {
         desktop_voice__stop(voice);
@@ -121,14 +130,19 @@ void desktop_voice__destroy(desktop_voice_t *voice)
  */
 static void _voice_internal__drop(desktop_voice_t *voice)
 {
+    // disconnect the transport
     if (voice->transport)
     {
         desktop_transport__disconnect(voice->transport);
     }
+
+    // reset the state
     voice->state = 0;
     voice->sent_state = -1;
     voice->pending_until = 0;
     voice->retry_after = desktop_system__milliseconds() + 3000;
+
+    // erase key and ticket
     mbedtls_platform_zeroize(voice->auth_key, sizeof(voice->auth_key));
     mbedtls_platform_zeroize(voice->ticket, sizeof(voice->ticket));
 }
@@ -140,19 +154,28 @@ static void _voice_internal__drop(desktop_voice_t *voice)
  */
 void desktop_voice__stop(desktop_voice_t *voice)
 {
+    // nothing to stop
     if (!voice)
     {
         return;
     }
+
+    // disconnect and stop audio
     _voice_internal__drop(voice);
     if (voice->audio)
     {
         desktop_audio__stop_voice(voice->audio);
     }
+
+    // destroy the hotkey
     desktop_hotkey__destroy(voice->hotkey);
     voice->hotkey = NULL;
+
+    // erase the keys
     mbedtls_platform_zeroize(&voice->media, sizeof(voice->media));
     mbedtls_platform_zeroize(voice->bots, sizeof(voice->bots));
+
+    // reset the state
     voice->have_keys = 0;
     voice->microphone_announced = FALSE;
     voice->received_any = 0;
@@ -171,6 +194,7 @@ void desktop_voice__stop(desktop_voice_t *voice)
  */
 void desktop_voice__channel_changed(desktop_voice_t *voice)
 {
+    // reset audio and bots
     if (voice)
     {
         desktop_audio__reset(voice->audio);
@@ -190,10 +214,14 @@ static boole _voice_internal__request(desktop_session_t *session, const char *ty
 {
     cJSON *message = client_msg__delivery__new_message(type);
     boole complete = message != NULL;
+
+    // add the number field
     if (value >= 0)
     {
         complete = complete && cJSON_AddNumberToObject(message, clib__strcmp(type, "microphone_usage") == 0 ? "value" : "client_id", (double)value);
     }
+
+    // send the message
     return client_msg__delivery__send(session, message, complete);
 }
 
@@ -207,6 +235,8 @@ static voice_bot_t *_voice_internal__bot(desktop_voice_t *voice, uint id)
 {
     int64 index = 0;
     voice_bot_t *available = NULL_POINTER;
+
+    // find the bot entry
     for (index = 0; index < VOICE_BOTS; index++)
     {
         if (voice->bots[index].used && voice->bots[index].id == id)
@@ -218,6 +248,8 @@ static voice_bot_t *_voice_internal__bot(desktop_voice_t *voice, uint id)
             available = &voice->bots[index];
         }
     }
+
+    // mark the entry used
     if (available)
     {
         available->used = 1;
@@ -233,23 +265,33 @@ static boole _voice_internal__read_counter(const char *text, uint64 *counter)
     uint64 digit = 0;
     uint64 index = 0;
 
+    // refuse empty text
     if (!text || !text[0])
     {
         return FALSE;
     }
+
+    // read the decimal digits
     for (index = 0; text[index]; index++)
     {
+        // check length and digit
         if (index >= 20 || text[index] < '0' || text[index] > '9')
         {
             return FALSE;
         }
+
+        // refuse an overflow
         digit = (uint64)(text[index] - '0');
         if (value > (UINT64_MAX - digit) / 10)
         {
             return FALSE;
         }
+
+        // add the digit
         value = value * 10 + digit;
     }
+
+    // store the counter
     *counter = value;
     return TRUE;
 }
@@ -279,12 +321,17 @@ void desktop_voice__message(desktop_session_t *session, const cJSON *message)
     int64 slot = -1;
     int64 index = 0;
     uint64 discarded_through = 0;
+
+    // check the voice pointer
     if (!voice)
     {
         return;
     }
+
+    // choose by message type
     if (clib__strcmp(type, "authentication_status") == 0 || clib__strcmp(type, "server_policy") == 0)
     {
+        // read the policy flags
         value = cJSON_GetObjectItemCaseSensitive(message, "is_audio_over_websocket_allowed");
         if (cJSON_IsBool(value))
         {
@@ -303,12 +350,15 @@ void desktop_voice__message(desktop_session_t *session, const cJSON *message)
     }
     else if (clib__strcmp(type, "audio_websocket_session") == 0 && voice->state == 1 && desktop_system__milliseconds() < voice->pending_until)
     {
+        // read key and ticket
         id = server_msg__read_number(message, "client_id");
         if (id != session->model.local_id || id < 0 || id > UINT32_MAX || !crypto_media__hex(server_msg__read_string(message, "auth_key"), voice->auth_key, 32) || !crypto_media__hex(server_msg__read_string(message, "ticket"), voice->ticket, 16) || !desktop_endpoint__parse(session->connection.address, &endpoint))
         {
             _voice_internal__drop(voice);
             return;
         }
+
+        // connect the audio socket
         if (!clib__string_format(url, sizeof(url), "%s://%s%s%s:%u/audio", endpoint.secure ? "wss" : "ws", clib__strchr(endpoint.host, ':') ? "[" : "", endpoint.host, clib__strchr(endpoint.host, ':') ? "]" : "", endpoint.port) || !desktop_transport__connect(voice->transport, url))
         {
             _voice_internal__drop(voice);
@@ -318,17 +368,22 @@ void desktop_voice__message(desktop_session_t *session, const cJSON *message)
     }
     else if (clib__strcmp(type, "stop_song_stream") == 0 || clib__strcmp(type, "client_disconnect") == 0)
     {
+        // check the music bot
         id = server_msg__read_number(message, "client_id");
         slot = desktop_session__client(session, id);
         if (id < 0 || id > UINT32_MAX || slot < 0 || !session->model.clients[slot].music || session->model.clients[slot].channel != session->model.channel)
         {
             return;
         }
+
+        // find the bot entry
         bot = _voice_internal__bot(voice, (uint)id);
         if (!bot)
         {
             return;
         }
+
+        // discard the music audio
         if (clib__strcmp(type, "client_disconnect") == 0)
         {
             desktop_audio__discard_music(voice->audio);
@@ -343,18 +398,23 @@ void desktop_voice__message(desktop_session_t *session, const cJSON *message)
     }
     else if (clib__strcmp(type, "music_bot_key") == 0)
     {
+        // check bot and channel
         id = server_msg__read_number(message, "client_id");
         slot = desktop_session__client(session, id);
         if (slot < 0 || !session->model.clients[slot].music || session->model.clients[slot].channel != session->model.channel || server_msg__read_number(message, "channel_id") != session->model.channel || id > UINT32_MAX)
         {
             return;
         }
+
+        // check the key list
         bot = _voice_internal__bot(voice, (uint)id);
         keys = cJSON_GetObjectItemCaseSensitive(message, "music_bot_keys");
         if (!bot || !cJSON_IsArray(keys) || cJSON_GetArraySize(keys) != 4)
         {
             return;
         }
+
+        // read the four keys
         bot->ready = 0;
         mbedtls_platform_zeroize(&bot->keys, sizeof(bot->keys));
         for (index = 0; index < 4; index++)
@@ -389,25 +449,36 @@ static void _voice_internal__receive(desktop_session_t *session, const ubyte *by
     int64 slot = -1;
     voice_bot_t *bot = NULL_POINTER;
     const desktop_content_keys_t *keys = &session->keys;
+
+    // authenticate and check counter
     length = crypto_media__open(&voice->media, bytes, size, &packet.sender, &counter, &frame_counter, content, sizeof(content));
     if (!length || (voice->received_any && frame_counter <= voice->received_counter))
     {
         return;
     }
+
+    // store the frame counter
     voice->received_counter = frame_counter;
     voice->received_any = 1;
+
+    // check the sender
     slot = desktop_session__client(session, packet.sender);
     if (slot < 0 || packet.sender == session->model.local_id || session->model.clients[slot].muted || session->model.clients[slot].idle || session->model.clients[slot].channel != session->model.channel)
     {
         return;
     }
+
+    // choose the keys
     if (session->model.clients[slot].music)
     {
+        // find the bot entry
         bot = _voice_internal__bot(voice, packet.sender);
         if (!bot || !_voice_internal__after_discard(bot, counter))
         {
             return;
         }
+
+        // request a missing key
         if (!bot->ready)
         {
             if (desktop_system__milliseconds() - bot->requested >= 1000)
@@ -417,25 +488,35 @@ static void _voice_internal__receive(desktop_session_t *session, const ubyte *by
             }
             return;
         }
+
+        // use the bot keys
         keys = &bot->keys;
     }
     else if (!session->model.keys_ready)
     {
         return;
     }
+
+    // decrypt the four layers
     for (index = 4; index > 0; index--)
     {
         crypto_media__layer(keys->keys[index - 1], keys->ivs[index - 1], packet.sender, counter, content, length);
     }
+
+    // build the audio packet
     packet.sequence = (ushort)(content[0] | (content[1] << 8));
     packet.size = length - 2;
     clib__memcpy(packet.data, content + 2, packet.size);
     packet.volume_offset = session->model.clients[slot].volume_offset;
     packet.music = session->model.clients[slot].music;
+
+    // queue the audio packet
     if (desktop_audio__receive(voice->audio, &packet))
     {
         session->model.audio_packets_received++;
     }
+
+    // clear the buffers
     clib__null_memory(content, sizeof(content));
     clib__null_memory(&packet, sizeof(packet));
 }
@@ -454,29 +535,44 @@ static void _voice_internal__send(desktop_session_t *session)
     int64 batch = 0;
     int64 index = 0;
     uint64 size = 0;
+
+    // send a packet batch
     for (batch = 0; batch < 4 && desktop_audio__next_packet(voice->audio, &packet); batch++)
     {
+        // check the counter limit
         if (voice->counter == UINT64_MAX)
         {
             desktop_session__detail(session, "Media counter exhausted. Reconnect before transmitting again.", 1);
             return;
         }
+
+        // increase the counter
         voice->counter++;
+
+        // write sequence and data
         content[0] = (ubyte)packet.sequence;
         content[1] = (ubyte)(packet.sequence >> 8);
         clib__memcpy(content + 2, packet.data, packet.size);
+
+        // encrypt the four layers
         for (index = 0; index < 4; index++)
         {
             crypto_media__layer(session->keys.keys[index], session->keys.ivs[index], (uint)session->model.local_id, voice->counter, content, packet.size + 2);
         }
+
+        // build and send frame
         size = crypto_media__seal(&voice->media, (uint)session->model.local_id, voice->counter, content, packet.size + 2, frame, sizeof(frame));
         if (!size || !desktop_transport__send_media(voice->transport, frame, size, packet.created + DESKTOP_AUDIO_PACKET_AGE))
         {
-            // Live audio is dropped under backpressure instead of growing a delay queue.
+            // live audio is dropped under backpressure instead of growing a delay queue
             break;
         }
+
+        // count the sent packet
         session->model.audio_packets_sent++;
     }
+
+    // clear the buffers
     clib__null_memory(content, sizeof(content));
     clib__null_memory(&packet, sizeof(packet));
 }
@@ -499,10 +595,14 @@ void desktop_voice__tick(desktop_session_t *session)
     int64 key = DESKTOP_HOTKEY_DEFAULT;
     int64 requested = 3;
     int64 slot = desktop_session__client(session, session->model.local_id);
+
+    // check the voice pointer
     if (!voice)
     {
         return;
     }
+
+    // copy the audio options
     desktop_mutex__lock(session->mutex);
     options = session->audio_options;
     if (!options.microphone)
@@ -511,11 +611,15 @@ void desktop_voice__tick(desktop_session_t *session)
     }
     key = session->push_to_talk_key;
     desktop_mutex__unlock(session->mutex);
+
+    // reset the audio status
     session->model.audio_ready = 0;
     session->model.microphone_ready = 0;
     session->model.talking = 0;
     session->model.voice_detected = FALSE;
     session->model.input_level = -90;
+
+    // stop disabled audio
     if (!options.enabled || !voice->policy_socket || (!voice->policy_voice && !voice->policy_music) || !session->model.connected || slot < 0 || session->model.clients[slot].idle)
     {
         if (voice->state)
@@ -528,6 +632,8 @@ void desktop_voice__tick(desktop_session_t *session)
         clib__string_copy(session->model.audio_detail, sizeof(session->model.audio_detail), !voice->policy_socket ? "This server does not allow audio over TCP WebSocket." : "Audio disabled");
         return;
     }
+
+    // prepare keys and counter
     if (!voice->have_keys)
     {
         if (!crypto_session__media_keys(session->crypto, &voice->media) || !crypto_session__random(session->crypto, (ubyte *)&voice->counter, sizeof(voice->counter)))
@@ -537,17 +643,23 @@ void desktop_voice__tick(desktop_session_t *session)
         voice->counter &= UINT64_MAX >> 1;
         voice->have_keys = 1;
     }
+
+    // request the audio socket
     if (!voice->state && now >= voice->retry_after)
     {
         voice->state = 1;
         voice->pending_until = now + 10000;
         _voice_internal__request(session, "request_audio_websocket", -1);
     }
+
+    // check the transport state
     desktop_transport__status(voice->transport, &status);
     if (voice->state >= 2 && (status.state == DESKTOP_TRANSPORT_FAILED || status.state == DESKTOP_TRANSPORT_DISCONNECTED))
     {
         _voice_internal__drop(voice);
     }
+
+    // send the ticket proof
     if (voice->state == 2 && status.state == DESKTOP_TRANSPORT_CONNECTED)
     {
         if (crypto_media__proof(voice->auth_key, voice->ticket, (uint)session->model.local_id, proof) && desktop_transport__send_binary(voice->transport, proof, sizeof(proof)))
@@ -555,14 +667,18 @@ void desktop_voice__tick(desktop_session_t *session)
             voice->state = 3;
         }
     }
+
+    // read received messages
     for (batch = 0; batch < 32 && desktop_transport__receive(voice->transport, &message); batch++)
     {
+        // refuse a text message
         if (!message.binary)
         {
             _voice_internal__drop(voice);
         }
         else if (voice->state == 3)
         {
+            // check the acknowledgement
             if (crypto_media__acknowledgement(voice->auth_key, voice->ticket, (const ubyte *)message.data, message.size))
             {
                 voice->state = 4;
@@ -577,6 +693,7 @@ void desktop_voice__tick(desktop_session_t *session)
         }
         else if (voice->state == 4)
         {
+            // receive audio, answer keepalive
             if (message.size)
             {
                 _voice_internal__receive(session, (const ubyte *)message.data, message.size);
@@ -586,24 +703,36 @@ void desktop_voice__tick(desktop_session_t *session)
                 desktop_transport__send_binary(voice->transport, NULL, 0);
             }
         }
+
+        // release the message
         desktop_message__release(&message);
     }
+
+    // time limit has passed
     if (voice->state && voice->state < 4 && now >= voice->pending_until)
     {
         _voice_internal__drop(voice);
     }
+
+    // update the audio options
     options.enabled = voice->state == 4;
     options.microphone = options.enabled && options.microphone && voice->policy_voice;
+
+    // create the hotkey
     if (options.microphone && !options.voice_activation && !voice->hotkey && voice->devices && now >= voice->hotkey_retry)
     {
         voice->hotkey = desktop_hotkey__create();
         voice->hotkey_retry = now + 3000;
     }
+
+    // choose the microphone state
     desktop_audio__status(voice->audio, &audio);
     if (options.microphone)
     {
         requested = (options.voice_activation ? audio.voice_active : (options.transmit || desktop_hotkey__down(voice->hotkey, key))) && audio.capture_ready && session->model.keys_ready ? 1 : 2;
     }
+
+    // send the microphone state
     if (voice->state == 4 && voice->sent_state != requested)
     {
         if (_voice_internal__request(session, "microphone_usage", requested))
@@ -611,8 +740,12 @@ void desktop_voice__tick(desktop_session_t *session)
             voice->sent_state = requested;
         }
     }
+
+    // configure the audio
     options.transmit = requested == 1 && session->model.clients[slot].audio == 1 && session->model.keys_ready;
     desktop_audio__configure(voice->audio, &options);
+
+    // send or discard packets
     if (options.transmit)
     {
         _voice_internal__send(session);
@@ -621,16 +754,24 @@ void desktop_voice__tick(desktop_session_t *session)
     {
         desktop_transport__discard_media(voice->transport);
     }
+
+    // store the ready flags
     session->model.audio_ready = voice->state == 4 && audio.playback_ready;
     session->model.microphone_ready = options.microphone && audio.capture_ready;
+
+    // play the microphone sound
     if (session->model.microphone_ready && !voice->microphone_announced)
     {
         desktop_voice__sound(voice, DESKTOP_SOUND_MICROPHONE_ACTIVATED);
         voice->microphone_announced = TRUE;
     }
+
+    // store the talk status
     session->model.talking = options.transmit && audio.transmitting;
     session->model.input_level = options.microphone && audio.capture_ready ? audio.input_level : -90;
     session->model.voice_detected = options.microphone && audio.voice_active;
+
+    // set the detail text
     if (voice->state != 4)
     {
         clib__string_copy(session->model.audio_detail, sizeof(session->model.audio_detail), "Connecting audio...");
@@ -651,6 +792,8 @@ void desktop_voice__tick(desktop_session_t *session)
     {
         clib__string_format(session->model.audio_detail, sizeof(session->model.audio_detail), session->model.talking ? "Talking" : options.microphone ? "Hold %s to talk" : "Listening - microphone disabled", desktop_hotkey__name(key));
     }
+
+    // erase the proof
     mbedtls_platform_zeroize(proof, sizeof(proof));
 }
 

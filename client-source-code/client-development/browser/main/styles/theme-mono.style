@@ -1008,7 +1008,7 @@
     font: 600 18px/28px var(--set-font);
 }
 
-:root :is(#local-settings-container, #server-settings-tab, #groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog, #server-info-dialog, #video-stream-popup) .close-button.close-button
+:root :is(#local-settings-container, #server-settings-tab, #groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog, #server-info-dialog, #video-stream-popup, #identity-string-use-container-enter) .close-button.close-button
 {
     width: 28px;
     height: 28px;
@@ -1020,12 +1020,12 @@
     text-align: center;
 }
 
-:root :is(#local-settings-container, #server-settings-tab, #groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog, #server-info-dialog, #video-stream-popup) .close-button.close-button::before
+:root :is(#local-settings-container, #server-settings-tab, #groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog, #server-info-dialog, #video-stream-popup, #identity-string-use-container-enter) .close-button.close-button::before
 {
     content: "\2715";
 }
 
-:root :is(#local-settings-container, #server-settings-tab, #groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog, #server-info-dialog, #video-stream-popup) .close-button.close-button:hover
+:root :is(#local-settings-container, #server-settings-tab, #groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog, #server-info-dialog, #video-stream-popup, #identity-string-use-container-enter) .close-button.close-button:hover
 {
     background: var(--mono-line);
     color: var(--mono-text);
@@ -1700,4 +1700,63 @@ body.msgr-neighbors-only #member-list-body .member-list-client:not(.in-current-c
     text-align: center;
     pointer-events: none;
     z-index: 46;
+}
+
+/* The connection details window and the import identity window: this theme's panel, fields and buttons. */
+:root #identity-string-use-container-enter
+{
+    border: 1px solid var(--mono-line);
+    border-radius: 16px;
+    background: var(--mono-bg);
+    color: var(--mono-text);
+    box-shadow: none;
+}
+
+:root :is(#container-2, #identity-string-use-container-enter) :is(.button-1, #add-key-button)
+{
+    width: auto;
+    height: auto;
+    min-width: 0;
+    padding: 8px 16px;
+    border: 1px solid var(--mono-text);
+    border-radius: 18px;
+    background: var(--mono-text);
+    color: var(--mono-inverse);
+    font: 600 13px/18px var(--set-font);
+    white-space: nowrap;
+    box-shadow: none;
+}
+
+:root :is(#container-2, #identity-string-use-container-enter) :is(.button-1, #add-key-button):hover
+{
+    border-color: var(--mono-muted);
+    background: var(--mono-muted);
+}
+
+:root :is(#container-2, #identity-string-use-container-enter) :is(input[type="text"], input[type="password"], select, textarea)
+{
+    border: 1px solid var(--mono-line);
+    border-radius: 10px;
+    background: var(--mono-surface);
+    color: var(--mono-text);
+    font: 14px/20px var(--set-font);
+    box-shadow: none;
+}
+
+:root :is(#container-2, #identity-string-use-container-enter) :is(input[type="text"], input[type="password"], select, textarea):focus
+{
+    border-color: var(--mono-text);
+    outline: none;
+}
+
+:root #identity-string-use-container-enter :is(.identity-dialog-explainer, .identity-dialog-hint)
+{
+    color: var(--mono-muted);
+    font: 13px/1.5 var(--set-font);
+}
+
+:root #identity-string-use-container-enter .identity-dialog-link
+{
+    color: var(--mono-text);
+    font: 13px/20px var(--set-font);
 }

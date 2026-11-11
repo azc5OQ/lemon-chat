@@ -79,14 +79,19 @@ static uint64 _video_websocket_internal__read_u32(const ubyte *bytes)
  */
 static boole _video_websocket_internal__authentication_code(mbedtls_md_context_t *context, const ubyte *data, uint64 size, ubyte *out_code)
 {
+    // reset the HMAC state
     if (mbedtls_md_hmac_reset(context) != 0)
     {
         return FALSE;
     }
+
+    // add the data
     if (mbedtls_md_hmac_update(context, data, size) != 0)
     {
         return FALSE;
     }
+
+    // write the check value
     return mbedtls_md_hmac_finish(context, out_code) == 0;
 }
 
@@ -104,6 +109,7 @@ static boole _video_websocket_internal__is_equal(const ubyte *left, const ubyte 
     ubyte difference = 0;
     uint64 i = 0;
 
+    // compare every byte
     for (i = 0; i < size; i++)
     {
         difference |= left[i] ^ right[i];
@@ -153,6 +159,8 @@ static boole _video_websocket_internal__issue_session(client_t *client)
     {
         return FALSE;
     }
+
+    // store the new session
     *slot = session;
     session->requested_at = now;
     session->expires_at = now + 15000;
@@ -175,6 +183,8 @@ static boole _video_websocket_internal__issue_session(client_t *client)
     {
         clib__string_format(ticket_hex + i * 2, 3, "%02x", session->ticket[i]);
     }
+
+    // build the JSON message
     root = cJSON_CreateObject();
     message = cJSON_AddObjectToObject(root, "message");
     if (message != NULL_POINTER)
@@ -185,6 +195,8 @@ static boole _video_websocket_internal__issue_session(client_t *client)
         cJSON_AddStringToObject(message, "ticket", ticket_hex);
         plaintext = cJSON_PrintUnformatted(root);
     }
+
+    // queue the message
     if (plaintext != NULL_POINTER)
     {
         is_issued = server_msg__delivery__queue_text_to_client(client, plaintext);
@@ -197,7 +209,11 @@ static boole _video_websocket_internal__issue_session(client_t *client)
         mbedtls_platform_zeroize(plaintext, clib__strlen(plaintext));
         cJSON_free(plaintext);
     }
+
+    // free the JSON
     cJSON_Delete(root);
+
+    // clear the key text
     mbedtls_platform_zeroize(key_hex, sizeof(key_hex));
     return is_issued;
 }
@@ -222,24 +238,26 @@ static uint64 _video_websocket_internal__attach(ws_cli_conn_t *socket, const uby
     client_t *client = NULL_POINTER;
     uint64 id = 0;
 
-    // Require the complete proof packet before reading its fields.
+    // require the complete proof packet before reading its fields
     if (size != 53)
     {
         return UINT64_MAX;
     }
 
-    // Accept the session proof packet type only.
+    // accept the session proof packet type only
     if (data[0] != 1)
     {
         return UINT64_MAX;
     }
 
-    // Read the client ID and check it before indexing the clients array.
+    // read the client ID and check it before indexing the clients array
     id = _video_websocket_internal__read_u32(data + 1);
     if (id >= g_server_settings.max_client_count)
     {
         return UINT64_MAX;
     }
+
+    // find client and session
     client = &g_clients_array[id];
     session = client->video_websocket;
 
@@ -250,25 +268,25 @@ static uint64 _video_websocket_internal__attach(ws_cli_conn_t *socket, const uby
         goto rejected;
     }
 
-    // Reject expired tickets and sessions already attached to another socket.
+    // reject expired tickets and sessions already attached to another socket
     if (session->socket != NULL_POINTER || now > session->expires_at)
     {
         goto rejected;
     }
 
-    // Require the ticket issued to this client.
+    // require the ticket issued to this client
     if (_video_websocket_internal__is_equal(session->ticket, data + 5, 16) == FALSE)
     {
         goto rejected;
     }
 
-    // Calculate the expected authentication code for the packet.
+    // calculate the expected authentication code for the packet
     if (_video_websocket_internal__authentication_code(&session->receive_mac, data, 21, code) == FALSE)
     {
         goto rejected;
     }
 
-    // Reject a proof whose authentication code does not match.
+    // reject a proof whose authentication code does not match
     if (_video_websocket_internal__is_equal(code, data + 21, 32) == FALSE)
     {
         goto rejected;
@@ -283,7 +301,7 @@ static uint64 _video_websocket_internal__attach(ws_cli_conn_t *socket, const uby
         return UINT64_MAX;
     }
 
-    // Attach the verified socket and queue the acknowledgement.
+    // attach the verified socket and queue the acknowledgement
     session->socket = socket;
     ws_media_bind(socket, id);
     client->is_video_websocket_authenticated = TRUE;
@@ -295,6 +313,7 @@ static uint64 _video_websocket_internal__attach(ws_cli_conn_t *socket, const uby
     return id;
 
 rejected:
+    // log the refusal
     DBG_VIDEO_WEBSOCKET log_info("%s %s %llu %s", "video", "proof frame for client", id, "refused: no session, wrong ticket or code, expired, idle, or already attached");
     return UINT64_MAX;
 }
@@ -344,18 +363,25 @@ static boole _video_websocket_internal__is_served(void)
  */
 boole video_websocket__send(client_t *client, const ubyte *frame, uint64 size)
 {
+    // refuse wrong size
     if (size < MEDIA_FRAME_OVERHEAD || size > WS_VIDEO_FRAME_MAX)
     {
         return FALSE;
     }
+
+    // refuse missing session
     if (client->video_websocket == NULL_POINTER)
     {
         return FALSE;
     }
+
+    // refuse missing socket
     if (client->video_websocket->socket == NULL_POINTER)
     {
         return FALSE;
     }
+
+    // queue the packet
     return ws_media_queue_frame(client->video_websocket->socket, frame, size, WS_MEDIA_KIND_VIDEO) == 0;
 }
 
@@ -397,6 +423,7 @@ void video_websocket__request(client_t *client)
     boole status3 = FALSE;
     boole status4 = FALSE;
 
+    // check policy and client
     status0 = _video_websocket_internal__is_served() == FALSE;
     if (status0 == FALSE)
     {
@@ -405,11 +432,15 @@ void video_websocket__request(client_t *client)
         status3 = client->is_music_bot == TRUE;
         status4 = client->is_idle == TRUE;
     }
+
+    // refuse the request
     if (status0 == TRUE || status1 == TRUE || status2 == TRUE || status3 == TRUE || status4 == TRUE)
     {
         DBG_VIDEO_WEBSOCKET log_info("%s %llu %s", "video session request of client", client->client_id, "refused: websocket video is not served, or the client is not authenticated, a music bot, or idle");
         return;
     }
+
+    // create the session offer
     _video_websocket_internal__issue_session(client);
 }
 
@@ -424,9 +455,12 @@ void video_websocket__onopen(ws_cli_conn_t *socket)
 {
     boole status = FALSE;
 
+    // read the server policy
     clib__read_lock(&g_clients_global_rwlock_guard);
     status = _video_websocket_internal__is_served();
     clib__unlock(&g_clients_global_rwlock_guard);
+
+    // close when not served
     if (status == FALSE)
     {
         DBG_VIDEO_WEBSOCKET log_info("%s", "a /video socket opened while websocket video is not served; closed");
@@ -457,12 +491,15 @@ void video_websocket__onmessage(ws_cli_conn_t *socket, ubyte *data, uint64 size,
     boole relay = FALSE;
     uint64 now = util__get_timestamp_ms();
 
+    // check type and size
     if (type != WS_FR_OP_BIN || size > WS_VIDEO_FRAME_MAX)
     {
         DBG_VIDEO_WEBSOCKET log_info("%s %llu %s", "video frame of", size, "bytes refused: not binary or too large; socket closed");
         ws_abort_client(socket);
         return;
     }
+
+    // attach a new socket
     if (id == UINT64_MAX)
     {
         clib__write_lock(&g_clients_global_rwlock_guard);
@@ -475,33 +512,47 @@ void video_websocket__onmessage(ws_cli_conn_t *socket, ubyte *data, uint64 size,
         return;
     }
 
+    // lock the clients
     clib__read_lock(&g_clients_global_rwlock_guard);
+
+    // check the client id
     if (id >= g_server_settings.max_client_count)
     {
         goto done;
     }
+
+    // find client and session
     client = &g_clients_array[id];
     session = client->video_websocket;
     if (client->is_existing == FALSE || client->is_authenticated == FALSE || client->is_idle == TRUE || session == NULL_POINTER)
     {
         goto done;
     }
+
+    // check the session socket
     if (session->socket != socket)
     {
         goto done;
     }
+
+    // check the frame limit
     if (_video_websocket_internal__is_frame_allowed(session, now, VIDEO_WEBSOCKET_MAX_FRAMES_PER_SECOND) == FALSE)
     {
         DBG_VIDEO_WEBSOCKET log_info("%s %llu %s", "client", id, "sent more video frames within a second than allowed; socket closed");
         goto done;
     }
+
+    // accept the frame
     valid = TRUE;
     if (size > 0)
     {
         relay = TRUE;
     }
 done:
+    // unlock the clients
     clib__unlock(&g_clients_global_rwlock_guard);
+
+    // close socket or relay
     if (valid == FALSE)
     {
         ws_abort_client(socket);
@@ -527,9 +578,12 @@ void video_websocket__onclose(ws_cli_conn_t *socket)
     uint64 id = ws_media_client_id(socket);
     client_t *client = NULL_POINTER;
 
+    // lock clients, peers, channels
     clib__write_lock(&g_clients_global_rwlock_guard);
     clib__read_lock(&g_webrtc_peers_rwlock_guard);
     clib__write_lock(&g_channels_global_rwlock_guard);
+
+    // end the video session
     if (id < g_server_settings.max_client_count)
     {
         client = &g_clients_array[id];
@@ -543,6 +597,8 @@ void video_websocket__onclose(ws_cli_conn_t *socket)
             }
         }
     }
+
+    // unlock channels, peers, clients
     clib__unlock(&g_channels_global_rwlock_guard);
     clib__unlock(&g_webrtc_peers_rwlock_guard);
     clib__unlock(&g_clients_global_rwlock_guard);
@@ -562,12 +618,17 @@ void video_websocket__disconnect(client_t *client)
     video_websocket_session_t **slot = &client->video_websocket;
     video_websocket_session_t *session = *slot;
 
+    // remove session from client
     *slot = NULL_POINTER;
     client->is_video_websocket_authenticated = FALSE;
+
+    // no session to end
     if (session == NULL_POINTER)
     {
         return;
     }
+
+    // close the socket
     if (session->socket != NULL_POINTER)
     {
         ws_abort_client(session->socket);
@@ -612,10 +673,13 @@ void video_websocket__clear_queue(client_t *client)
 {
     boole status = FALSE;
 
+    // check for a socket
     if (client->video_websocket != NULL_POINTER)
     {
         status = client->video_websocket->socket != NULL_POINTER;
     }
+
+    // clear the socket queue
     if (status == TRUE)
     {
         ws_media_clear_queue(client->video_websocket->socket);

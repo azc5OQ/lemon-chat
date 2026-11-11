@@ -31,6 +31,7 @@ static boole _server_attachments_internal__blocked(const desktop_chat_preference
  */
 static void _server_attachments_internal__append(desktop_session_t *session, desktop_attachment_record_t *record, int64 slot)
 {
+    // add the chat line
     if (record->view.peer >= 0)
     {
         server_msg__chat__append_direct(session, slot, "Attachment", 0);
@@ -39,6 +40,8 @@ static void _server_attachments_internal__append(desktop_session_t *session, des
     {
         server_msg__chat__append(session, record->view.channel, session->model.clients[slot].name, "Attachment", 0);
     }
+
+    // store the attachment ID
     session->model.chats[session->model.chat_count - 1].attachment_id = record->view.id;
 }
 
@@ -60,10 +63,14 @@ static void _server_attachments_internal__offer(desktop_session_t *session, cons
     int64 index = 0;
     uint64 length = clib__strlen(preview);
     boole picture = cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(message, "is_picture"));
+
+    // check length and sender
     if (clib__strlen(id) != 32 || (slot >= 0 && session->model.clients[slot].ignored))
     {
         return;
     }
+
+    // check the hex characters
     for (index = 0; index < 32; index++)
     {
         if (!clib__strchr("0123456789abcdef", id[index]))
@@ -71,6 +78,8 @@ static void _server_attachments_internal__offer(desktop_session_t *session, cons
             return;
         }
     }
+
+    // find the offer record
     for (index = 0; index < DESKTOP_ATTACHMENT_COUNT; index++)
     {
         if (clib__strcmp(attachments->records[index].view.offer, id) == 0)
@@ -79,13 +88,18 @@ static void _server_attachments_internal__offer(desktop_session_t *session, cons
             break;
         }
     }
+
+    // store a new offer
     if (clib__strcmp(status, "offered") == 0 && !record && slot >= 0 && sender != session->model.local_id && length > 0 && length <= 49152)
     {
+        // reserve a record
         record = desktop_attachments__reserve(attachments);
         if (!record)
         {
             return;
         }
+
+        // fill the record
         record->view.peer = sender;
         record->view.peer_serial = session->model.clients[slot].serial;
         record->view.picture = picture;
@@ -93,13 +107,19 @@ static void _server_attachments_internal__offer(desktop_session_t *session, cons
         record->sender_serial = record->view.peer_serial;
         clib__string_copy(record->view.offer, sizeof(record->view.offer), id);
         record->view.state = DESKTOP_ATTACHMENT_PREPARING;
+
+        // add the chat line
         _server_attachments_internal__append(session, record, slot);
+
+        // refuse a blocked type
         if (_server_attachments_internal__blocked(&attachments->preferences, TRUE, picture))
         {
             desktop_attachment_record__fail(record, "Receiving this attachment type is disabled in local settings.");
             record->decision = 2;
             return;
         }
+
+        // allocate the preview
         record->preview = calloc(1, length + 1);
         if (!record->preview)
         {
@@ -107,20 +127,27 @@ static void _server_attachments_internal__offer(desktop_session_t *session, cons
             record->decision = 2;
             return;
         }
+
+        // copy the preview
         clib__string_copy(record->preview, length + 1, preview);
+
+        // start the offer job
         record->job = ATTACHMENT_JOB_OFFER;
         clib__string_copy(record->view.detail, sizeof(record->view.detail), "Reading attachment offer");
     }
     else if (record && sender == (record->view.outgoing ? session->model.local_id : record->view.peer))
     {
+        // apply the offer status
         if (!record->busy && clib__strcmp(status, "accepted") == 0 && record->view.outgoing && record->view.state == DESKTOP_ATTACHMENT_WAITING)
         {
+            // start the upload
             record->accepted = TRUE;
             record->view.state = DESKTOP_ATTACHMENT_UPLOADING;
             clib__string_copy(record->view.detail, sizeof(record->view.detail), "Uploading");
         }
         else if (record->view.state < DESKTOP_ATTACHMENT_READY && (clib__strcmp(status, "rejected") == 0 || clib__strcmp(status, "cancelled") == 0 || clib__strcmp(status, "expired") == 0 || clib__strcmp(status, "unavailable") == 0 || clib__strcmp(status, "busy") == 0))
         {
+            // cancel the transfer
             record->decision = 3;
             if (record->busy)
             {
@@ -155,12 +182,17 @@ static void _server_attachments_internal__metadata(desktop_session_t *session, c
     int64 active = 0;
     int64 index = 0;
     boole reuse = FALSE;
+
+    // check the metadata
     if (slot < 0 || session->model.clients[slot].ignored || sender == session->model.local_id || server_id < 0 || length <= 0 || (uint64)length > DESKTOP_ATTACHMENT_WIRE_LIMIT || (!direct && (channel != session->model.channel || !session->model.keys_ready)) || (!picture && (!header_length || header_length > 16384)) || _server_attachments_internal__blocked(&attachments->preferences, direct, picture))
     {
         return;
     }
+
+    // check every record
     for (index = 0; index < DESKTOP_ATTACHMENT_COUNT; index++)
     {
+        // count receiving transfers
         candidate = &attachments->records[index];
         if (!candidate->view.outgoing && candidate->view.state == DESKTOP_ATTACHMENT_RECEIVING)
         {
@@ -171,22 +203,30 @@ static void _server_attachments_internal__metadata(desktop_session_t *session, c
                 return;
             }
         }
+
+        // find the accepted offer
         if (direct && !candidate->view.outgoing && candidate->view.peer == sender && candidate->view.peer_serial == session->model.clients[slot].serial && candidate->accepted && candidate->view.state == DESKTOP_ATTACHMENT_WAITING && candidate->view.picture == picture && !candidate->busy)
         {
             record = candidate;
         }
     }
+
+    // check the memory limit
     if (active >= 2 || (uint64)length > DESKTOP_ATTACHMENT_CACHE_LIMIT - total)
     {
         desktop_session__detail(session, "Incoming attachment skipped: transfer memory limit reached.", FALSE);
         return;
     }
+
+    // reuse or reserve record
     reuse = record != NULL;
     record = record ? record : desktop_attachments__reserve(attachments);
     if (!record)
     {
         return;
     }
+
+    // fill the record
     record->view.picture = picture;
     record->view.peer = direct ? sender : -1;
     record->view.peer_serial = direct ? session->model.clients[slot].serial : 0;
@@ -196,6 +236,8 @@ static void _server_attachments_internal__metadata(desktop_session_t *session, c
     record->sender_serial = session->model.clients[slot].serial;
     record->wire_size = (uint64)length;
     record->wire_capacity = (uint64)length + 1;
+
+    // allocate the buffers
     record->wire = calloc(1, record->wire_capacity);
     if (!picture)
     {
@@ -205,18 +247,26 @@ static void _server_attachments_internal__metadata(desktop_session_t *session, c
             clib__string_copy(record->header, header_length + 1, header);
         }
     }
+
+    // add the chat line
     if (!reuse)
     {
         _server_attachments_internal__append(session, record, slot);
     }
+
+    // check the allocations
     if (!record->wire || (!picture && !record->header))
     {
         desktop_attachment_record__fail(record, "Could not allocate this transfer.");
         return;
     }
+
+    // copy the keys
     record->keys = session->keys;
     record->previous = session->previous_keys;
     record->have_previous = session->have_previous;
+
+    // set the receiving state
     record->view.state = DESKTOP_ATTACHMENT_RECEIVING;
     record->deadline = desktop_system__milliseconds() + 600000;
     clib__string_copy(record->view.detail, sizeof(record->view.detail), "Receiving");
@@ -241,13 +291,19 @@ void server_msg__attachments__receive(desktop_session_t *session, const cJSON *m
     int64 local_id = server_msg__read_number(message, "local_message_id");
     int64 index = 0;
     uint64 length = 0;
+
+    // lock the attachments
     desktop_mutex__lock(attachments->mutex);
+
+    // choose by message type
     if (clib__strcmp(type, "direct_attachment_offer") == 0)
     {
+        // read the direct offer
         _server_attachments_internal__offer(session, message);
     }
     else if (clib__strcmp(type, "file_send_success") == 0)
     {
+        // mark upload as acknowledged
         record = desktop_attachments__find(attachments, attachments->uploading);
         if (record && (record->view.state == DESKTOP_ATTACHMENT_CANCELLED || (record->offset == record->wire_size && record->offset)))
         {
@@ -256,6 +312,7 @@ void server_msg__attachments__receive(desktop_session_t *session, const cJSON *m
     }
     else if (clib__strcmp(type, "file_send_error") == 0)
     {
+        // mark the failed upload
         for (index = 0; index < DESKTOP_ATTACHMENT_COUNT; index++)
         {
             record = &attachments->records[index];
@@ -272,14 +329,17 @@ void server_msg__attachments__receive(desktop_session_t *session, const cJSON *m
     }
     else if (clib__strcmp(type, "channel_chat_picture_metadata") == 0 || clib__strcmp(type, "direct_chat_picture_metadata") == 0)
     {
+        // read the picture metadata
         _server_attachments_internal__metadata(session, message, type[0] == 'd', TRUE);
     }
     else if (clib__strcmp(type, "channel_chat_file_metadata") == 0 || clib__strcmp(type, "direct_chat_file_metadata") == 0)
     {
+        // read the file metadata
         _server_attachments_internal__metadata(session, message, type[0] == 'd', FALSE);
     }
     else if (clib__strcmp(type, "file_receive_chunk") == 0 || clib__strcmp(type, "file_receive_completed") == 0)
     {
+        // find the receiving record
         for (index = 0; index < DESKTOP_ATTACHMENT_COUNT; index++)
         {
             record = &attachments->records[index];
@@ -288,13 +348,18 @@ void server_msg__attachments__receive(desktop_session_t *session, const cJSON *m
                 break;
             }
         }
+
+        // no record matches
         if (index == DESKTOP_ATTACHMENT_COUNT)
         {
             desktop_mutex__unlock(attachments->mutex);
             return;
         }
+
+        // read chunk or completion
         if (clib__strcmp(type, "file_receive_chunk") == 0)
         {
+            // check and store chunk
             length = clib__strlen(value);
             if (!length || length > 65536 || record->received > record->wire_size || length > record->wire_size - record->received)
             {
@@ -309,6 +374,7 @@ void server_msg__attachments__receive(desktop_session_t *session, const cJSON *m
         }
         else
         {
+            // check the finished transfer
             expected = record->view.peer >= 0 ? (record->view.picture ? "direct_chat_picture" : "direct_chat_file") : (record->view.picture ? "channel_chat_picture" : "channel_chat_file");
             if (record->received != record->wire_size || clib__strcmp(expected, server_msg__read_string(message, "receive_type")) != 0)
             {
@@ -323,9 +389,12 @@ void server_msg__attachments__receive(desktop_session_t *session, const cJSON *m
     }
     else
     {
+        // skip other message types
         desktop_mutex__unlock(attachments->mutex);
         return;
     }
+
+    // increase revision and unlock
     attachments->revision++;
     desktop_mutex__unlock(attachments->mutex);
 }

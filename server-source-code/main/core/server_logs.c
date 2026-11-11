@@ -49,6 +49,7 @@ static boole _server_logs_internal__enabled(const boole *setting)
 {
     boole enabled;
 
+    // read the setting
     clib__read_lock(&g_clients_global_rwlock_guard);
     enabled = *setting;
     clib__unlock(&g_clients_global_rwlock_guard);
@@ -60,6 +61,7 @@ static uint64 _server_logs_internal__limits(int64 *retention)
 {
     uint64 cap;
 
+    // read both limits
     clib__read_lock(&g_clients_global_rwlock_guard);
     cap = (uint64)g_server_settings.admin_log_max_size_bytes / ADMIN_LOG_SIZE_DIVISOR;
     if (retention != NULL_POINTER)
@@ -79,20 +81,26 @@ static void _server_logs_internal__pop_oldest_locked(void)
 {
     admin_log_entry_t *entry = g_admin_log_head;
 
+    // nothing to remove
     if (entry == NULL_POINTER)
     {
         return;
     }
 
+    // move the list head
     g_admin_log_head = entry->next;
 
+    // clear the list tail
     if (g_admin_log_head == NULL_POINTER)
     {
         g_admin_log_tail = NULL_POINTER;
     }
 
+    // update the counters
     g_admin_log_total_bytes -= sizeof(admin_log_entry_t);
     g_admin_log_count--;
+
+    // free the entry
     memorymanager__free((nuint)entry);
 }
 
@@ -103,6 +111,7 @@ static void _server_logs_internal__pop_oldest_locked(void)
  */
 static void _server_logs_internal__purge_over_cap_locked(uint64 cap)
 {
+    // remove the oldest entries
     while (g_admin_log_total_bytes > cap && g_admin_log_count > 1)
     {
         _server_logs_internal__pop_oldest_locked();
@@ -125,20 +134,25 @@ static void _server_logs_internal__append(char *text)
     uint64 cap = _server_logs_internal__limits(NULL_POINTER);
     admin_log_entry_t *entry = NULL_POINTER;
 
+    // check the text
     if (text == NULL_POINTER || text[0] == 0)
     {
         return;
     }
 
+    // allocate the entry
     entry = (admin_log_entry_t *)memorymanager__allocate(sizeof(admin_log_entry_t), MEMALLOC_ADMIN_LOG);
 
+    // check the allocation
     if (entry == NULL_POINTER)
     {
         return;
     }
 
+    // clear the entry
     clib__null_memory(entry, sizeof(admin_log_entry_t));
 
+    // read the local time
     now = time(NULL_POINTER);
     entry->created = now;
 #ifdef _WIN32
@@ -150,6 +164,7 @@ static void _server_logs_internal__append(char *text)
     time_parts = localtime_r(&now, &local_parts);
 #endif
 
+    // build the entry text
     if (time_parts != NULL_POINTER)
     {
         clib__string_format(entry->text, ADMIN_LOG_ENTRY_MAX_LENGTH, "%04d-%02d-%02d %02d:%02d:%02d | %s", time_parts->tm_year + 1900, time_parts->tm_mon + 1, time_parts->tm_mday, time_parts->tm_hour, time_parts->tm_min, time_parts->tm_sec, text);
@@ -159,8 +174,10 @@ static void _server_logs_internal__append(char *text)
         clib__string_format(entry->text, ADMIN_LOG_ENTRY_MAX_LENGTH, "%s", text);
     }
 
+    // lock the log
     pthread_mutex_lock(&g_admin_log_mutex);
 
+    // add to the list
     if (g_admin_log_tail == NULL_POINTER)
     {
         g_admin_log_head = entry;
@@ -170,14 +187,18 @@ static void _server_logs_internal__append(char *text)
         g_admin_log_tail->next = entry;
     }
 
+    // update tail and counters
     g_admin_log_tail = entry;
     g_admin_log_total_bytes += sizeof(admin_log_entry_t);
     g_admin_log_count++;
 
+    // log for debugging
     DBG_SERVER_LOGS log_info("%s %llu %s %llu %s", "admin log: entry appended, now", (uint64)g_admin_log_count, "entries,", (uint64)g_admin_log_total_bytes, "bytes");
 
+    // apply the size limit
     _server_logs_internal__purge_over_cap_locked(cap);
 
+    // unlock the log
     pthread_mutex_unlock(&g_admin_log_mutex);
 }
 
@@ -196,28 +217,36 @@ void server_logs__purge_tick(void)
     int64 retention = 0;
     uint64 cap = _server_logs_internal__limits(&retention);
 
+    // lock the log
     pthread_mutex_lock(&g_admin_log_mutex);
 
+    // check the purge interval
     if (g_admin_log_last_purge_ms != 0 && now_ms - g_admin_log_last_purge_ms < ADMIN_LOG_PURGE_INTERVAL_MS)
     {
         pthread_mutex_unlock(&g_admin_log_mutex);
         return;
     }
 
+    // store the purge time
     g_admin_log_last_purge_ms = now_ms;
 
+    // calculate the cutoff time
     cutoff = time(NULL_POINTER) - (time_t)(retention * ADMIN_LOG_RETENTION_UNIT_SECONDS);
 
+    // remove old entries
     while (g_admin_log_head != NULL_POINTER && g_admin_log_head->created < cutoff)
     {
         _server_logs_internal__pop_oldest_locked();
         removed_count++;
     }
 
+    // log for debugging
     DBG_SERVER_LOGS log_info("%s %llu %s", "admin log: purge removed", (uint64)removed_count, "entries older than the retention period");
 
+    // apply the size limit
     _server_logs_internal__purge_over_cap_locked(cap);
 
+    // unlock the log
     pthread_mutex_unlock(&g_admin_log_mutex);
 }
 
@@ -232,11 +261,13 @@ void server_logs__client_joined(client_t *client)
 {
     char text[ADMIN_LOG_ENTRY_MAX_LENGTH] = { 0 };
 
+    // check setting and client
     if (_server_logs_internal__enabled(&g_server_settings.is_logging_client_joins_enabled) == FALSE || client == NULL_POINTER)
     {
         return;
     }
 
+    // add the log entry
     clib__string_format(text, sizeof(text), "join: %s (ip %s)", client->username, client->ip_address);
     _server_logs_internal__append(text);
 }
@@ -253,11 +284,13 @@ void server_logs__fast_reconnect(client_t *client)
 {
     char text[ADMIN_LOG_ENTRY_MAX_LENGTH] = { 0 };
 
+    // check the client
     if (client == NULL_POINTER)
     {
         return;
     }
 
+    // add the log entry
     clib__string_format(text, sizeof(text), "fast reconnect: %s (ip %s)", client->username, client->ip_address);
     _server_logs_internal__append(text);
 }
@@ -276,11 +309,13 @@ void server_logs__client_disconnect_reason(client_t *client, char *reason)
 {
     char text[ADMIN_LOG_ENTRY_MAX_LENGTH] = { 0 };
 
+    // check setting and client
     if (_server_logs_internal__enabled(&g_server_settings.is_logging_client_disconnects_enabled) == FALSE || client == NULL_POINTER || client->is_authenticated == FALSE || client->username[0] == 0)
     {
         return;
     }
 
+    // add the log entry
     clib__string_format(text, sizeof(text), "%s: %s (ip %s)", reason, client->username, client->ip_address);
     _server_logs_internal__append(text);
 }
@@ -297,11 +332,13 @@ void server_logs__username_changed(char *old_username, char *new_username)
 {
     char text[ADMIN_LOG_ENTRY_MAX_LENGTH] = { 0 };
 
+    // check the setting
     if (_server_logs_internal__enabled(&g_server_settings.is_logging_username_changes_enabled) == FALSE)
     {
         return;
     }
 
+    // add the log entry
     clib__string_format(text, sizeof(text), "rename: %s -> %s", old_username, new_username);
     _server_logs_internal__append(text);
 }
@@ -319,11 +356,13 @@ void server_logs__group_added(uint64 group_id, char *target_username, char *admi
 {
     char text[ADMIN_LOG_ENTRY_MAX_LENGTH] = { 0 };
 
+    // check the setting
     if (_server_logs_internal__enabled(&g_server_settings.is_logging_group_changes_enabled) == FALSE)
     {
         return;
     }
 
+    // add the log entry
     clib__string_format(text, sizeof(text), "group %llu added to %s by %s", group_id, target_username, admin_username);
     _server_logs_internal__append(text);
 }
@@ -340,11 +379,13 @@ void server_logs__client_kicked(char *target_username, char *admin_username)
 {
     char text[ADMIN_LOG_ENTRY_MAX_LENGTH] = { 0 };
 
+    // check the setting
     if (_server_logs_internal__enabled(&g_server_settings.is_logging_kicks_and_bans_enabled) == FALSE)
     {
         return;
     }
 
+    // add the log entry
     clib__string_format(text, sizeof(text), "kick: %s by %s", target_username, admin_username);
     _server_logs_internal__append(text);
 }
@@ -362,11 +403,13 @@ void server_logs__client_banned(char *target_username, char *target_ip, char *ad
 {
     char text[ADMIN_LOG_ENTRY_MAX_LENGTH] = { 0 };
 
+    // check the setting
     if (_server_logs_internal__enabled(&g_server_settings.is_logging_kicks_and_bans_enabled) == FALSE)
     {
         return;
     }
 
+    // add the log entry
     clib__string_format(text, sizeof(text), "ban: %s (ip %s) by %s", target_username, target_ip, admin_username);
     _server_logs_internal__append(text);
 }
@@ -384,11 +427,13 @@ void server_logs__client_disconnected(client_t *client)
 {
     char text[ADMIN_LOG_ENTRY_MAX_LENGTH] = { 0 };
 
+    // check setting and client
     if (_server_logs_internal__enabled(&g_server_settings.is_logging_client_disconnects_enabled) == FALSE || client == NULL_POINTER || client->is_authenticated == FALSE || client->username[0] == 0)
     {
         return;
     }
 
+    // add the log entry
     clib__string_format(text, sizeof(text), "disconnect: %s (ip %s)", client->username, client->ip_address);
     _server_logs_internal__append(text);
 }
@@ -405,11 +450,13 @@ void server_logs__join_refused(char *reason, char *ip_address)
 {
     char text[ADMIN_LOG_ENTRY_MAX_LENGTH] = { 0 };
 
+    // check the setting
     if (_server_logs_internal__enabled(&g_server_settings.is_logging_failed_attempts_enabled) == FALSE)
     {
         return;
     }
 
+    // add the log entry
     clib__string_format(text, sizeof(text), "join refused: %s (ip %s)", reason, ip_address);
     _server_logs_internal__append(text);
 }
@@ -426,11 +473,13 @@ void server_logs__socket_opened(char *ip_address)
 {
     char text[ADMIN_LOG_ENTRY_MAX_LENGTH] = { 0 };
 
+    // check setting and address
     if (_server_logs_internal__enabled(&g_server_settings.is_logging_socket_opens_and_closes_enabled) == FALSE || ip_address == NULL_POINTER)
     {
         return;
     }
 
+    // add the log entry
     clib__string_format(text, sizeof(text), "socket opened (ip %s)", ip_address);
     _server_logs_internal__append(text);
 }
@@ -449,11 +498,13 @@ void server_logs__socket_closed(char *ip_address, char *username)
     char text[ADMIN_LOG_ENTRY_MAX_LENGTH] = { 0 };
     char *shown_ip = (ip_address != NULL_POINTER) ? ip_address : "unknown";
 
+    // check the setting
     if (_server_logs_internal__enabled(&g_server_settings.is_logging_socket_opens_and_closes_enabled) == FALSE)
     {
         return;
     }
 
+    // build the log text
     if (username != NULL_POINTER && username[0] != 0)
     {
         clib__string_format(text, sizeof(text), "socket closed: %s (ip %s)", username, shown_ip);
@@ -462,6 +513,8 @@ void server_logs__socket_closed(char *ip_address, char *username)
     {
         clib__string_format(text, sizeof(text), "socket closed before login (ip %s)", shown_ip);
     }
+
+    // add the log entry
     _server_logs_internal__append(text);
 }
 
@@ -477,11 +530,13 @@ void server_logs__join_refused_country(char *country_iso_code, char *ip_address)
 {
     char text[ADMIN_LOG_ENTRY_MAX_LENGTH] = { 0 };
 
+    // check the setting
     if (_server_logs_internal__enabled(&g_server_settings.is_logging_failed_attempts_enabled) == FALSE)
     {
         return;
     }
 
+    // add the log entry
     clib__string_format(text, sizeof(text), "join refused: country %s is blocked (ip %s)", country_iso_code, ip_address);
     _server_logs_internal__append(text);
 }
@@ -498,11 +553,13 @@ void server_logs__admin_password_failed(char *username, char *ip_address)
 {
     char text[ADMIN_LOG_ENTRY_MAX_LENGTH] = { 0 };
 
+    // check the setting
     if (_server_logs_internal__enabled(&g_server_settings.is_logging_failed_attempts_enabled) == FALSE)
     {
         return;
     }
 
+    // add the log entry
     clib__string_format(text, sizeof(text), "wrong admin password from %s (ip %s)", username, ip_address);
     _server_logs_internal__append(text);
 }
@@ -519,11 +576,13 @@ void server_logs__server_settings_updated(char *admin_username, boole save_succe
 {
     char text[ADMIN_LOG_ENTRY_MAX_LENGTH] = { 0 };
 
+    // check result and setting
     if (save_succeeded == FALSE || _server_logs_internal__enabled(&g_server_settings.is_logging_server_settings_updates_enabled) == FALSE)
     {
         return;
     }
 
+    // add the log entry
     clib__string_format(text, sizeof(text), "server settings updated by %s", admin_username);
     _server_logs_internal__append(text);
 }
@@ -539,15 +598,19 @@ void server_logs__cleared_by(char *admin_username)
 {
     char text[ADMIN_LOG_ENTRY_MAX_LENGTH] = { 0 };
 
+    // lock the log
     pthread_mutex_lock(&g_admin_log_mutex);
 
+    // remove every entry
     while (g_admin_log_head != NULL_POINTER)
     {
         _server_logs_internal__pop_oldest_locked();
     }
 
+    // unlock the log
     pthread_mutex_unlock(&g_admin_log_mutex);
 
+    // add the log entry
     clib__string_format(text, sizeof(text), "log cleared by %s", admin_username);
     _server_logs_internal__append(text);
 }
@@ -562,20 +625,25 @@ cJSON *server_logs__build_json_array(void)
     cJSON *json_lines = NULL_POINTER;
     admin_log_entry_t *entry = NULL_POINTER;
 
+    // create the JSON array
     json_lines = cJSON_CreateArray();
 
+    // check the array
     if (json_lines == NULL_POINTER)
     {
         return NULL_POINTER;
     }
 
+    // lock the log
     pthread_mutex_lock(&g_admin_log_mutex);
 
+    // add every log line
     for (entry = g_admin_log_head; entry != NULL_POINTER; entry = entry->next)
     {
         util__json_add_owned_array(json_lines, cJSON_CreateString(entry->text));
     }
 
+    // unlock the log
     pthread_mutex_unlock(&g_admin_log_mutex);
 
     return json_lines;

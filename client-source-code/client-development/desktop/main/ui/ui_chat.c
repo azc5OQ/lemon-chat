@@ -35,14 +35,18 @@ static void _ui_chat_internal__layout(gui_node_t *node, float x, float y, float 
 static void _ui_chat_internal__layout(gui_node_t *node, float x, float y, float width, float height, float scale)
 {
     gui_node_t *message = node->parent ? node->parent->parent : NULL;
+
+    // call the original layout
     if (g_chat_button_original.layout)
     {
         g_chat_button_original.layout(node, x, y, width, height, scale);
     }
+
+    // set the button visibility
     if (clib__strcmp(node->klass, "chat-edit-button") == 0)
     {
-        // Meek currently treats visibility:visible as an unspecified style value.
-        // Resolve this control explicitly while retaining its stable layout space.
+        // meek currently treats visibility:visible as an unspecified style value.
+        // resolve this control explicitly while retaining its stable layout space
         node->resolved.visibility = message && (message->state == GUI_NODE_STATE__HOVER || message->state == GUI_NODE_STATE__PRESSED) ? GUI_VISIBILITY__VISIBLE : GUI_VISIBILITY__HIDDEN;
     }
 }
@@ -60,6 +64,8 @@ static void _ui_chat_internal__draw(gui_node_t *node, float scale)
     float icon_scale = clib__fminf(scale, clib__fminf(node->bounds.w, node->bounds.h) / 26);
     float x = node->bounds.x + (node->bounds.w - 26 * icon_scale) * 0.5f;
     float y = node->bounds.y + (node->bounds.h - 26 * icon_scale) * 0.5f;
+
+    // call the original drawing
     if (clib__strcmp(node->klass, "chat-edit-button") != 0)
     {
         if (g_chat_button_original.emit_draws)
@@ -68,15 +74,21 @@ static void _ui_chat_internal__draw(gui_node_t *node, float scale)
         }
         return;
     }
+
+    // skip a hidden button
     if (node->resolved.visibility == GUI_VISIBILITY__HIDDEN)
     {
         return;
     }
+
+    // draw the hover rectangle
     if (node->state == GUI_NODE_STATE__HOVER || node->state == GUI_NODE_STATE__PRESSED)
     {
         hover.a *= node->state == GUI_NODE_STATE__PRESSED ? 0.22f : 0.12f;
         renderer__submit_rect(node->bounds, hover, 4 * scale);
     }
+
+    // draw the pencil
     renderer__submit_line((gui_vec2_t){ x + 8.5f * icon_scale, y + 17.5f * icon_scale }, (gui_vec2_t){ x + 17.5f * icon_scale, y + 8.5f * icon_scale }, 3 * icon_scale, ink);
     renderer__submit_line((gui_vec2_t){ x + 18.5f * icon_scale, y + 7.5f * icon_scale }, (gui_vec2_t){ x + 20 * icon_scale, y + 6 * icon_scale }, 3 * icon_scale, ink);
     renderer__submit_triangle((gui_vec2_t){ x + 6 * icon_scale, y + 20 * icon_scale }, (gui_vec2_t){ x + 7 * icon_scale, y + 16.5f * icon_scale }, (gui_vec2_t){ x + 9.5f * icon_scale, y + 19 * icon_scale }, ink);
@@ -91,10 +103,14 @@ static void _ui_chat_internal__draw(gui_node_t *node, float scale)
 static const desktop_chat_t *_ui_chat_internal__message(uint64 sequence, uint64 connection)
 {
     int64 index = 0;
+
+    // check the connection
     if (!g_chat_view || g_chat_view->connection_serial != connection)
     {
         return NULL;
     }
+
+    // find the message
     for (index = 0; index < g_chat_view->chat_count; index++)
     {
         if (g_chat_view->chats[index].sequence == sequence && g_chat_view->chats[index].connection_serial == connection)
@@ -113,6 +129,8 @@ static const desktop_chat_t *_ui_chat_internal__message(uint64 sequence, uint64 
 static void _ui_chat_internal__result(const char *text)
 {
     gui_node_t *node = scene__find_by_id("message-edit-result");
+
+    // set the result text
     if (node)
     {
         scene__set_text(node, text, clib__strlen(text));
@@ -130,17 +148,27 @@ static void _ui_chat_internal__open(gui_event_t *event)
     gui_node_t *input = scene__find_by_id("message-edit-text");
     const desktop_chat_t *chat = NULL_POINTER;
     uint64 sequence = event && event->sender ? (uint64)(nint)event->sender->user_data : 0;
+
+    // check controls and click
     if (!g_chat_view || !panel || !input || !event || !event->sender || event->mouse.button != 0 || event->sender->resolved.visibility == GUI_VISIBILITY__HIDDEN)
     {
         return;
     }
+
+    // find the message
     chat = _ui_chat_internal__message(sequence, g_chat_view->connection_serial);
+
+    // check and copy text
     if (!desktop_session__can_edit(g_chat_view, chat) || !scene__set_text(input, chat->text, clib__strlen(chat->text)))
     {
         return;
     }
+
+    // store sequence and connection
     g_chat_sequence = sequence;
     g_chat_connection = chat->connection_serial;
+
+    // show the edit panel
     _ui_chat_internal__result("Choose Save changes to send the edit. Cancel keeps the original message.");
     clib__string_copy(panel->klass, sizeof(panel->klass), "column panel");
     desktop_ui_layout__raise(panel);
@@ -158,17 +186,25 @@ static void _ui_chat_internal__close(gui_event_t *event)
     gui_node_t *panel = scene__find_by_id("message-edit-panel");
     gui_node_t *input = scene__find_by_id("message-edit-text");
     (void)event;
+
+    // erase the draft text
     if (input)
     {
         desktop_memory__erase(input->text, input->text_capacity);
         scene__set_text(input, "", 0);
     }
+
+    // hide the edit panel
     if (panel)
     {
         clib__string_copy(panel->klass, sizeof(panel->klass), "column panel hidden");
     }
+
+    // clear the stored message
     g_chat_sequence = 0;
     g_chat_connection = 0;
+
+    // focus the message field
     scene__set_focus(scene__find_by_id("message-input"));
 }
 
@@ -181,6 +217,8 @@ static void _ui_chat_internal__save(gui_event_t *event)
 {
     gui_node_t *input = scene__find_by_id("message-edit-text");
     (void)event;
+
+    // queue the edit
     if (input && desktop_session__edit(g_chat_session, g_chat_sequence, g_chat_connection, input->text))
     {
         _ui_chat_internal__close(NULL);
@@ -199,6 +237,8 @@ void desktop_ui_chat__update(void)
 {
     gui_node_t *save = scene__find_by_id("message-edit-save");
     const desktop_chat_t *chat = _ui_chat_internal__message(g_chat_sequence, g_chat_connection);
+
+    // update the save button
     if (save)
     {
         save->state = desktop_session__can_edit(g_chat_view, chat) ? GUI_NODE_STATE__DEFAULT : GUI_NODE_STATE__DISABLED;
@@ -214,10 +254,14 @@ void desktop_ui_chat__update(void)
 void desktop_ui_chat__initialize(desktop_session_t *session, const desktop_session_view_t *view)
 {
     const widget_vtable_t *original = widget_registry__get(GUI_NODE_TYPE__BUTTON);
+
+    // store the arguments
     g_chat_session = session;
     g_chat_view = view;
     g_chat_sequence = 0;
     g_chat_connection = 0;
+
+    // replace layout and drawing
     if (!g_chat_button_registered && original)
     {
         g_chat_button_original = *original;
@@ -227,6 +271,8 @@ void desktop_ui_chat__initialize(desktop_session_t *session, const desktop_sessi
         widget_registry__register(GUI_NODE_TYPE__BUTTON, &g_chat_button);
         g_chat_button_registered = TRUE;
     }
+
+    // register the handlers
     scene__register_handler("on_edit_message", _ui_chat_internal__open);
     scene__register_handler("on_save_message_edit", _ui_chat_internal__save);
     scene__register_handler("on_cancel_message_edit", _ui_chat_internal__close);

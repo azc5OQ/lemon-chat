@@ -25,8 +25,10 @@ void server_msg__audio__send_active_microphone_usage_for_current_channel_to_sing
     uint64 x = 0;
     client_t *client_in_loop = NULL_POINTER;
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // create microphone usage message
     root = server_msg__delivery__new_message("current_channel_active_microphone_usage", &message);
     json_clients_array = cJSON_CreateArray();
 
@@ -35,17 +37,20 @@ void server_msg__audio__send_active_microphone_usage_for_current_channel_to_sing
     {
         single_object = NULL_POINTER;
 
+        // skip empty slots
         client_in_loop = &g_clients_array[x];
         if (client_in_loop->is_existing == FALSE)
         {
             continue;
         }
 
+        // skip unauthenticated clients
         if (client_in_loop->is_authenticated == FALSE)
         {
             continue;
         }
 
+        // skip other channels
         if (client_in_loop->channel_id != channel_id)
         {
             continue;
@@ -63,6 +68,7 @@ void server_msg__audio__send_active_microphone_usage_for_current_channel_to_sing
             continue;
         }
 
+        // add one client object
         single_object = cJSON_CreateObject();
         cJSON_AddNumberToObject(single_object, "client_id", client_in_loop->client_id);
         cJSON_AddNumberToObject(single_object, "audio_state", client_in_loop->audio_state);
@@ -73,8 +79,10 @@ void server_msg__audio__send_active_microphone_usage_for_current_channel_to_sing
         util__json_add_owned_array(json_clients_array, single_object);
     }
 
+    // add the client array
     util__json_add_owned_object(message, "clients", json_clients_array);
 
+    // send to the receiver
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
 }
@@ -93,12 +101,16 @@ void server_msg__audio__send_datachannel_cooldown_to_single_client(client_t *rec
     cJSON *root = NULL_POINTER;
     cJSON *message = NULL_POINTER;
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // create cooldown message
     root = server_msg__delivery__new_message("datachannel_cooldown", &message);
 
+    // add the seconds left
     cJSON_AddNumberToObject(message, "seconds_left", (double)seconds_left);
 
+    // send to the receiver
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
 }
@@ -121,22 +133,29 @@ void server_msg__audio__send_webrtc_sdp_offer_to_single_client(client_t *receive
     cJSON *jsoncandidate = NULL_POINTER;
     cJSON *jsonlineindex = NULL_POINTER;
 
+    // create ICE candidate message
     root = server_msg__delivery__new_message("ice_candidate", &message);
     json_message_value = cJSON_CreateObject();
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
+    // add the candidate text
     jsoncandidate = cJSON_CreateString(candidate);
     util__json_add_owned_object(json_message_value, "candidate", jsoncandidate);
 
+    // add the media id
     jmid = cJSON_CreateString(mid);
     util__json_add_owned_object(json_message_value, "sdpMid", jmid);
 
+    // add line index zero
     jsonlineindex = cJSON_CreateNumber(0.0);
     util__json_add_owned_object(json_message_value, "sdpMLineIndex", jsonlineindex);
 
+    // add the value object
     util__json_add_owned_object(message, "value", json_message_value);
 
+    // send to the receiver
     server_msg__delivery__send_json_to_client(receiver, root);
     cJSON_Delete(root);
 }
@@ -162,6 +181,7 @@ void server_msg__audio__send_state_of_client_to_all_clients(client_t *subject, u
     uint64 i = 0;
     client_t *client = NULL_POINTER;
 
+    // write the debug log
     DBG_SERVER_MESSAGE_HIGH_LVL_PERSPECTIVE log_info("%s", __func__);
 
     // two variants, each printed once: the subject's channel hears the real state, the rest of the server
@@ -171,11 +191,13 @@ void server_msg__audio__send_state_of_client_to_all_clients(client_t *subject, u
     cJSON_AddNumberToObject(message, "value", (double)state);
     plaintext = cJSON_PrintUnformatted(root);
 
+    // build other channel version
     root_other_channel = server_msg__delivery__new_message("audio_state_of_single_client", &message_other_channel);
     cJSON_AddNumberToObject(message_other_channel, "client_id", (double)subject->client_id);
     cJSON_AddNumberToObject(message_other_channel, "value", (double)(state == AUDIO_STATE__PUSH_TO_TALK_ACTIVE ? AUDIO_STATE__PUSH_TO_TALK_ENABLED : state));
     plaintext_other_channel = cJSON_PrintUnformatted(root_other_channel);
 
+    // send the matching version
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
         client = &g_clients_array[i];
@@ -195,6 +217,7 @@ void server_msg__audio__send_state_of_client_to_all_clients(client_t *subject, u
         }
     }
 
+    // free texts and messages
     cJSON_free(plaintext);
     cJSON_free(plaintext_other_channel);
     cJSON_Delete(root);

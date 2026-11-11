@@ -9,6 +9,7 @@ static boole _http_gzip_internal__equal(const char *begin, const char *end, cons
 {
     ubyte value = 0;
 
+    // compare lowercase letters
     while (begin < end && *expected != 0)
     {
         value = (ubyte)*begin++;
@@ -31,19 +32,26 @@ static int64 _http_gzip_internal__quality(const char *begin, const char *end)
     int64 quality = 0;
     int64 place = 100;
 
+    // check first digit
     if (begin == end || (*begin != '0' && *begin != '1'))
     {
         return 0;
     }
+
+    // read the first digit
     quality = (*begin++ - '0') * 1000;
     if (begin == end)
     {
         return quality;
     }
+
+    // check decimal point
     if (*begin++ != '.')
     {
         return 0;
     }
+
+    // read decimal digits
     while (begin < end)
     {
         if (*begin < '0' || *begin > '9' || place == 0 || (quality >= 1000 && *begin != '0'))
@@ -73,24 +81,32 @@ http_encoding_t http_gzip__choose_encoding(const char *request, boole *identity_
     int64 wildcard = -1;
     const char *line = strstr(request, "\r\n");
 
+    // read every header line
     while (line != NULL && line[2] != '\r' && line[2] != 0)
     {
+        // find line end
         line += 2;
         end = strstr(line, "\r\n");
         if (end == NULL)
         {
             break;
         }
+
+        // find Accept-Encoding header
         colon = memchr(line, ':', (uint64)(end - line));
         if (colon != NULL && _http_gzip_internal__equal(line, colon, "accept-encoding"))
         {
+            // read each list item
             item = colon + 1;
             while (item < end)
             {
+                // find item end
                 next = memchr(item, ',', (uint64)(end - item));
                 item_end = next == NULL ? end : next;
                 quality = 1000;
                 selected = NULL;
+
+                // remove surrounding spaces
                 while (item < item_end && (*item == ' ' || *item == '\t'))
                 {
                     item++;
@@ -99,12 +115,16 @@ http_encoding_t http_gzip__choose_encoding(const char *request, boole *identity_
                 {
                     item_end--;
                 }
+
+                // split name and parameter
                 parameter = memchr(item, ';', (uint64)(item_end - item));
                 name_end = parameter == NULL ? item_end : parameter;
                 while (name_end > item && (name_end[-1] == ' ' || name_end[-1] == '\t'))
                 {
                     name_end--;
                 }
+
+                // read quality value
                 if (parameter != NULL)
                 {
                     parameter++;
@@ -121,6 +141,8 @@ http_encoding_t http_gzip__choose_encoding(const char *request, boole *identity_
                         quality = _http_gzip_internal__quality(parameter + 2, item_end);
                     }
                 }
+
+                // match encoding name
                 if (_http_gzip_internal__equal(item, name_end, "gzip") || _http_gzip_internal__equal(item, name_end, "x-gzip"))
                 {
                     selected = &gzip;
@@ -134,21 +156,31 @@ http_encoding_t http_gzip__choose_encoding(const char *request, boole *identity_
                     selected = &wildcard;
                 }
 
-                // For contradictory duplicates, keep the stricter preference.
+                // for contradictory duplicates, keep the stricter preference
                 if (selected != NULL && (*selected < 0 || quality < *selected))
                 {
                     *selected = quality;
                 }
+
+                // go to next item
                 item = next == NULL ? end : next + 1;
             }
         }
+
+        // go to next line
         line = end;
     }
+
+    // allow or refuse identity
     *identity_allowed = identity > 0 || (identity < 0 && wildcard != 0);
+
+    // use wildcard for gzip
     if (gzip < 0)
     {
         gzip = wildcard;
     }
+
+    // choose the encoding
     if (gzip > 0 && (identity <= gzip || !*identity_allowed))
     {
         return HTTP_ENCODING_GZIP;
@@ -161,42 +193,57 @@ ubyte *http_gzip__compress(const void *data, uint64 size, uint64 *compressed_siz
 {
     uint64 i = 0;
     static const ubyte header[10] = { 0x1f, 0x8b, 8, 0, 0, 0, 0, 0, 0, 255 };
-    size_t deflated_size = 0; // miniz writes this through a size_t pointer.
+    size_t deflated_size = 0; // miniz writes this through a size_t pointer
     ubyte *deflated = NULL_POINTER;
     ubyte *result = NULL_POINTER;
     uint64 crc = 0;
 
+    // clear the result size
     *compressed_size = 0;
+
+    // check input size
     if (size > SIZE_MAX)
     {
         return NULL;
     }
+
+    // compress the data
     deflated = tdefl_compress_mem_to_heap(data, size, &deflated_size, TDEFL_DEFAULT_MAX_PROBES);
     if (deflated == NULL)
     {
         return NULL;
     }
+
+    // check result size
     if (deflated_size > SIZE_MAX - 18)
     {
         free(deflated);
         return NULL;
     }
+
+    // enlarge the buffer
     result = realloc(deflated, deflated_size + 18);
     if (result == NULL)
     {
         free(deflated);
         return NULL;
     }
+
+    // write gzip header
     memmove(result + 10, result, deflated_size);
     memcpy(result, header, sizeof(header));
+
+    // calculate the checksum
     crc = (uint64)mz_crc32(MZ_CRC32_INIT, data, size);
 
-    // Write low 32 bits.
+    // write low 32 bits
     for (i = 0; i < 4; i++)
     {
         result[10 + deflated_size + i] = (ubyte)(crc >> (i * 8));
         result[14 + deflated_size + i] = (ubyte)(size >> (i * 8));
     }
+
+    // store result size
     *compressed_size = deflated_size + 18;
     return result;
 }

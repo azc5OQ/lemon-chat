@@ -35,7 +35,7 @@ static boole _util_internal__check_executable(cstring candidate, char *path, uin
     uint64 length = 0;
 #ifdef _WIN32
     uint64 attributes = 0;
-    DWORD binary_type = 0; // GetBinaryTypeA writes a DWORD.
+    DWORD binary_type = 0; // GetBinaryTypeA writes a DWORD
     uint64 required = 0;
     uint64 written = 0;
 #else
@@ -44,11 +44,14 @@ static boole _util_internal__check_executable(cstring candidate, char *path, uin
 #endif
 
 #ifdef _WIN32
+    // check the exe ending
     length = clib__strlen(candidate);
     if (length < 4 || _stricmp(candidate + length - 4, ".exe") != 0)
     {
         return FALSE;
     }
+
+    // check the file type
     attributes = GetFileAttributesA(candidate);
     if (attributes == INVALID_FILE_ATTRIBUTES || (attributes & FILE_ATTRIBUTE_DIRECTORY) != 0 || !GetBinaryTypeA(candidate, &binary_type))
     {
@@ -58,6 +61,8 @@ static boole _util_internal__check_executable(cstring candidate, char *path, uin
     {
         return FALSE;
     }
+
+    // write the absolute path
     required = GetFullPathNameA(candidate, 0, NULL_POINTER, NULL_POINTER);
     if (required == 0 || (uint64)required > capacity)
     {
@@ -71,15 +76,21 @@ static boole _util_internal__check_executable(cstring candidate, char *path, uin
     }
 #else
     (void)length;
+
+    // check file is executable
     if (stat(candidate, &information) != 0 || !S_ISREG(information.st_mode) || access(candidate, X_OK) != 0)
     {
         return FALSE;
     }
+
+    // find the absolute path
     absolute = realpath(candidate, NULL_POINTER);
     if (absolute == NULL_POINTER)
     {
         return FALSE;
     }
+
+    // copy the absolute path
     length = clib__strlen(absolute);
     if (length >= capacity)
     {
@@ -118,21 +129,29 @@ boole util__find_executable(cstring command, char *path, uint64 capacity)
     char separator = ':';
     char slash = '/';
 
+    // check the buffer
     if (path == NULL_POINTER || capacity == 0)
     {
         return FALSE;
     }
     path[0] = 0;
+
+    // check the command
     if (command == NULL_POINTER || command[0] == 0)
     {
         return FALSE;
     }
+
+    // check for explicit path
     command_length = clib__strlen(command);
     explicit_path = clib__strchr(command, '/') != NULL_POINTER;
 #ifdef _WIN32
+    // use Windows separators
     separator = ';';
     slash = '\\';
     explicit_path = explicit_path || clib__strchr(command, '\\') != NULL_POINTER || clib__strchr(command, ':') != NULL_POINTER;
+
+    // find the file name
     basename = command;
     for (cursor = command; *cursor != 0; cursor++)
     {
@@ -141,6 +160,8 @@ boole util__find_executable(cstring command, char *path, uint64 capacity)
             basename = cursor + 1;
         }
     }
+
+    // add the exe ending
     if (clib__strchr(basename, '.') == NULL_POINTER)
     {
         suffix = ".exe";
@@ -148,11 +169,15 @@ boole util__find_executable(cstring command, char *path, uint64 capacity)
 #else
     (void)basename;
 #endif
+
+    // check the total length
     suffix_length = clib__strlen(suffix);
     if (command_length > SIZE_MAX - suffix_length - 2)
     {
         return FALSE;
     }
+
+    // check the explicit path
     if (explicit_path == TRUE)
     {
         candidate = malloc((uint64)(command_length + suffix_length + 1));
@@ -166,14 +191,19 @@ boole util__find_executable(cstring command, char *path, uint64 capacity)
         free(candidate);
         return found;
     }
+
+    // read the PATH variable
     environment = getenv("PATH");
     if (environment == NULL_POINTER || environment[0] == 0)
     {
         return FALSE;
     }
+
+    // search every PATH directory
     start = environment;
     while (*start != 0)
     {
+        // find the directory end
         cursor = start;
         quoted = FALSE;
         while (*cursor != 0)
@@ -192,25 +222,33 @@ boole util__find_executable(cstring command, char *path, uint64 capacity)
         }
         end = cursor;
 #ifdef _WIN32
+        // remove surrounding quotes
         if (end > start + 1 && *start == '"' && end[-1] == '"')
         {
             start++;
             end--;
         }
 #endif
+
+        // check this directory
         directory_length = (uint64)(end - start);
         if (directory_length != 0 && directory_length <= SIZE_MAX - command_length - suffix_length - 2)
         {
+            // allocate the candidate path
             candidate_capacity = directory_length + command_length + suffix_length + 2;
             candidate = malloc((uint64)candidate_capacity);
             if (candidate == NULL_POINTER)
             {
                 return FALSE;
             }
+
+            // build the candidate path
             clib__memcpy(candidate, start, directory_length);
             candidate[directory_length] = slash;
             clib__memcpy(candidate + directory_length + 1, command, command_length);
             clib__memcpy(candidate + directory_length + 1 + command_length, suffix, suffix_length + 1);
+
+            // check the candidate file
             found = _util_internal__check_executable(candidate, path, capacity);
             free(candidate);
             if (found == TRUE)
@@ -218,6 +256,8 @@ boole util__find_executable(cstring command, char *path, uint64 capacity)
                 return TRUE;
             }
         }
+
+        // go to next directory
         if (*cursor == 0)
         {
             break;
@@ -247,12 +287,14 @@ boole util__get_process_ram_usage(uint64 *bytes)
     int64 fields = 0;
 #endif
 
+    // check arguments
     if (bytes == NULL_POINTER)
     {
         return FALSE;
     }
     *bytes = 0;
 #ifdef _WIN32
+    // read the Windows counters
     counters.cb = sizeof(counters);
     if (!GetProcessMemoryInfo(GetCurrentProcess(), &counters, sizeof(counters)))
     {
@@ -260,12 +302,14 @@ boole util__get_process_ram_usage(uint64 *bytes)
     }
     *bytes = (uint64)counters.WorkingSetSize;
 #elif defined(__APPLE__)
+    // read the task info
     if (task_info(mach_task_self(), MACH_TASK_BASIC_INFO, (task_info_t)&info, &count) != KERN_SUCCESS)
     {
         return FALSE;
     }
     *bytes = (uint64)info.resident_size;
 #elif defined(__linux__)
+    // read the page counts
     page_size = sysconf(_SC_PAGESIZE);
     file = fopen("/proc/self/statm", "r");
     if (file == NULL_POINTER)
@@ -274,6 +318,8 @@ boole util__get_process_ram_usage(uint64 *bytes)
     }
     fields = fscanf(file, "%llu %llu", &virtual_pages, &resident_pages);
     fclose(file);
+
+    // convert pages to bytes
     if (fields != 2 || page_size <= 0 || resident_pages > UINT64_MAX / (uint64)page_size)
     {
         return FALSE;
@@ -298,16 +344,23 @@ boole util__start_detached_thread(void *(*entry)(void *), void *argument)
     pthread_t thread = { 0 };
     int64 result = 0;
 
+    // create the thread attributes
     if (pthread_attr_init(&attributes) != 0)
     {
         return FALSE;
     }
+
+    // start the detached thread
     result = pthread_attr_setdetachstate(&attributes, PTHREAD_CREATE_DETACHED);
     if (result == 0)
     {
         result = pthread_create(&thread, &attributes, entry, argument);
     }
+
+    // free the attributes
     pthread_attr_destroy(&attributes);
+
+    // log the failure
     if (result != 0)
     {
         DBG_UTIL log_info("%s %lld", "detached thread could not be started, error", result);
@@ -328,20 +381,24 @@ boole util__normalize_country_code(cJSON *json_entry, char *out_code)
     char first = 0;
     char second = 0;
 
+    // check the JSON entry
     if (json_entry == NULL_POINTER || cJSON_IsString(json_entry) == FALSE || json_entry->valuestring == NULL_POINTER)
     {
         return FALSE;
     }
 
+    // refuse wrong length
     if (clib__utf8_string_length(json_entry->valuestring) != 2)
     {
         DBG_UTIL log_info("%s %s", "country code rejected, not two characters:", json_entry->valuestring);
         return FALSE;
     }
 
+    // read both letters
     first = json_entry->valuestring[0];
     second = json_entry->valuestring[1];
 
+    // convert to upper case
     if (first >= 'a' && first <= 'z')
     {
         first = (char)(first - 32);
@@ -351,12 +408,14 @@ boole util__normalize_country_code(cJSON *json_entry, char *out_code)
         second = (char)(second - 32);
     }
 
+    // allow letters only
     if (first < 'A' || first > 'Z' || second < 'A' || second > 'Z')
     {
         DBG_UTIL log_info("%s %s", "country code rejected, not two letters:", json_entry->valuestring);
         return FALSE;
     }
 
+    // write the country code
     out_code[0] = first;
     out_code[1] = second;
     out_code[2] = 0;
@@ -389,6 +448,7 @@ uint64 util__get_timestamp_ms(void)
     struct timeval tv = { 0 };
     uint64 timestamp_msec = 0;
 
+    // read the system time
     gettimeofday(&tv, NULL_POINTER);
     timestamp_msec = (uint64)tv.tv_sec * 1000 + (uint64)tv.tv_usec / 1000;
     return timestamp_msec;
@@ -407,6 +467,7 @@ boole util__get_monotonic_ms(uint64 *milliseconds)
 #else
     struct timespec now = { 0 };
 
+    // read the monotonic clock
     if (clock_gettime(CLOCK_MONOTONIC, &now) != 0)
     {
         return FALSE;
@@ -426,24 +487,30 @@ void util__sleep_for_milliseconds(uint64 milliseconds)
 #ifdef WIN32
     const uint64 maximum_delay = (uint64)INFINITE - 1;
 
-    // Keep waits finite
+    // keep waits finite
     while (milliseconds > maximum_delay)
     {
         Sleep((DWORD)maximum_delay);
         milliseconds -= maximum_delay;
     }
+
+    // wait the remaining time
     Sleep((DWORD)milliseconds);
 #elif _POSIX_C_SOURCE >= 199309L
     struct timespec ts = { 0 };
 
+    // convert and wait
     ts.tv_sec = milliseconds / 1000;
     ts.tv_nsec = (milliseconds % 1000) * 1000000;
     nanosleep(&ts, NULL_POINTER);
 #else
+    // wait the whole seconds
     if (milliseconds >= 1000)
     {
         sleep(milliseconds / 1000);
     }
+
+    // wait the remaining part
     usleep((milliseconds % 1000) * 1000);
 #endif
 }
@@ -458,17 +525,20 @@ void util__get_executable_directory(char *out_directory, uint64 out_directory_si
 {
     const char *last_slash = NULL_POINTER;
 #if defined(__APPLE__)
-    uint image_path_size = 0; // _NSGetExecutablePath takes a pointer to an unsigned 32-bit capacity.
+    uint image_path_size = 0; // _NSGetExecutablePath takes a pointer to an unsigned 32-bit capacity
     char image_path[4096] = { 0 }; // raw (possibly relative/symlinked) path from the loader
     char resolved_path[4096] = { 0 }; // realpath output; realpath needs a PATH_MAX-sized buffer
 #else
     int64 link_length = 0;
 #endif
 
+    // check arguments
     if (out_directory == NULL_POINTER || out_directory_size == 0)
     {
         return;
     }
+
+    // refuse too large size
     if (out_directory_size > SIZE_MAX)
     {
         out_directory[0] = 0;
@@ -485,14 +555,17 @@ void util__get_executable_directory(char *out_directory, uint64 out_directory_si
         return;
     }
 
+    // convert to absolute path
     if (realpath(image_path, resolved_path) == NULL_POINTER)
     {
         out_directory[0] = 0;
         return;
     }
 
+    // copy the full path
     clib__string_format(out_directory, out_directory_size, "%s", resolved_path);
 #else
+    // read the executable link
     link_length = readlink("/proc/self/exe", out_directory, out_directory_size - 1);
     if (link_length <= 0)
     {
@@ -500,9 +573,11 @@ void util__get_executable_directory(char *out_directory, uint64 out_directory_si
         return;
     }
 
+    // add the null terminator
     out_directory[link_length] = 0;
 #endif
 
+    // remove the file name
     last_slash = clib__strrchr(out_directory, '/');
     if (last_slash != NULL_POINTER)
     {
@@ -525,10 +600,13 @@ void util__get_executable_directory(char *out_directory, uint64 out_directory_si
     uint64 length = 0;
     uint64 capacity = 0;
 
+    // check arguments
     if (out_directory == NULL_POINTER || out_directory_size == 0)
     {
         return;
     }
+
+    // read the executable path
     capacity = out_directory_size > MAXDWORD ? MAXDWORD : out_directory_size;
     length = GetModuleFileNameA(NULL_POINTER, out_directory, (DWORD)capacity);
     if (length == 0 || length >= capacity)
@@ -537,6 +615,7 @@ void util__get_executable_directory(char *out_directory, uint64 out_directory_si
         return;
     }
 
+    // remove the file name
     last_separator = (char *)clib__strrchr(out_directory, '\\');
     if (last_separator != NULL_POINTER)
     {
@@ -562,14 +641,17 @@ boole util__fill_secure_random_bytes(ubyte *out_buffer, uint64 length)
     int64 ret = 0;
     boole result = TRUE;
 
+    // check arguments
     if (length > MBEDTLS_CTR_DRBG_MAX_REQUEST || (out_buffer == NULL_POINTER && length != 0))
     {
         return FALSE;
     }
 
+    // create the random generator
     mbedtls_entropy_init(&entropy);
     mbedtls_ctr_drbg_init(&ctr_drbg);
 
+    // seed the generator
     ret = mbedtls_ctr_drbg_seed(&ctr_drbg, mbedtls_entropy_func, &entropy, (const ubyte *)pers, clib__strlen(pers));
     if (ret != 0)
     {
@@ -577,6 +659,7 @@ boole util__fill_secure_random_bytes(ubyte *out_buffer, uint64 length)
         result = FALSE;
     }
 
+    // write the random bytes
     if (result == TRUE)
     {
         ret = mbedtls_ctr_drbg_random(&ctr_drbg, out_buffer, length);
@@ -587,6 +670,7 @@ boole util__fill_secure_random_bytes(ubyte *out_buffer, uint64 length)
         }
     }
 
+    // free the generator
     mbedtls_ctr_drbg_free(&ctr_drbg);
     mbedtls_entropy_free(&entropy);
 
@@ -605,11 +689,13 @@ boole util__fill_block_of_data_with_ascii_characters(char *block, uint64 length)
     uint64 upperbound = 126;
     uint64 i = 0;
 
+    // fill with random bytes
     if (util__fill_secure_random_bytes((ubyte *)block, length) == FALSE)
     {
         return FALSE;
     }
 
+    // convert to printable characters
     for (i = 0; i < length; i++)
     {
         block[i] = (char)((ubyte)block[i] % (upperbound - lowerbound + 1)) + lowerbound;
@@ -625,11 +711,13 @@ boole util__fill_block_of_data_with_ascii_characters(char *block, uint64 length)
  */
 void util__free_json_message(cJSON *json_root_object1, char *json_root_object1_string)
 {
+    // delete the JSON object
     if (json_root_object1 != NULL_POINTER)
     {
         util__json_delete_secure(json_root_object1);
     }
 
+    // free the printed string
     if (json_root_object1_string != NULL_POINTER)
     {
         clib__null_memory(json_root_object1_string, strlen(json_root_object1_string));
@@ -653,13 +741,16 @@ void util__hash_password_to_base64(cstring plaintext, char *out, int64 out_size)
     ubyte digest[32] = { 0 };
     char encoded[BASE64_ENCODE_OUT_SIZE(32)] = { 0 };
 
+    // hash the password
     ith_sha256_init(&ctx);
     ith_sha256_update(&ctx, (ubyte *)plaintext, clib__strlen(plaintext));
     ith_sha256_final(&ctx, digest);
 
+    // convert to base64
     clib__null_memory(encoded, sizeof(encoded));
     zchg_base64_encode(digest, 32, encoded);
 
+    // write the result
     clib__null_memory(out, out_size);
     clib__string_copy(out, out_size, encoded);
 }
@@ -689,20 +780,27 @@ boole util__json_read_int64(const cJSON *value, int64 minimum, int64 maximum, in
     double number = 0;
     int64 parsed = 0;
 
+    // check arguments
     if (result == NULL_POINTER || !cJSON_IsNumber(value) || minimum > maximum)
     {
         return FALSE;
     }
+
+    // check the number range
     number = value->valuedouble;
     if (!(number >= -9223372036854775808.0 && number < 9223372036854775808.0))
     {
         return FALSE;
     }
+
+    // check fraction and limits
     parsed = (int64)number;
     if ((double)parsed != number || parsed < minimum || parsed > maximum)
     {
         return FALSE;
     }
+
+    // write the result
     *result = parsed;
     return TRUE;
 }
@@ -716,20 +814,27 @@ boole util__json_read_uint64(const cJSON *value, uint64 maximum, uint64 *result)
     double number = 0;
     uint64 parsed = 0;
 
+    // check arguments
     if (result == NULL_POINTER || !cJSON_IsNumber(value))
     {
         return FALSE;
     }
+
+    // check the number range
     number = value->valuedouble;
     if (!(number >= 0.0 && number < 18446744073709551616.0))
     {
         return FALSE;
     }
+
+    // check fraction and limits
     parsed = (uint64)number;
     if ((double)parsed != number || parsed > maximum)
     {
         return FALSE;
     }
+
+    // write the result
     *result = parsed;
     return TRUE;
 }
@@ -742,10 +847,13 @@ void util__json_delete_secure(cJSON *root)
 {
     cJSON *child = NULL_POINTER;
 
+    // nothing to delete
     if (root == NULL_POINTER)
     {
         return;
     }
+
+    // clear the owned content
     if (!(root->type & cJSON_IsReference))
     {
         while (root->child != NULL_POINTER)
@@ -758,10 +866,14 @@ void util__json_delete_secure(cJSON *root)
             clib__null_memory(root->valuestring, strlen(root->valuestring));
         }
     }
+
+    // clear the item name
     if (!(root->type & cJSON_StringIsConst) && root->string != NULL_POINTER)
     {
         clib__null_memory(root->string, strlen(root->string));
     }
+
+    // free the item
     cJSON_Delete(root);
 }
 

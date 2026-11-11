@@ -17,6 +17,8 @@ boole client_msg__delivery__try_send(desktop_session_t *session, cJSON *message)
     char *json = NULL_POINTER;
     char *wire = NULL_POINTER;
     boole sent = FALSE;
+
+    // wrap, encrypt and send
     if (root && message && cJSON_AddItemToObject(root, "message", message))
     {
         json = cJSON_PrintUnformatted(root);
@@ -27,6 +29,8 @@ boole client_msg__delivery__try_send(desktop_session_t *session, cJSON *message)
     {
         crypto_session__free_json(message);
     }
+
+    // free the buffers
     crypto_session__free_json(root);
     crypto_session__free_text(json);
     crypto_session__free_text(wire);
@@ -41,6 +45,8 @@ boole client_msg__delivery__try_send(desktop_session_t *session, cJSON *message)
 cJSON *client_msg__delivery__new_message(const char *type)
 {
     cJSON *message = cJSON_CreateObject();
+
+    // add the message type
     if (message && !cJSON_AddStringToObject(message, "type", type))
     {
         crypto_session__free_json(message);
@@ -64,6 +70,7 @@ boole client_msg__delivery__send(desktop_session_t *session, cJSON *message, boo
     uint64 deadline = desktop_system__milliseconds() + 2000;
     boole sent = 0;
 
+    // wrap and encrypt message
     if (!complete || !root || !message || !cJSON_AddItemToObject(root, "message", message))
     {
         crypto_session__free_json(message);
@@ -73,6 +80,8 @@ boole client_msg__delivery__send(desktop_session_t *session, cJSON *message, boo
         json = cJSON_PrintUnformatted(root);
         wire = json ? crypto_session__encrypt(session->crypto, json) : NULL;
     }
+
+    // send until the deadline
     while (wire && !desktop_session__stopping(session) && desktop_system__milliseconds() < deadline)
     {
         sent = desktop_transport__send(session->transport, wire, clib__strlen(wire));
@@ -82,9 +91,13 @@ boole client_msg__delivery__send(desktop_session_t *session, cJSON *message, boo
         }
         desktop_system__sleep(5);
     }
+
+    // free the buffers
     crypto_session__free_text(wire);
     crypto_session__free_text(json);
     crypto_session__free_json(root);
+
+    // report the failure
     if (!sent && !desktop_session__stopping(session))
     {
         desktop_session__detail(session, "Could not send a complete protocol message. Disconnected.", 1);

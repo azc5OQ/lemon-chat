@@ -18,10 +18,14 @@ static BOOL CALLBACK _system_internal__window_icon(HWND window, LPARAM context)
     HICON small = LoadImageW(module, MAKEINTRESOURCEW(101), IMAGE_ICON, GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON), LR_SHARED);
     HICON large = LoadImageW(module, MAKEINTRESOURCEW(101), IMAGE_ICON, GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON), LR_SHARED);
     (void)context;
+
+    // set the small icon
     if (small)
     {
         SendMessageW(window, WM_SETICON, ICON_SMALL, (LPARAM)small);
     }
+
+    // set the large icon
     if (large)
     {
         SendMessageW(window, WM_SETICON, ICON_BIG, (LPARAM)large);
@@ -55,6 +59,8 @@ uint64 desktop_system__milliseconds(void)
 void desktop_system__sleep(int64 milliseconds)
 {
     DWORD chunk = 0;
+
+    // sleep in parts
     while (milliseconds > 0)
     {
         chunk = milliseconds > 4294967294LL ? 4294967294UL : (DWORD)milliseconds;
@@ -72,11 +78,14 @@ boole desktop_system__asset_directory(void)
     wchar_t path[32768] = { 0 };
     DWORD length = 0;
 
+    // read the program path
     length = GetModuleFileNameW(NULL, path, sizeof(path) / sizeof(path[0]));
     if (!length || length >= sizeof(path) / sizeof(path[0]))
     {
         return 0;
     }
+
+    // remove the file name
     while (length && path[length - 1] != L'\\' && path[length - 1] != L'/')
     {
         length--;
@@ -86,6 +95,8 @@ boole desktop_system__asset_directory(void)
         return 0;
     }
     path[length] = 0;
+
+    // change the current folder
     return SetCurrentDirectoryW(path) != 0;
 }
 
@@ -102,11 +113,14 @@ boole desktop_system__font_path(char *path, uint64 capacity, boole bold)
     char directory[MAX_PATH * 3] = { 0 };
     UINT length = 0;
 
+    // read the Windows folder
     clib__null_memory(path, capacity);
     length = GetWindowsDirectoryW(windows_directory, MAX_PATH);
     if (!length || length >= MAX_PATH || !WideCharToMultiByte(CP_UTF8, 0, windows_directory, -1, directory, sizeof(directory), NULL, NULL))
     {
         return 0;
     }
+
+    // build the font path
     return clib__string_copy(path, capacity, directory) && clib__string_append(path, capacity, "/Fonts/") && clib__string_append(path, capacity, bold ? "segoeuib.ttf" : "segoeui.ttf");
 }
