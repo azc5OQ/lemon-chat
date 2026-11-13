@@ -191,16 +191,22 @@ function dispatch__mainthread_onmessage(e)
         else if (connection__try_start_fast_reconnect("socket closed") == false)
         {
             // a deliberate close (an identity switch, "disconnect" in the connections menu) is not a lost connection - no scary alert
-            if (g_is_authenticated && g_is_identity_switch_in_progress == false && is_connection_ended_by_user == false)
+            let is_connection_lost = (g_is_authenticated && g_is_identity_switch_in_progress == false && is_connection_ended_by_user == false);
+            if (is_connection_lost && g_is_running_in_android_webview == false)
             {
-                if (g_is_running_in_android_webview == false)
-                {
-                    utils__custom_alert("connection with server was lost");
-                }
+                utils__custom_alert("connection with server was lost");
             }
             g_is_authenticated = false;
 
             connection__reset_chat_app_keep_identity();
+
+            // after a lost connection the connection details are shown, so the user sees the server and can connect again
+            if (is_connection_lost && typeof connection__show_connect_window === "function")
+            {
+                // a menu that was open belongs to the connection that ended
+                UI.delete_contextmenus(true);
+                connection__show_connect_window();
+            }
         }
     }
     else if (e.data.type == "websocket_worker_onerror")

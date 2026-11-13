@@ -1032,6 +1032,12 @@ var server_msg = {
         g_channel_list[index].is_using_password = msg.message.is_using_password;
         g_channel_list[index].name = msg.message.channel_name;
         g_channel_list[index].is_audio_enabled = msg.message.is_audio_enabled;
+
+        // a theme with the conversation list shows or hides its talk bar by this setting
+        if (typeof member_conversations__schedule_refresh === "function")
+        {
+            member_conversations__schedule_refresh();
+        }
         if (typeof msg.message.is_temp_channel === "boolean")
         {
             g_channel_list[index].is_temp_channel = msg.message.is_temp_channel;

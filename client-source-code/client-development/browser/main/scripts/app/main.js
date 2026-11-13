@@ -178,6 +178,211 @@ function main__sync_toolbar_state_classes()
 }
 
 /**
+ * @brief Tells whether the theme in use is one of the themes for phones. Those are the themes whose entry in
+ *        the list of themes has the attribute data-mobile="true".
+ *
+ * @return boolean true while a theme for phones is in use
+ */
+function main__is_current_theme_for_phones()
+{
+    let item = document.querySelector('.choose-theme-item[data-name="' + connection__current_theme_name() + '"]');
+
+    return item != null && item.getAttribute("data-mobile") === "true";
+}
+
+/**
+ * @brief The button that shows and hides the list of people. It switches the class "member-list-shown"
+ *        on itself. A theme that draws the list as a panel over the page (Mobile 2) shows the panel
+ *        while the button has this class.
+ *
+ * @param object event -> the click event of the button
+ *
+ * @return void
+ */
+function main__show_hide_member_list_button_onclick(event)
+{
+    event.currentTarget.classList.toggle("member-list-shown");
+}
+
+/**
+ * @brief A press on the page under the top bar. While the list of people is shown as a panel, the theme
+ *        (Mobile 2) blurs the rest of the page with a layer that the page element draws itself, so a
+ *        press on that layer has the page element as its target. Such a press hides the list. A press
+ *        on anything inside the page has another target and changes nothing here.
+ *
+ * @param object event -> the click event of the page element (#communication-system-container)
+ *
+ * @return void
+ */
+function main__member_list_blurred_page_onclick(event)
+{
+    // only the blurred layer
+    if (event.target !== event.currentTarget)
+    {
+        return;
+    }
+
+    // hide the list
+    document.getElementById("show-hide-member-list-button").classList.remove("member-list-shown");
+}
+
+/**
+ * @brief Fills the list of open conversations (#chat-context-select) from the conversation tabs: one entry for
+ *        every tab, "# name" for a channel and "@ name" for a person. The chosen entry is the one of the
+ *        conversation that is shown: the chat part (.chat-context) that is not hidden, whose id
+ *        "chat-context-channel-3" or "chat-context-pm-7" gives the value "channel-3" or "user-7" of its tab.
+ *        So the list follows a press on a person and a change of the channel too. A theme for phones shows this
+ *        list in place of the row of tabs. Two MutationObservers call the function: after every change of the
+ *        tabs and after every change of the chat parts.
+ *
+ * @return void
+ */
+function main__refresh_chat_context_select()
+{
+    let select = document.getElementById("chat-context-select");
+    let shown = Array.from(document.querySelectorAll("#chat-context-container > .chat-context")).find(function(context) { return getComputedStyle(context).display != "none"; });
+    let shown_value = (shown == null) ? "" : shown.id.replace("chat-context-channel-", "channel-").replace("chat-context-pm-", "user-");
+    let option = null;
+
+    // rebuild the entries
+    select.replaceChildren();
+    for (let tab of document.querySelectorAll("#chat-context-selectors-container .chat-context-selector"))
+    {
+        option = document.createElement("option");
+        option.value = tab.getAttribute("data-chat-context-selector-id");
+        option.textContent = (tab.getAttribute("data-chat-context-selector-type") == "channel" ? "# " : "@ ") + tab.querySelector("p").textContent.trim();
+        option.selected = option.value == shown_value;
+        select.appendChild(option);
+    }
+
+    // the own channel stays
+    document.getElementById("chat-context-select-close").disabled = (shown_value == "" || shown_value == "channel-" + g_current_channel_id);
+}
+
+/**
+ * @brief An entry of the list of open conversations was chosen. The tab of that conversation gets a click, so
+ *        the conversation is shown the same way as after a press on the tab.
+ *
+ * @param object event -> the change event of #chat-context-select
+ *
+ * @return void
+ */
+function main__chat_context_select_onchange(event)
+{
+    let tab = document.querySelector('#chat-context-selectors-container .chat-context-selector[data-chat-context-selector-id="' + event.currentTarget.value + '"]');
+
+    // show the conversation
+    if (tab != null)
+    {
+        tab.click();
+    }
+}
+
+/**
+ * @brief The close button next to the list of open conversations. The close mark of the tab of the shown
+ *        conversation gets a click, so the conversation is closed the same way as from its tab: the chat of
+ *        the user's own channel is shown afterwards. The button is disabled while the chat of the user's own
+ *        channel is shown (main__refresh_chat_context_select), because that chat cannot be closed.
+ *
+ * @return void
+ */
+function main__chat_context_select_close_onclick()
+{
+    let mark = document.querySelector('#chat-context-selectors-container [data-chat-context-remove-selector-id="' + document.getElementById("chat-context-select").value + '"]');
+
+    // close the conversation
+    if (mark != null)
+    {
+        mark.click();
+    }
+}
+
+// The time of the last touch on the page, in milliseconds; 0 while there was none.
+let main__last_touch_time = 0;
+
+/**
+ * @brief Stores the time of a touch. A device with a touch screen can have a mouse too, and the browser
+ *        sends mouse events of its own after every touch. main__is_mouse_event_of_a_touch() uses this
+ *        time to tell those from a press with a real mouse.
+ *
+ * @return void
+ */
+function main__note_touch()
+{
+    main__last_touch_time = Date.now();
+}
+
+/**
+ * @brief Tells whether a mouse event that arrives now was made by the browser from a touch: such an event
+ *        comes less than a second after the touch.
+ *
+ * @return boolean true for a mouse event that belongs to a touch
+ */
+function main__is_mouse_event_of_a_touch()
+{
+    return Date.now() - main__last_touch_time < 1000;
+}
+
+/**
+ * @brief A press, a click or a double click with a mouse in the channel tree on a device that counts as a
+ *        touch screen. The rows of the tree get only touch handlers on such a device (messages.js), so a
+ *        mouse did nothing there. This function passes the event to the handlers that the rows have on a
+ *        device without a touch screen: a press on a person or a channel (left button: choose, right
+ *        button: menu), a click on a channel name, and a double click on a channel name (join). The arrow
+ *        of a channel row has its own mouse handler on every device and is left out.
+ *
+ * @param object event -> the mousedown, click or dblclick event of #channel-list-container or #idle-clients-container
+ *
+ * @return void
+ */
+function main__tree_mouse_on_touch_device(event)
+{
+    let client = event.target.closest(".connected-client");
+    let channel = event.target.closest(".single-channel");
+    let channel_name = event.target.closest("[data-channel-name-id]");
+    // the row handlers read the row from "currentTarget" or, when that is null, from their fifth parameter
+    let forwarded_event = { stopPropagation: function() {}, currentTarget: null, which: event.which, clientX: event.clientX, clientY: event.clientY };
+
+    // only a real mouse
+    if (g_is_client_running_under_touch_device == false || main__is_mouse_event_of_a_touch() == true)
+    {
+        return;
+    }
+
+    // a person's row
+    if (client != null)
+    {
+        if (event.type == "mousedown")
+        {
+            UI.connected_user_onmousedown(forwarded_event, null, null, null, client);
+            event.stopPropagation();
+        }
+        return;
+    }
+
+    // not a channel row
+    if (channel == null || event.target.closest(".single-channel-collapse-button") != null)
+    {
+        return;
+    }
+
+    // a channel row
+    if (event.type == "mousedown")
+    {
+        UI.single_channel_onmousedown(forwarded_event, null, null, null, channel);
+        event.stopPropagation();
+    }
+    else if (channel_name != null && event.type == "dblclick")
+    {
+        UI.single_channel_doubleclick_join(event);
+    }
+    else if (channel_name != null)
+    {
+        UI.single_channel_onclick(event);
+    }
+}
+
+/**
  * @brief applies the local "theme cursor" setting: with the setting off, the root element carries the
  *        class custom-cursor-off, and a theme's cursor rules (ozone replaces the mouse cursor and draws
  *        a glow around it) are written so that this class switches them off
@@ -373,8 +578,8 @@ async function main__window_onload()
                 // bring the channel chat back on screen - same as tapping its conversation tab
                 member_conversations__open_channel_chat(channel_circle.getAttribute("data-member-list-channel-id"));
             }
-            // a theme with the conversation list has a button for the channel list, so a hold opens no menu there
-            else if (member_conversations.active == false)
+            // a hold opens the list of channels
+            else
             {
                 member_list_show_channel_switch_menu(click_x, click_y);
             }
@@ -571,7 +776,8 @@ async function main__window_onload()
         document.addEventListener("visibilitychange", cancel_member_list_press);
 
         member_list_body.addEventListener("mousedown", function(event) {
-            if (g_is_client_running_under_touch_device == true) { return; }
+            // skip after a touch
+            if (g_is_client_running_under_touch_device == true && main__is_mouse_event_of_a_touch() == true) { return; }
 
             // left opens, right = actions / channel list - same split the tree rows use
             if (event.which == 1 || event.which == 3)
@@ -740,10 +946,7 @@ async function main__window_onload()
     document.getElementById("msgr-neighbors-button").onclick = function()
     {
         let neighbors_now = document.body.classList.toggle("msgr-neighbors-only");
-        if (!document.body.classList.contains("pocket-theme-active"))
-        {
-            utils__storage_set("lemon_strip_neighbors", neighbors_now ? "1" : "0");
-        }
+        utils__storage_set("lemon_strip_neighbors", neighbors_now ? "1" : "0");
         UI.refresh_member_list_controls();
     };
 
@@ -763,26 +966,6 @@ async function main__window_onload()
             {
                 first.focus();
             }
-        }
-        else if (button.id == "pocket-people-toggle")
-        {
-            document.body.classList.toggle("pocket-people-open");
-            UI.refresh_member_list_controls();
-        }
-        else if (button.id == "pocket-people-close")
-        {
-            document.body.classList.remove("pocket-people-open");
-            UI.refresh_member_list_controls();
-            document.getElementById("pocket-people-toggle").focus();
-        }
-    });
-    document.addEventListener("keydown", function(event)
-    {
-        if (event.key == "Escape" && document.body.classList.contains("pocket-people-open"))
-        {
-            document.body.classList.remove("pocket-people-open");
-            UI.refresh_member_list_controls();
-            document.getElementById("pocket-people-toggle").focus();
         }
     });
     window.addEventListener("resize", UI.refresh_member_list_controls);
@@ -965,6 +1148,7 @@ async function main__window_onload()
     chat_files__setup_chat_file_drag_and_drop();
     chat_files__setup_chat_file_card_glow();
     chat__setup_public_key_expand();
+    chat__setup_public_key_lines_setting();
     chat_files__apply_file_upload_policy_to_ui();
     document.getElementById("add-key-button").onclick = UI.add_key_button_on_click;
     document.getElementById("connect-show-advanced").onchange = UI.show_connection_advanced;
@@ -980,6 +1164,24 @@ async function main__window_onload()
     document.getElementById("admin-password-send-button").onclick = UI.admin_password_send_button_onclick;
     document.getElementById("clear-chat-button").onclick = UI.clear_chat_button_onclick;
     document.getElementById("hide-chat-button").onclick = UI.hide_chat_container;
+    document.getElementById("show-hide-member-list-button").onclick = main__show_hide_member_list_button_onclick;
+    document.getElementById("communication-system-container").addEventListener("click", main__member_list_blurred_page_onclick);
+    document.getElementById("chat-context-select").onchange = main__chat_context_select_onchange;
+    document.getElementById("chat-context-select-close").onclick = main__chat_context_select_close_onclick;
+    new MutationObserver(main__refresh_chat_context_select).observe(document.getElementById("chat-context-selectors-container"),
+        { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ["style"] });
+    new MutationObserver(main__refresh_chat_context_select).observe(document.getElementById("chat-context-container"),
+        { childList: true, subtree: true, attributes: true, attributeFilter: ["style"] });
+    main__refresh_chat_context_select();
+    document.addEventListener("touchstart", main__note_touch, { capture: true, passive: true });
+    document.addEventListener("touchend", main__note_touch, { capture: true, passive: true });
+    for (let tree_id of ["channel-list-container", "idle-clients-container"])
+    {
+        for (let event_name of ["mousedown", "click", "dblclick"])
+        {
+            document.getElementById(tree_id).addEventListener(event_name, main__tree_mouse_on_touch_device);
+        }
+    }
     document.getElementById("show-admin-password-entry").onclick = UI.enter_admin_password_button_onclick;
     document.getElementById("choose-song-file-input").onchange = UI.choose_song_file_input_onchange;
     document.getElementById("drag-resize-chat").addEventListener('mousedown', UI.drag_resize_chat_onclick, false);
@@ -990,8 +1192,8 @@ async function main__window_onload()
     document.getElementById("server-settings-log-refresh-button").onclick = UI.server_settings_log_refresh_button_onclick;
     document.getElementById("server-settings-log-clear-button").onclick = UI.server_settings_log_clear_button_onclick;
     document.getElementById("enter-server-settings").onclick = UI.enter_server_settings_onclick;
-    document.getElementById("channel-flatten-toggle-button").onclick = UI.channel_flatten_toggle_onclick;
-    document.getElementById("show-secret-identity-string").onclick = UI.show_secret_identity_string_onclick;
+    document.getElementById("local-settings-flat-channel-list").onchange = UI.channel_flatten_toggle_onclick;
+    document.getElementById("show-secret-identity-string").onclick = head_menu__identity_button_onclick;
     document.getElementById("export-identity-file-button").onclick = UI.export_identity_file_button_onclick;
     document.getElementById("choose-identity-file-button").onclick = UI.choose_identity_file_button_onclick;
     document.getElementById("identity-file-input").onchange = UI.identity_file_input_onchange;
@@ -1021,7 +1223,8 @@ async function main__window_onload()
     document.getElementById("import-identity-button").onclick = UI.import_identity_button_onclick;
     // top bar: same passphrase dialog; entered while connected it disconnects, regenerates
     // the keypair from the passphrase and reconnects as that identity (see the confirm handler)
-    document.getElementById("switch-identity-button").onclick = UI.import_identity_button_onclick;
+    document.getElementById("identity-menu-export").onclick = head_menu__identity_item_onclick;
+    document.getElementById("identity-menu-import").onclick = head_menu__identity_item_onclick;
     document.getElementById("identity-string-use-confirm-button").onclick = UI.identity_string_use_confirm_button;
     document.getElementById("close-button-poke-client").onclick = UI.close_button_poke_client_onclick;
     document.getElementById("close-button-client-info").onclick = UI.close_button_client_info_onclick;
@@ -1283,10 +1486,7 @@ async function main__window_onload()
     document.getElementById("local-settings-member-list-neighbors").onchange = function()
     {
         document.body.classList.toggle("msgr-neighbors-only", this.checked);
-        if (!document.body.classList.contains("pocket-theme-active"))
-        {
-            utils__storage_set("lemon_strip_neighbors", this.checked ? "1" : "0");
-        }
+        utils__storage_set("lemon_strip_neighbors", this.checked ? "1" : "0");
         UI.refresh_member_list_controls();
     };
 
@@ -1654,6 +1854,12 @@ async function main__window_onload()
                 let rect = null;
 
                 if (e.button !== 0 || e.target.closest(".close-button") != null)
+                {
+                    return;
+                }
+
+                // no moving on phones
+                if (main__is_current_theme_for_phones() == true)
                 {
                     return;
                 }

@@ -37,6 +37,7 @@
     <!-- default mobile theme style -->
     <style id="style-theme-default-mobile" class="style-theme-html-element" media="(max-width: 1px)">
 /* @@INCLUDE: styles/theme-default-mobile.style @@ */
+/* @@INCLUDE: styles/settings-phone.style @@ */
     </style>
 
 
@@ -68,7 +69,17 @@
 
     <style id="style-theme-pocket" class="style-theme-html-element" media="(max-width: 1px)">
 /* @@INCLUDE: styles/theme-default.style @@ */
+/* @@INCLUDE: styles/theme-mono.style @@ */
+/* @@INCLUDE: styles/theme-phone.style @@ */
+/* @@INCLUDE: styles/theme-phone-tabs.style @@ */
 /* @@INCLUDE: styles/theme-pocket.style @@ */
+    </style>
+
+    <!-- Mobile 2: the Termix theme arranged and sized for the screen of a phone. -->
+    <style id="style-theme-mobile-2" class="style-theme-html-element" media="(max-width: 1px)">
+/* @@INCLUDE: styles/theme-termix.style @@ */
+/* @@INCLUDE: styles/theme-mobile-2.style @@ */
+/* @@INCLUDE: styles/settings-phone.style @@ */
     </style>
     <!-- bluebell theme style (messenger look; flat channel list, a row of people's pictures from the member list) -->
     <style id="style-theme-bluebell" class="style-theme-html-element" media="(max-width: 1px)">
@@ -80,11 +91,13 @@
     <style id="style-theme-mono-light" class="style-theme-html-element" media="(max-width: 1px)">
 /* @@INCLUDE: styles/theme-default.style @@ */
 /* @@INCLUDE: styles/theme-mono.style @@ */
+/* @@INCLUDE: styles/theme-phone.style @@ */
     </style>
 
     <style id="style-theme-mono-dark" class="style-theme-html-element" media="(max-width: 1px)">
 /* @@INCLUDE: styles/theme-default.style @@ */
 /* @@INCLUDE: styles/theme-mono.style @@ */
+/* @@INCLUDE: styles/theme-phone.style @@ */
 /* @@INCLUDE: styles/theme-mono-dark.style @@ */
     </style>
 
@@ -92,6 +105,7 @@
     <style id="style-theme-simple" class="style-theme-html-element" media="(max-width: 1px)">
 /* @@INCLUDE: styles/theme-default.style @@ */
 /* @@INCLUDE: styles/theme-mono.style @@ */
+/* @@INCLUDE: styles/theme-phone.style @@ */
 /* @@INCLUDE: styles/theme-simple.style @@ */
     </style>
 
@@ -951,8 +965,11 @@
             </div>
             <input type="button" id="clear-chat-button">
             <input type="button" id="hide-chat-button">
+            <!-- shows and hides the list of people in a theme that draws this list as a panel over the page (Mobile 2); not shown in the other themes -->
+            <input type="button" id="show-hide-member-list-button" title="show or hide the list of people">
             <input type="button" id="show-admin-password-entry">
-            <input type="button" id="show-secret-identity-string" title="export identity: view the passphrase or save this identity as a file">
+            <!-- the identity button: a press opens the list #identity-menu-list under it, which asks whether this identity is exported or another one is imported (head-menu.js) -->
+            <input type="button" id="show-secret-identity-string" title="identity: export this identity or import another one">
             <input type="button" id="microphone-always-broadcasting-audio-button">
             <input type="button" id="hide-show-flags-button">
             <input type="button" id="sound-effects-button">
@@ -960,6 +977,15 @@
             <div id="local-settings-container" style="display: none;">
                 <div id="menu-bar-container"><p id="local-settings-title">local settings</p><div class="close-button" id="local-settings-x-button"></div></div>
                 <div id="local-settings-body">
+                    <!-- the sections as a list: a theme for phones shows it in place of the row of tabs; the value of an entry is the id of its tab -->
+                    <select id="local-settings-section-select" aria-label="local settings section">
+                        <option value="local-settings-tab-appearance">Appearance</option>
+                        <option value="local-settings-tab-chat">Chat</option>
+                        <option value="local-settings-tab-audio">Audio</option>
+                        <option value="local-settings-tab-files">Files &amp; pictures</option>
+                        <option value="local-settings-tab-identity">Identity</option>
+                        <option value="local-settings-tab-advanced">Advanced</option>
+                    </select>
                     <div id="local-settings-tabs" role="tablist" aria-label="local settings sections" aria-orientation="vertical">
                         <button type="button" class="local-settings-tab" id="local-settings-tab-appearance" role="tab" aria-controls="local-settings-page-appearance" aria-selected="true" tabindex="0">Appearance</button>
                         <button type="button" class="local-settings-tab" id="local-settings-tab-chat" role="tab" aria-controls="local-settings-page-chat" aria-selected="false" tabindex="-1">Chat</button>
@@ -1025,6 +1051,20 @@
                             </label>
                             <label class="local-settings-row">
                                 <span class="local-settings-text">
+                                    <span class="local-settings-label">show the number of people in the channel list</span>
+                                    <span class="local-settings-hint">a channel with people in it shows their number and up to three of their pictures</span>
+                                </span>
+                                <input type="checkbox" id="local-settings-show-channel-people">
+                            </label>
+                            <label class="local-settings-row local-settings-row-flat-channel-list">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">flat channel list</span>
+                                    <span class="local-settings-hint">shows every channel at the same depth, without the steps of the channel tree</span>
+                                </span>
+                                <input type="checkbox" id="local-settings-flat-channel-list">
+                            </label>
+                            <label class="local-settings-row">
+                                <span class="local-settings-text">
                                     <span class="local-settings-label">theme cursor</span>
                                     <span class="local-settings-hint">lets a theme replace the mouse cursor and draw a glow around it (ozone does); off keeps the system cursor</span>
                                 </span>
@@ -1078,6 +1118,13 @@
                                     <span class="local-settings-hint">a new message scrolls the chat down; off keeps your place while you read older messages</span>
                                 </span>
                                 <input type="checkbox" id="local-settings-auto-scroll">
+                            </label>
+                            <label class="local-settings-row">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">hide public keys in private chats</span>
+                                    <span class="local-settings-hint">a private chat begins without the lines "your public key" and "his public key"</span>
+                                </span>
+                                <input type="checkbox" id="local-settings-hide-public-keys">
                             </label>
                             <label class="local-settings-row">
                                 <span class="local-settings-text">
@@ -1203,28 +1250,32 @@
                             <label class="local-settings-row">
                                 <span class="local-settings-text">
                                     <span class="local-settings-label">block direct chat pictures</span>
-                                    <span class="local-settings-hint">This feature must also be enabled on the server.</span>
+                                    <span class="local-settings-hint">the server stops a picture that somebody sends you in a private chat before it reaches this device, and tells the sender that you block pictures</span>
+                                    <span class="local-settings-hint local-settings-attachment-preference-state"></span>
                                 </span>
                                 <input type="checkbox" id="local-settings-block-direct-chat-pictures" data-attachment-preference="block_direct_chat_pictures">
                             </label>
                             <label class="local-settings-row">
                                 <span class="local-settings-text">
                                     <span class="local-settings-label">block direct chat files</span>
-                                    <span class="local-settings-hint">This feature must also be enabled on the server.</span>
+                                    <span class="local-settings-hint">the server stops a file that somebody sends you in a private chat before it reaches this device, and tells the sender that you block files</span>
+                                    <span class="local-settings-hint local-settings-attachment-preference-state"></span>
                                 </span>
                                 <input type="checkbox" id="local-settings-block-direct-chat-files" data-attachment-preference="block_direct_chat_files">
                             </label>
                             <label class="local-settings-row">
                                 <span class="local-settings-text">
                                     <span class="local-settings-label">block channel chat pictures</span>
-                                    <span class="local-settings-hint">This feature must also be enabled on the server.</span>
+                                    <span class="local-settings-hint">the server does not send you the pictures that are sent to your channel; the other people in the channel still get them</span>
+                                    <span class="local-settings-hint local-settings-attachment-preference-state"></span>
                                 </span>
                                 <input type="checkbox" id="local-settings-block-channel-chat-pictures" data-attachment-preference="block_channel_chat_pictures">
                             </label>
                             <label class="local-settings-row">
                                 <span class="local-settings-text">
                                     <span class="local-settings-label">block channel chat files</span>
-                                    <span class="local-settings-hint">This feature must also be enabled on the server.</span>
+                                    <span class="local-settings-hint">the server does not send you the files that are sent to your channel; the other people in the channel still get them</span>
+                                    <span class="local-settings-hint local-settings-attachment-preference-state"></span>
                                 </span>
                                 <input type="checkbox" id="local-settings-block-channel-chat-files" data-attachment-preference="block_channel_chat_files">
                             </label>
@@ -1282,6 +1333,7 @@
                 <button type="button" class="choose-theme-item" data-name="ozone" data-mobile="false">Ozone</button>
                 <button type="button" class="choose-theme-item" data-name="termix" data-mobile="false">Termix</button>
                 <button type="button" class="choose-theme-item" data-name="default-mobile" data-mobile="true" title="Designed for mobile">Mobile</button>
+                <button type="button" class="choose-theme-item" data-name="mobile-2" data-mobile="true" title="Designed for mobile">Mobile 2</button>
                 <button type="button" class="choose-theme-item" data-name="pocket" data-mobile="true" title="Designed for mobile">Pocket</button>
                 <button type="button" class="choose-theme-item" data-name="simple" data-mobile="true" title="Designed for mobile">Simple</button>
                 <button type="button" class="choose-theme-item" data-name="bluebell" data-mobile="true" title="Designed for mobile">Bluebell</button>
@@ -1289,9 +1341,15 @@
                 <button type="button" class="choose-theme-item" data-name="mono-dark" data-mobile="true" title="Designed for mobile">Mono Dark</button>
             </div>
             <input type="button" id="layout-edit-button" value="layout" title="re-arrange the panels; click again to lock them in place">
-            <input type="button" id="switch-identity-button" value="import identity" title="import identity: load an identity file or passphrase, then reconnect as that identity">
-            <input type="button" id="channel-flatten-toggle-button" value="flatten" title="toggle the channel tree between nested and a flat, single-level list">
             <input type="button" id="enter-server-settings">
+        </div>
+        <!-- the list of the identity button of the top bar. It stands outside the top bar and is placed under the button with fixed
+             coordinates (head-menu.js), because the themes put the button at different places and some top bars cut off their content -->
+        <div class="head-menu-dropdown" id="identity-menu">
+            <div class="head-menu-dropdown-list" id="identity-menu-list" style="display: none;">
+                <p class="head-menu-dropdown-item" id="identity-menu-export">export this identity</p>
+                <p class="head-menu-dropdown-item" id="identity-menu-import">import another identity</p>
+            </div>
         </div>
         <!-- shown while the connect page is held back, so the wait is a spinner, not a blank screen -->
         <style>
@@ -1426,6 +1484,11 @@
                             </div>
                             <div class="remove-chat-context-selector" data-chat-context-remove-selector-type="channel" data-chat-context-remove-selector-id="channel-0"></div>
                         </div>
+                    </div>
+                    <!-- the open conversations as a list (<select>) with a button that closes the shown one: a theme for phones shows this in place of the row of tabs above (main.js keeps the list in step with the tabs) -->
+                    <div id="chat-context-select-container">
+                        <select id="chat-context-select" aria-label="open conversations"></select>
+                        <input type="button" id="chat-context-select-close" value="&times;" title="close this conversation">
                     </div>
                     <div id="chat-context-container">
                         <div id="chat-seen-indicator" title="your last message has been read"></div>

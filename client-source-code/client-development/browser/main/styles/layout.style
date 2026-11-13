@@ -626,6 +626,124 @@
     color: var(--set-danger-strong, #ff6b6b);
 }
 
+/* The window that asks for the password of a channel: one arrangement for every theme except Bluebell. The
+   window is 340px wide (narrower on a narrow screen) and as high as its content: a title bar, one row with
+   the word "password" and the field, and the join button at the right under the field. Before, most themes
+   gave the row a fixed height of 120px, which left an empty part above the button, and some gave the row no
+   distance from the edges of the window. A theme gives colours, edges and the look of the controls.
+   Bluebell arranges this window with rules of its own, which stay as they are. The style element of the
+   theme in use has no "media" attribute (UI.change_theme removes it), so ":not(:has(...))" at the start of
+   every selector is true while Bluebell is not the theme in use. "!important" is needed where a theme sets
+   the same property with "!important" or where the page has the value in a style attribute. */
+:root:not(:has(#style-theme-bluebell:not([media]))) body div#channel-password-enter
+{
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    width: min(340px, calc(100vw - 24px)) !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-width: none;
+}
+
+:root:not(:has(#style-theme-bluebell:not([media]))) body div#channel-password-enter > #channel-password-input-container
+{
+    display: flex !important;
+    align-items: center;
+    gap: 12px;
+    box-sizing: border-box;
+    width: auto !important;
+    height: auto !important;
+    min-height: 0;
+    margin: 0 !important;
+    padding: 16px 16px 12px !important;
+    text-align: left;
+}
+
+/* the two wrappers around the word and the field have "display: inline-block" in their style attribute */
+:root:not(:has(#style-theme-bluebell:not([media]))) body #channel-password-input-container > div,
+:root:not(:has(#style-theme-bluebell:not([media]))) body #channel-password-input-container > div > div
+{
+    display: contents !important;
+}
+
+:root:not(:has(#style-theme-bluebell:not([media]))) body #channel-password-input-container .text-input-container
+{
+    display: block;
+    flex: 0 0 auto;
+    box-sizing: border-box;
+    width: auto !important;
+    height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    float: none;
+}
+
+:root:not(:has(#style-theme-bluebell:not([media]))) body #channel-password-input-container .text-input-container:has(> #input-channel-password)
+{
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+/* The word "password" is a field that cannot be changed (a disabled <input> in the page). It is shown as
+   plain text: some themes draw every disabled field as a grey rectangle, which made the word look like a
+   button. It is as wide as its text ("field-sizing: content"); a browser without that property gives it a
+   width of ten digits. Its height is 1.7 times its font size: a field without padding is as high as one
+   line of text, and in some fonts that cut off the upper and the lower ends of the letters. */
+:root:not(:has(#style-theme-bluebell:not([media]))) body #channel-password-input-container .text-input-container:has(> input:disabled)
+{
+    border: 0 !important;
+    background: none !important;
+    box-shadow: none !important;
+}
+
+:root:not(:has(#style-theme-bluebell:not([media]))) body #channel-password-input-container input:disabled
+{
+    box-sizing: content-box;
+    width: 10ch !important;
+    height: 1.7em !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    line-height: 1.7 !important;
+    background: none !important;
+    box-shadow: none !important;
+    text-align: left;
+    opacity: 1;
+}
+
+@supports (field-sizing: content)
+{
+    :root:not(:has(#style-theme-bluebell:not([media]))) body #channel-password-input-container input:disabled
+    {
+        width: auto !important;
+        field-sizing: content;
+    }
+}
+
+:root:not(:has(#style-theme-bluebell:not([media]))) body #channel-password-input-container #input-channel-password
+{
+    box-sizing: border-box;
+    width: 100% !important;
+    min-height: 32px;
+    margin: 0 !important;
+}
+
+/* the row of the join button */
+:root:not(:has(#style-theme-bluebell:not([media]))) body div#channel-password-enter > div:last-child
+{
+    box-sizing: border-box;
+    margin: 0 !important;
+    padding: 0 16px 16px !important;
+    text-align: right;
+}
+
+:root:not(:has(#style-theme-bluebell:not([media]))) body #join-passworded-channel-button
+{
+    position: static !important;
+    margin: 0 !important;
+}
+
 #admin-password-input-container {
     display: block;
     text-align: left;
@@ -3846,7 +3964,7 @@ body.server-audio-disabled .client-audio-state[data-has-avatar="1"]
     float: none;
 }
 
-/* Icons at the right end of a channel row: "audio disabled", then the lock, then the channel icon, all of one size. */
+/* The channel icon stands at the right end of a channel row. */
 #channel-list-container .single-channel > .single-channel-icon
 {
     order: 3;
@@ -3855,26 +3973,142 @@ body.server-audio-disabled .client-audio-state[data-has-avatar="1"]
     margin: 0 0 0 4px !important;
 }
 
+/* The two marks of a channel stand at the left of the arrow of the row: first the "audio disabled"
+   picture, then the lock of a channel with a password. Each is 14px wide and has 2px after it, 16px
+   together.
+   The marks do not move the channel: the first mark of a row has a negative left margin as wide as the
+   marks of that row, so the arrow and the name stay in line with those of the other rows, and the marks
+   stand in the empty part (.padding-div) that moves a row to the right by the depth of its channel.
+   Where that empty part is too narrow for the marks, every row of the list gets a wider one (the rules
+   for --channel-marks-gutter further down), so every row keeps its place relative to the others.
+   A flex row places its parts by the value of "order" first: the empty part has -4, the two marks -3,
+   the arrow -2, and every other part keeps 0. The lock is the ::after part of the row; a theme gives it
+   the picture. */
+#channel-list-container .single-channel > .padding-div
+{
+    order: -4;
+}
+
+#channel-list-container .single-channel > :is(.single-channel-collapse-button, .single-channel-expand-button)
+{
+    order: -2;
+}
+
 #channel-list-container .single-channel > .single-channel-is-audio-disabled
 {
-    order: 1;
-    width: var(--tree-icon-size, 16px);
-    height: var(--tree-icon-size, 16px);
-    margin: 0 0 0 4px;
+    order: -3;
+    width: 14px;
+    height: 16px;
+    margin: 0 2px 0 -16px;
     background-position: center;
     background-size: contain;
 }
 
-/* When any channel has an icon, a row with the "audio disabled" icon keeps an empty channel icon box. */
-body:not(.hide-channel-icons-in-channel-list) #channel-list-container:has(.single-channel-icon[style*="background-image"]) .single-channel:has(> .single-channel-is-audio-disabled) > .single-channel-icon
+/* a channel with both marks: the picture takes the room for both */
+#channel-list-container .single-channel:has(> .single-channel-is-using-password) > .single-channel-is-audio-disabled
 {
-    display: block !important;
+    margin-left: -32px;
+}
+
+#channel-list-container .single-channel:has(> .single-channel-is-using-password)::after
+{
+    order: -3;
+    flex: 0 0 14px;
+    height: 16px;
+    margin: 0 2px 0 -16px;
+}
+
+#channel-list-container .single-channel:has(> .single-channel-is-audio-disabled):has(> .single-channel-is-using-password)::after
+{
+    margin-left: 0;
+}
+
+/* The empty part at the left of every row, of a channel and of a person, is 20px wider while a channel of
+   the first depth has a mark, while a channel of the second depth has both marks, or while a mark exists
+   in a list that a theme draws without depth (the class "channels-flattened"). The marks then stand inside
+   their row; a theme may cut off what stands outside a row. The selectors name the parts of one row in
+   their order in the page: the empty part, the name (which has the class of the lock), the part of the
+   "audio disabled" picture. The value is set on #space-devider1, which holds the list of channels and the
+   group of idle people, so the rows of both get it. */
+#space-devider1:has(> #channel-list-container > .single-channel > .padding-div[style^="padding-left: 0px"] ~ :is(.single-channel-is-using-password, .single-channel-is-audio-disabled)),
+#space-devider1:has(> #channel-list-container > .single-channel > .padding-div[style^="padding-left: 20px"] ~ .single-channel-is-using-password ~ .single-channel-is-audio-disabled),
+#space-devider1:has(> #channel-list-container.channels-flattened > .single-channel > :is(.single-channel-is-using-password, .single-channel-is-audio-disabled))
+{
+    --channel-marks-gutter: 20px;
+}
+
+/* 40px while a channel of the first depth, or any channel of a list without depth, has both marks */
+#space-devider1:has(> #channel-list-container > .single-channel > .padding-div[style^="padding-left: 0px"] ~ .single-channel-is-using-password ~ .single-channel-is-audio-disabled),
+#space-devider1:has(> #channel-list-container.channels-flattened > .single-channel > .single-channel-is-using-password ~ .single-channel-is-audio-disabled)
+{
+    --channel-marks-gutter: 40px;
+}
+
+:is(#channel-list-container, #idle-clients-container) > .single-channel > .padding-div,
+:is(#channel-list-container, #idle-clients-container) > .connected-client > div:first-child
+{
+    margin-left: var(--channel-marks-gutter, 0px);
+}
+
+/* The number of people in a channel, with up to three of their pictures in front of it, after the name
+   of the channel; written by channel_tree__refresh_people_counts(). It is displayed only with the local
+   setting "show the number of people in the channel list". The colours come from the text colour of
+   the row, so they fit every theme. A press on it reaches the row. */
+#channel-list-container .single-channel > .single-channel-people
+{
+    display: none;
+    flex-shrink: 0;
+    align-items: center;
+    margin: 0 0 0 6px;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: var(--tree-icon-size, 16px);
+    pointer-events: none;
+}
+
+#channel-list-container .single-channel-people-picture
+{
+    box-sizing: border-box;
+    width: var(--tree-icon-size, 16px);
+    height: var(--tree-icon-size, 16px);
+    margin-left: -5px;
+    overflow: hidden;
+    border: 1px solid color-mix(in srgb, currentColor 45%, transparent);
+    border-radius: 50%;
+    background: center / cover no-repeat color-mix(in srgb, currentColor 22%, transparent);
+    font-size: 9px;
+    line-height: calc(var(--tree-icon-size, 16px) - 2px);
+    text-align: center;
+    text-transform: uppercase;
+}
+
+#channel-list-container .single-channel-people-picture:first-child
+{
+    margin-left: 0;
+}
+
+#channel-list-container .single-channel-people-count
+{
+    margin-left: 4px;
+    opacity: 0.8;
+}
+
+body.show-channel-people-in-channel-list #channel-list-container .single-channel > .single-channel-people
+{
+    display: flex;
 }
 
 /* Three local settings each hide one kind of icon in the channel list. */
 body.hide-server-group-icons-in-channel-list :is(#channel-list-container, #idle-clients-container) .client-groups > .single-group:not(.channel-group-icon),
 body.hide-channel-group-icons-in-channel-list :is(#channel-list-container, #idle-clients-container) .client-groups > .channel-group-icon,
 body.hide-channel-icons-in-channel-list #channel-list-container .single-channel-icon
+{
+    display: none !important;
+}
+
+/* A local setting hides the two lines with public keys at the beginning of a private chat. It is on until
+   the user turns it off (chat__setup_public_key_lines_setting in chat.js). */
+body.public-key-info-hidden .server-message-public-key
 {
     display: none !important;
 }
@@ -4167,4 +4401,91 @@ body.hide-channel-icons-in-channel-list #channel-list-container .single-channel-
 :is(#channel-list-container, #idle-clients-container) .connected-client:has(.client-mute-state[style*="block"]) .client-name-text
 {
     margin-left: 19px;
+}
+
+/* The button that shows and hides the list of people belongs to a theme that draws this list as a panel
+   over the page (Mobile 2 on a touch screen). No other theme shows the button. */
+#show-hide-member-list-button
+{
+    display: none !important;
+}
+
+/* The list of the identity button of the top bar ("export this identity", "import another identity").
+   Its part of the page stands after the top bar and takes no room; head-menu.js writes the place of the
+   list, under the button, into the list's style attribute. */
+#identity-menu
+{
+    position: static;
+    width: 0;
+    height: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+}
+
+#identity-menu > #identity-menu-list
+{
+    position: fixed;
+    right: auto;
+    bottom: auto;
+    z-index: 1000;
+    margin: 0;
+}
+
+/* The setting "flat channel list" is shown only by a theme that has rules for a flat channel list
+   (Termix, and Mobile 2 with it). */
+.local-settings-row-flat-channel-list
+{
+    display: none !important;
+}
+
+/* The sections of the local settings as a list (<select>). A theme for phones shows it and hides the row
+   of tabs; UI.select_local_settings_tab() keeps the list and the tabs in step. */
+#local-settings-section-select
+{
+    display: none;
+    box-sizing: border-box;
+    flex: 0 0 auto;
+    width: calc(100% - 24px);
+    min-height: 44px;
+    margin: 8px 12px;
+    padding: 0 12px;
+    font-size: 16px;
+}
+
+/* The open conversations as a list (<select>) with a button that closes the shown conversation. A theme for
+   phones shows it in place of the row of tabs (#chat-context-selectors-container) and gives it the look of
+   that row and of a tab; main.js keeps the list in step with the tabs. */
+#chat-context-select-container
+{
+    display: none;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 4px;
+    box-sizing: border-box;
+}
+
+#chat-context-select
+{
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: calc(100% - 40px);
+    /* 16px: a phone browser enlarges the page when a field with smaller text gets the cursor */
+    font-size: 16px;
+}
+
+#chat-context-select-close
+{
+    flex: 0 0 auto;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+}
+
+/* the chat of the user's own channel cannot be closed */
+#chat-context-select-close:disabled
+{
+    opacity: 0.3;
+    cursor: default;
 }

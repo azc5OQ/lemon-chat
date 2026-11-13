@@ -13,7 +13,7 @@ These defaults apply even if automatic connection is disabled.
 The choices are saved in `server_settings.json`: `default_theme` for desktop and `default_mobile_theme` for mobile.
 To change them after setup, edit those values and restart the server. Users who already saved a theme keep their own choice.
 
-On a computer, you can choose any of the twelve themes below, including the themes designed for phones. On a detected touch device, the menu shows only the six themes marked for mobile use. These have a small phone symbol in the menu.
+On a computer, you can choose any of the thirteen themes below, including the themes designed for phones. On a detected touch device, the menu shows only the seven themes marked for mobile use. These have a small phone symbol in the menu.
 
 The Android app's simple mode uses **Bluebell**. Its advanced mode uses a saved mobile theme other than Bluebell, or **Mobile** if there is no such saved choice.
 
@@ -40,11 +40,12 @@ These themes are also available on a computer.
 
 | Theme | Preview |
 | --- | --- |
-| **Mobile**<br>A dark theme with controls arranged for a touch screen. | ![Mobile theme](images/themes/theme-default-mobile.jpg) |
-| **Pocket**<br>Light panels with green-blue buttons and a compact layout. | ![Pocket theme](images/themes/theme-pocket.jpg) |
+| **Mobile**<br>A dark theme with controls arranged for a touch screen. On a narrow screen the button with the eye in the top row switches between the channel tree and the chat; beside the chat, a narrow column shows the people of your own channel. | ![Mobile theme](images/themes/theme-default-mobile.jpg) |
+| **Mobile 2**<br>The Termix theme arranged for a touch screen. A wide screen shows its channel tree and its chat side by side. A narrow screen shows either the channel tree or the chat with the message box and, in a narrow column at its left, the people of your own channel; the button with the eye in the top row switches between them. The button with the two people at the right end of the top row shows and hides the list of all people as a panel at the right edge; the rest of the page is blurred while the panel is shown. | ![Mobile 2 theme](images/themes/theme-mobile-2.jpg) |
+| **Pocket**<br>A panel of white quilted leather in a dark grey frame, with chrome lines and stitched seams. A bar of four screens at the bottom: Chat, People, Channels and Me. The Channels screen shows the full channel tree; a press on a channel shows a Join button on it. The microphone button is at the right end of the message field. | ![Pocket theme](images/themes/theme-pocket.jpg) |
 | **Simple**<br>One list of rooms and people, with a Join button on each room. Light or dark colours follow the device. | ![Simple theme](images/themes/theme-simple.png) |
 | **Bluebell**<br>A dark blue and purple background with rounded controls. | ![Bluebell theme](images/themes/theme-bluebell.jpg) |
-| **Mono Light**<br>White and light gray panels, with a switch between people and chat. | ![Mono Light theme](images/themes/theme-mono-light.jpg) |
+| **Mono Light**<br>White and light gray panels. A list of people, and one conversation at a time with a back arrow. | ![Mono Light theme](images/themes/theme-mono-light.jpg) |
 | **Mono Dark**<br>The same layout as Mono Light, with dark panels and light text. | ![Mono Dark theme](images/themes/theme-mono-dark.jpg) |
 
 Some themes place controls elsewhere or hide them. For example, Pocket hides the administrator password and server settings buttons. To use those controls on a computer, switch to Default. Changing themes does not change your permissions.

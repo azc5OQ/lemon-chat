@@ -5,6 +5,7 @@ var member_conversations =
     active: false,
     auto_open: false,
     is_room_list_shown: false,
+    is_tab_bar_shown: false,
     observer: null,
     pending: false
 };
@@ -16,7 +17,9 @@ function member_conversations__apply_theme()
     member_conversations.active = style.getPropertyValue("--member-conversations").trim() === "1";
     member_conversations.auto_open = style.getPropertyValue("--member-conversations-auto-open").trim() === "1";
     member_conversations.is_room_list_shown = style.getPropertyValue("--member-conversations-rooms").trim() === "1";
+    member_conversations.is_tab_bar_shown = member_conversations.active && style.getPropertyValue("--member-conversations-tabs").trim() === "1";
     document.body.classList.toggle("member-conversations-active", member_conversations.active);
+    member_conversations__apply_tab_bar();
     if (member_conversations.observer != null)
     {
         member_conversations.observer.disconnect();
@@ -69,6 +72,11 @@ function member_conversations__apply_theme()
         subtree: true,
         characterData: true
     });
+    // a row added or removed changes the names shown in the row of the channel
+    member_conversations.observer.observe(document.getElementById("member-list-body"),
+    {
+        childList: true
+    });
     member_conversations__schedule_refresh();
 }
 
@@ -95,6 +103,24 @@ function member_conversations__refresh_people()
     let body = document.getElementById("member-list-body");
     let profile = document.getElementById("member-conversations-profile");
     let local = body.querySelector(".connected-local-client");
+    let current_channel = g_channel_list.find(function(channel) { return Number(channel.channel_id) === Number(g_current_channel_id); });
+
+    // the screen chosen in the bar decides whether the chat is shown
+    if (member_conversations.is_tab_bar_shown
+        && ((document.body.dataset.conversationTab == "chat") == g_is_chat_hidden)
+        && document.body.dataset.conversationTab != "people")
+    {
+        UI.hide_chat_container();
+    }
+
+    // mark the user's channel in the channel tree
+    for (let row of document.querySelectorAll("#channel-list-container .single-channel"))
+    {
+        row.classList.toggle("single-channel-current", Number(row.dataset.channelId) === Number(g_current_channel_id));
+    }
+
+    // a channel without audio gets no talk bar
+    document.body.classList.toggle("current-channel-audio-disabled", current_channel != null && current_channel.is_audio_enabled == false);
     if (profile != null)
     {
         profile.replaceChildren();
@@ -171,17 +197,289 @@ function member_conversations__refresh_people()
             let sent = last.querySelector(".single-chat-message-sender-time > p");
             time = sent != null ? sent.textContent.trim().replace(/(\d{1,2}:\d{2}):\d{2}/, "$1") : "";
         }
-        if (!text)
+        // the row of a channel names the people in it
+        if (row.classList.contains("member-list-channel"))
+        {
+            text = member_conversations__channel_people_text(row.getAttribute("data-member-list-channel-id"));
+            time = "";
+        }
+        // a person without messages: where the person is
+        else if (!text)
         {
             let channel = row.querySelector(".member-list-client-channel");
             let presence = row.querySelector(".member-list-presence");
-            text = channel != null ? channel.textContent : presence != null ? presence.textContent : "Channel chat";
+            if (!row.classList.contains("in-current-channel") && channel != null && channel.textContent.trim() != "")
+            {
+                text = "In " + channel.textContent;
+            }
+            else
+            {
+                text = presence != null ? presence.textContent : "";
+            }
         }
         // Keep user text as text, including when it resembles markup.
         preview.textContent = text.slice(0, 200);
         timestamp.textContent = time;
     }
     member_conversations__filter_people();
+}
+
+/**
+ * @brief Shows or hides the bar with the four screens (chat, people, channels, me), for a theme that
+ *        sets --member-conversations-tabs to 1. The bar is created the first time it is needed.
+ *
+ * @return void
+ */
+function member_conversations__apply_tab_bar()
+{
+    let bar = document.getElementById("member-conversations-tabs");
+    let screens = [["chat", "Chat"], ["people", "People"], ["channels", "Channels"], ["me", "Me"]];
+
+    // nothing to hide
+    if (bar == null && member_conversations.is_tab_bar_shown == false)
+    {
+        return;
+    }
+
+    // create the bar once
+    if (bar == null)
+    {
+        bar = document.createElement("nav");
+        bar.id = "member-conversations-tabs";
+        bar.setAttribute("aria-label", "Screens");
+        for (let [name, label] of screens)
+        {
+            let button = document.createElement("button");
+            button.type = "button";
+            button.dataset.tab = name;
+            button.textContent = label;
+            bar.appendChild(button);
+        }
+        bar.addEventListener("click", member_conversations__tab_onclick);
+        document.getElementById("body-container").appendChild(bar);
+        document.getElementById("channel-list-container").addEventListener("click", member_conversations__tree_onclick, true);
+    }
+
+    // show or hide
+    bar.hidden = !member_conversations.is_tab_bar_shown;
+    if (member_conversations.is_tab_bar_shown == false)
+    {
+        delete document.body.dataset.conversationTab;
+        return;
+    }
+
+    // the chat is the first screen
+    if (document.body.dataset.conversationTab == null)
+    {
+        member_conversations__mark_tab("chat");
+    }
+}
+
+/**
+ * @brief Stores which screen of the bar is shown and marks its button as pressed.
+ *
+ * @param string name -> "chat", "people", "channels" or "me"
+ *
+ * @return void
+ */
+function member_conversations__mark_tab(name)
+{
+    // remember the screen
+    document.body.dataset.conversationTab = name;
+
+    // mark its button
+    for (let button of document.querySelectorAll("#member-conversations-tabs > button"))
+    {
+        button.setAttribute("aria-pressed", button.dataset.tab == name ? "true" : "false");
+    }
+}
+
+/**
+ * @brief Shows one screen of the bar. The chat screen shows the chat of the user's channel; the other
+ *        screens are shown in place of the chat.
+ *
+ * @param string name -> "chat", "people", "channels" or "me"
+ *
+ * @return void
+ */
+function member_conversations__show_tab(name)
+{
+    member_conversations__mark_tab(name);
+
+    // remove the join question
+    member_conversations__ask_join(null);
+
+    // open the channel chat
+    if (name == "chat")
+    {
+        member_conversations__open_channel_chat(g_current_channel_id);
+    }
+
+    // show or hide the chat
+    if ((name != "chat") != g_is_chat_hidden)
+    {
+        UI.hide_chat_container();
+    }
+}
+
+/**
+ * @brief A press on a button of the bar shows its screen.
+ *
+ * @param object event -> the click event
+ *
+ * @return void
+ */
+function member_conversations__tab_onclick(event)
+{
+    let button = event.target.closest("button[data-tab]");
+
+    // not a button
+    if (button == null)
+    {
+        return;
+    }
+    member_conversations__show_tab(button.dataset.tab);
+}
+
+/**
+ * @brief A press in the channel tree while the bar is shown: a channel row gets the Join button, a press
+ *        on that button joins the channel, and a person's row shows the conversation with that person.
+ *        A press on a channel row alone does not move the user, so looking around joins nothing.
+ *        The function is registered for the capture phase
+ *        (it runs before the handlers of the pressed element), because the tree's own handlers stop
+ *        the event. Those handlers select the conversation; this function shows it after they ran.
+ *
+ * @param object event -> the click event
+ *
+ * @return void
+ */
+function member_conversations__tree_onclick(event)
+{
+    let channel = event.target.closest(".single-channel");
+    let client = event.target.closest(".connected-client");
+    let join_button = event.target.closest(".single-channel-join");
+
+    // only with the bar
+    if (member_conversations.is_tab_bar_shown == false)
+    {
+        return;
+    }
+
+    // join after the question
+    if (join_button != null)
+    {
+        event.stopPropagation();
+        member_conversations__join_channel(channel.dataset.channelId);
+        member_conversations__ask_join(null);
+        return;
+    }
+
+    // ask before joining
+    if (channel != null)
+    {
+        if (event.target.closest(".single-channel-collapse-button") == null)
+        {
+            member_conversations__ask_join(channel);
+        }
+        return;
+    }
+
+    // show the conversation
+    if (client != null && !client.classList.contains("connected-local-client"))
+    {
+        setTimeout(function()
+        {
+            // not selected
+            if (g_current_chat_context_id !== "chat-context-pm-" + client.getAttribute("data-connected-client-id"))
+            {
+                return;
+            }
+            member_conversations__mark_tab("people");
+            if (g_is_chat_hidden == true)
+            {
+                UI.hide_chat_container();
+            }
+        }, 0);
+    }
+}
+
+/**
+ * @brief Shows the Join button on one channel row and removes it from every other row. The row of the
+ *        user's own channel gets no button, and a second press on a row that has the button removes it.
+ *
+ * @param object channel -> the channel row (.single-channel), or null to remove the button everywhere
+ *
+ * @return void
+ */
+function member_conversations__ask_join(channel)
+{
+    let is_shown = channel != null && channel.querySelector(":scope > .single-channel-join") != null;
+    let button = null;
+
+    // remove the old button
+    for (let old of document.querySelectorAll("#channel-list-container .single-channel-join"))
+    {
+        old.remove();
+    }
+
+    // nothing to ask
+    if (channel == null || is_shown || Number(channel.dataset.channelId) === Number(g_current_channel_id))
+    {
+        return;
+    }
+
+    // show the button
+    button = document.createElement("button");
+    button.type = "button";
+    button.className = "single-channel-join";
+    button.textContent = "Join";
+    channel.appendChild(button);
+}
+
+/**
+ * @brief Returns the names of the people in a channel as one line of text, for the row of that channel.
+ *        Music bots and people in idle mode are not counted.
+ *
+ * @param string channel_id -> id of the channel
+ *
+ * @return string -> for example "Only you are here", "You, anna, peter" or "You, anna, peter, tom and 2 more"
+ */
+function member_conversations__channel_people_text(channel_id)
+{
+    let names = [];
+    let is_local_inside = false;
+    let shown = "";
+
+    // collect the names
+    for (let client of g_client_list)
+    {
+        if (Number(client.channel_id) !== Number(channel_id) || client.is_idle == true || client.is_music_bot == true)
+        {
+            continue;
+        }
+        if (Number(client.client_id) === Number(g_local_client_id))
+        {
+            is_local_inside = true;
+        }
+        else
+        {
+            names.push(client.username);
+        }
+    }
+
+    // nobody else
+    if (names.length == 0)
+    {
+        return is_local_inside ? "Only you are here" : "Nobody is here";
+    }
+
+    // shorten a long list
+    shown = names.slice(0, 3).join(", ");
+    if (names.length > 3)
+    {
+        shown += " and " + (names.length - 3) + " more";
+    }
+    return (is_local_inside ? "You, " : "") + shown;
 }
 
 /**
@@ -353,13 +651,6 @@ function member_conversations__filter_people()
 
 function member_conversations__show_selected_chat()
 {
-    // pocket: the people panel lies over the chat, so it closes when a conversation was chosen
-    if (document.body.classList.contains("pocket-people-open"))
-    {
-        document.body.classList.remove("pocket-people-open");
-        UI.refresh_member_list_controls();
-    }
-
     // only a theme with the conversation list switches from the list to the chat
     if (!member_conversations.active || !member_conversations.auto_open)
     {

@@ -1055,7 +1055,10 @@ function groups__refresh_channel_controls()
             input.dataset.channelPowerPlaceholder = input.placeholder;
         }
         input.readOnly = message_blocked;
-        input.placeholder = message_blocked ? groups__channel_power_message("message") : input.dataset.channelPowerPlaceholder;
+
+        // say why
+        input.placeholder = message_blocked ? groups__channel_power_message("message")
+            : input.disabled ? "you are not in this channel and cannot write here" : input.dataset.channelPowerPlaceholder;
         input.title = message_blocked ? groups__channel_power_message("message") : "";
     }
     if (picture && input)

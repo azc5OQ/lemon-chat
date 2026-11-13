@@ -1,6 +1,7 @@
 /* Shared conversation-list controls. Themes enable them with --member-conversations: 1.
    Use --member-conversations-auto-open: 1 to return to chat after selecting a row. */
-body:not(.member-conversations-active) :is(#member-conversations-profile, #member-conversations-search, #member-conversations-search-empty, .member-conversation-preview, .member-conversation-time),
+body:not(.member-conversations-active) :is(#member-conversations-profile, #member-conversations-search, #member-conversations-rooms, #member-conversations-search-empty, .member-conversation-preview, .member-conversation-time),
+#member-conversations-rooms[hidden],
 body.member-conversations-active #member-list-body > .member-conversation-filtered,
 #member-conversations-search-empty[hidden]
 {

@@ -1,0 +1,336 @@
+/* The local settings as a screen of a phone, for the themes Mobile and Mobile 2 (template.html includes this
+   file after the theme's own file). The window fills the screen: a head row with the title and the close
+   button, the sections as a list (<select>), every setting on a field of its own with a switch in place of
+   a check box, lists and number fields as wide as the field, and the save button at the lower edge.
+   A theme gives the colours with these variables; without them the colours of the Mobile theme are used:
+   --settings-phone-page (background of the screen and of pressed-in controls), --settings-phone-bar (head
+   row), --settings-phone-field and --settings-phone-field-line (the field of one setting and its edge),
+   --settings-phone-control-line (edge of lists, fields and the choice of two), --settings-phone-line,
+   --settings-phone-text, --settings-phone-muted (explanations), --settings-phone-accent (switch that is on,
+   chosen half, save button), --settings-phone-switch-off, --settings-phone-button (small buttons).
+   ":root body div#..." gives the rules more weight than the rules of the themes and than layout.style,
+   which is loaded after the themes. */
+
+/* The window fills the screen. main.js writes "left" and "top" into its style attribute when it opens a
+   window in the middle of the page; "!important" keeps the window at the edges. */
+:root body div#local-settings-container
+{
+    position: fixed;
+    top: 0 !important;
+    right: 0;
+    bottom: 0;
+    left: 0 !important;
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    max-width: 100vw;
+    height: 100dvh;
+    max-height: 100dvh;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: var(--settings-phone-page, #24272c);
+    color: var(--settings-phone-text, var(--set-text));
+    overflow: hidden;
+    animation: none;
+    transform: none;
+}
+
+/* the part under the head row: the list of sections, then the settings, which scroll */
+:root body div#local-settings-container #local-settings-body
+{
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    height: auto;
+    min-height: 0;
+    margin: 0;
+    overflow: hidden;
+}
+
+:root body div#local-settings-container #local-settings-scroll
+{
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+/* a phone has no key for hold-to-talk */
+:root body div#local-settings-container #local-settings-ptt-key-row
+{
+    display: none !important;
+}
+
+/* the way of the microphone is chosen with two halves of one field, not with a list: the webview of the
+   Android app closes the list of a <select> at once in a window that was opened with an animation */
+:root body div#local-settings-container #local-settings-mic-mode
+{
+    display: none;
+}
+
+:root body div#local-settings-container #local-settings-mic-mode-segmented
+{
+    display: flex;
+}
+
+/* the head row */
+:root body div#local-settings-container div#menu-bar-container
+{
+    display: flex;
+    align-items: center;
+    min-height: 56px;
+    padding: 0 58px 0 16px;
+    border-bottom: 0;
+    background: var(--settings-phone-bar, #1b1d21);
+}
+
+:root body div#local-settings-container #local-settings-title
+{
+    padding: 0;
+    font-size: 19px;
+    font-weight: 600;
+    letter-spacing: 0;
+    line-height: 56px;
+    text-transform: none;
+}
+
+:root body div#local-settings-container #local-settings-title::first-letter
+{
+    text-transform: uppercase;
+}
+
+/* the close button: a field of 36px with rounded corners and a cross of two thin lines, in the middle of the height of the head row */
+:root body div#local-settings-container #local-settings-x-button
+{
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    float: none;
+    box-sizing: border-box;
+    width: 36px;
+    height: 36px;
+    margin: 0;
+    border: 1px solid var(--settings-phone-control-line, #ffffff24);
+    border-radius: 11px;
+    background: var(--settings-phone-field, #2f3238) url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2014%2014%27%3E%20%3Cpath%20d%3D%27M2.5%202.5l9%209M11.5%202.5l-9%209%27%20fill%3D%27none%27%20stroke%3D%27%23e6e8ea%27%20stroke-width%3D%271.7%27%20stroke-linecap%3D%27round%27%2F%3E%20%3C%2Fsvg%3E") center / 14px 14px no-repeat;
+    color: transparent;
+    font-size: 0;
+    transform: none;
+}
+
+/* a theme can draw a cross of its own with these two; the cross of this file is the background picture */
+:root body div#local-settings-container #local-settings-x-button::before,
+:root body div#local-settings-container #local-settings-x-button::after
+{
+    content: none;
+}
+
+:root body div#local-settings-container #local-settings-x-button:active
+{
+    border-color: var(--settings-phone-accent, var(--set-accent));
+}
+
+/* the sections: a list (<select>) under the head row; the row of tabs is not shown */
+:root body #local-settings-container #local-settings-tabs
+{
+    display: none !important;
+}
+
+:root body div#local-settings-container #local-settings-section-select
+{
+    display: block;
+    width: calc(100% - 24px);
+    min-height: 48px;
+    margin: 12px 12px 0;
+    padding: 0 14px;
+    border: 1px solid var(--settings-phone-control-line, #ffffff24);
+    border-radius: 14px;
+    background-color: var(--settings-phone-field, #2f3238);
+    color: var(--settings-phone-text, var(--set-text));
+    font-size: 16px;
+    font-weight: 600;
+}
+
+/* the page of one section; the name of the section is in the list already */
+:root body div#local-settings-container #local-settings-scroll
+{
+    padding: 12px 0 4px;
+}
+
+:root body div#local-settings-container .local-settings-page
+{
+    max-width: 680px;
+    margin: 0 auto;
+}
+
+:root body div#local-settings-container .local-settings-section-title
+{
+    display: none;
+}
+
+/* one setting: a field with the name and the explanation at the left and the control at the right */
+:root body div#local-settings-container .local-settings-row
+{
+    box-sizing: border-box;
+    align-items: center;
+    gap: 14px;
+    min-height: 60px;
+    margin: 0 12px 8px;
+    padding: 10px 14px;
+    border: 1px solid var(--settings-phone-field-line, #ffffff0f);
+    border-radius: 14px;
+    background: var(--settings-phone-field, #2f3238);
+}
+
+:root body div#local-settings-container .local-settings-label
+{
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.3;
+}
+
+:root body div#local-settings-container .local-settings-hint
+{
+    margin-top: 2px;
+    color: var(--settings-phone-muted, var(--set-muted));
+    font-size: 12.5px;
+    line-height: 1.4;
+}
+
+/* A check box is drawn as a switch: a track of 50px with a white knob, at the left while off and at the
+   right, on the theme's blue, while on. The knob is a part of the background, so no extra element is needed. */
+:root body div#local-settings-container .local-settings-row input[type="checkbox"]
+{
+    flex: 0 0 50px;
+    width: 50px;
+    min-width: 50px;
+    height: 30px;
+    margin: 0;
+    border: 0;
+    border-radius: 15px;
+    background: radial-gradient(circle at 15px 50%, #ffffff 0 11px, #ffffff00 12px) var(--settings-phone-switch-off, #5a6170);
+    transform: none;
+    appearance: none;
+    -webkit-appearance: none;
+    cursor: pointer;
+}
+
+:root body div#local-settings-container .local-settings-row input[type="checkbox"]:checked
+{
+    background: radial-gradient(circle at 35px 50%, #ffffff 0 11px, #ffffff00 12px) var(--settings-phone-accent, var(--set-accent));
+}
+
+/* a theme can draw a check mark of its own into a check box; a switch shows none */
+:root body div#local-settings-container .local-settings-row input[type="checkbox"]::before,
+:root body div#local-settings-container .local-settings-row input[type="checkbox"]::after
+{
+    content: none;
+}
+
+/* a setting with a list, a field or buttons: the control stands under the text and is as wide as the field */
+:root body div#local-settings-container .local-settings-row-select
+{
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+}
+
+:root body div#local-settings-container .local-settings-row :is(select, input[type="number"], input[type="text"])
+{
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 46px;
+    padding: 0 12px;
+    border: 1px solid var(--settings-phone-control-line, #ffffff24);
+    border-radius: 12px;
+    background-color: var(--settings-phone-page, #24272c);
+    color: var(--settings-phone-text, var(--set-text));
+    font-size: 16px;
+}
+
+:root body div#local-settings-container .local-settings-row :is(input[type="button"], button):not(.local-settings-segment)
+{
+    min-height: 40px;
+    padding: 0 16px;
+    border: 0;
+    border-radius: 20px;
+    background: var(--settings-phone-button, #ffffff1f);
+    color: var(--settings-phone-text, var(--set-text));
+    font-size: 14px;
+}
+
+/* the size of the chat: the text in the first line, the slider with its value and the reset button in the second */
+:root body div#local-settings-container .local-settings-chat-scale-row
+{
+    flex-wrap: wrap;
+}
+
+:root body div#local-settings-container .local-settings-chat-scale-controls
+{
+    display: flex;
+    flex: 1 1 100%;
+    align-items: center;
+    gap: 12px;
+}
+
+:root body div#local-settings-container .local-settings-chat-scale-controls input[type="range"]
+{
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 30px;
+    accent-color: var(--settings-phone-accent, var(--set-accent));
+}
+
+/* a choice of two: one field with two halves, the chosen half in the theme's blue */
+:root body div#local-settings-container #local-settings-mic-mode-segmented
+{
+    flex-wrap: nowrap;
+    gap: 0;
+    padding: 3px;
+    border: 1px solid var(--settings-phone-control-line, #ffffff24);
+    border-radius: 13px;
+    background: var(--settings-phone-page, #24272c);
+}
+
+:root body div#local-settings-container .local-settings-segment
+{
+    flex: 1 1 0;
+    min-height: 40px;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--settings-phone-text, var(--set-text));
+    font-size: 15px;
+}
+
+:root body div#local-settings-container .local-settings-segment.segment-selected
+{
+    background: var(--settings-phone-accent, var(--set-accent));
+    color: #ffffff;
+}
+
+/* the save button at the lower edge */
+:root body div#local-settings-container #local-settings-body
+{
+    border-bottom: 1px solid var(--settings-phone-line, var(--set-line));
+}
+
+:root body div#local-settings-container #local-settings-close-button
+{
+    align-self: center;
+    width: calc(100% - 24px);
+    max-width: 656px;
+    min-height: 50px;
+    margin: 10px 12px max(12px, env(safe-area-inset-bottom));
+    border: 0;
+    border-radius: 14px;
+    background: var(--settings-phone-accent, var(--set-accent));
+    color: #ffffff;
+    font-size: 16px;
+    font-weight: 600;
+}

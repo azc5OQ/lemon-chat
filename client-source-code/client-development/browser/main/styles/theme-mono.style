@@ -1065,6 +1065,26 @@
     background: var(--mono-bg);
 }
 
+/* The sections are chosen from a list (<select>) in this theme; the row of tabs above is not shown.
+   The colours of the list come from the rules for the lists of the settings. */
+:root #local-settings-container #local-settings-tabs
+{
+    display: none !important;
+}
+
+:root #local-settings-container #local-settings-section-select
+{
+    display: block;
+    min-height: 48px;
+    margin: 12px 12px 4px;
+}
+
+/* the heading of a section repeats the chosen entry of the list */
+:root #local-settings-container .local-settings-page > .local-settings-section-title
+{
+    display: none;
+}
+
 :root #local-settings-container .local-settings-tab
 {
     flex: 0 0 auto;
@@ -1759,4 +1779,121 @@ body.msgr-neighbors-only #member-list-body .member-list-client:not(.in-current-c
 {
     color: var(--mono-text);
     font: 13px/20px var(--set-font);
+}
+
+/* The window that asks for the password of a channel, in the colours of this theme. theme-default.style, which
+   this theme includes first, draws the window dark grey with a yellow close button, and the title had this
+   theme's dark text colour on that dark window. The arrangement of the parts is in layout.style. */
+:root body div#channel-password-enter
+{
+    border: 1px solid var(--mono-line);
+    border-radius: 16px;
+    background: var(--mono-bg);
+    box-shadow: 0 18px 44px #00000047, 0 2px 6px #0000001f;
+    color: var(--mono-text);
+    overflow: hidden;
+}
+
+:root body div#channel-password-enter > #menu-bar-container
+{
+    min-height: 44px;
+    padding: 0;
+    border: 0;
+    border-bottom: 1px solid var(--mono-line);
+    border-radius: 0;
+    background: var(--mono-surface);
+}
+
+:root body div#channel-password-enter > #menu-bar-container > .dialog-title
+{
+    padding: 0 48px 0 16px;
+    color: var(--mono-text);
+    font: 600 14px/44px var(--set-font);
+    letter-spacing: 0;
+    text-align: left;
+}
+
+/* the close button: a round field with a cross */
+:root body div#channel-password-enter .close-button
+{
+    top: 50%;
+    right: 8px;
+    box-sizing: border-box;
+    width: 28px;
+    height: 28px;
+    margin: 0;
+    border: 1px solid var(--mono-line);
+    border-radius: 50%;
+    background: var(--mono-bg);
+    color: var(--mono-muted);
+    font: 400 12px/26px var(--set-font);
+    text-align: center;
+    transform: translateY(-50%);
+}
+
+:root body div#channel-password-enter .close-button::before
+{
+    content: "\2715";
+    color: inherit;
+}
+
+:root body div#channel-password-enter .close-button:hover
+{
+    border-color: var(--mono-muted);
+    color: var(--mono-text);
+}
+
+/* the word "password": plain text */
+:root body #channel-password-input-container .text-input-container
+{
+    border: 0;
+    background: none;
+    box-shadow: none;
+}
+
+:root body #channel-password-input-container input:disabled
+{
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--mono-muted);
+    -webkit-text-fill-color: var(--mono-muted);
+    font: 500 14px/20px var(--set-font);
+    opacity: 1;
+}
+
+/* the field */
+:root body #channel-password-input-container #input-channel-password
+{
+    height: 40px;
+    padding: 0 12px;
+    border: 1px solid var(--mono-line);
+    border-radius: 10px;
+    background: var(--mono-surface);
+    box-shadow: inset 0 1px 2px #0000000f;
+    color: var(--mono-text);
+    font: 400 15px/20px var(--set-font);
+    outline: none;
+}
+
+:root body #channel-password-input-container #input-channel-password:focus
+{
+    border-color: var(--phone-accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--phone-accent) 16%, transparent);
+}
+
+/* the join button */
+:root body #join-passworded-channel-button
+{
+    box-sizing: border-box;
+    width: auto;
+    min-width: 84px;
+    height: 38px;
+    padding: 0 18px;
+    border: 0;
+    border-radius: 10px;
+    background: var(--phone-accent);
+    box-shadow: 0 1px 2px #00000033;
+    color: var(--phone-accent-text);
+    font: 600 14px/38px var(--set-font);
 }

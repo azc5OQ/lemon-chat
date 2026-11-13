@@ -549,17 +549,9 @@ a-toast:hover
     margin-top: 3px;
     width: 16px;
     float: right;
-    background-image: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAMAAAAoLQ9TAAAACXBIWXMAAABIAAAASABGyWs+AAAACXZwQWcAAAAQAAAAEABcxq3DAAAApVBMVEX////9/Pz9+/v9+Pj29vj87/Dt7vL86+vr7PH76uvp6e/j4+vc3ebW1+LU1eHX2OP60tPQ0t/O0N3Jy9rHyNjHyditr8arrcWoqsOjpb+kp8GhpL6bnbqcn7uWmbaWmbeQk7OHiq1ucpzwTlLvR0vvRUnvQ0fvQ0hIToJARnw8QXk/RHs9Qno5PnfuMDXuMTU4PHfuLjM1O3QyOHIvNHAoLmztHyRjLcuOAAAANXRSTlMBBQcLDRUZGRsbHSExNTc3Nzs9RUdJZ2ltcXF1e3uFhYmVsc/V19nZ3efp6evt7e3v7/H1+W4YZggAAAABYktHRACIBR1IAAAAg0lEQVQY02WPxxaCMBRELyLGghp7F5XYaxDy/5/mIiyCebuZc+bNXADYX4e4V8+TbOAaowvTrFeKIITFLgjnn6410pek31LvaPmcxHETUqOlUEZHrIrvPZ8hlNFnoyWwubXHDxAnYzUc1p0ChKoaXsR7amuPZW0Dav/DvOkWbluFc/F/QqQRWMe47BIAAAAldEVYdGRhdGU6Y3JlYXRlADIwMTAtMDItMTFUMTM6MzU6MjItMDY6MDBehYmEAAAAJXRFWHRkYXRlOm1vZGlmeQAyMDA4LTA3LTIxVDA2OjI5OjUwLTA1OjAwtIXxJwAAAABJRU5ErkJggg==);
+    /* a grey loudspeaker with a dark edge and a red cross, drawn after a picture the author of the theme chose */
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%20128%20128%27%3E%20%3Cpath%20fill%3D%27%23a7adb4%27%20stroke%3D%27%233f464d%27%20stroke-width%3D%277%27%20stroke-linejoin%3D%27round%27%20d%3D%27M12%2046h22l30-24v84L34%2082H12z%27%2F%3E%20%3Cpath%20fill%3D%27none%27%20stroke%3D%27%237c1111%27%20stroke-width%3D%2724%27%20stroke-linecap%3D%27round%27%20d%3D%27M80%2044l32%2040M112%2044L80%2084%27%2F%3E%20%3Cpath%20fill%3D%27none%27%20stroke%3D%27%23e02424%27%20stroke-width%3D%2714%27%20stroke-linecap%3D%27round%27%20d%3D%27M80%2044l32%2040M112%2044L80%2084%27%2F%3E%20%3C%2Fsvg%3E");
     background-repeat: no-repeat;
-}
-
-.single-channel-is-using-password
-{
-    display: inline-block;
-    background-image: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAABHNCSVQICAgIfAhkiAAAAAlwSFlzAAALEwAACxMBAJqcGAAAAgJJREFUWIXtlbFPFEEUxr/3ZoE1hBx4B7ESE0NhgY12dP4PkiNia6ExGiOxgVyIKLGwMAQKKwPEmCD/AJWdEToLExMLrwMvyCFCDt15zwL3uKi7N+fuZRPjV83uvPd9v5nMzgL/lbGo5Y7LavLnbJFhxwS4yEABwBdVbBCZ5cqmeYGn9L0tAIXJ2pDCvGTG+agaEbwF7Oj2jP8+VYDCZG0ITK8JnG9Wq5BtFR1xgWCn9JJ6ymY1DBeRA1WdIgrOVsjrMNacUdUpETkAAALnwWYF17SjmbXnkj9gbVEZw2G4R3Rp637nm3B+EygDmDlZ+rYmKq8YfIKB4f5TtlgBluK8nXZAyY6FYyKabQxv1OfpznUCzdb71I4383YCEMKFegPb53G1xtrl+kNDXyIABgbC8ad3fjmuduuB//E4v/mBdTuE4OOvZYVsfC2pm2dLAO1T5gCRF9FgSf19DR4T5ArAub+PkD1VXuxm7255mmq/zkbeA0fhuJ58k7iHCDf2NVAAN3+bjWo7Wnl6IsjVP72PWV6SbXf3y/wQJgJQ6J3cjvGhOpEJQO+Ot/Bhjg+7vnrzmQDs9ga3AOCwJ7idCQCIHv0cPMwGIAUlBugr6elMATwNYn/PbQdIqhgA2Us3SnZbAhDlZ6nmR/hFAvRVzYQo5qLInSVSheJJrmruJfL5Z/UDfaOsxxIePTcAAAAASUVORK5CYII=);
-    background-repeat: no-repeat;
-    background-size: 20px 18px;
-    padding-left: 24px !important;
 }
 
 .single-channel-is-temp
@@ -2332,13 +2324,6 @@ body, input, button, textarea, select, p, li, label
     padding-left: 19px;
 }
 
-.single-channel-name-p.single-channel-is-using-password
-{
-    background-image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjggMTI4Ij48cGF0aCBmaWxsPSIjYWZhMjAxIiBmaWxsLXJ1bGU9Im5vbnplcm8iIGQ9Ik0xMTksNjcuMDczQzExOSw3OS45NjkgMTA4LjU0NSw5MC40MjEgOTUuNjUxLDkwLjQyMUwzMi4zNDcsOTAuNDIxQzE5LjQ1NCw5MC40MjEgOSw3OS45NyA5LDY3LjA3M0w5LDM2Ljc3NEM5LDIzLjg4IDE5LjQ1NCwxMy40MjYgMzIuMzQ3LDEzLjQyNkw5NS42NTIsMTMuNDI2QzEwOC41NDUsMTMuNDI2IDExOSwyMy44OCAxMTksMzYuNzc0TDExOSw2Ny4wNzNaIi8+PHBhdGggZmlsbD0iI2FmYTIwMSIgZmlsbC1ydWxlPSJub256ZXJvIiBkPSJNOTMuODkxLDg3LjYxNEM5My44OTEsODcuNjE0IDg1LjUwNSwxMTEuNjc3IDU5Ljk4NCwxMTYuNDE2Qzc1LjI5NywxMDIuOTI3IDY1LjMxLDg3LjA4OSA2NS4zMSw4Ny4wODlMOTMuODkxLDg3LjYxNFoiLz48cGF0aCBmaWxsPSIjZmZmZmZmIiBmaWxsLXJ1bGU9Im5vbnplcm8iIGQ9Ik04OC44NzUsNDEuODMxTDU3LjcwNiw3Mi45NDlDNTcuMTAyLDczLjU1MyA1Ni4yMTIsNzMuODQgNTUuMDM4LDczLjgwNUM1My45NjMsNzMuNzcyIDUzLjE0MSw3My40ODcgNTIuNTcxLDcyLjk0OUwzOS4xMjUsNTkuNTA1QzM4LjUyMSw1OC45MDEgMzguMjE5LDU4LjE2MyAzOC4yMTksNTcuMjg5QzM4LjIxOSw1Ni40MTcgMzguNTIxLDU1LjY3OCAzOS4xMjUsNTUuMDc0TDQzLjYwNiw1MC41OTNDNDQuMjEsNDkuOTg5IDQ0Ljk0OCw0OS42ODcgNDUuODIyLDQ5LjY4N0M0Ni42OTUsNDkuNjg3IDQ3LjQzMyw0OS45ODkgNDguMDM3LDUwLjU5M0w1NS4xMzcsNTcuNjkzTDc5Ljk2MiwzMi45MTlDODAuNTY2LDMyLjMxNSA4MS4zMDQsMzIuMDEzIDgyLjE3OCwzMi4wMTNDODMuMDUsMzIuMDEzIDgzLjc4OSwzMi4zMTUgODQuMzkzLDMyLjkxOUw4OC44NzQsMzcuMzUxQzg5LjQ3OCwzNy45ODkgODkuNzgsMzguNzM2IDg5Ljc4LDM5LjU5MUM4OS43ODEsNDAuNDQ2IDg5LjQ3OSw0MS4xOTMgODguODc1LDQxLjgzMVoiLz48L3N2Zz4=");
-    background-size: 14px 14px;
-    padding-left: 19px !important;
-}
-
 .single-channel-name-p.single-channel-is-full
 {
     background-image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjggMTI4Ij48cGF0aCBmaWxsPSIjYzkwNzA5IiBmaWxsLXJ1bGU9Im5vbnplcm8iIGQ9Ik0xMTksNjYuMTUyYzAsMTIuODk2IC0xMC40NTUsMjMuMzQ4IC0yMy4zNDksMjMuMzQ4bC02My4zMDQsMGMtMTIuODkzLDAgLTIzLjM0NywtMTAuNDUxIC0yMy4zNDcsLTIzLjM0OGwwLC0zMC4yOTljMCwtMTIuODk0IDEwLjQ1NCwtMjMuMzQ4IDIzLjM0NywtMjMuMzQ4bDYzLjMwNSwwYzEyLjg5MywwIDIzLjM0OCwxMC40NTQgMjMuMzQ4LDIzLjM0OGwwLDMwLjI5OVoiLz48cGF0aCBmaWxsPSIjYzkwNzA5IiBmaWxsLXJ1bGU9Im5vbnplcm8iIGQ9Ik05My44OTEsODYuNjkzYzAsMCAtOC4zODYsMjQuMDYzIC0zMy45MDcsMjguODAyYzE1LjMxMywtMTMuNDg5IDUuMzI2LC0yOS4zMjcgNS4zMjYsLTI5LjMyN2wyOC41ODEsMC41MjVaIi8+PC9zdmc+");
@@ -2393,7 +2378,7 @@ body, input, button, textarea, select, p, li, label
     padding-left: 20px !important;
 }
 
-.single-channel-name-p.single-channel-is-using-password, .single-channel-name-p.single-channel-is-full
+.single-channel-name-p.single-channel-is-full
 {
     background-size: 16px 16px !important;
     background-position: 0px center !important;
@@ -2543,34 +2528,20 @@ body, input, button, textarea, select, p, li, label
     padding-bottom: 0 !important;
 }
 
-/* The lock is an item of the row, in the column to the left of the channel icon, so it does not cover that icon. */
+/* The lock of a channel with a password is the ::after part of the row. layout.style gives it its size and
+   its place: at the left of the arrow of the row, after the "audio disabled" picture. */
 .single-channel:has(.single-channel-is-using-password)::after
 {
     content: "";
-    order: 2;
-    flex: 0 0 var(--tree-icon-size, 16px);
-    height: var(--tree-icon-size, 16px);
-    margin-left: 4px;
-    background-position: center;
+    /* The picture is 13px high and stands at the upper edge of its part, which is 16px high. Its lower edge is
+       then on the base line of the channel name, as the lower edge of the "audio disabled" picture is. In the
+       middle of the part the lock was 1.5px lower. */
+    background-position: 50% 0;
     background-image:url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjggMTI4Ij48cGF0aCBmaWxsPSIjODc4YjhjIiBmaWxsLXJ1bGU9Im5vbnplcm8iIGQ9Ik00My42NDYsNDMuMzc2YzAsLTUuNzI5IDEuOTk3LC0xMC42IDUuOTkyLC0xNC42MDljMy45OTMsLTQuMDEgOC43OTgsLTYuMDE2IDE0LjQxOSwtNi4wMTZjNS42MiwwIDEwLjQwMSwyLjAwNiAxNC4zNyw2LjAxNmMzLjk1NCw0LjAwOSA1LjkzOCw4Ljg4IDUuOTM4LDE0LjYwOWwwLDUuMzIybDEzLjU2MywwbDAsLTUuMzIyYzAsLTYuMjM0IC0xLjUxNCwtMTEuOTc5IC00LjU2MiwtMTcuMjQyYy0zLjAzNiwtNS4yNjQgLTcuMTQ2LC05LjQzNiAtMTIuMzQxLC0xMi41MTRjLTUuMTk1LC0zLjA3NiAtMTAuODcsLTQuNjIgLTE3LjAyMiwtNC42MmMtNi4xNDYsMCAtMTEuODIsMS41NDQgLTE3LjAxNyw0LjYyMWMtNS4xOTUsMy4wNzggLTkuMzEzLDcuMjUgLTEyLjM1NCwxMi41MTRjLTMuMDM2LDUuMjYzIC00LjU2MSwxMS4wMDggLTQuNTYxLDE3LjI0MmwwLDUuMzIybDEzLjU3NCwwbDAsLTUuMzIzbDAuMDAxLDBaIi8+PHBhdGggZmlsbD0iIzQwNDU0NyIgZmlsbC1ydWxlPSJub256ZXJvIiBkPSJNMjEuNzcyLDU3LjI5Mmw4NC41MDMsMGMxLjI0LDAuMjcxIDIuMzI1LDAuODc0IDMuMjYyLDEuODJjMS4zMDksMS4zMjYgMS45NjMsMi45NTMgMS45NjMsNC44ODhsMCw0OC4xMjNjMCwxLjkyOCAtMC42NTQsMy41NjIgLTEuOTYzLDQuODg3Yy0xLjMxMSwxLjMyOSAtMi45MDksMS45OSAtNC44MjQsMS45OWwtODEuNDI1LDBjLTEuODQzLDAgLTMuNDI5LC0wLjY2MSAtNC43NzEsLTEuOTljLTEuMzQ0LC0xLjMyNSAtMi4wMTcsLTIuOTU5IC0yLjAxNywtNC44ODdsMCwtNDguMTIzYzAsLTEuOTM1IDAuNjczLC0zLjU2MiAyLjAxNywtNC44ODhjMC45NTgsLTAuOTQ2IDIuMDQzLC0xLjU0OSAzLjI1NSwtMS44MloiLz48cGF0aCBmaWxsPSIjZmZmZmZmIiBmaWxsLXJ1bGU9Im5vbnplcm8iIGQ9Ik03MS40MjgsNzMuOTU1YzAsLTIuNzYyIC0yLjIzOCwtNSAtNSwtNWwtNC44NTUsMGMtMi43NjEsMCAtNSwyLjIzOCAtNSw1bDAsMjcuOTIyYzAsMi43NjIgMi4yMzksNSA1LDVsNC44NTUsMGMyLjc2MiwwIDUsLTIuMjM4IDUsLTVsMCwtMjcuOTIyWiIvPjwvc3ZnPg==");
     background-size: 13px 13px;
     background-repeat: no-repeat;
 }
 
-/* When any channel has an icon, a row with the lock keeps an empty channel icon box. */
-body:not(.hide-channel-icons-in-channel-list) #channel-list-container:has(.single-channel-icon[style*="background-image"]) .single-channel:has(.single-channel-is-using-password) > .single-channel-icon
-{
-    display: block !important;
-}
-
-/* When any channel has a lock, a row with the "audio disabled" icon keeps an empty box of the lock's width. */
-#channel-list-container:has(.single-channel-is-using-password) .single-channel:has(> .single-channel-is-audio-disabled):not(:has(.single-channel-is-using-password))::after
-{
-    content: "";
-    order: 2;
-    flex: 0 0 var(--tree-icon-size, 16px);
-    margin-left: 4px;
-}
 
 #channel-properties-input-container .text-input-container-2
 {
@@ -4490,4 +4461,12 @@ a-toast
     --groups-title-weight: 400;
     --groups-title-spacing: 0;
     --groups-option-background: #fff;
+}
+
+/* A channel that has nothing to collapse shows no arrow in this theme, but the arrow keeps its room. On
+   such a row the arrow's room comes before the marks, so the marks stand in it, directly next to the
+   picture of the channel; layout.style puts the arrow after the marks on the other rows. */
+#channel-list-container .single-channel.single-channel-no-children > :is(.single-channel-collapse-button, .single-channel-expand-button)
+{
+    order: -4;
 }

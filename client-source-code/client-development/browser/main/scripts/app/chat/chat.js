@@ -668,6 +668,37 @@ function chat__setup_public_key_expand()
 }
 
 /**
+ * @brief Restores the local choice to hide the two lines with public keys at the beginning of a private chat
+ *        ("your public key", "his public key") and connects its checkbox in the local settings. The lines
+ *        are hidden until the user turns the choice off. A class on the body hides them (layout.style), so
+ *        the choice also applies to the private chats that are opened later.
+ *
+ * @return void
+ */
+function chat__setup_public_key_lines_setting()
+{
+    let checkbox = null;
+
+    // only with a page
+    if (G_HAS_DOM == false)
+    {
+        return;
+    }
+    checkbox = document.getElementById("local-settings-hide-public-keys");
+
+    // restore saved value
+    checkbox.checked = utils__storage_get("lemon_is_public_key_info_hidden", "1") === "1";
+    document.body.classList.toggle("public-key-info-hidden", checkbox.checked);
+
+    // save on change
+    checkbox.onchange = function()
+    {
+        utils__storage_set("lemon_is_public_key_info_hidden", checkbox.checked ? "1" : "0");
+        document.body.classList.toggle("public-key-info-hidden", checkbox.checked);
+    };
+}
+
+/**
  * @brief scrolls the chat to its newest message
  *        a received message only does so while the local "auto-scroll to the end" setting is on, so a
  *        person reading older messages is not yanked down; the user's own send or tab switch always does

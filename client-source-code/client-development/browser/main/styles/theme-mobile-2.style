@@ -1,0 +1,606 @@
+/* Mobile 2: the Termix theme of a computer, arranged and sized for a touch screen; included after
+   theme-termix.style, which gives every colour and shape.
+   On a touch screen main.js hides the layout button and layout.js does not arrange the panels; the
+   rules that start with that hidden button arrange them here.
+   - A screen of 768px or more: the channel tree and the chat with the message box under it stand side
+     by side.
+   - A narrower screen shows either the channel tree, or the chat with the message box and, in a narrow
+     column at its left, the people of the user's own channel. The button with the eye in the top bar
+     switches between the two; it calls UI.hide_chat_container(), which writes "display" and "width"
+     into the style attributes of the panels and sets the class "chat-hidden" on the button.
+   - The list of all people, with the description of the channel and the details of a chosen person
+     above it, is a panel at the right edge that lies over the other panels. The button with the two
+     people at the right end of the top bar shows and hides it: main.js switches the class
+     "member-list-shown" on that button. While the panel is shown, the rest of the page under the top
+     bar is blurred, and a press on the blurred part hides the panel.
+   - The top bar has no button for the admin password.
+   Without a touch screen Termix's own arrangement is kept. Rows and buttons are larger, for a finger. */
+:root
+{
+    --mobile2-top: 56px;
+    --tree-icon-size: 20px;
+}
+
+/* The top bar: one row of buttons that does not wrap. On a screen that is too narrow for the row the
+   buttons get narrower. The bar does not cut off its content, so the lists that open under its buttons
+   (connections, bookmarks, identity) are shown whole. */
+#communication-system-head-menu
+{
+    flex-wrap: nowrap;
+    gap: 2px;
+    height: var(--mobile2-top);
+    min-height: var(--mobile2-top);
+    padding: 0 6px;
+}
+
+#communication-system-head-menu > :is(input[type="button"], button, label)
+{
+    flex: 0 1 34px;
+    width: 34px;
+    min-width: 24px;
+    height: 40px;
+    background-size: 22px 22px;
+}
+
+/* "connections" and "bookmarks" are pictures on a screen of up to 620px (layout.style). Termix gives
+   these two buttons a text size and side padding with more weight, so a part of the word was drawn over
+   the picture. Here the word is not drawn, and the two buttons are as large as the other buttons. */
+@media (max-width: 620px)
+{
+    #communication-system-head-menu #head-menu-left-group :is(#connections-menu-button, #bookmarks-menu-button)
+    {
+        width: 34px;
+        height: 40px;
+        padding: 0;
+        background-size: 22px 22px;
+        font-size: 0;
+    }
+}
+
+/* The button for the admin password is not shown: this theme is for phones. */
+#communication-system-head-menu > #show-admin-password-entry
+{
+    display: none !important;
+}
+
+/* the lists of the top bar lie above the page; their entries and those of the identity list are high enough for a finger */
+#communication-system-head-menu .head-menu-dropdown-list
+{
+    z-index: 250;
+}
+
+:is(#communication-system-head-menu, #identity-menu) .head-menu-dropdown-item
+{
+    padding: 12px 16px;
+    font-size: 15px;
+}
+
+/* The buttons of the top bar stand in the order of the Mobile theme, from left to right: server settings,
+   identity, local settings, theme, layout, the eye, and the button that clears the chat. The button for the
+   list of people, which only this theme has, comes last. */
+#communication-system-head-menu > #enter-server-settings
+{
+    order: 1;
+}
+
+#communication-system-head-menu > #show-secret-identity-string
+{
+    order: 2;
+}
+
+#communication-system-head-menu > #local-settings-button
+{
+    order: 3;
+}
+
+#communication-system-head-menu > #choose-theme-button
+{
+    order: 4;
+}
+
+#communication-system-head-menu > #layout-edit-button
+{
+    order: 5;
+}
+
+#communication-system-head-menu > #hide-chat-button
+{
+    order: 6;
+}
+
+#communication-system-head-menu > #clear-chat-button
+{
+    order: 7;
+}
+
+/* The button that shows and hides the list of all people: the last button of the top bar. */
+:root:has(#layout-edit-button[style*="display: none"]) #communication-system-head-menu > #show-hide-member-list-button
+{
+    display: block !important;
+    order: 8;
+    border-radius: 9px;
+    background: transparent url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2024%2024%27%20fill%3D%27none%27%20stroke%3D%27%23dce8f7%27%20stroke-width%3D%271.7%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%20%3Ccircle%20cx%3D%279%27%20cy%3D%278%27%20r%3D%273.2%27%2F%3E%3Cpath%20d%3D%27M3%2019c0-3.3%202.7-5.6%206-5.6s6%202.3%206%205.6%27%2F%3E%3Ccircle%20cx%3D%2717.2%27%20cy%3D%279%27%20r%3D%272.4%27%2F%3E%3Cpath%20d%3D%27M17%2013.6c2.4.3%204%202.1%204%204.9%27%2F%3E%20%3C%2Fsvg%3E") center / 22px no-repeat;
+}
+
+:root:has(#layout-edit-button[style*="display: none"]) #communication-system-head-menu > #show-hide-member-list-button.member-list-shown
+{
+    background-color: var(--tmx-active);
+    box-shadow: inset 0 0 0 1.5px var(--tmx-accent);
+}
+
+/* the part with the details of one person is not shown while no person is chosen */
+#current-client-description:has(#current-client-description-client-name:empty)
+{
+    display: none;
+}
+
+/* The page under the top bar is as high as the rest of the screen. Only a panel scrolls, not the page. */
+:root:has(#layout-edit-button[style*="display: none"]) #communication-system-container[style*="display: block"]
+{
+    height: calc(100dvh - var(--mobile2-top));
+    overflow: hidden;
+}
+
+:root:has(#layout-edit-button[style*="display: none"]) #channel-list-container
+{
+    height: auto !important;
+    overflow: visible;
+}
+
+:root:has(#layout-edit-button[style*="display: none"]) #member-list-container
+{
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+/* The list of all people: a panel at the right edge that lies over the other panels, shown while the
+   button with the two people has the class "member-list-shown". The hold-to-talk button stays above
+   the panel; the free place under the last row lets every row be moved out from under that button. */
+:root:has(#layout-edit-button[style*="display: none"]) #space-devider-42
+{
+    display: none !important;
+}
+
+:root:has(#layout-edit-button[style*="display: none"]):has(#show-hide-member-list-button.member-list-shown) #space-devider-42
+{
+    display: flex !important;
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 2;
+    box-sizing: border-box;
+    width: min(300px, 80%) !important;
+    height: auto !important;
+    border-left: 1px solid var(--tmx-line);
+    box-shadow: -14px 0 30px #0a101c99;
+}
+
+:root:has(#layout-edit-button[style*="display: none"]) #member-list-body
+{
+    padding-bottom: 112px;
+}
+
+/* While the panel is shown, the rest of the page under the top bar is blurred and darkened. The blurred
+   layer is drawn by the page element itself (a ::before part), so a press on it has the page element as
+   its target; main.js hides the panel after such a press. The layer and the panel have the same z-index:
+   the panel comes later in the page and is drawn above the layer. */
+:root:has(#layout-edit-button[style*="display: none"]):has(#show-hide-member-list-button.member-list-shown) #communication-system-container[style*="display: block"]::before
+{
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    background: #0a101c80;
+    -webkit-backdrop-filter: blur(5px);
+    backdrop-filter: blur(5px);
+}
+
+:root:has(#layout-edit-button[style*="display: none"]) #space-devider4
+{
+    box-sizing: border-box;
+    width: auto !important;
+    padding: 8px 10px 10px;
+}
+
+/* A wide touch screen: two columns. With the chat switched off the tree takes the whole width. */
+@media (min-width: 768px)
+{
+    :root:has(#layout-edit-button[style*="display: none"]) #communication-system-container[style*="display: block"]
+    {
+        display: grid !important;
+        grid-template-columns: minmax(220px, 26%) minmax(0, 1fr);
+        grid-template-rows: minmax(0, 1fr) auto;
+        grid-template-areas: "tree chat" "tree box";
+    }
+
+    :root:has(#layout-edit-button[style*="display: none"]):has(#hide-chat-button.chat-hidden) #communication-system-container[style*="display: block"]
+    {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-areas: "tree" "tree";
+    }
+
+    :root:has(#layout-edit-button[style*="display: none"]) #space-devider1
+    {
+        grid-area: tree;
+        width: auto !important;
+        height: auto !important;
+        min-height: 0;
+        overflow-x: hidden;
+        overflow-y: auto;
+        border-right: 1px solid var(--tmx-line);
+    }
+
+    :root:has(#layout-edit-button[style*="display: none"]) #space-devider2
+    {
+        grid-area: chat;
+        width: auto !important;
+        min-height: 0;
+    }
+
+    :root:has(#layout-edit-button[style*="display: none"]) #space-devider4
+    {
+        grid-area: box;
+    }
+}
+
+/* A narrow touch screen: one column, and one of the two screens at a time. */
+@media (max-width: 767px)
+{
+    :root:has(#layout-edit-button[style*="display: none"]) #communication-system-container[style*="display: block"]
+    {
+        display: flex !important;
+        flex-direction: column;
+    }
+
+    /* the first screen: the channel tree fills the page */
+    :root:has(#layout-edit-button[style*="display: none"]) #space-devider1
+    {
+        flex: 1 1 0;
+        width: 100% !important;
+        height: auto !important;
+        min-height: 0;
+        overflow-x: hidden;
+        overflow-y: auto;
+    }
+
+    /* The second screen: the chat with the message box under it and, in a narrow column at its left,
+       the people of the user's own channel, each with the picture and the name. The column is a quarter
+       of the screen, at least 76px and at most 110px. */
+    :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden))
+    {
+        --mobile2-people-width: clamp(76px, 25vw, 110px);
+    }
+
+    :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #communication-system-container[style*="display: block"]
+    {
+        display: grid !important;
+        grid-template-columns: var(--mobile2-people-width) minmax(0, 1fr);
+        grid-template-rows: minmax(0, 1fr) auto;
+    }
+
+    /* an empty part of the page between the panels; in a grid it would take a place of its own */
+    :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #communication-system-container > div:not([id])
+    {
+        display: none;
+    }
+
+    :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #space-devider1
+    {
+        grid-area: 1 / 1;
+        width: auto !important;
+        max-height: none;
+        border-right: 1px solid var(--tmx-line);
+        overflow: hidden;
+    }
+
+    :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #space-devider2
+    {
+        grid-area: 1 / 2;
+        width: auto !important;
+        min-width: 0;
+    }
+
+    :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #space-devider4
+    {
+        grid-area: 2 / 1 / 3 / 3;
+    }
+
+    /* the list is as high as its rows; the place under it is kept for the hold-to-talk button */
+    :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #channel-list-container
+    {
+        max-height: calc(100% - 84px);
+        overflow-x: hidden;
+        overflow-y: auto;
+        /* the list is moved with a finger; a scroll bar would take a part of the names */
+        scrollbar-width: none;
+    }
+
+    :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #idle-clients-container
+    {
+        display: none !important;
+    }
+
+    /* a person's row is shown also while the channel is collapsed in the tree */
+    :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #channel-list-container > .connected-client
+    {
+        display: flex !important;
+        min-width: 0;
+        margin: 0;
+        padding: 3px 3px 3px 5px;
+        border-radius: 0;
+    }
+
+    :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #channel-list-container > .connected-client > .client-audio-state
+    {
+        margin-right: 4px;
+    }
+
+    /* The tree is one flat list: a channel row, then the rows of its people, then the next channel row.
+       The people of the user's own channel are the rows around the user's own row with no channel row
+       between. Not shown: every channel row, every person's row that has a channel row between itself
+       and the user's own row further down, and every person's row after a channel row that follows the
+       user's own row. */
+    :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #channel-list-container > .single-channel,
+    :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #channel-list-container > .connected-client:has(~ .single-channel ~ .connected-local-client),
+    :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #channel-list-container > .connected-local-client ~ .single-channel ~ .connected-client
+    {
+        display: none !important;
+    }
+
+    /* the empty part that moves a row to the right by the depth of its channel, the flag, the name of the played song and the group pictures */
+    :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #channel-list-container > .connected-client > :is(div:first-child, .connected-client-country-flag, .marquee-music-playing-container, .client-groups)
+    {
+        display: none !important;
+    }
+
+    /* A name takes up to two lines; a longer name ends with three dots. The user's own name is a text
+       field, which has one line. */
+    :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #channel-list-container > .connected-client > :is(.connected-client-p, #connected-local-client-input)
+    {
+        flex: 1 1 0;
+        width: 0;
+        min-width: 0;
+        overflow: hidden;
+        font-size: 13px;
+        line-height: 17px;
+        text-overflow: ellipsis;
+    }
+
+    :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #channel-list-container > .connected-client > .connected-client-p
+    {
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+        line-clamp: 2;
+        overflow-wrap: anywhere;
+        white-space: normal;
+    }
+
+    :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #channel-list-container > .connected-client > #connected-local-client-input
+    {
+        display: block;
+        white-space: nowrap;
+    }
+
+    /* the row of a person who talks: a green background; Termix itself draws a green ring around the picture */
+    :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #channel-list-container > .connected-client:has(> .client-audio-state-microphone-active)
+    {
+        background: color-mix(in srgb, var(--tmx-green) 26%, transparent);
+    }
+
+    :root:has(#layout-edit-button[style*="display: none"]) #space-devider2
+    {
+        flex: 1 1 0;
+        width: 100% !important;
+        min-height: 0;
+    }
+
+    :root:has(#layout-edit-button[style*="display: none"]) #space-devider4
+    {
+        flex: 0 0 auto;
+    }
+
+    /* the hold-to-talk button stands under the people of the channel, in the middle of their column and above the message box; the log button would lie on the box */
+    :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #microphone-push-to-talk-button-touch-device
+    {
+        right: auto;
+        bottom: 128px;
+        left: calc((var(--mobile2-people-width) - 58px) / 2);
+    }
+
+    :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #show-hide-log-button
+    {
+        display: none;
+    }
+}
+
+/* The message box: a little lower than on a computer, larger buttons. */
+#space-devider4 #chat-input-file-input-container
+{
+    height: 96px;
+}
+
+/* 16px: a phone browser enlarges the page when a field with smaller text gets the cursor */
+#space-devider4 #chat-input-container-text-input
+{
+    font-size: 16px;
+}
+
+#space-devider4 .chat-controls-container
+{
+    right: 18px;
+    bottom: 18px;
+}
+
+#space-devider4 :is(.custom-file-upload-button, #stop-song)
+{
+    width: 36px;
+    height: 34px;
+    background-size: 22px 22px;
+}
+
+#space-devider4 #chat-input-container-send-chat-input
+{
+    width: 72px;
+    height: 34px;
+    font-size: 15px;
+}
+
+/* Rows of the tree and of the list of people: high enough for a finger, with larger text. */
+.single-channel
+{
+    min-height: 42px;
+    margin: 2px 8px;
+    border-radius: 8px;
+    line-height: 42px;
+}
+
+#channel-list-container .connected-client,
+#idle-clients-container .connected-client
+{
+    min-height: 42px;
+}
+
+.single-channel-name-p,
+:is(#channel-list-container, #idle-clients-container, #member-list-body) :is(.connected-client-p, .connected-client-p-music-bot),
+#connected-local-client-input
+{
+    font-size: 16px;
+}
+
+/* The local settings fill the screen; the rules are in styles/settings-phone.style, which template.html
+   includes after this file. These are the colours of this theme for them. */
+:root
+{
+    --settings-phone-page: var(--tmx-sidebar);
+    --settings-phone-bar: var(--tmx-darkest);
+    --settings-phone-field: var(--tmx-main);
+    --settings-phone-field-line: var(--tmx-line);
+    --settings-phone-control-line: #91a8c24d;
+    --settings-phone-line: var(--tmx-line);
+    --settings-phone-text: var(--tmx-text);
+    --settings-phone-muted: var(--tmx-muted);
+    --settings-phone-accent: var(--tmx-accent);
+    --settings-phone-switch-off: var(--tmx-active);
+    --settings-phone-button: var(--tmx-input);
+}
+
+/* The open conversations are chosen from a list (<select>) in place of the row of tabs. The bar keeps the
+   place, the height and the look of that row, and the list has the look of the tab of the shown
+   conversation: its field and the violet line at its lower edge. */
+#chat-window-container > #chat-context-selectors-container
+{
+    display: none !important;
+}
+
+#chat-window-container > #chat-context-select-container
+{
+    display: flex;
+    height: 59px;
+    padding: 9px 16px;
+    border-bottom: 1px solid var(--tmx-line);
+    background: var(--tmx-sidebar);
+}
+
+/* the list: the field of a tab with the violet line at its lower edge, a thin violet edge, a shade from
+   light to dark and an arrow of its own in light violet */
+#chat-context-select-container > #chat-context-select
+{
+    height: 34px;
+    padding: 0 34px 0 12px;
+    border: 1px solid #8475ff66;
+    border-radius: 10px;
+    background: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2014%2014%27%3E%3Cpath%20d%3D%27M3%205.2l4%204%204-4%27%20fill%3D%27none%27%20stroke%3D%27%23c3bcff%27%20stroke-width%3D%271.8%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%2F%3E%3C%2Fsvg%3E") right 11px center / 13px 13px no-repeat, linear-gradient(180deg, #3d4c80, #2b3862);
+    box-shadow: inset 0 -2px 0 var(--tmx-accent), inset 0 1px 0 #ffffff1a, 0 4px 10px #0a101c80;
+    color: var(--tmx-bright);
+    font-weight: 600;
+    appearance: none;
+    -webkit-appearance: none;
+}
+
+#chat-context-select-container > #chat-context-select:focus
+{
+    border-color: var(--tmx-accent);
+    box-shadow: inset 0 -2px 0 var(--tmx-accent), 0 0 0 3px #8475ff40;
+    outline: none;
+}
+
+#chat-context-select-container > #chat-context-select option
+{
+    background: var(--tmx-sidebar);
+    color: var(--tmx-text);
+}
+
+/* the button that closes the shown conversation: a small field in the colours of Termix's fields */
+#chat-context-select-container > #chat-context-select-close
+{
+    width: 34px;
+    height: 34px;
+    border: 1px solid var(--tmx-line);
+    border-radius: 10px;
+    background: var(--tmx-input);
+    color: var(--tmx-muted);
+    font-size: 20px;
+    line-height: 30px;
+}
+
+/* The rows of people stand 10px further to the left than in Termix (16px there): the picture of a person
+   starts close to the first letter of the name of its channel. */
+:is(#channel-list-container, #idle-clients-container) > .connected-client
+{
+    margin-left: 6px;
+}
+
+/* The "#" of a channel row is the button that collapses and expands the channel (theme-termix.style). It has
+   the text size of the name here. Its part that takes a press is 8px wider at each side; the negative
+   left margin keeps the "#" at its place. */
+:is(#channel-list-container, #idle-clients-container) .single-channel > :is(.single-channel-collapse-button, .single-channel-expand-button)
+{
+    margin-left: -8px;
+    padding: 0 8px;
+    font-size: 16px;
+}
+
+/* The hold-to-talk button of a touch screen: a round button in Termix's colours at the lower right
+   edge; violet while the microphone sends. Termix itself has no rule for it. */
+#microphone-push-to-talk-button-touch-device
+{
+    position: fixed;
+    right: 14px;
+    bottom: 46px;
+    width: 58px;
+    height: 58px;
+    padding: 0;
+    border: 2px solid var(--tmx-accent);
+    border-radius: 50%;
+    background: var(--tmx-sidebar) url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2024%2024%27%20fill%3D%27none%27%20stroke%3D%27%23f4f9ff%27%20stroke-width%3D%271.6%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%20%3Crect%20x%3D%278%27%20y%3D%272%27%20width%3D%278%27%20height%3D%2713%27%20rx%3D%274%27%2F%3E%3Cpath%20d%3D%27M5%2010v2a7%207%200%200%200%2014%200v-2M12%2019v3M8%2022h8%27%2F%3E%20%3C%2Fsvg%3E") center / 26px no-repeat;
+    box-shadow: 0 0 0 4px #10172899, 0 10px 22px #000000a6;
+    color: transparent;
+    font-size: 0;
+    /* above the panels, under every window and menu */
+    z-index: 3;
+}
+
+#microphone-push-to-talk-button-touch-device:is(.ptt-pressed, .mic-continuous-active)
+{
+    border-color: #c3bcff;
+    background-color: var(--tmx-accent);
+    box-shadow: 0 0 0 4px #10172899, 0 0 22px 6px #8475ff99;
+}
+
+#microphone-push-to-talk-button-touch-device.mic-unavailable
+{
+    opacity: 0.45;
+}
+
+/* While the chat is not shown, the hold-to-talk button stands in the middle of the lower edge.
+   layout.style sets "transform" for the pressed button and reads --mic-center-shift for it. */
+:root:has(#layout-edit-button[style*="display: none"]):has(#hide-chat-button.chat-hidden) #microphone-push-to-talk-button-touch-device
+{
+    right: auto;
+    left: 50%;
+    --mic-center-shift: -50%;
+    transform: translateX(var(--mic-center-shift));
+}

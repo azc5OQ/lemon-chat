@@ -152,7 +152,7 @@ Configured connection keys encrypt the snapshot. With no connection keys configu
 
 Suppose you administer the server from a browser today and want to use another computer tomorrow. Typing the same display name on the second computer does not make it the same user. Groups belong to the cryptographic identity used by the client, not the display name.
 
-In the Default toolbar, open the control whose tooltip starts **export identity**. The **Export Identity** dialog offers **export identity file** and displays the identity passphrase. Save the file privately. On the other device, choose **import identity**, load that file or passphrase, and reconnect as the same identity.
+In the Default toolbar, open the control whose tooltip starts **identity** and choose **export this identity** in its list. The **Export Identity** dialog offers **export identity file** and displays the identity passphrase. Save the file privately. On the other device, open the same control, choose **import another identity**, load that file or passphrase, and reconnect as the same identity.
 
 ![Export Identity dialog with the export identity file button highlighted and the identity passphrase hidden for documentation.](images/export-admin-identity.jpg)
 
@@ -160,7 +160,7 @@ In the Default toolbar, open the control whose tooltip starts **export identity*
 
 ![Import Identity dialog with select identity file and use an identity passphrase instead controls.](images/import-admin-identity.jpg)
 
-*On the other device, open **import identity**, then choose **select identity file**. The link below it opens the passphrase alternative. Review and confirm the import before reconnecting.*
+*On the other device, choose **import another identity** in the list of the identity control, then choose **select identity file**. The link below it opens the passphrase alternative. Review and confirm the import before reconnecting.*
 
 Anyone with the exported file or passphrase can act as that identity. Keep it with your private credentials rather than sending it to ordinary server users. Backing up the server settings alone does not back up your client's secret identity.
 

@@ -48,6 +48,8 @@ function chat_files__refresh_receive_preferences_controls()
     let preference = null;
     let element = null;
     let allowed = false;
+    let reason = "";
+    let reason_element = null;
 
     if (typeof document === "undefined")
     {
@@ -63,8 +65,14 @@ function chat_files__refresh_receive_preferences_controls()
         allowed = g_is_authenticated && g_server_policy["is_" + preference.replace(/^block_/, "blocking_") + "_active"] === true;
         element.disabled = !allowed;
         element.checked = allowed && g_attachment_receive_preferences[preference];
-        element.closest("label").title = allowed ? "Applies to new attachments; transfers already started will finish."
-            : "This feature must also be enabled on the server.";
+
+        // say why not
+        reason = allowed ? "" : !g_is_authenticated ? "cannot be changed while you are not connected to a server"
+            : "cannot be changed on this server: its administrator has not turned on \"allow clients to " + preference.replaceAll("_", " ") + "\" in the server settings";
+        reason_element = element.closest("label").querySelector(".local-settings-attachment-preference-state");
+        reason_element.textContent = reason;
+        reason_element.style.display = (reason == "") ? "none" : "";
+        element.closest("label").title = allowed ? "Applies to new attachments; transfers already started will finish." : reason;
     }
 }
 

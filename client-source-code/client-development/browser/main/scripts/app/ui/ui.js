@@ -13,7 +13,6 @@ var member_list_observer = null;
 
 var member_list_sync_scheduled = false;
 
-var pocket_previous_neighbors = false;
 
 var settings_delete_delegation_wired = false;
 
@@ -163,6 +162,9 @@ var UI = {
             document.getElementById(tab.getAttribute("aria-controls")).hidden = !selected;
         }
         document.getElementById("local-settings-scroll").scrollTop = 0;
+
+        // update the list
+        document.getElementById("local-settings-section-select").value = selected_tab.id;
     },
 
     /**
@@ -172,6 +174,12 @@ var UI = {
     setup_local_settings_tabs: function()
     {
         let tab_list = document.getElementById("local-settings-tabs");
+
+        // choose from the list
+        document.getElementById("local-settings-section-select").onchange = function(event)
+        {
+            UI.select_local_settings_tab(document.getElementById(event.currentTarget.value));
+        };
 
         tab_list.onclick = function(event)
         {
@@ -2335,23 +2343,6 @@ var UI = {
             sheets[i].setAttribute("media", "(max-width: 1px)");
         }
         document.getElementById(sheet_id).removeAttribute("media");
-        let was_pocket = document.body.classList.contains("pocket-theme-active");
-        document.body.classList.toggle("pocket-theme-active", themename == "pocket");
-        if (themename == "pocket" && was_pocket == false)
-        {
-            pocket_previous_neighbors = document.getElementById("msgr-neighbors-button") == null
-                ? utils__storage_get("lemon_strip_neighbors") == "1"
-                : document.body.classList.contains("msgr-neighbors-only");
-            document.body.classList.add("msgr-neighbors-only");
-        }
-        if (themename != "pocket")
-        {
-            document.body.classList.remove("pocket-people-open");
-            if (was_pocket)
-            {
-                document.body.classList.toggle("msgr-neighbors-only", pocket_previous_neighbors);
-            }
-        }
         if (typeof member_conversations__apply_theme === "function")
         {
             member_conversations__apply_theme();
@@ -2435,145 +2426,20 @@ var UI = {
     },
 
     /**
-     * @brief Updates the participant filter and Pocket navigation controls.
+     * @brief Updates the participant filter.
      */
     refresh_member_list_controls: function()
     {
-        let pocket = document.body.classList.contains("pocket-theme-active");
         let neighbors = document.body.classList.contains("msgr-neighbors-only");
         let toggle = document.getElementById("msgr-neighbors-button");
-        let header = document.getElementById("member-list-header");
-        let speakers = document.getElementById("pocket-speakers");
-        if (!pocket && speakers != null)
-        {
-            speakers.hidden = true;
-            speakers.replaceChildren();
-        }
+
+        // update the filter button
         if (toggle != null)
         {
-            toggle.value = pocket ? (neighbors ? "In this channel" : "All server users") : "";
+            toggle.value = "";
             toggle.title = neighbors ? "Show all known server users" : "Show people in this channel";
             toggle.setAttribute("aria-label", toggle.title);
             toggle.setAttribute("aria-pressed", neighbors ? "true" : "false");
-        }
-        if (pocket == false || header == null)
-        {
-            return;
-        }
-        if (speakers == null)
-        {
-            speakers = document.createElement("div");
-            speakers.id = "pocket-speakers";
-            speakers.hidden = true;
-            speakers.setAttribute("role", "group");
-            speakers.setAttribute("aria-label", "People speaking");
-            document.getElementById("communication-system-head-menu").appendChild(speakers);
-        }
-        if (document.getElementById("pocket-people-toggle") == null)
-        {
-            header.innerHTML = "<button type='button' id='pocket-people-toggle' aria-controls='member-list-body'>People</button>"
-                + "<button type='button' id='pocket-channel-switch' aria-label='Choose channel' title='Choose channel' aria-haspopup='menu'></button>"
-                + "<button type='button' id='pocket-people-close' aria-label='Close people' title='Close people'></button>";
-        }
-        document.getElementById("pocket-people-toggle").setAttribute("aria-expanded",
-            document.body.classList.contains("pocket-people-open") || window.matchMedia("(min-width: 760px)").matches ? "true" : "false");
-    },
-
-    /**
-     * @brief Shows small portraits for people speaking in the current channel.
-     * @param Array clients The speaking clients from the existing participant rows.
-     */
-    refresh_pocket_speakers: function(clients)
-    {
-        let container = document.getElementById("pocket-speakers");
-        if (container == null)
-        {
-            return;
-        }
-        let channel = channel_tree__get_channel_by_id(g_channel_list, g_current_channel_id);
-        let active_clients = g_server_policy.is_voice_chat_active && channel != null && channel.is_audio_enabled
-            ? clients : [];
-        let entries = active_clients.slice(0, 5).map(function(client)
-        {
-            return {
-                id: client.client_id,
-                name: channel_tree__get_display_name_by_client_id(client.client_id, client.username),
-                avatar: g_server_policy.is_avatar_upload_allowed && typeof client.base64_avatar == "string"
-                    ? client.base64_avatar : ""
-            };
-        });
-        container.hidden = entries.length == 0;
-        let portraits = [];
-        for (let entry of entries)
-        {
-            let portrait = Array.from(container.children).find(function(child)
-            {
-                return child.dataset.clientId == String(entry.id);
-            }) || document.createElement("span");
-            if (portrait.className != "pocket-speaker")
-            {
-                portrait.className = "pocket-speaker";
-            }
-            portrait.dataset.clientId = entry.id;
-            portrait.setAttribute("role", "img");
-            portrait.setAttribute("aria-label", entry.name + " is speaking");
-            portrait.title = entry.name + " is speaking";
-            if (entry.avatar.length > 0)
-            {
-                if (portrait.textContent != "")
-                {
-                    portrait.textContent = "";
-                }
-                let image = 'url("' + entry.avatar + '")';
-                if (portrait.style.backgroundImage != image)
-                {
-                    portrait.style.backgroundImage = image;
-                }
-            }
-            else
-            {
-                if (portrait.style.backgroundImage != "")
-                {
-                    portrait.style.backgroundImage = "";
-                }
-                let initials = UI.initials_for_name(entry.name);
-                if (portrait.textContent != initials)
-                {
-                    portrait.textContent = initials;
-                }
-            }
-            portraits.push(portrait);
-        }
-        if (active_clients.length > 5)
-        {
-            let more = container.querySelector(".pocket-speaker-more") || document.createElement("span");
-            more.className = "pocket-speaker pocket-speaker-more";
-            let count = "+" + (active_clients.length - 5);
-            if (more.textContent != count)
-            {
-                more.textContent = count;
-            }
-            more.title = active_clients.slice(5).map(function(client)
-            {
-                return channel_tree__get_display_name_by_client_id(client.client_id, client.username);
-            }).join(", ");
-            more.setAttribute("role", "img");
-            more.setAttribute("aria-label", more.title + " are speaking");
-            portraits.push(more);
-        }
-        for (let child of Array.from(container.children))
-        {
-            if (!portraits.includes(child))
-            {
-                child.remove();
-            }
-        }
-        for (let i = 0; i < portraits.length; i++)
-        {
-            if (container.children[i] != portraits[i])
-            {
-                container.insertBefore(portraits[i], container.children[i] || null);
-            }
         }
     },
 
@@ -2619,10 +2485,6 @@ var UI = {
             && previous_channel.getAttribute("data-member-list-channel-id") != String(g_current_channel_id);
         let changed_conversation = previous_channel != null
             && previous_channel.getAttribute("data-member-list-conversation-id") != String(g_current_chat_context_id);
-        if (changed_channel && document.body.classList.contains("pocket-theme-active"))
-        {
-            document.body.classList.add("msgr-neighbors-only");
-        }
         let focused_row = document.activeElement.closest(".member-list-channel, .member-list-client");
         let focus_attribute = focused_row == null ? null : focused_row.hasAttribute("data-member-list-channel-id")
             ? "data-member-list-channel-id" : focused_row.hasAttribute("data-identity-hash")
@@ -2630,7 +2492,6 @@ var UI = {
         let focus_value = focused_row == null ? null : focused_row.getAttribute(focus_attribute);
         let fragment = document.createDocumentFragment();
         let count = 0;
-        let speaking_clients = [];
 
         // which conversation is on screen decides which circle wears the active ring:
         // a pm context rings that user's circle, anything else rings the channel circle
@@ -2783,12 +2644,6 @@ var UI = {
             presence.textContent = clone.classList.contains("idle-client") ? "Idle"
                 : clone.querySelector(".client-audio-state-microphone-active") != null ? "Talking"
                     : clone.classList.contains("in-current-channel") ? "In this channel" : "Online";
-            if (caption_client_object != null && clone.classList.contains("in-current-channel")
-                && !clone.classList.contains("idle-client")
-                && clone.querySelector(".client-audio-state-microphone-active") != null)
-            {
-                speaking_clients.push(caption_client_object);
-            }
             clone.appendChild(presence);
             fragment.appendChild(clone);
             count++;
@@ -2893,12 +2748,7 @@ var UI = {
                 }
             }
         }
-        if (document.body.classList.contains("pocket-theme-active"))
-        {
-            UI.refresh_member_list_controls();
-            UI.refresh_pocket_speakers(speaking_clients);
-        }
-        else if (header != null)
+        if (header != null)
         {
             header.textContent = "members — " + count;
         }
@@ -2939,6 +2789,13 @@ var UI = {
         {
             if (g_is_channel_list_flattened == true) { button.classList.add("flatten-active"); }
             else { button.classList.remove("flatten-active"); }
+        }
+
+        // update the setting
+        let checkbox = document.getElementById("local-settings-flat-channel-list");
+        if (checkbox != null)
+        {
+            checkbox.checked = (g_is_channel_list_flattened == true);
         }
     },
 

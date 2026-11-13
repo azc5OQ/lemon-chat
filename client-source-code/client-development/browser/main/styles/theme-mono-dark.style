@@ -10,4 +10,5 @@
     --mono-inverse: #101013;
     --mono-accent: #8bacff;
     --mono-icon-filter: invert(1);
+    --phone-microphone-icon: var(--phone-microphone-dark);
 }

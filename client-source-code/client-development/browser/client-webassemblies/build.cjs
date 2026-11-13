@@ -18,7 +18,49 @@ function run(script, arguments_ = [], env = process.env)
     }
 }
 
-function build(compiler)
+/**
+ * @brief Tells whether the build that created a lock file is still running.
+ *
+ * @param string lockFile -> path of the lock file; it holds the process id of the build that created it
+ *
+ * @return boolean -> true when that build runs; false when it was stopped and left the file behind
+ */
+function isLockOwnerRunning(lockFile)
+{
+    let owner = 0;
+    let age = 0;
+
+    // read the process id
+    try
+    {
+        owner = parseInt(fs.readFileSync(lockFile, 'utf8'), 10);
+        age = Date.now() - fs.statSync(lockFile).mtimeMs;
+    }
+    catch (error)
+    {
+        return false;
+    }
+
+    // no id written
+    if (!Number.isInteger(owner) || owner <= 0)
+    {
+        // a build writes its id right after it creates the file, so an empty file of the last seconds is in use
+        return age < 10000;
+    }
+
+    // ask the system
+    try
+    {
+        process.kill(owner, 0);
+        return true;
+    }
+    catch (error)
+    {
+        return error.code === 'EPERM';
+    }
+}
+
+function build(compiler, isTested = false)
 {
     const buildDirectory = path.join(__dirname, 'build');
     fs.mkdirSync(buildDirectory, {recursive: true});
@@ -30,13 +72,34 @@ function build(compiler)
     }
     catch (error)
     {
-        if (error.code === 'EEXIST')
+        if (error.code !== 'EEXIST')
         {
-            throw new Error('Another WebAssembly build holds ' + lockFile
-                + '. If it was interrupted, confirm it has stopped before removing the lock.');
+            throw error;
         }
-        throw error;
+
+        // another build runs
+        if (isLockOwnerRunning(lockFile))
+        {
+            throw new Error('Another WebAssembly build is running (lock file ' + lockFile + ').');
+        }
+
+        // remove leftover files
+        console.log('An earlier WebAssembly build was stopped before it finished; removing its lock and its unfinished files.');
+        fs.rmSync(lockFile, {force: true});
+        for (const name of fs.readdirSync(buildDirectory))
+        {
+            if (name.startsWith('candidate-'))
+            {
+                fs.rmSync(path.join(buildDirectory, name), {recursive: true, force: true});
+            }
+        }
+
+        // take the lock
+        lock = fs.openSync(lockFile, 'wx');
     }
+
+    // store own process id
+    fs.writeSync(lock, String(process.pid));
     let temporary;
     try
     {
@@ -45,7 +108,7 @@ function build(compiler)
         {
             console.log('  ' + (index + 1) + '. ' + binary + ' - ' + description);
         }
-        console.log('First compile all modules, then test them, then embed them in client.html.\n');
+        console.log('First compile all modules, ' + (isTested ? 'then test them, ' : '') + 'then embed them in client.html.\n');
         temporary = fs.mkdtempSync(path.join(buildDirectory, 'candidate-'));
         const candidate = path.join(temporary, 'wasm');
         fs.mkdirSync(candidate);
@@ -57,34 +120,41 @@ function build(compiler)
             run(path.join(__dirname, project, 'build.cjs'), [path.join(candidate, binary)], env);
             console.log(step + 'Finished ' + binary + '. Modules left to build: ' + (projects.length - index - 1) + '.');
         }
-        console.log('\nAll ' + projects.length + ' modules compiled. Starting tests.');
-        for (const [index, [project, binary, test]] of projects.entries())
+        if (!isTested)
         {
-            const step = '[WASM test ' + (index + 1) + '/' + projects.length + '] ';
-            console.log('\n' + step + 'Testing ' + binary);
-            if (test)
+            console.log('\nAll ' + projects.length + ' modules compiled. The tests are skipped; --wasm-tests runs them.');
+        }
+        else
+        {
+            console.log('\nAll ' + projects.length + ' modules compiled. Starting tests.');
+            for (const [index, [project, binary, test]] of projects.entries())
             {
-                run(path.join(__dirname, project, test), [path.join(candidate, binary)]);
-            }
-            else
-            {
-                const rsaEnv = {...process.env, LEMON_RSA_WASM: path.join(candidate, binary)};
-                for (const [index, bits] of [512, 1024, 2048].entries())
+                const step = '[WASM test ' + (index + 1) + '/' + projects.length + '] ';
+                console.log('\n' + step + 'Testing ' + binary);
+                if (test)
                 {
-                    console.log('  [RSA ' + (index + 1) + '/5] Checking ' + bits + '-bit identity vectors');
-                    run(path.join(__dirname, 'rsa-keygen/test/compare-wasm.js'),
-                        [path.join(__dirname, 'rsa-keygen/test/vectors-' + bits + '.json')], rsaEnv);
+                    run(path.join(__dirname, project, test), [path.join(candidate, binary)]);
                 }
-                console.log('  [RSA 4/5] Checking modular arithmetic; this can take a while');
-                run(path.join(__dirname, 'rsa-keygen/test/rsa-ops.js'), [], rsaEnv);
-                console.log('  [RSA 5/5] Checking compatibility with the previous client');
-                run(path.join(__dirname, 'rsa-keygen/test/crypto-compat.js'), [], rsaEnv);
+                else
+                {
+                    const rsaEnv = {...process.env, LEMON_RSA_WASM: path.join(candidate, binary)};
+                    for (const [index, bits] of [512, 1024, 2048].entries())
+                    {
+                        console.log('  [RSA ' + (index + 1) + '/5] Checking ' + bits + '-bit identity vectors');
+                        run(path.join(__dirname, 'rsa-keygen/test/compare-wasm.js'),
+                            [path.join(__dirname, 'rsa-keygen/test/vectors-' + bits + '.json')], rsaEnv);
+                    }
+                    console.log('  [RSA 4/5] Checking modular arithmetic; this can take a while');
+                    run(path.join(__dirname, 'rsa-keygen/test/rsa-ops.js'), [], rsaEnv);
+                    console.log('  [RSA 5/5] Checking compatibility with the previous client');
+                    run(path.join(__dirname, 'rsa-keygen/test/crypto-compat.js'), [], rsaEnv);
+                }
+                console.log(step + 'Passed ' + binary + '. Modules left to test: ' + (projects.length - index - 1) + '.');
             }
-            console.log(step + 'Passed ' + binary + '. Modules left to test: ' + (projects.length - index - 1) + '.');
         }
 
-        // Publish a complete tested set. A compiler/test failure leaves main/wasm untouched.
-        console.log('\nPublishing the ' + projects.length + ' tested WebAssembly modules.');
+        // Publish a complete set. A compiler/test failure leaves main/wasm untouched.
+        console.log('\nPublishing the ' + projects.length + (isTested ? ' tested' : '') + ' WebAssembly modules.');
         const destination = path.resolve(__dirname, '../main/wasm');
         const previous = path.join(temporary, 'previous');
         if (fs.existsSync(destination))
@@ -103,7 +173,7 @@ function build(compiler)
             }
             throw error;
         }
-        console.log('All four WebAssembly modules compiled, tested and published.');
+        console.log('All four WebAssembly modules compiled' + (isTested ? ', tested' : '') + ' and published.');
         return destination;
     }
     finally

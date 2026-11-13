@@ -2499,3 +2499,113 @@ div#local-settings-container .local-settings-row-select input[type="button"]:not
 .server-message-public-key {
     display: none !important;
 }
+
+/* The stop button of a song is shown only while a song plays: ui.js then writes "display: block" into
+   its style attribute. The Default theme has this rule; it was missing here, so the stop button was
+   always shown and the two buttons shared the 44px of one. Each button keeps its full width now. */
+:root #stop-song
+{
+    display: none;
+}
+
+:root #space-devider4 #play-pause-song-container,
+:root #play-pause-song-container > div
+{
+    width: auto;
+}
+
+:root #play-pause-song-container > div
+{
+    gap: 6px;
+}
+
+:root #play-pause-song-container :is(#custom-file-upload-button-song, #stop-song)
+{
+    flex: 0 0 44px;
+}
+
+/* The sections of the local settings are chosen from a list (<select>) in this theme; the row of tabs is
+   not shown, and the list stands above the settings. */
+:root #local-settings-container #local-settings-tabs
+{
+    display: none !important;
+}
+
+:root #local-settings-container #local-settings-section-select
+{
+    display: block;
+}
+
+:root #local-settings-container #local-settings-body
+{
+    flex-direction: column;
+}
+
+/* the heading of a section repeats the chosen entry of the list */
+:root #local-settings-container .local-settings-page > .local-settings-section-title
+{
+    display: none;
+}
+
+/* The row of pictures stands in the middle of its band. Every entry is as high as its picture and its
+   name, and the band places the entries in its middle. The line with the channel of a person hangs under
+   the name and takes no room, so the picture of a channel and the pictures of people stay in one line.
+   Before, every entry was as high as the band and its content began at the top: 8px were above a picture
+   and 27px under the name of a channel. The column of pictures at the left edge ("people on the side") is
+   not changed. */
+body:not(.msgr-vertical) #member-list-body
+{
+    display: flex;
+    align-items: center;
+    padding-top: 0;
+    padding-bottom: 0;
+}
+
+body:not(.msgr-vertical) #member-list-body > :is(.member-list-channel, .member-list-client)
+{
+    flex: 0 0 auto;
+    height: auto;
+    margin-top: 0;
+    margin-bottom: 0;
+}
+
+body:not(.msgr-vertical) #member-list-body .member-list-client .member-list-client-channel
+{
+    position: absolute;
+    top: 100%;
+    right: 0;
+    left: 0;
+}
+
+/* The theme button is a round button with a picture, 28px wide like the other buttons of the top row; it
+   was 62px wide and showed the word "theme". The buttons to its left stand 34px further to the right. */
+#choose-theme-button
+{
+    width: 28px;
+    background: #1f2842 url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2024%2024%27%20fill%3D%27none%27%20stroke%3D%27%23aebdcc%27%20stroke-width%3D%272%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%20%3Cpath%20d%3D%27M12%203a9%209%200%201%200%200%2018c1.3%200%202-0.9%202-2%200-1.2-0.9-1.6-0.9-2.7%200-1%200.8-1.8%201.9-1.8H17a4%204%200%200%200%204-4C21%206.4%2017%203%2012%203z%27%2F%3E%20%3Ccircle%20cx%3D%277.5%27%20cy%3D%2711.5%27%20r%3D%271%27%2F%3E%3Ccircle%20cx%3D%2710%27%20cy%3D%277.5%27%20r%3D%271%27%2F%3E%3Ccircle%20cx%3D%2715%27%20cy%3D%277.5%27%20r%3D%271%27%2F%3E%20%3C%2Fsvg%3E") center / 16px 16px no-repeat;
+    color: transparent;
+    font-size: 0;
+}
+
+input#local-settings-button,
+#msgr-orientation-button
+{
+    right: 42px;
+}
+
+#msgr-session-button,
+#msgr-neighbors-button
+{
+    right: 78px;
+}
+
+#clear-chat-button,
+#msgr-me-button
+{
+    right: 114px;
+}
+
+#msgr-scale-slider
+{
+    right: 150px;
+}

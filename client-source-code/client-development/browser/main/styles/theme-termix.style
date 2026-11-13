@@ -941,6 +941,15 @@ div#image-upload-preview {
     --tmx-mic-background: #a397ff;
     border-color: #a397ff;
 }
+
+/* voice.js and ui.js write a picture of the microphone into the style attribute of this label every time
+   the microphone is switched on or off. The themes Mobile, Hybrid, Hybrid v2 and Aero show the state with
+   that picture. This theme draws the state itself (::before, ::after and the colours above), so the picture
+   is not shown here: it stood behind the drawn microphone. */
+#toggle-microphone-label
+{
+    background-image: none !important;
+}
 .add-group-context-menu { display: none; }
 .collapsed { display: none !important; }
 
@@ -1462,32 +1471,7 @@ a-toast { animation: tmx-pop 0.16s ease-out; }
     font-style: italic;
 }
 
-#channel-flatten-toggle-button {
-    display: block !important;
-    position: absolute;
-    z-index: 1;
-    top: 0;
-    right: 312px;
-    width: 25px;
-    height: 99%;
-    border: 0;
-    border-radius: 3px;
-    font-size: 0;
-    background-color: transparent;
-    background-repeat: no-repeat;
-    background-position: center center;
-    background-size: 18px 18px;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23b5bac1' stroke-width='2' stroke-linecap='round'%3E%3Cline x1='4' y1='6' x2='20' y2='6'/%3E%3Cline x1='10' y1='12' x2='20' y2='12'/%3E%3Cline x1='10' y1='18' x2='20' y2='18'/%3E%3C/svg%3E");
-    transition: background-color 0.15s ease;
-}
-#channel-flatten-toggle-button:hover {
-    background-color: var(--tmx-hover);
-}
-#channel-flatten-toggle-button.flatten-active {
-    background-color: var(--tmx-accent);
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffffff' stroke-width='2' stroke-linecap='round'%3E%3Cline x1='4' y1='6' x2='20' y2='6'/%3E%3Cline x1='4' y1='12' x2='20' y2='12'/%3E%3Cline x1='4' y1='18' x2='20' y2='18'/%3E%3C/svg%3E");
-}
-
+/* The rules for a channel list without depth. The local setting "flat channel list" switches the class. */
 #channel-list-container.channels-flattened .padding-div {
     padding-left: 0 !important;
     width: 0 !important;
@@ -3118,4 +3102,57 @@ input[type="radio"] {
 :root #member-list-body > .member-list-client.offline-contact
 {
     display: none;
+}
+
+/* The local setting "flat channel list" is shown in this theme, because the rules for a flat channel list
+   are in this file. The top bar had a button for this state before; the setting took its place. */
+div#local-settings-container .local-settings-row-flat-channel-list
+{
+    display: flex !important;
+}
+
+/* A channel without audio and a channel with a password get a picture at the left of the arrow of the
+   row: first the crossed-out loudspeaker, then the lock; layout.style gives both their size and their
+   place in the row. This theme drew neither of the two before. */
+#channel-list-container .single-channel > .single-channel-is-audio-disabled
+{
+    background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2020%2020%27%3E%20%3Cpath%20d%3D%27M3%207.6h2.8L10%204.2v11.6l-4.2-3.4H3z%27%20fill%3D%27%2391a8c2%27%2F%3E%20%3Cpath%20d%3D%27M12.6%207.4a3.6%203.6%200%200%201%200%205.2%27%20fill%3D%27none%27%20stroke%3D%27%2391a8c2%27%20stroke-width%3D%271.6%27%20stroke-linecap%3D%27round%27%2F%3E%20%3Cpath%20d%3D%27M4%203.5l12%2013%27%20stroke%3D%27%23ff7a7e%27%20stroke-width%3D%272%27%20stroke-linecap%3D%27round%27%2F%3E%20%3C%2Fsvg%3E");
+    background-repeat: no-repeat;
+}
+
+.single-channel:has(> .single-channel-is-using-password)::after {
+    content: "";
+    background: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2020%2020%27%3E%20%3Crect%20x%3D%274.5%27%20y%3D%279%27%20width%3D%2711%27%20height%3D%278%27%20rx%3D%271.8%27%20fill%3D%27%2391a8c2%27%2F%3E%20%3Cpath%20d%3D%27M7%209V6.8a3%203%200%200%201%206%200V9%27%20fill%3D%27none%27%20stroke%3D%27%2391a8c2%27%20stroke-width%3D%271.7%27%20stroke-linecap%3D%27round%27%2F%3E%20%3C%2Fsvg%3E") center / contain no-repeat;
+}
+
+/* The "#" of a channel row is the button that collapses and expands the channel. The button itself shows
+   the "#"; before, it showed a small triangle, and the "#" was a part of the name without a function.
+   While the channel is collapsed, the "#" is bold and has the accent colour. */
+:is(#channel-list-container, #idle-clients-container) .single-channel > :is(.single-channel-collapse-button, .single-channel-expand-button)
+{
+    width: auto;
+    height: auto;
+    padding: 0 5px 0 0;
+    font-size: 14px;
+    font-weight: 400;
+    line-height: inherit;
+    opacity: 0.85;
+    cursor: pointer;
+}
+
+:is(#channel-list-container, #idle-clients-container) .single-channel > :is(.single-channel-collapse-button, .single-channel-expand-button)::before
+{
+    content: "#";
+}
+
+:is(#channel-list-container, #idle-clients-container) .single-channel > .single-channel-expand-button
+{
+    color: var(--tmx-accent);
+    font-weight: 700;
+    opacity: 1;
+}
+
+:is(#channel-list-container, #idle-clients-container) .single-channel > .single-channel-name-p::before
+{
+    content: none;
 }

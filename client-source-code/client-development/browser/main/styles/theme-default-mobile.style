@@ -497,12 +497,14 @@ a-toast:hover {
     background-repeat: no-repeat;
 }
 
-.single-channel-is-using-password {
-    display: inline-block;
+/* The lock of a channel with a password is the ::after part of the row. layout.style gives it its size and
+   its place: at the left of the arrow of the row, after the "audio disabled" picture. */
+.single-channel:has(> .single-channel-is-using-password)::after {
+    content: "";
     background-image: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAABHNCSVQICAgIfAhkiAAAAAlwSFlzAAALEwAACxMBAJqcGAAAAgJJREFUWIXtlbFPFEEUxr/3ZoE1hBx4B7ESE0NhgY12dP4PkiNia6ExGiOxgVyIKLGwMAQKKwPEmCD/AJWdEToLExMLrwMvyCFCDt15zwL3uKi7N+fuZRPjV83uvPd9v5nMzgL/lbGo5Y7LavLnbJFhxwS4yEABwBdVbBCZ5cqmeYGn9L0tAIXJ2pDCvGTG+agaEbwF7Oj2jP8+VYDCZG0ITK8JnG9Wq5BtFR1xgWCn9JJ6ymY1DBeRA1WdIgrOVsjrMNacUdUpETkAAALnwWYF17SjmbXnkj9gbVEZw2G4R3Rp637nm3B+EygDmDlZ+rYmKq8YfIKB4f5TtlgBluK8nXZAyY6FYyKabQxv1OfpznUCzdb71I4383YCEMKFegPb53G1xtrl+kNDXyIABgbC8ad3fjmuduuB//E4v/mBdTuE4OOvZYVsfC2pm2dLAO1T5gCRF9FgSf19DR4T5ArAub+PkD1VXuxm7255mmq/zkbeA0fhuJ58k7iHCDf2NVAAN3+bjWo7Wnl6IsjVP72PWV6SbXf3y/wQJgJQ6J3cjvGhOpEJQO+Ot/Bhjg+7vnrzmQDs9ga3AOCwJ7idCQCIHv0cPMwGIAUlBugr6elMATwNYn/PbQdIqhgA2Us3SnZbAhDlZ6nmR/hFAvRVzYQo5qLInSVSheJJrmruJfL5Z/UDfaOsxxIePTcAAAAASUVORK5CYII=);
     background-repeat: no-repeat;
-    background-size: 20px 18px;
-    padding-left: 24px !important;
+    background-position: center;
+    background-size: contain;
 }
 
 .single-channel-is-temp {
@@ -1679,7 +1681,7 @@ a-toast:hover {
     position: absolute;
     z-index: 1;
     top: 0;
-    right: 228px;
+    right: 200px;
     width: 25px;
     height: 99%;
     border: 0px;
@@ -2487,89 +2489,7 @@ div#local-settings-container div#menu-bar-container
     overflow: hidden;
 }
 
-#local-settings-container #local-settings-tabs
-{
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    flex: 0 0 auto;
-    gap: 3px;
-    padding: 6px 8px;
-    border-right: 0;
-    border-bottom: 1px solid var(--set-line);
-    overflow: visible;
-}
-
-div#local-settings-container .local-settings-tab
-{
-    min-height: 44px;
-    padding: 7px 5px;
-    text-align: center;
-    font-size: 13px;
-}
-
-div#local-settings-container .local-settings-tab[aria-selected="true"]
-{
-    box-shadow: inset 0 -2px var(--set-accent);
-}
-
-div#local-settings-container .local-settings-row
-{
-    min-height: 44px;
-    margin: 0 14px 10px;
-    gap: 12px;
-}
-
-div#local-settings-container .local-settings-section-title
-{
-    margin: 16px 14px;
-    font-size: 16px;
-}
-
-div#local-settings-container .local-settings-label
-{
-    font-size: 14px;
-    line-height: 1.4;
-}
-
-div#local-settings-container .local-settings-hint
-{
-    font-size: 12px;
-    line-height: 1.5;
-}
-
-div#local-settings-container .local-settings-row-select
-{
-    flex-wrap: wrap;
-}
-
-div#local-settings-container .local-settings-row-select > :is(select, input),
-div#local-settings-container .local-settings-segment
-{
-    box-sizing: border-box;
-    min-height: 44px;
-    max-width: 100%;
-    font-size: 16px;
-}
-
-div#local-settings-container .local-settings-row input[type="checkbox"]
-{
-    flex: 0 0 22px;
-    width: 22px;
-    height: 22px;
-    transform: none;
-}
-
-div#local-settings-container #local-settings-mic-mode-segmented
-{
-    flex-wrap: wrap;
-}
-
-div#local-settings-container #local-settings-close-button
-{
-    min-height: 44px;
-    margin: 10px 14px max(12px, env(safe-area-inset-bottom));
-    width: calc(100% - 28px);
-}
+/* The look of the local settings is in styles/settings-phone.style, which this theme includes after this file. */
 
 /* Keep new dialogs and their controls usable with a finger. */
 :root #channel-properties-edit
@@ -2954,4 +2874,387 @@ div#local-settings-container #local-settings-close-button
 :where(body, button, input, select, textarea)
 {
     font-family: var(--set-font);
+}
+
+/* On a touch screen main.js hides the layout button. The buttons to its left then move one place to
+   the right, so the top row of buttons has no empty place. */
+:root:has(#layout-edit-button[style*="display: none"]) #choose-theme-button
+{
+    right: 59px;
+}
+
+:root:has(#layout-edit-button[style*="display: none"]) #local-settings-button
+{
+    right: 87px;
+}
+
+:root:has(#layout-edit-button[style*="display: none"]) #show-secret-identity-string
+{
+    right: 116px;
+}
+
+:root:has(#layout-edit-button[style*="display: none"]) #enter-server-settings
+{
+    right: 144px;
+}
+
+/* The message box follows the Default theme of a computer: grey buttons in place of the bright blue
+   ones, and a grey Send button. The buttons stay 38px high for a finger. */
+.custom-file-upload-button
+{
+    background-color: #7d8799;
+    background-position: center;
+    background-size: 18px 18px;
+}
+
+.custom-file-upload-button:is(:hover, :active)
+{
+    background-color: #36393f;
+}
+
+#space-devider4 #play-pause-song-container,
+#space-devider4 #upload-image-container,
+#space-devider4 #upload-file-container
+{
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+}
+
+#chat-input-container-send-chat-input
+{
+    height: 38px;
+    padding: 0 18px;
+    border-radius: 10px;
+    background: #7d8799;
+    font-size: 13px;
+    font-weight: 400;
+    letter-spacing: 0;
+}
+
+#chat-input-container-send-chat-input:is(:hover, :active)
+{
+    background: #36393f;
+}
+
+/* On a window of 700px or more the buttons stand beside the text, as in the Default theme. On a
+   narrower screen they keep their own row under the text, because the text would get too narrow. */
+@media (min-width: 700px)
+{
+    #chat-input-file-input-container
+    {
+        padding: 6px 230px 24px 10px;
+    }
+
+    #chat-input-container-text-input
+    {
+        min-height: 46px;
+    }
+
+    #space-devider4 .chat-controls-container
+    {
+        top: 50%;
+        right: 30px;
+        bottom: auto;
+        gap: 6px;
+        transform: translateY(-52%);
+    }
+}
+
+/* The chat is shown on a touch screen. main.js hides the layout button on a touch screen, and the button
+   with the eye has the class "chat-hidden" while the chat is not shown; the rules start with these two.
+   UI.hide_chat_container() writes "width: 30%" into the channel tree and "width: 100%" into the chat,
+   so the chat was as wide as the screen but started after the tree, and the end of every long line was
+   outside the screen. The page becomes a grid here: the chat gets exactly the width that is left. */
+:root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #communication-system-container[style*="display: block"]
+{
+    display: grid !important;
+    grid-template-columns: var(--mobile-tree-width, 30%) minmax(0, 1fr);
+    grid-template-rows: 100% auto;
+}
+
+/* an empty part of the page between the panels; in a grid it would take a place of its own */
+:root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #communication-system-container > div:not([id])
+{
+    display: none;
+}
+
+:root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #space-devider1
+{
+    grid-area: 1 / 1;
+    width: auto !important;
+}
+
+:root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #space-devider2
+{
+    grid-area: 1 / 2;
+    width: auto !important;
+    min-width: 0;
+}
+
+:root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #space-devider4
+{
+    grid-area: 2 / 1 / 3 / 3;
+}
+
+/* A screen narrower than 768px: while the chat is shown, the left column holds only the people of the
+   user's own channel, each with the microphone picture and the name. Channel rows, people of other
+   channels, the idle group, flags and group pictures are not shown; the button with the eye shows the
+   whole channel tree again. The column is a quarter of the screen, at least 76px and at most 110px. */
+@media (max-width: 767px)
+{
+    :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden))
+    {
+        --mobile-tree-width: clamp(76px, 25vw, 110px);
+    }
+
+    :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #space-devider1
+    {
+        overflow: hidden;
+    }
+
+    /* the list is as high as its rows; the place under it is kept for the hold-to-talk button */
+    :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #channel-list-container
+    {
+        display: block;
+        box-sizing: border-box;
+        width: 100%;
+        height: auto !important;
+        max-height: calc(100% - 72px);
+        margin: 0;
+        padding-top: 6px;
+        overflow-x: hidden;
+        overflow-y: auto;
+        /* the list is moved with a finger; a scroll bar would take 6px of the names */
+        scrollbar-width: none;
+    }
+
+    :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #idle-clients-container
+    {
+        display: none !important;
+    }
+
+    /* a person's row is shown also while the channel is collapsed in the tree */
+    :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #channel-list-container > .connected-client
+    {
+        display: flex !important;
+        align-items: center;
+        gap: 4px;
+        box-sizing: border-box;
+        min-width: 0;
+        min-height: 34px;
+        padding: 4px 4px 4px 3px;
+        border-left: 3px solid transparent;
+    }
+
+    /* The tree is one flat list: a channel row, then the rows of its people, then the next channel row.
+       The people of the user's own channel are the rows around the user's own row with no channel row
+       between. Not shown: every channel row, every person's row that has a channel row between itself
+       and the user's own row further down, and every person's row after a channel row that follows the
+       user's own row. */
+    :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #channel-list-container > .single-channel,
+    :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #channel-list-container > .connected-client:has(~ .single-channel ~ .connected-local-client),
+    :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #channel-list-container > .connected-local-client ~ .single-channel ~ .connected-client
+    {
+        display: none !important;
+    }
+
+    /* the empty part that moves a row to the right by the depth of its channel, the flag, the name of the played song and the group pictures */
+    :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #channel-list-container > .connected-client > :is(div:first-child, .connected-client-country-flag, .marquee-music-playing-container, .client-groups)
+    {
+        display: none !important;
+    }
+
+    :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #channel-list-container > .connected-client > .client-audio-state
+    {
+        flex: 0 0 16px;
+        width: 16px;
+        height: 18px;
+        background-position: center;
+        background-size: 15px 15px;
+    }
+
+    /* A name takes up to two lines; a longer name ends with three dots. The user's own name is a text
+       field, which has one line. */
+    :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #channel-list-container > .connected-client > :is(.connected-client-p, #connected-local-client-input)
+    {
+        flex: 1 1 0;
+        width: 0;
+        min-width: 0;
+        margin: 0;
+        top: 0;
+        overflow: hidden;
+        font-size: 13px;
+        line-height: 16px;
+        text-overflow: ellipsis;
+    }
+
+    :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #channel-list-container > .connected-client > .connected-client-p
+    {
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+        line-clamp: 2;
+        overflow-wrap: anywhere;
+        white-space: normal;
+    }
+
+    :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #channel-list-container > .connected-client > #connected-local-client-input
+    {
+        display: block;
+        height: 20px;
+        padding: 0;
+        white-space: nowrap;
+    }
+
+    /* The number of unread private messages stands at the right end of the row. In the tree it stands
+       at the left, in the empty part that is not shown here, where it would cover the microphone picture. */
+    :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #channel-list-container > .connected-client > .connected-client-p-received-messages-number
+    {
+        right: 3px;
+        left: auto;
+    }
+
+    :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #channel-list-container > .connected-client:has(> .connected-client-p-received-messages-number:not([hidden]))
+    {
+        padding-right: 26px;
+    }
+
+    /* the row of a person who talks: a green line at the left edge and a lighter background */
+    :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #channel-list-container > .connected-client:has(> .client-audio-state-microphone-active)
+    {
+        border-left-color: #63eb2c;
+        background: linear-gradient(90deg, #63eb2c40, #63eb2c00);
+    }
+
+    /* the hold-to-talk button stands under the list, in the middle of the column, and no longer on the chat */
+    :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #microphone-push-to-talk-button-touch-device
+    {
+        left: calc(var(--mobile-tree-width) / 2);
+    }
+}
+
+/* This theme is for phones: the button for the admin password is not shown. The buttons to its left take
+   the next place to the right (the rules for a touch screen further up move them one more place, because
+   the layout button is not shown there either). */
+#show-admin-password-entry
+{
+    display: none !important;
+}
+
+#layout-edit-button
+{
+    right: 59px;
+}
+
+:root:not(:has(#layout-edit-button[style*="display: none"])) #choose-theme-button
+{
+    right: 87px;
+}
+
+:root:not(:has(#layout-edit-button[style*="display: none"])) #local-settings-button
+{
+    right: 116px;
+}
+
+:root:not(:has(#layout-edit-button[style*="display: none"])) #show-secret-identity-string
+{
+    right: 144px;
+}
+
+:root:not(:has(#layout-edit-button[style*="display: none"])) #enter-server-settings
+{
+    right: 172px;
+}
+
+/* The open conversations are chosen from a list (<select>) in place of the row of tabs. The bar keeps the
+   place, the height and the black background of that row, and the list has the grey field of the tab of the
+   shown conversation. */
+#chat-window-container > #chat-context-selectors-container
+{
+    display: none;
+}
+
+#chat-window-container > #chat-context-select-container
+{
+    display: flex;
+    height: 24px;
+    padding: 0 5px;
+    background: #000000;
+}
+
+/* the list: the grey field of a tab with a thin blue edge, a light upper edge and an arrow of its own in the theme's blue */
+#chat-context-select-container > #chat-context-select
+{
+    height: 22px;
+    padding: 0 26px 0 8px;
+    border: 1px solid #05a3ff80;
+    border-radius: 6px;
+    background: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2014%2014%27%3E%3Cpath%20d%3D%27M3%205.2l4%204%204-4%27%20fill%3D%27none%27%20stroke%3D%27%2305a3ff%27%20stroke-width%3D%271.8%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%2F%3E%3C%2Fsvg%3E") right 7px center / 11px 11px no-repeat, linear-gradient(180deg, #454a57, #2f323a);
+    box-shadow: inset 0 1px 0 #ffffff1f;
+    color: #ffffff;
+    appearance: none;
+    -webkit-appearance: none;
+}
+
+#chat-context-select-container > #chat-context-select:focus
+{
+    border-color: #05a3ff;
+    outline: none;
+}
+
+#chat-context-select-container > #chat-context-select option
+{
+    background: #2f3238;
+    color: #ffffff;
+}
+
+#chat-context-select-container > #chat-context-select-close
+{
+    width: 22px;
+    height: 22px;
+    color: #b7d3da;
+    font-size: 18px;
+    line-height: 22px;
+}
+
+/* The message field: a pressed-in field with a thin edge, which is blue while the field has the cursor.
+   While the field takes no text (the chat of a channel the user is not in is shown, and ui.js writes the
+   reason into the field), it has slanted stripes, a dashed edge and a lock in front of the reason; the
+   buttons next to it are pale. */
+#space-devider4 #chat-input-container-text-input
+{
+    border: 1px solid #ffffff1f;
+    border-radius: 12px;
+    background: #121418;
+    box-shadow: inset 0 2px 6px #00000080;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+#space-devider4 #chat-input-container-text-input:focus
+{
+    border-color: #05a3ff;
+    box-shadow: inset 0 2px 6px #00000080, 0 0 0 3px #05a3ff33;
+    outline: none;
+}
+
+#space-devider4 #chat-input-container-text-input:disabled
+{
+    padding-left: 38px;
+    border: 1px dashed #ffd27a80;
+    background: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2020%2020%27%3E%20%3Crect%20x%3D%274.5%27%20y%3D%279%27%20width%3D%2711%27%20height%3D%278%27%20rx%3D%271.8%27%20fill%3D%27%23ffd27a%27%2F%3E%20%3Cpath%20d%3D%27M7%209V6.8a3%203%200%200%201%206%200V9%27%20fill%3D%27none%27%20stroke%3D%27%23ffd27a%27%20stroke-width%3D%271.7%27%20stroke-linecap%3D%27round%27%2F%3E%20%3C%2Fsvg%3E") 11px 9px / 18px 18px no-repeat, repeating-linear-gradient(135deg, #2b2e34 0 10px, #24272c 10px 20px);
+    box-shadow: none;
+    cursor: not-allowed;
+}
+
+#space-devider4 #chat-input-container-text-input:disabled::placeholder
+{
+    color: #ffd27a;
+    opacity: 1;
+}
+
+#space-devider4:has(#chat-input-container-text-input:disabled) :is(.custom-file-upload-button, #chat-input-container-send-chat-input)
+{
+    opacity: 0.4;
+    cursor: not-allowed;
 }

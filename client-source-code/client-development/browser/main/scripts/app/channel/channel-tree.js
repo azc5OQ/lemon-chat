@@ -41,6 +41,9 @@ function channel_tree__apply_server_update(handler, message)
     finally
     {
         keys__check_channel_key_recipients();
+
+        // update the people counts
+        channel_tree__refresh_people_counts();
         for (let anchor of anchors)
         {
             let row = container.querySelector('[' + anchor.attribute + '="' + anchor.id + '"]');
@@ -798,6 +801,9 @@ function channel_tree__apply_avatar_to_ui(client_id, base64)
         }
     }
 
+    // update the people counts
+    channel_tree__refresh_people_counts();
+
     // the member list is a clone of the tree, so repaint it too
     if (g_avatar.grid_visible == true) { UI.schedule_member_list_sync(); }
 
@@ -1000,9 +1006,103 @@ function channel_tree__pump_avatar_load_queue(chunk_size)
 }
 
 /**
- * @brief Restores the three local choices that each hide one kind of icon in the channel list
- *        (server group icons, channel group icons, channel icons) and connects their checkboxes.
- *        One name is used for the checkbox, the stored value and the class set on the body.
+ * @brief Writes the number of people, with up to three of their pictures in front of it, into the row of
+ *        every channel that has people in it, and removes it from a row without people. Music bots and
+ *        people in idle mode are not counted. A person whose channel is hidden from the local client has
+ *        the channel id -1 and is counted nowhere. The result is displayed only with the local setting
+ *        "show the number of people in the channel list", which sets a class on the body.
+ *
+ * @return void
+ */
+function channel_tree__refresh_people_counts()
+{
+    let people_by_channel = {};
+
+    // only with a page
+    if (!G_HAS_DOM)
+    {
+        return;
+    }
+
+    // collect the people
+    for (let client of g_client_list)
+    {
+        if (client.is_music_bot == true || client.is_idle == true)
+        {
+            continue;
+        }
+        if (people_by_channel[client.channel_id] == null)
+        {
+            people_by_channel[client.channel_id] = [];
+        }
+        people_by_channel[client.channel_id].push(client);
+    }
+
+    // update each row
+    for (let row of document.querySelectorAll("#channel-list-container .single-channel"))
+    {
+        let people = people_by_channel[row.getAttribute("data-channel-id")] || [];
+        let element = row.querySelector(":scope > .single-channel-people");
+        let shown = people.slice(0, 3);
+        let state = people.length + ":" + shown.map(function(client) { return client.client_id + "/" + (client.base64_avatar || "").length; }).join(",");
+        let count = null;
+
+        // nobody inside
+        if (people.length == 0)
+        {
+            if (element != null)
+            {
+                element.remove();
+            }
+            continue;
+        }
+
+        // nothing changed
+        if (element != null && element.getAttribute("data-people") === state)
+        {
+            continue;
+        }
+
+        // create the element
+        if (element == null)
+        {
+            element = document.createElement("div");
+            element.className = "single-channel-people";
+            row.appendChild(element);
+        }
+
+        // up to three pictures
+        element.textContent = "";
+        for (let client of shown)
+        {
+            let picture = document.createElement("span");
+            picture.className = "single-channel-people-picture";
+            if (client.base64_avatar && g_server_policy.is_avatar_upload_allowed == true)
+            {
+                picture.style.backgroundImage = "url(" + client.base64_avatar + ")";
+            }
+            else
+            {
+                picture.textContent = String(client.username || "").charAt(0);
+            }
+            element.appendChild(picture);
+        }
+
+        // the number
+        count = document.createElement("span");
+        count.className = "single-channel-people-count";
+        count.textContent = people.length;
+        element.appendChild(count);
+        element.setAttribute("data-people", state);
+        element.setAttribute("aria-label", people.length == 1 ? "1 person in this channel" : people.length + " people in this channel");
+    }
+}
+
+/**
+ * @brief Restores the local choices about the channel list and connects their checkboxes: three that
+ *        each hide one kind of icon (server group icons, channel group icons, channel icons) and one
+ *        that shows the number of people in a channel. A choice is a word ("hide" or "show") and a
+ *        name; both are used for the checkbox, the stored value and the class set on the body.
  *        main.js calls this once at start; the country flag choice is restored from here too.
  *
  * @return void
@@ -1015,12 +1115,12 @@ function channel_tree__setup_icon_preference()
         return;
     }
 
-    // each icon setting
-    for (let name of ["server-group-icons", "channel-group-icons", "channel-icons"])
+    // each setting
+    for (let [word, name] of [["hide", "server-group-icons"], ["hide", "channel-group-icons"], ["hide", "channel-icons"], ["show", "channel-people"]])
     {
-        let checkbox = document.getElementById("local-settings-hide-" + name);
-        let storage_key = "lemon_hide_" + name.replaceAll("-", "_");
-        let body_class = "hide-" + name + "-in-channel-list";
+        let checkbox = document.getElementById("local-settings-" + word + "-" + name);
+        let storage_key = "lemon_" + word + "_" + name.replaceAll("-", "_");
+        let body_class = word + "-" + name + "-in-channel-list";
 
         // restore saved value
         checkbox.checked = utils__storage_get(storage_key) === "1";

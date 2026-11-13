@@ -421,7 +421,7 @@ function writeAtomic(file, content)
 
 function options(arguments_)
 {
-    const result = {mode: null, output: null, serverCopy: true, check: false, downloads: 'ask'};
+    const result = {mode: null, output: null, serverCopy: true, check: false, downloads: 'ask', isWasmTested: false};
     const modes = {'--minified': 'minified', '--minify-js': 'minified', '--unminified': 'unminified',
         '--no-optimize': 'unminified', '--no-minify-js': 'assets'};
     for (let index = 0; index < arguments_.length; index++)
@@ -442,6 +442,10 @@ function options(arguments_)
         else if (argument === '--no-server-copy')
         {
             result.serverCopy = false;
+        }
+        else if (argument === '--wasm-tests')
+        {
+            result.isWasmTested = true;
         }
         else if (argument === '--download-tools' || argument === '--no-download-tools')
         {
@@ -507,8 +511,9 @@ async function main(arguments_ = process.argv.slice(2))
     if (arguments_.includes('--help'))
     {
         console.log('node build.cjs [--minified | --unminified] [--output file] [--no-server-copy]\n'
-            + '  [--download-tools | --no-download-tools]\n'
-            + 'A build compiles and tests all four WebAssembly modules before embedding.\n'
+            + '  [--download-tools | --no-download-tools] [--wasm-tests]\n'
+            + 'A build compiles all four WebAssembly modules before embedding.\n'
+            + '--wasm-tests also tests them first; the tests take several minutes.\n'
             + 'node build.cjs --check (syntax only; no compilation or downloads)\nnode build.cjs --check-minifier\n' + installHint);
         return;
     }
@@ -542,7 +547,7 @@ async function main(arguments_ = process.argv.slice(2))
     let wasmDirectory = path.join(sourceDirectory, 'wasm');
     if (!settings.check)
     {
-        wasmDirectory = webassemblies.build(await setup.ensureZig(settings.downloads));
+        wasmDirectory = webassemblies.build(await setup.ensureZig(settings.downloads), settings.isWasmTested);
     }
     if (!settings.check)
     {

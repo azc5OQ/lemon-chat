@@ -425,3 +425,70 @@ function head_menu__delete_bookmark(index)
     connection__write_server_bookmarks(bookmarks);
     connection__render_server_bookmarks();
 }
+
+/**
+ * @brief The identity button of the top bar (#show-secret-identity-string). A press opens the list with the
+ *        entries "export this identity" and "import another identity" under the button; a press while the
+ *        list is open closes the list. The list gets fixed coordinates, because the themes put the button
+ *        at different places of the top bar. It opens above the button when there is no room under it
+ *        (a top bar at the lower edge of the window), and it does not leave the window at the sides.
+ *
+ * @param object event -> the click event of the button
+ *
+ * @return void
+ */
+function head_menu__identity_button_onclick(event)
+{
+    let list = document.getElementById("identity-menu-list");
+    let rect = event.currentTarget.getBoundingClientRect();
+    let left = 0;
+    let top = 0;
+
+    // stop the page click
+    event.stopPropagation();
+
+    // open the list
+    head_menu__toggle("identity-menu");
+
+    // closed by this press
+    if (document.getElementById("identity-menu").classList.contains("is-open") == false)
+    {
+        return;
+    }
+
+    // stay inside the window
+    left = Math.max(4, Math.min(rect.left, window.innerWidth - list.offsetWidth - 4));
+    top = rect.bottom + 2;
+    if (top + list.offsetHeight > window.innerHeight)
+    {
+        top = rect.top - list.offsetHeight - 2;
+    }
+
+    // place the list
+    list.style.left = Math.round(left) + "px";
+    list.style.top = Math.round(top) + "px";
+}
+
+/**
+ * @brief An entry of the identity list was pressed. The list is closed and the window of that entry is
+ *        opened: the export window for "export this identity", the import window for "import another identity".
+ *
+ * @param object event -> the click event of the entry
+ *
+ * @return void
+ */
+function head_menu__identity_item_onclick(event)
+{
+    // close the list
+    head_menu__close_all();
+
+    // open the window
+    if (event.currentTarget.id === "identity-menu-export")
+    {
+        UI.show_secret_identity_string_onclick(event);
+    }
+    else
+    {
+        UI.import_identity_button_onclick();
+    }
+}

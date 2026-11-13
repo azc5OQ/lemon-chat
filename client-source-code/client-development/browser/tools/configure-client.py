@@ -410,7 +410,7 @@ def ask(settings):
     """
     # what this is
     say("info", "Lemon Chat page builder")
-    say("info", "It writes a server address, passwords, default themes and the start page buttons into a copy of client.html.")
+    say("info", "It configures client.html for use.")
     print()
 
     # files

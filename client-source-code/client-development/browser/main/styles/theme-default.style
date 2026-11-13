@@ -450,12 +450,14 @@ a-toast:hover {
     background-repeat: no-repeat;
 }
 
-.single-channel-is-using-password {
-    display: inline-block;
+/* The lock of a channel with a password is the ::after part of the row. layout.style gives it its size and
+   its place: at the left of the arrow of the row, after the "audio disabled" picture. */
+.single-channel:has(> .single-channel-is-using-password)::after {
+    content: "";
     background-image: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAABHNCSVQICAgIfAhkiAAAAAlwSFlzAAALEwAACxMBAJqcGAAAAgJJREFUWIXtlbFPFEEUxr/3ZoE1hBx4B7ESE0NhgY12dP4PkiNia6ExGiOxgVyIKLGwMAQKKwPEmCD/AJWdEToLExMLrwMvyCFCDt15zwL3uKi7N+fuZRPjV83uvPd9v5nMzgL/lbGo5Y7LavLnbJFhxwS4yEABwBdVbBCZ5cqmeYGn9L0tAIXJ2pDCvGTG+agaEbwF7Oj2jP8+VYDCZG0ITK8JnG9Wq5BtFR1xgWCn9JJ6ymY1DBeRA1WdIgrOVsjrMNacUdUpETkAAALnwWYF17SjmbXnkj9gbVEZw2G4R3Rp637nm3B+EygDmDlZ+rYmKq8YfIKB4f5TtlgBluK8nXZAyY6FYyKabQxv1OfpznUCzdb71I4383YCEMKFegPb53G1xtrl+kNDXyIABgbC8ad3fjmuduuB//E4v/mBdTuE4OOvZYVsfC2pm2dLAO1T5gCRF9FgSf19DR4T5ArAub+PkD1VXuxm7255mmq/zkbeA0fhuJ58k7iHCDf2NVAAN3+bjWo7Wnl6IsjVP72PWV6SbXf3y/wQJgJQ6J3cjvGhOpEJQO+Ot/Bhjg+7vnrzmQDs9ga3AOCwJ7idCQCIHv0cPMwGIAUlBugr6elMATwNYn/PbQdIqhgA2Us3SnZbAhDlZ6nmR/hFAvRVzYQo5qLInSVSheJJrmruJfL5Z/UDfaOsxxIePTcAAAAASUVORK5CYII=);
     background-repeat: no-repeat;
-    background-size: 20px 18px;
-    padding-left: 24px !important;
+    background-position: center;
+    background-size: contain;
 }
 
 .single-channel-is-temp {
@@ -1669,7 +1671,7 @@ a-toast:hover {
     position: absolute;
     z-index: 1;
     top: 0;
-    right: 228px;
+    right: 200px;
     width: 25px;
     height: 99%;
     border: 0px;
@@ -2097,6 +2099,18 @@ a-toast:hover {
     background: #25333b;
     color: #75d2ac;
     border-color: #75d2ac;
+}
+
+/* voice.js and ui.js write a picture of the microphone into the style attribute of this label every time
+   the microphone is switched on or off. The themes Mobile, Hybrid, Hybrid v2 and Aero show the state with
+   that picture. This theme draws the state itself (::before, ::after and the colours above), so the picture
+   is not shown here: it stood behind the drawn microphone, and the wide button of the Mono themes,
+   which include this file, repeated it over its whole width. The layout with the bar of four screens
+   (body[data-conversation-tab], the Pocket theme) is left out: it gives the button pictures of its own with
+   the same property. */
+:root:not(:has(body[data-conversation-tab])) #toggle-microphone-label
+{
+    background-image: none !important;
 }
 
 #toggle-microphone {
