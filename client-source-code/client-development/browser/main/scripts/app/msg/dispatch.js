@@ -330,7 +330,12 @@ function dispatch__mainthread_onmessage(e)
                 android_host__node_apply_idle_for_ui_state();
             }
 
-            utils__hide_custom_alert(); // if there was any alert
+            // A resumed login still needs its refreshed lists. Its notice is cleared once those
+            // arrive, without dismissing another alert that may have replaced it meanwhile.
+            if (g_fast_reconnect.resumed == false)
+            {
+                utils__hide_custom_alert();
+            }
 
             // the same policy set arrives again as "server_policy" whenever an admin saves,
             // so both paths share one application function

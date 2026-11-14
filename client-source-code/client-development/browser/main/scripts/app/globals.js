@@ -72,10 +72,10 @@ var g_session = {
 };
 
 // fast reconnect (server setting): a lost socket keeps the page exactly as it is and connects again with
-// the same identity; the server adopts the still-open session. only a failed attempt shows
-// "connection lost" and resets the page
+// the same identity; the server adopts the still-open session. A notice shows recovery in progress;
+// only a failed attempt resets the page.
 var g_fast_reconnect = {
-    in_progress: false,   // an attempt is running: no wipe, no toast, one attempt only
+    in_progress: false,   // recovery is running without wiping the chat or restarting its deadline
     resumed: false,       // the server said fast_reconnect_ok: the lists that follow are a refresh
     deadline_timer: null, // the classic "connection lost" path when the attempt stalls
     pending_lists: null   // the refreshed lists, applied together so the page repaints once
@@ -451,8 +451,11 @@ var g_send_seen_receipts = true;
 // a received message scrolls the chat to the end; off keeps the place of somebody reading older messages
 var g_auto_scroll_chat_to_end = true;
 
-// the user can hide the mic button outright; it stays visible by default
+// The user can hide the touch microphone button in every theme; it stays visible by default.
 var g_hide_microphone_button = false;
+
+// Separate local preference for the theme named Mobile; other themes keep their current behavior.
+var g_hide_mobile_microphone_button = false;
 
 // local-only preference for which microphone to capture from; "" means the browser's default
 var g_selected_microphone_device_id = "";

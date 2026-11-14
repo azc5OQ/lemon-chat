@@ -92,12 +92,14 @@
 /* @@INCLUDE: styles/theme-default.style @@ */
 /* @@INCLUDE: styles/theme-mono.style @@ */
 /* @@INCLUDE: styles/theme-phone.style @@ */
+/* @@INCLUDE: styles/theme-phone-tabs.style @@ */
     </style>
 
     <style id="style-theme-mono-dark" class="style-theme-html-element" media="(max-width: 1px)">
 /* @@INCLUDE: styles/theme-default.style @@ */
 /* @@INCLUDE: styles/theme-mono.style @@ */
 /* @@INCLUDE: styles/theme-phone.style @@ */
+/* @@INCLUDE: styles/theme-phone-tabs.style @@ */
 /* @@INCLUDE: styles/theme-mono-dark.style @@ */
     </style>
 
@@ -113,6 +115,7 @@
          class must stay off this element - apply_theme() disables every sheet carrying it -->
     <style id="style-layout">
 /* @@INCLUDE: styles/layout.style @@ */
+/* @@INCLUDE: styles/identity-dialogs.style @@ */
 /* @@INCLUDE: styles/member-conversations.style @@ */
 /* @@INCLUDE: styles/client-log.style @@ */
 /* @@INCLUDE: styles/start-page.style @@ */
@@ -1203,10 +1206,17 @@
                             </div>
                             <label class="local-settings-row">
                                 <span class="local-settings-text">
-                                    <span class="local-settings-label">hide the microphone button</span>
-                                    <span class="local-settings-hint">removes the round mic button from the chat screen entirely</span>
+                                    <span class="local-settings-label">hide touch microphone button in all themes</span>
+                                    <span class="local-settings-hint">hides the on-screen touch control; does not mute an active microphone</span>
                                 </span>
                                 <input type="checkbox" id="local-settings-hide-mic">
+                            </label>
+                            <label class="local-settings-row">
+                                <span class="local-settings-text">
+                                    <span class="local-settings-label">hide microphone button in Mobile theme</span>
+                                    <span class="local-settings-hint">applies only to the theme named Mobile; does not mute an active microphone or affect Pocket, Mono or Simple</span>
+                                </span>
+                                <input type="checkbox" id="local-settings-hide-mobile-mic">
                             </label>
                             <label class="local-settings-row">
                                 <span class="local-settings-text">
@@ -1543,11 +1553,10 @@
                     </label>
                     <input type="range" id="chat-input-font-size-range" min="12" max="30">
                     <textarea spellcheck="false" id="chat-input-container-text-input" maxlength="900" placeholder="write a message ..."></textarea>
-                    <!-- the pending attachment previews (file chip, picture thumbnail) overlay the text
-                         box's top-left corner; attaching clears the typed text so the preview does not
-                         sit on top of it -->
+                    <!-- Pending attachments sit inside the composer; the layout reserves space for
+                         the preview so it does not cover the message field or its placeholder. -->
                     <div id="file-upload-preview" style="display: none;"></div>
-                    <div id="image-upload-preview" style="display: none;"><span id="image-upload-preview-remove" title="remove">&#10005;</span></div>
+                    <div id="image-upload-preview" style="display: none;"><button type="button" id="image-upload-preview-remove" aria-label="Remove attached image" title="Remove attached image">&#10005;</button></div>
                 </div>
                 <div class="chat-controls-container">
                     <div id="play-pause-song-container">
@@ -1916,33 +1925,44 @@
         </div>
 
         <div id="identity-string-use-container">
-            <div id="identity-string-use-container-enter">
+            <div id="identity-string-use-container-enter" class="identity-dialog" role="dialog" aria-labelledby="identity-import-title">
                 <div id="menu-bar-container">
-                    <p class="dialog-title">Import Identity</p>
-                    <div class="close-button" id="close-button-identity-string-use">
-                    </div>
+                    <p class="dialog-title" id="identity-import-title">Import Identity</p>
+                    <button type="button" class="close-button" id="close-button-identity-string-use" aria-label="Close import identity"></button>
                 </div>
-                <div id="identity-file-mode">
-                    <p class="identity-dialog-explainer">
-                        An identity file (.lmn) contains a complete identity. Importing it makes this device connect as that identity, and any server that already knows it restores the associated groups and permissions. Select the file or drop it onto this dialog; nothing changes until you confirm. Rebuilding the key pair can take a moment. The file is read locally and never leaves this device.</p>
-                    <div class="identity-dialog-button-row">
-                        <input type="button" class="button-1" id="choose-identity-file-button" value="select identity file">
-                        <input type="file" id="identity-file-input" accept=".lmn" style="display: none;">
+                <div class="identity-dialog-body">
+                    <p class="identity-dialog-explainer">To use the same identity on another device, import a file or passphrase you previously exported.</p>
+                    <div id="identity-file-mode">
+                        <p class="identity-dialog-label">Identity file (.lmn)</p>
+                        <div class="identity-file-picker">
+                            <input type="button" class="button-1" id="choose-identity-file-button" value="Choose identity file">
+                            <input type="file" id="identity-file-input" accept=".lmn" style="display: none;">
+                            <p class="identity-dialog-hint">Or drop the file onto this window.</p>
+                        </div>
+                        <p id="identity-file-status" class="identity-dialog-hint" role="status" aria-live="polite"></p>
+                        <div class="identity-dialog-actions">
+                            <input type="button" id="identity-file-confirm-button" class="button-1" value="Import identity" disabled>
+                        </div>
                     </div>
-                    <p id="identity-file-status" class="identity-dialog-hint"></p>
-                    <div style="text-align: right;">
-                        <input type="button" id="identity-file-confirm-button" class="button-1" value="import this identity" style="right: 20px; display: none;">
+                    <div id="identity-string-mode" style="display: none;">
+                        <label class="identity-dialog-label" for="identity-string-use-textarea">Identity passphrase</label>
+                        <textarea spellcheck="false" autocapitalize="off" autocomplete="off" id="identity-string-use-textarea" placeholder="Paste your identity passphrase" aria-describedby="identity-passphrase-hint"></textarea>
+                        <p id="identity-passphrase-hint" class="identity-dialog-hint">Copy the complete passphrase from Export Identity.</p>
+                        <p class="identity-dialog-hint">Before importing a passphrase, select the original identity key size in Local settings → Identity.</p>
+                        <div class="identity-dialog-actions">
+                            <input type="button" id="identity-string-use-confirm-button" class="button-1" value="Import identity">
+                        </div>
                     </div>
+                    <p class="identity-dialog-hint identity-dialog-note">Nothing changes until you choose Import identity. Switching identities reconnects this client if it is already connected.</p>
+                    <button type="button" id="identity-mode-toggle-link" class="identity-dialog-link">Paste a passphrase instead</button>
+                    <details class="identity-dialog-help">
+                        <summary>How identity import works</summary>
+                        <p>A server recognizes you by your public key. If you join with a different identity, using the same username will not bring back the groups and permissions assigned to your previous identity.</p>
+                        <p>Your identity passphrase and RSA key size let this client recreate the same public and private keys. New identity files (.lmn) save both, so importing the file restores the key size automatically.</p>
+                        <p>If you paste a passphrase or import an older file without a saved key size, select the original size in Local settings → Identity first. The same passphrase with a different size creates a different identity.</p>
+                        <p>The keys are rebuilt on this device; the passphrase is never sent to the chat server. The client uses those keys to connect, and the server applies the groups and permissions it currently associates with that identity.</p>
+                    </details>
                 </div>
-                <div id="identity-string-mode" style="display: none;">
-                    <div class="text-input-container">
-                        <textarea spellcheck="false" id="identity-string-use-textarea" placeholder="An identity is an RSA key pair. A new random one is generated each time the client starts, so by default every session presents a different public key, which is fine for simply joining and chatting. Groups and permissions, however, are bound to the public key. Entering an identity passphrase here rebuilds exactly the same key pair, so the server recognizes you and restores them. Key generation can take a moment depending on the device. The passphrase is used locally only and is never sent to the server."></textarea>
-                    </div>
-                    <div style="text-align: right;">
-                        <input type="button" id="identity-string-use-confirm-button" class="button-1" value="use this passphrase" style="right: 20px;">
-                    </div>
-                </div>
-                <p id="identity-mode-toggle-link" class="identity-dialog-link">use an identity passphrase instead</p>
             </div>
         </div>
 
@@ -1963,19 +1983,25 @@
         </div>
 
         <div id="secret-identity-string-container">
-            <div id="secret-identity-string-container-enter">
+            <div id="secret-identity-string-container-enter" class="identity-dialog" role="dialog" aria-labelledby="identity-export-title">
                 <div id="menu-bar-container">
-                    <p class="dialog-title">Export Identity</p>
-                    <div class="close-button" id="close-button-secret-identity-string">
+                    <p class="dialog-title" id="identity-export-title">Export Identity</p>
+                    <button type="button" class="close-button" id="close-button-secret-identity-string" aria-label="Close export identity"></button>
+                </div>
+                <div class="identity-dialog-body">
+                    <p class="identity-dialog-explainer">Save a backup or use this identity on another device.</p>
+                    <div class="identity-dialog-button-row">
+                        <input type="button" class="button-1" id="export-identity-file-button" value="Save identity file">
+                        <span id="export-identity-file-name" class="identity-dialog-hint"></span>
                     </div>
+                    <p class="identity-dialog-hint">The file saves your passphrase and key size together. Import it on another device to restore both automatically.</p>
+                    <div class="identity-dialog-passphrase">
+                        <label class="identity-dialog-label" for="p-secret-identity-string">Identity passphrase</label>
+                        <textarea id="p-secret-identity-string" readonly spellcheck="false" autocomplete="off" aria-describedby="identity-export-hint"></textarea>
+                        <p id="identity-export-hint" class="identity-dialog-hint"></p>
+                    </div>
+                    <p class="identity-dialog-hint identity-dialog-note">Keep the file and passphrase private. Either can be used to connect as you.</p>
                 </div>
-                <p class="identity-dialog-explainer">
-                    This identity is the RSA key pair this device connects with; groups and permissions granted on a server are bound to it. Export it as a file to keep a backup or to move it to another device, where it can be imported. Treat the file and the passphrase below as secrets: anyone who holds them can act as you.</p>
-                <div class="identity-dialog-button-row">
-                    <input type="button" class="button-1" id="export-identity-file-button" value="export identity file">
-                    <span id="export-identity-file-name" class="identity-dialog-hint"></span>
-                </div>
-                <p id="p-secret-identity-string"></p>
             </div>
         </div>
 

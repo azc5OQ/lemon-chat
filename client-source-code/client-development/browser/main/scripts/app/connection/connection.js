@@ -441,6 +441,10 @@ async function connection__connect_loop()
         if (g_is_authenticated == false && g_fast_reconnect.in_progress == true)
         {
             await connection__connect_loop_retry_wait(2);
+            if (is_connection_ended_by_user == true)
+            {
+                continue;
+            }
             if (g_fast_reconnect.in_progress == true)
             {
                 continue;
@@ -870,6 +874,11 @@ function connection__try_start_fast_reconnect(reason)
     console.log("%cfast reconnect: " + reason + " - connecting again with the same identity", "color: #ffa500; font-weight: bold; font-size: 14px;");
     utils__custom_log("fast reconnect attempt (" + reason + ")");
 
+    if (G_HAS_DOM)
+    {
+        utils__custom_alert("Connection lost. Reconnecting…", "fast-reconnect");
+    }
+
     g_fast_reconnect.deadline_timer = setTimeout(function()
     {
         connection__fast_reconnect_failed("no adopted session within " + (FAST_RECONNECT_DEADLINE_MS / 1000) + " s");
@@ -999,6 +1008,11 @@ function connection__fast_reconnect_apply_lists()
 
     console.log("%cFAST RECONNECT HAPPENED - session resumed, lists refreshed, nothing was lost", "color: #00e000; font-weight: bold; font-size: 20px;");
     utils__custom_log("fast reconnect happened");
+
+    if (G_HAS_DOM)
+    {
+        utils__hide_custom_alert("", "fast-reconnect");
+    }
 }
 
 /**
@@ -1010,6 +1024,11 @@ function connection__fast_reconnect_apply_lists()
  */
 function connection__reset_chat_app_keep_identity()
 {
+    if (G_HAS_DOM)
+    {
+        utils__hide_custom_alert("", "fast-reconnect");
+        utils__hide_custom_alert("", "channel-context");
+    }
     connection__cancel_upload_send();
     clearTimeout(g_fast_reconnect.deadline_timer);
     g_fast_reconnect.deadline_timer = null;
@@ -1883,9 +1902,31 @@ function connection__refresh_connect_window_sections()
  */
 function connection__disconnect_by_user()
 {
+    if (G_HAS_DOM)
+    {
+        utils__hide_custom_alert("", "fast-reconnect");
+    }
     is_connection_ended_by_user = true;
     is_connect_loop_wake_pending = false;
     g_last_disconnect_reason = "disconnected";
+
+    if (g_fast_reconnect.in_progress || g_fast_reconnect.resumed)
+    {
+        // Cancel the recovery deadline as well as its UI: an explicit disconnect must not
+        // produce another loss alert when the old deadline expires.
+        g_is_authenticated = false;
+        connection__reset_chat_app_keep_identity();
+        connection__show_connect_window();
+        // End an active retry delay without queuing a new connect request. An active
+        // socket instead wakes the loop through its close event.
+        if (connect_loop_wake_resolver != null)
+        {
+            let resolver = connect_loop_wake_resolver;
+            connect_loop_wake_resolver = null;
+            resolver();
+        }
+        return;
+    }
 
     // the window comes back, so the user sees where the connection went; the reset that follows the close leaves it open
     if (connection__is_connect_window_mode() == true)

@@ -1954,7 +1954,6 @@ p.single-channel-unread-number.unread-empty {
     display: none !important;
 }
 
-#msgr-orientation-button,
 #msgr-neighbors-button,
 #msgr-me-button {
     display: none !important;
@@ -2587,10 +2586,20 @@ body:not(.msgr-vertical) #member-list-body .member-list-client .member-list-clie
     font-size: 0;
 }
 
-input#local-settings-button,
-#msgr-orientation-button
+input#local-settings-button
 {
     right: 42px;
+}
+
+#msgr-orientation-button
+{
+    right: 150px;
+}
+
+#msgr-orientation-button[aria-pressed="true"]
+{
+    background-color: #35407a;
+    border-color: #a9b5ff;
 }
 
 #msgr-session-button,
@@ -2607,5 +2616,5 @@ input#local-settings-button,
 
 #msgr-scale-slider
 {
-    right: 150px;
+    right: 186px;
 }

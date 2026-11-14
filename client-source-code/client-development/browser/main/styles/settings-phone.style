@@ -15,6 +15,7 @@
    window in the middle of the page; "!important" keeps the window at the edges. */
 :root body div#local-settings-container
 {
+    --local-settings-content-width: 680px;
     position: fixed;
     top: 0 !important;
     right: 0;
@@ -39,15 +40,23 @@
     transform: none;
 }
 
+:root body:has(#local-settings-container:not([style*="display: none"])) :is(#show-hide-log-button, #textarea-log)
+{
+    visibility: hidden;
+    transition: none;
+}
+
 /* the part under the head row: the list of sections, then the settings, which scroll */
 :root body div#local-settings-container #local-settings-body
 {
     display: flex;
     flex: 1 1 auto;
     flex-direction: column;
+    width: 100%;
+    max-width: var(--local-settings-content-width);
     height: auto;
     min-height: 0;
-    margin: 0;
+    margin: 0 auto;
     overflow: hidden;
 }
 
@@ -81,9 +90,14 @@
 /* the head row */
 :root body div#local-settings-container div#menu-bar-container
 {
+    box-sizing: border-box;
     display: flex;
+    flex: 0 0 auto;
     align-items: center;
+    width: 100%;
+    max-width: var(--local-settings-content-width);
     min-height: 56px;
+    margin: 0 auto;
     padding: 0 58px 0 16px;
     border-bottom: 0;
     background: var(--settings-phone-bar, #1b1d21);
@@ -144,6 +158,7 @@
 :root body div#local-settings-container #local-settings-section-select
 {
     display: block;
+    flex: 0 0 auto;
     width: calc(100% - 24px);
     min-height: 48px;
     margin: 12px 12px 0;
@@ -322,11 +337,15 @@
 
 :root body div#local-settings-container #local-settings-close-button
 {
+    position: static;
+    flex: 0 0 auto;
     align-self: center;
-    width: calc(100% - 24px);
-    max-width: 656px;
-    min-height: 50px;
-    margin: 10px 12px max(12px, env(safe-area-inset-bottom));
+    width: auto;
+    min-width: 112px;
+    max-width: calc(100% - 24px);
+    min-height: 44px;
+    margin: 12px auto max(12px, env(safe-area-inset-bottom));
+    padding: 0 24px;
     border: 0;
     border-radius: 14px;
     background: var(--settings-phone-accent, var(--set-accent));

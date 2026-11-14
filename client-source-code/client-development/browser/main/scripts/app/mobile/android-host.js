@@ -125,6 +125,8 @@ g_auto_scroll_chat_to_end = (utils__storage_get("lemon_auto_scroll") !== "0");
 
 g_hide_microphone_button = (utils__storage_get("lemon_hide_mic") === "1");
 
+g_hide_mobile_microphone_button = (utils__storage_get("lemon_hide_mobile_mic") === "1");
+
 g_selected_microphone_device_id = utils__storage_get("lemon_mic_device_id", "");
 
 g_is_continuous_mic_mode = (utils__storage_get("lemon_continuous_mic") === "1");

@@ -143,11 +143,48 @@
     margin: 0 14px 14px;
 }
 
+/* The panel must use the same palette as its table and title, including themes that include Default. */
+#musicbot-management-background-container > #musicbot-management-dialog
+{
+    color: var(--set-text, #e8e8e8);
+    background: var(--set-panel, #36393f);
+    border: 1px solid var(--set-line, rgba(255, 255, 255, 0.12));
+}
+
 #musicbot-playback-controls
 {
     display: flex;
+    flex-wrap: wrap;
+    align-items: center;
     gap: 8px;
-    margin: 8px;
+    margin: 12px 14px 0;
+}
+
+#musicbot-playback-controls:empty
+{
+    display: none;
+}
+
+#musicbot-playback-controls > .musicbot-playback-button
+{
+    position: static;
+    box-sizing: border-box;
+    width: auto;
+    min-width: 88px;
+    min-height: 44px;
+    height: auto;
+    margin: 0;
+    padding: 10px 16px;
+    font-family: var(--set-font, sans-serif);
+    font-size: 14px;
+    line-height: 20px;
+    cursor: pointer;
+}
+
+#musicbot-playback-controls > .musicbot-playback-button:focus-visible
+{
+    outline: 2px solid var(--set-accent, #7b68ee);
+    outline-offset: 3px;
 }
 
 :is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog)

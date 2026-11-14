@@ -184,6 +184,11 @@ body {
     width: 100px;
 }
 
+/* the same width for layout.style, which gives it to the name of another client in a row that shows a song name */
+#channel-list-container, #idle-clients-container {
+    --tree-own-name-width: 100px;
+}
+
 #body-container {
     background: var(--tmx-main);
 }
@@ -1428,9 +1433,15 @@ a-toast { animation: tmx-pop 0.16s ease-out; }
     display: none !important;
 }
 .member-list-client .connected-client-p-received-messages-number,
-.member-list-client .marquee-music-playing-container,
 .member-list-client .connected-client-country-flag {
     display: none;
+}
+/* The song name of a client that streams music is not shown in the member list. A row of the member list
+   is a copy of a row of the channel tree, and the copy has the "display: inline-block" that the script
+   writes into the style attribute to show the song name, so this rule needs !important. Without it the
+   song name was shown and ended 55px past the end of the row. */
+.member-list-client .marquee-music-playing-container {
+    display: none !important;
 }
 
 .member-list-client .client-audio-state {
@@ -2602,6 +2613,13 @@ input[type="radio"] {
     margin: 0;
     font: 14px/1.5 var(--set-font);
     resize: none;
+}
+
+/* The format slider sits above this field; the pending picture starts inside the text area below it. */
+:root #space-devider4 #image-upload-preview
+{
+    top: 24px;
+    left: 24px;
 }
 
 #space-devider4 .chat-controls-container

@@ -1443,8 +1443,9 @@ function chat_files__attach_chat_picture(file)
         // one attachment per message, so a pending file gives way to the picture
         chat_files__clear_pending_chat_file();
 
-        // the thumbnail overlays the text box, so the typed text is cleared out of its way
+        // A picture is a separate message; the preview reserves its own space inside the input.
         document.getElementById("chat-input-container-text-input").value = "";
+        document.getElementById("chat-input-file-input-container").style.removeProperty("--pending-image-ratio");
         document.getElementById("image-upload-preview").style.aspectRatio = "";
         document.getElementById("image-upload-preview").style.display = "inline-block";
         document.getElementById("image-upload-preview").style.backgroundImage = "url(" + event.target.result + ")";
@@ -1457,6 +1458,7 @@ function chat_files__attach_chat_picture(file)
             if (preview_image.naturalWidth > 0 && preview_image.naturalHeight > 0 && g_base64_picture_string_to_send === preview_image.src)
             {
                 document.getElementById("image-upload-preview").style.aspectRatio = preview_image.naturalWidth + " / " + preview_image.naturalHeight;
+                document.getElementById("chat-input-file-input-container").style.setProperty("--pending-image-ratio", String(preview_image.naturalWidth / preview_image.naturalHeight));
             }
         };
         preview_image.src = event.target.result;

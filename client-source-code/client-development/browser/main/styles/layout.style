@@ -1456,12 +1456,115 @@ body[data-layout-edit="1"] #communication-system-container > .layout-dragging
     white-space: nowrap;
 }
 
-:is(#channel-list-container, #idle-clients-container) .connected-client .marquee-music-playing-container
+/* The song name in the row of a client that streams music (a music bot, or a person who streams a song
+   file). The code calls it a marquee: text that moves across a box. Its parts are a note picture with "[",
+   the box with the moving song name, and "]".
+   The script shows the container by writing "display: inline-block" into its style attribute and hides it
+   with "display: none". The first rule therefore selects the shown state by that attribute value, and its
+   display needs !important to replace the value of the attribute.
+   The three parts are the columns of a grid in a container that is 137px wide: the two brackets keep
+   their width and the box of the song name takes the rest (100px next to the note picture; 119px in Termix
+   and Mobile 2, which have no note picture). When the row has less room, the container gets narrower
+   before the name of the client does, down to 0. Its flex-shrink is 1000000 against 1 of the name: with
+   100 the name still lost up to 0.9px, and a name box that is a fraction of a pixel narrower than its
+   text ends in three dots ("radio21981..."). The container is a size
+   container (container-type: inline-size), so the two @container rules further down can read its width:
+   at 60px or less the box would be narrower than 24px and only the note picture is shown, at 18px or less
+   nothing is shown. Measured with a music bot that streamed a song and had the name every new bot gets,
+   "radio2198124" (100px wide in Default): when the container could not get narrower than its brackets, a
+   row of 175px to 230px showed 44px to 93px of that name next to an empty "[ ]".
+   All parts have a height and a line height of 16px, so their letters are in the middle of the same 16px,
+   and the row puts these 16px in its own middle, where the name of the client is.
+   Before, the themes placed the parts at the top of a line that was higher than the parts: the brackets
+   were up to 3.6px above the middle of the name, in Termix, Mobile 2 and Aero the song name was up to 4px
+   lower than the brackets and its lower 3px were not shown, and in a narrow row the display ended in the
+   middle of the song name while the name of the client was shortened too.
+   Not in Bluebell, which does not show the song name, and not while audio is turned off on the server. */
+:root:not(:has(#style-theme-bluebell:not([media]))) body:not(.server-audio-disabled) :is(#channel-list-container, #idle-clients-container) .connected-client .marquee-music-playing-container[style*="inline-block"]
 {
-    flex: 0 1 auto;
-    max-width: 100%;
+    display: grid !important;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    column-gap: 4px;
+    align-items: center;
+    container: music-song-name / inline-size;
+    flex: 0 1000000 137px;
     min-width: 0;
-    overflow: hidden;
+    max-width: 100%;
+    /* the themes moved the container up by 1px with "bottom: 1px" */
+    inset: auto;
+    margin-left: 6px;
+    line-height: 16px;
+}
+
+:root :is(#channel-list-container, #idle-clients-container) .connected-client .marquee-music-playing-container > p,
+:root :is(#channel-list-container, #idle-clients-container) .connected-client .marquee-music-playing-container > .marquee,
+:root :is(#channel-list-container, #idle-clients-container) .connected-client .marquee-music-playing-container > .marquee > div
+{
+    height: 16px;
+    margin-top: 0;
+    margin-bottom: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    line-height: 16px;
+    vertical-align: top;
+}
+
+/* the box of the song name takes the width of its grid column */
+:root :is(#channel-list-container, #idle-clients-container) .connected-client .marquee-music-playing-container > .marquee
+{
+    width: auto;
+    min-width: 0;
+}
+
+/* the note picture is 15px high: in the middle of the 16px */
+:root :is(#channel-list-container, #idle-clients-container) .connected-client .marquee-music-playing-container > .p-marquee-song-icon
+{
+    background-position: 0 50%;
+}
+
+/* a container of 60px or less: only the note picture. The part with the note picture also holds the
+   letter "[", which gets a font size of 0 here. */
+@container music-song-name (max-width: 60px)
+{
+    :root :is(#channel-list-container, #idle-clients-container) .connected-client .marquee-music-playing-container > .marquee,
+    :root :is(#channel-list-container, #idle-clients-container) .connected-client .marquee-music-playing-container > p:not(.p-marquee-song-icon)
+    {
+        display: none;
+    }
+
+    :root :is(#channel-list-container, #idle-clients-container) .connected-client .marquee-music-playing-container > .p-marquee-song-icon
+    {
+        font-size: 0;
+    }
+}
+
+/* a container of 18px or less is narrower than the note picture: nothing is shown */
+@container music-song-name (max-width: 18px)
+{
+    :root :is(#channel-list-container, #idle-clients-container) .connected-client .marquee-music-playing-container > .p-marquee-song-icon
+    {
+        display: none;
+    }
+}
+
+/* In a row that shows a song name, the name of the client is at least as wide as the text field that holds
+   the own name: 80px, or the value a theme sets in --tree-own-name-width when its field has another width.
+   The song name then starts at the same place in the own row and in the rows of other clients. Before, it
+   started 6px after the last letter of another client's name and 6px after the end of the field in the own
+   row, which was 38px further right for a name of five letters.
+   The smallest width is at most 30% of the row, and the field of the own name takes the same width, so a
+   narrow row keeps room for the song name and the two kinds of row stay equal. A name that is longer than
+   this width keeps its full width in the row of another client.
+   Not in Pocket, where the own name is as wide as its letters, and not in Bluebell. */
+:root:not(:has(:is(#style-theme-bluebell, #style-theme-pocket):not([media]))) body:not(.server-audio-disabled) :is(#channel-list-container, #idle-clients-container) .connected-client:has(> .marquee-music-playing-container[style*="inline-block"]) > .connected-client-p
+{
+    min-width: min(var(--tree-own-name-width, 80px), 30%);
+}
+
+:root:not(:has(:is(#style-theme-bluebell, #style-theme-pocket):not([media]))) body:not(.server-audio-disabled) :is(#channel-list-container, #idle-clients-container) .connected-client:has(> .marquee-music-playing-container[style*="inline-block"]) > #connected-local-client-input
+{
+    width: min(var(--tree-own-name-width, 80px), 30%);
+    min-width: min(var(--tree-own-name-width, 80px), 30%);
 }
 
 /* Group icons of a client: the channel group icon, then the server group icons, ending at the flag; an icon that does not fit is not shown. */
@@ -2500,9 +2603,19 @@ div#local-settings-container.closing {
     outline-offset: -2px;
 }
 
+/* An unavailable send must remain visibly different even when a theme gives it an accent fill. */
+:root #chat-input-container-send-chat-input:disabled
+{
+    opacity: 0.45;
+    cursor: not-allowed;
+    filter: grayscale(1);
+}
+
 /* the text box container anchors the pending previews, because they are placed absolutely inside it */
-#chat-input-file-input-container {
+#chat-input-file-input-container
+{
     position: relative;
+    --pending-image-width: clamp(40px, calc(48px * var(--pending-image-ratio, 1.5)), 144px);
 }
 
 /* the pending-file chip overlays the text box's top-left corner; absolute, because in flow it
@@ -2566,21 +2679,20 @@ div#local-settings-container.closing {
     background: var(--set-row-hover, rgba(255, 255, 255, 0.08));
 }
 
-/* the pending-picture thumbnail takes the same spot as the file chip, because only one
-   attachment can be pending at a time. the width follows the picture's own aspect ratio
-   (js stamps the real one inline), because a fixed box cover-cropped most images to a sliver;
-   the clamps stop panoramas and tall screenshots from degenerating */
-#image-upload-preview {
+/* The pending picture has its own space inside the input. Desktop fields reserve text space beside
+   it; the phone layout adds a preview row above the text. Extreme aspect ratios stay fully visible. */
+:root #image-upload-preview
+{
     display: none;
     position: absolute;
     left: 10px;
     top: 8px;
     z-index: 5;
-    width: auto;
+    width: var(--pending-image-width);
     aspect-ratio: 3 / 2;
     min-width: 40px;
-    max-width: 200px;
-    height: 56px;
+    max-width: calc(100% - 24px);
+    height: min(48px, calc(100% - 16px));
     margin: 0;
     box-sizing: border-box;
     border-radius: 8px;
@@ -2589,28 +2701,49 @@ div#local-settings-container.closing {
     background-color: var(--set-panel, rgba(16, 20, 38, 0.92));
     background-repeat: no-repeat;
     background-position: center;
-    background-size: cover;
+    background-size: contain;
+}
+
+:root #chat-input-file-input-container:has(#image-upload-preview:not([style*="display: none"])) #chat-input-container-text-input
+{
+    padding-left: calc(var(--pending-image-width) + 24px);
+}
+
+:root #chat-input-file-input-container:has(#image-upload-preview:not([style*="display: none"])) #chat-input-container-text-input::placeholder
+{
+    opacity: 0;
 }
 
 /* the picture's cancel cross sits on the thumbnail's corner; the dark circle keeps it readable
    on any image */
-#image-upload-preview-remove {
+:root #image-upload-preview-remove
+{
     position: absolute;
     top: 3px;
     right: 3px;
-    width: 16px;
-    height: 16px;
-    line-height: 16px;
+    width: 24px;
+    height: 24px;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    line-height: 24px;
     text-align: center;
-    font-size: 10px;
+    font-size: 14px;
     border-radius: 50%;
     background: rgba(0, 0, 0, 0.55);
     color: #ffffff;
     user-select: none;
+    cursor: pointer;
 }
 
 #image-upload-preview-remove:hover {
     background: rgba(0, 0, 0, 0.8);
+}
+
+:root #image-upload-preview-remove:focus-visible
+{
+    outline: 2px solid white;
+    outline-offset: 2px;
 }
 
 .chat-file-card {
@@ -3609,9 +3742,16 @@ body.chat-use-theme-formatting #chat-context-container .single-chat-message-cont
     font-size: var(--chat-theme-font-size) !important;
     line-height: var(--chat-theme-line-height) !important;
     color: var(--chat-theme-text-color) !important;
+    text-shadow: none !important;
+}
+
+/* The background is removed from the pieces of text inside a message only. The paragraph itself keeps its
+   background: Mono, Simple and Pocket draw the message bubble on it, and with a transparent paragraph the
+   messages of those themes had no bubble. */
+body.chat-use-theme-formatting #chat-context-container .single-chat-message-content-p :is(span, font, b, strong, i, em, u, s, strike, small, big, sub, sup, a, code, pre)
+{
     background-color: transparent !important;
     background-image: none !important;
-    text-shadow: none !important;
 }
 
 /* Themes provide their own menu icons and can hide them or adjust their position. */
@@ -4488,4 +4628,11 @@ body.public-key-info-hidden .server-message-public-key
 {
     opacity: 0.3;
     cursor: default;
+}
+
+/* Keep the Mobile-only preference effective when audio updates restore inline display. */
+body.hide-mobile-microphone-button #toggle-microphone-label,
+body.hide-mobile-microphone-button #microphone-push-to-talk-button-touch-device
+{
+    display: none !important;
 }

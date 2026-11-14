@@ -479,12 +479,16 @@ function voice__create_new_peer_connection_object_for_use(is_this_reconnect = fa
 }
 
 /**
- * @brief shows or hides the floating push-to-talk button: touch devices only, never without a connection, and not when hidden in the local settings
+ * @brief applies the Mobile-only visibility preference and shows the floating touch control only while connected and allowed by local settings
  *
  * @return void
  */
 function voice__update_microphone_button()
 {
+    let hide_in_mobile_theme = connection__current_theme_name() === "default-mobile"
+        && g_hide_mobile_microphone_button;
+    document.body.classList.toggle("hide-mobile-microphone-button", hide_in_mobile_theme);
+
     let button = document.getElementById("microphone-push-to-talk-button-touch-device");
 
     if (button == null)
@@ -492,7 +496,7 @@ function voice__update_microphone_button()
         return;
     }
 
-    if (g_is_client_running_under_touch_device == false || g_hide_microphone_button == true)
+    if (g_is_client_running_under_touch_device == false || g_hide_microphone_button == true || hide_in_mobile_theme)
     {
         button.style.display = "none";
         return;

@@ -2,7 +2,6 @@
 :root
 {
     color-scheme: light;
-    --member-conversations-tabs: 1;
     --set-font: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
     --mono-bg: #ffffff;
     --mono-surface: #f1f3f4;
@@ -68,7 +67,8 @@
     pointer-events: none;
 }
 
-:root #communication-system-head-menu
+:root #communication-system-head-menu,
+:root #communication-system-container > #communication-system-head-menu
 {
     border-bottom: 0;
     background: transparent;
@@ -115,9 +115,15 @@
     text-shadow: 0 1px 2px #00000080;
 }
 
-:root .chat-context-selector[data-chat-context-selector-type="channel"] .p-container::before
+/* the line under the name of a conversation is light on the dark top bar; the letters of the round picture have no shadow */
+:root:has(body[data-conversation-tab]) .chat-context-selector[style*="background-color"]::after
 {
     color: #c9cfd5;
+}
+
+:root:has(body[data-conversation-tab]) .chat-context-selector[style*="background-color"]::before
+{
+    text-shadow: none;
 }
 
 :root #communication-system-head-menu > #hide-chat-button
@@ -419,7 +425,6 @@
 
 :root #local-settings-container #local-settings-close-button
 {
-    margin: 10px 14px 12px;
     border: 2px solid transparent;
     border-radius: 14px;
     background: var(--pocket-lacquer) padding-box, var(--pocket-chrome-ring) border-box;

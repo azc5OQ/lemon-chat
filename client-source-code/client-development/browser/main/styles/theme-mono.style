@@ -96,6 +96,12 @@
     outline-offset: 3px;
 }
 
+/* Opening a chat focuses its history without raising the phone keyboard. The history is not a control. */
+:root .chat-context[tabindex="-1"]:focus
+{
+    outline: none;
+}
+
 :root #body-container
 {
     height: 100%;
@@ -334,6 +340,7 @@
     width: 100% !important;
     height: auto !important;
     min-height: 0;
+    min-width: 0;
     padding: 0;
     background: var(--mono-bg);
     border: 0;
@@ -930,13 +937,6 @@
     background: var(--mono-surface);
 }
 
-:root #choose-theme-button-list .choose-theme-item[data-name^="mono-"]
-{
-    border: 1px solid var(--mono-line);
-    margin: 4px 0;
-    font-weight: 650;
-}
-
 :root .channel-list-context-menu
 {
     max-width: calc(100vw - 16px);
@@ -973,6 +973,9 @@
 /* Local settings use full-width rows and an ordinary scrolling list of sections. */
 :root #local-settings-container
 {
+    --local-settings-content-width: 760px;
+    display: flex;
+    flex-direction: column;
     position: fixed;
     inset: 0 !important;
     width: 100%;
@@ -994,9 +997,14 @@
 
 :root #local-settings-container > #menu-bar-container
 {
+    box-sizing: border-box;
+    flex: 0 0 auto;
+    width: 100%;
+    max-width: var(--local-settings-content-width);
     height: 56px;
     min-height: 56px;
-    padding: 14px 20px;
+    margin: 0 auto;
+    padding: 14px 64px 14px 20px;
     background: var(--mono-bg);
     border-bottom: 1px solid var(--mono-line);
     color: var(--mono-text);
@@ -1033,6 +1041,8 @@
 
 :root #local-settings-container .close-button.close-button
 {
+    box-sizing: border-box;
+    margin: 0;
     right: 8px;
     top: 6px;
     width: 44px;
@@ -1043,10 +1053,14 @@
 :root #local-settings-container #local-settings-body
 {
     display: flex;
+    flex: 1 1 auto;
     flex-direction: column;
-    height: calc(100% - 116px);
+    width: 100%;
+    max-width: var(--local-settings-content-width);
+    height: auto;
     min-height: 0;
-    margin: 0;
+    margin: 0 auto;
+    overflow: hidden;
 }
 
 :root #local-settings-tabs
@@ -1074,9 +1088,12 @@
 
 :root #local-settings-container #local-settings-section-select
 {
+    box-sizing: border-box;
     display: block;
+    flex: 0 0 auto;
+    width: calc(100% - 40px);
     min-height: 48px;
-    margin: 12px 12px 4px;
+    margin: 12px 20px 4px;
 }
 
 /* the heading of a section repeats the chosen entry of the list */
@@ -1343,7 +1360,8 @@
 
 :root #current-channel-description
 {
-    display: none;
+    /* Tree selection writes display:block inline; this pane has no place in the chat list. */
+    display: none !important;
 }
 
 :root #chat-input-file-input-container:focus-within
@@ -1507,20 +1525,6 @@
     background: transparent;
 }
 
-:root #choose-theme-button-list .choose-theme-item[data-name="mono-light"]
-{
-    background: #fff;
-    color: #19191c;
-    border-color: #aaa;
-}
-
-:root #choose-theme-button-list .choose-theme-item[data-name="mono-dark"]
-{
-    background: #09090b;
-    color: #f2f2f3;
-    border-color: #555;
-}
-
 :root .single-chat-message-content-p,
 :root .local-single-chat-message-content-p
 {
@@ -1597,15 +1601,19 @@
 :root #local-settings-container #local-settings-close-button
 {
     position: static;
-    width: calc(100% - 40px);
+    flex: 0 0 auto;
+    align-self: center;
+    width: auto;
+    min-width: 112px;
+    max-width: calc(100% - 40px);
     height: 44px;
-    margin: 8px 20px;
-    padding: 0 16px;
+    margin: 12px auto 16px;
+    padding: 0 24px;
     border: 0;
     border-radius: 12px;
     background: var(--mono-text);
     color: var(--mono-inverse);
-    font: 600 14px/44px var(--set-font);
+    font: 600 14px/normal var(--set-font);
 }
 
 :root .chat-context-selector :is(p, .p-container)
@@ -1646,6 +1654,13 @@
 :root body:has(#local-settings-container:not([style*="display: none"])) #communication-system-head-menu
 {
     z-index: 150;
+}
+
+/* The floating chat log belongs to the screen behind settings. */
+:root body:has(#local-settings-container:not([style*="display: none"])) :is(#show-hide-log-button, #textarea-log)
+{
+    visibility: hidden;
+    transition: none;
 }
 
 /* The local setting "only my channel": the member list shows only the people in the user's channel. */

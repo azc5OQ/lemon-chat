@@ -178,13 +178,15 @@ function utils__append_log_entries(entries)
  * @brief shows the a-toast element with plain text, including untrusted names and error messages
  *
  * @param string message -> the text to show
+ * @param string owner -> optional notice owner; a later ordinary alert replaces this ownership
  *
  * @return void
  */
-function utils__custom_alert(message = "")
+function utils__custom_alert(message = "", owner = "")
 {
     const el = document.querySelector("a-toast");
 
+    el.dataset.alertOwner = owner;
     el.style.visibility = 'visible';
     el.textContent = message;
 }
@@ -193,13 +195,19 @@ function utils__custom_alert(message = "")
  * @brief hides the a-toast element and replaces its text
  *
  * @param string message -> the text left in the hidden toast
+ * @param string|null owner -> when provided, hide only a notice belonging to this owner
  *
  * @return void
  */
-function utils__hide_custom_alert(message = "")
+function utils__hide_custom_alert(message = "", owner = null)
 {
     const el = document.querySelector("a-toast");
 
+    if (owner !== null && el.dataset.alertOwner !== owner)
+    {
+        return;
+    }
+    delete el.dataset.alertOwner;
     el.style.visibility = 'hidden';
     el.textContent = message;
 }

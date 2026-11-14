@@ -46,3 +46,258 @@ body.member-conversations-active #member-list-body > .member-conversation-filter
     color: var(--set-muted, #777);
     font: 12px/1.5 var(--set-font, sans-serif);
 }
+
+/* Music bots are visible participants, not buttons for starting a private conversation. */
+body.member-conversations-active #member-list-body :is(.music-bot-client, .music-bot-client .connected-client-p-music-bot, .music-bot-client .client-audio-state)
+{
+    cursor: default;
+}
+
+body.member-conversations-active #member-list-body .music-bot-client:hover
+{
+    background: transparent;
+}
+
+/* Channel participants remain separate from the latest message. A small avatar stack lets the user
+   recognize the people present without turning the whole header into another set of controls. */
+body:not(.member-conversations-active) .member-conversation-participants
+{
+    display: none !important;
+}
+
+body.member-conversations-active .member-conversation-participants
+{
+    --participant-avatar-size: 24px;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+    max-width: 100%;
+    margin: 2px 0;
+    color: var(--mono-muted, var(--set-muted));
+    font: 400 12px/20px var(--set-font, sans-serif);
+}
+
+.member-conversation-avatars
+{
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+}
+
+.member-conversation-avatars:empty
+{
+    display: none;
+}
+
+.member-conversation-avatar,
+.member-conversation-avatar-more
+{
+    display: grid;
+    flex: 0 0 auto;
+    place-items: center;
+    box-sizing: border-box;
+    width: var(--participant-avatar-size);
+    height: var(--participant-avatar-size);
+    border: 1px solid var(--mono-bg, var(--set-panel));
+    border-radius: 50%;
+    background: var(--mono-surface, var(--set-field)) center / cover no-repeat;
+    color: var(--mono-text, var(--set-text));
+    font: 600 9px/1 var(--set-font, sans-serif);
+}
+
+.member-conversation-avatars > :not(:first-child)
+{
+    margin-left: -4px;
+}
+
+.member-conversation-participant-names
+{
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+/* The selected channel tab is the phone header. Its real subtitle replaces the text-only pseudo. */
+:root:has(body.member-conversations-active) .chat-context-selector[style*="background-color"]:has(> .member-conversation-participants)
+{
+    grid-template-rows: 22px 22px;
+}
+
+:root:has(body.member-conversations-active) .chat-context-selector[style*="background-color"] > .member-conversation-participants
+{
+    --participant-avatar-size: 20px;
+    grid-column: 2;
+    grid-row: 2;
+    margin: 0;
+}
+
+:root:has(body.member-conversations-active) .chat-context-selector[style*="background-color"]:has(> .member-conversation-participants)::after
+{
+    content: none;
+}
+
+/* A channel with no messages already says who is there in its participant line. */
+#member-list-body .member-list-channel:has(> .member-conversation-participants) > .member-conversation-preview-empty
+{
+    display: none;
+}
+
+.channel-participants-trigger
+{
+    cursor: pointer;
+    touch-action: manipulation;
+}
+
+/* The transparent toolbar sits above the conversation title. Let its empty area pass clicks through,
+   while keeping its buttons, menus and the Local settings panel interactive. */
+:root:not(:has(#hide-chat-button.chat-hidden)):has(.channel-participants-trigger) #communication-system-head-menu
+{
+    pointer-events: none;
+}
+
+:root:not(:has(#hide-chat-button.chat-hidden)):has(.channel-participants-trigger) #communication-system-head-menu > input,
+:root:not(:has(#hide-chat-button.chat-hidden)):has(.channel-participants-trigger) #communication-system-head-menu > #local-settings-container,
+:root:not(:has(#hide-chat-button.chat-hidden)):has(.channel-participants-trigger) #head-menu-left-group .head-menu-dropdown
+{
+    pointer-events: auto;
+}
+
+.channel-participants-trigger:focus-visible
+{
+    outline: 2px solid var(--mono-text, var(--set-accent));
+    outline-offset: -2px;
+    border-radius: 8px;
+}
+
+#channel-participants-dialog
+{
+    box-sizing: border-box;
+    width: min(420px, calc(100% - 32px));
+    max-height: calc(100% - 32px);
+    margin: auto;
+    padding: 20px;
+    border: 1px solid var(--mono-line, var(--set-line));
+    border-radius: 20px;
+    background: var(--mono-bg, var(--set-panel));
+    color: var(--mono-text, var(--set-text));
+    font: 14px/1.5 var(--set-font, sans-serif);
+    box-shadow: 0 16px 64px #00000030;
+    overflow: hidden;
+}
+
+#channel-participants-dialog[open]
+{
+    display: flex;
+    flex-direction: column;
+}
+
+#channel-participants-dialog::backdrop
+{
+    background: #00000066;
+}
+
+.channel-participants-heading
+{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+#channel-participants-title
+{
+    min-width: 0;
+    margin: 0;
+    font: 600 20px/1.3 var(--set-font, sans-serif);
+    overflow-wrap: anywhere;
+}
+
+#channel-participants-close
+{
+    flex: 0 0 44px;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: var(--mono-surface, var(--set-field));
+    color: var(--mono-text, var(--set-text));
+    font: 400 26px/1 var(--set-font, sans-serif);
+    cursor: pointer;
+}
+
+#channel-participants-count,
+#channel-participants-empty
+{
+    margin: 0 0 14px;
+    color: var(--mono-muted, var(--set-muted));
+}
+
+#channel-participants-search
+{
+    box-sizing: border-box;
+    flex: 0 0 auto;
+    width: 100%;
+    min-height: 44px;
+    margin: 0 0 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--mono-line, var(--set-line));
+    border-radius: 12px;
+    background: var(--mono-surface, var(--set-field));
+    color: var(--mono-text, var(--set-text));
+    font: 16px/22px var(--set-font, sans-serif);
+}
+
+#channel-participants-list
+{
+    min-height: 0;
+    max-height: 50vh;
+    margin: 0;
+    padding: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    list-style: none;
+}
+
+#channel-participants-list .channel-participant-row
+{
+    --participant-avatar-size: 40px;
+    display: grid;
+    grid-template-columns: 40px minmax(0, 1fr);
+    column-gap: 12px;
+    align-items: center;
+    padding: 8px 2px;
+}
+
+.channel-participant-row > .member-conversation-avatar
+{
+    grid-row: 1 / span 2;
+    font-size: 13px;
+}
+
+.channel-participant-name
+{
+    font-weight: 600;
+    font-size: 15px;
+    overflow-wrap: anywhere;
+}
+
+.channel-participant-description
+{
+    grid-column: 2;
+    color: var(--mono-muted, var(--set-muted));
+    font-size: 12px;
+}
+
+#channel-participants-dialog [hidden]
+{
+    display: none !important;
+}
+
+#channel-participants-dialog :is(button, input, ul):focus-visible
+{
+    outline: 2px solid var(--mono-text, var(--set-accent));
+    outline-offset: 2px;
+}

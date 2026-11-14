@@ -935,10 +935,12 @@ function moderation__music_controls(message)
     {
         for (let [action, label] of [[message.is_paused ? "play" : "pause", message.is_paused ? "Play" : "Pause"], ["next", "Next track"]])
         {
-            controls.append(moderation__button(label, function()
+            let button = moderation__button(label, function()
             {
                 moderation__send("musicbot_playback", { bot_id: Number(message.bot_id), action: action });
-            }));
+            });
+            button.className = "button-1 musicbot-playback-button";
+            controls.append(button);
         }
     }
     document.getElementById("musicbot-management-upload-container").hidden = !groups__has_permission("upload_music_tracks");

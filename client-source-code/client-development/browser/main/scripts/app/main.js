@@ -53,11 +53,33 @@ function main__document_onmousedown(event)
 }
 
 /**
- * @brief the push-to-talk key (Q unless changed in local settings): held down = speaking
- *        in continuous mode the mic is toggled by the button instead, so the key does nothing
+ * @brief Recognizes fields where typing must respect the user's push-to-talk typing preference.
  *
+ * @param object element -> the focused DOM element
+ *
+ * @return boolean
+ */
+function main__is_editable_field(element)
+{
+    if (element == null)
+    {
+        return false;
+    }
+    if (element.isContentEditable)
+    {
+        return true;
+    }
+    if (element.readOnly || element.disabled)
+    {
+        return false;
+    }
+    return element.tagName === "TEXTAREA" || (element.tagName === "INPUT"
+        && ["text", "search", "email", "url", "password", "tel", "number"].includes(element.type));
+}
+
+/**
+ * @brief The push-to-talk key starts speech while held; continuous mode uses the microphone button.
  * @param object event -> the keyboard event
- *
  * @return void
  */
 function main__document_onkeydown(event)
@@ -70,7 +92,7 @@ function main__document_onkeydown(event)
     }
     if (event.which == g_push_to_talk_key_code)
     {
-        if (g_is_push_to_talk_disabled_while_typing == true && focused_element != null && focused_element.id === "chat-input-container-text-input")
+        if (g_is_push_to_talk_disabled_while_typing == true && main__is_editable_field(focused_element))
         {
             return;
         }
@@ -102,7 +124,7 @@ function main__document_onkeyup(event)
 }
 
 /**
- * @brief Stops keyboard-triggered speech when the user focuses the chat box.
+ * @brief Stops keyboard-triggered speech when the user focuses an editable field.
  * @return void
  */
 function main__chat_input_onfocus()
@@ -543,7 +565,7 @@ async function main__window_onload()
                 else if (event.key == "Escape")
                 {
                     UI.delete_contextmenus(true);
-                    let chooser = document.getElementById("pocket-channel-switch");
+                    let chooser = document.querySelector(".member-conversations-channel-switch") || document.getElementById("pocket-channel-switch");
                     if (chooser != null)
                     {
                         chooser.focus();
@@ -573,7 +595,7 @@ async function main__window_onload()
         let channel_circle = target_element.closest(".member-list-channel");
         if (channel_circle != null)
         {
-            if (is_short_click == true)
+            if (is_short_click == true && !target_element.closest(".member-conversations-channel-switch"))
             {
                 // bring the channel chat back on screen - same as tapping its conversation tab
                 member_conversations__open_channel_chat(channel_circle.getAttribute("data-member-list-channel-id"));
@@ -582,12 +604,22 @@ async function main__window_onload()
             else
             {
                 member_list_show_channel_switch_menu(click_x, click_y);
+                let first = document.querySelector(".channel-switch-menu-item");
+                if (first != null)
+                {
+                    first.focus();
+                }
             }
             return true;
         }
 
         let clone = target_element.closest(".member-list-client");
         if (clone == null) { return false; }
+
+        if (is_short_click && clone.classList.contains("music-bot-client"))
+        {
+            return true;
+        }
 
         // offline contacts have no live row to forward to. a HOLD shows what we know about
         // them; a TAP opens their conversation when the server keeps messages for people
@@ -675,7 +707,8 @@ async function main__window_onload()
             {
                 if (row.getAttribute(member_list_press_target.attribute) == member_list_press_target.value)
                 {
-                    return row;
+                    return member_list_press_target.channel_switch
+                        ? row.querySelector(".member-conversations-channel-switch") || row : row;
                 }
             }
             return null;
@@ -726,7 +759,18 @@ async function main__window_onload()
             event.preventDefault();
             event.stopPropagation();
             let rect = row.getBoundingClientRect();
-            member_list_forward(row, rect.left, rect.bottom, event.key == "Enter" || event.key == " ");
+            member_list_forward(event.target, rect.left, rect.bottom, event.key == "Enter" || event.key == " ");
+        });
+
+        member_list_body.addEventListener("click", function(event)
+        {
+            // Assistive technology can activate a button without preceding mouse or key events.
+            if (event.detail === 0 && event.target.closest(".member-conversations-channel-switch, .member-list-channel-name[role='button']"))
+            {
+                let rect = event.target.getBoundingClientRect();
+                member_list_forward(event.target, rect.left, rect.bottom, true);
+                event.stopPropagation();
+            }
         });
 
         member_list_body.addEventListener("touchstart", function(event)
@@ -745,7 +789,12 @@ async function main__window_onload()
             }
             let attribute = row.hasAttribute("data-member-list-channel-id") ? "data-member-list-channel-id"
                 : row.hasAttribute("data-identity-hash") ? "data-identity-hash" : "data-connected-client-id";
-            member_list_press_target = { attribute: attribute, value: row.getAttribute(attribute) };
+            member_list_press_target =
+            {
+                attribute: attribute,
+                value: row.getAttribute(attribute),
+                channel_switch: event.target.closest(".member-conversations-channel-switch") != null
+            };
             member_list_press_generation = g_worker_connection_generation;
             member_list_press_channel = g_current_channel_id;
             member_list_press_element = event.target;
@@ -772,18 +821,24 @@ async function main__window_onload()
         }, { passive: true });
 
         member_list_body.addEventListener("scroll", cancel_member_list_press, { passive: true });
+        document.getElementById("member-list-container").addEventListener("scroll", cancel_member_list_press, { passive: true });
         window.addEventListener("blur", cancel_member_list_press);
         document.addEventListener("visibilitychange", cancel_member_list_press);
 
         member_list_body.addEventListener("mousedown", function(event) {
             // skip after a touch
-            if (g_is_client_running_under_touch_device == true && main__is_mouse_event_of_a_touch() == true) { return; }
+            if (event.which == 1 && g_is_client_running_under_touch_device == true && main__is_mouse_event_of_a_touch() == true)
+            {
+                return;
+            }
 
             // left opens, right = actions / channel list - same split the tree rows use
             if (event.which == 1 || event.which == 3)
             {
                 if (member_list_forward(event.target, event.clientX, event.clientY, event.which == 1) == true)
                 {
+                    // Keep the focus given to the opened menu instead of returning it to the row.
+                    event.preventDefault();
                     event.stopPropagation();
                 }
             }
@@ -932,15 +987,26 @@ async function main__window_onload()
     apply_member_list_scale(restored_circle_px);
 
     document.getElementById("communication-system-head-menu").insertAdjacentHTML("afterbegin",
-        "<input type='button' id='msgr-orientation-button' title='people strip: switch between top row and side rail'>" +
+        "<input type='button' id='msgr-orientation-button' aria-label='Vertical user list' aria-controls='member-list-body'>" +
         "<input type='button' id='msgr-neighbors-button' title='show only people in your channel'>" +
         "<input type='button' id='msgr-me-button' title='you: avatar and account actions'>" +
         "<input type='range' id='msgr-scale-slider' min='38' max='64' step='2' value='" + restored_circle_px + "' title='people size'>");
 
+    function sync_member_list_orientation_controls()
+    {
+        let vertical = document.body.classList.contains("msgr-vertical");
+        let button = document.getElementById("msgr-orientation-button");
+        button.setAttribute("aria-pressed", String(vertical));
+        button.title = vertical ? "Show users in a row across the top" : "Show users vertically on the left";
+        document.getElementById("local-settings-member-list-vertical").checked = vertical;
+    }
+
+    sync_member_list_orientation_controls();
     document.getElementById("msgr-orientation-button").onclick = function()
     {
         let vertical_now = document.body.classList.toggle("msgr-vertical");
         utils__storage_set("lemon_strip_vertical", vertical_now ? "1" : "0");
+        sync_member_list_orientation_controls();
     };
 
     document.getElementById("msgr-neighbors-button").onclick = function()
@@ -1133,7 +1199,13 @@ async function main__window_onload()
     document.getElementById("chat-input-container-text-input").onkeydown = UI.chat_input_on_keydown;
     document.getElementById("chat-input-container-text-input").onbeforeinput = UI.chat_input_on_beforeinput;
     document.getElementById("chat-input-container-text-input").onkeyup = UI.chat_input_on_keyup;
-    document.getElementById("chat-input-container-text-input").onfocus = main__chat_input_onfocus;
+    document.addEventListener("focusin", function(event)
+    {
+        if (main__is_editable_field(event.target))
+        {
+            main__chat_input_onfocus();
+        }
+    });
     document.getElementById("chat-input-container-text-input").onpaste = chat_files__chat_input_onpaste;
     document.getElementById("choose_image_input").onchange = UI.choose_image_input;
     document.getElementById("choose-file-input").onchange = chat_files__choose_chat_file_input_onchange;
@@ -1293,6 +1365,7 @@ async function main__window_onload()
         document.getElementById("local-settings-send-seen").checked = g_send_seen_receipts;
         document.getElementById("local-settings-auto-scroll").checked = g_auto_scroll_chat_to_end;
         document.getElementById("local-settings-hide-mic").checked = g_hide_microphone_button;
+        document.getElementById("local-settings-hide-mobile-mic").checked = g_hide_mobile_microphone_button;
         document.getElementById("local-settings-show-mp3-button").checked = !document.body.classList.contains("hide-mp3-button");
         document.getElementById("local-settings-sound-effects").checked = g_are_sound_effects_enabled;
         document.getElementById("local-settings-country-flags").checked = (g_show_hide_toggle == false);
@@ -1481,6 +1554,7 @@ async function main__window_onload()
     {
         document.body.classList.toggle("msgr-vertical", this.checked);
         utils__storage_set("lemon_strip_vertical", this.checked ? "1" : "0");
+        sync_member_list_orientation_controls();
     };
 
     document.getElementById("local-settings-member-list-neighbors").onchange = function()
@@ -1610,6 +1684,13 @@ async function main__window_onload()
     {
         g_hide_microphone_button = this.checked;
         utils__storage_set("lemon_hide_mic", this.checked ? "1" : "0");
+        voice__update_microphone_button();
+    };
+
+    document.getElementById("local-settings-hide-mobile-mic").onchange = function()
+    {
+        g_hide_mobile_microphone_button = this.checked;
+        utils__storage_set("lemon_hide_mobile_mic", this.checked ? "1" : "0");
         voice__update_microphone_button();
     };
 
@@ -1769,6 +1850,29 @@ async function main__window_onload()
         };
     }
 
+
+    // Identity dialogs grow when the import method, file status or help text changes. Keep the
+    // window inside the viewport while preserving any position chosen by dragging its title bar.
+    let fit_identity_dialogs = function()
+    {
+        for (let dialog of document.querySelectorAll(".identity-dialog"))
+        {
+            if (dialog.offsetWidth === 0 || dialog.style.position !== "fixed")
+            {
+                continue;
+            }
+            let max_left = Math.max(12, window.innerWidth - dialog.offsetWidth - 12);
+            let max_top = Math.max(12, window.innerHeight - dialog.offsetHeight - 12);
+            dialog.style.left = Math.min(Math.max(12, dialog.offsetLeft), max_left) + "px";
+            dialog.style.top = Math.min(Math.max(12, dialog.offsetTop), max_top) + "px";
+        }
+    };
+    let identity_dialog_resize_observer = new ResizeObserver(fit_identity_dialogs);
+    for (let dialog of document.querySelectorAll(".identity-dialog"))
+    {
+        identity_dialog_resize_observer.observe(dialog);
+    }
+    window.addEventListener("resize", fit_identity_dialogs);
 
     // every popup drags by its title bar; the drag keeps it at an inline fixed position, and that position
     // is cleared on every re-open so popups start centered (a position taken while hidden was 0,0 forever)

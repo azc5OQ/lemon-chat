@@ -229,3 +229,8 @@ selfhosting-tools/wireguard/lemon-wg0.conf
 /server-source-code/third-party/stunnel/stunnel-5.75/src/stunnel
 /client-source-code/client-development/desktop/third-party/freetype-2.15.0/docs/oldlogs/
 /client-source-code/client-development/desktop/third-party/freetype-2.15.0/tests/
+
+
+proposals/
+proposal/
+log/

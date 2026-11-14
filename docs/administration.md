@@ -152,15 +152,19 @@ Configured connection keys encrypt the snapshot. With no connection keys configu
 
 Suppose you administer the server from a browser today and want to use another computer tomorrow. Typing the same display name on the second computer does not make it the same user. Groups belong to the cryptographic identity used by the client, not the display name.
 
-In the Default toolbar, open the control whose tooltip starts **identity** and choose **export this identity** in its list. The **Export Identity** dialog offers **export identity file** and displays the identity passphrase. Save the file privately. On the other device, open the same control, choose **import another identity**, load that file or passphrase, and reconnect as the same identity.
+In the Default toolbar, open the control whose tooltip starts **identity** and choose **export this identity** in its list. In **Export Identity**, choose **Save identity file**. The new `.lmn` file saves both your secret passphrase and the RSA key size needed to recreate the same identity. Save it privately.
 
-![Export Identity dialog with the export identity file button highlighted and the identity passphrase hidden for documentation.](images/export-admin-identity.jpg)
+On the other device, open the same control, choose **import another identity**, then **Choose identity file**. Selecting the file only checks it. Choose **Import identity** to restore its passphrase and key size. Switching identities reconnects a connected client; importing the identity already in use keeps the connection.
 
-*Choose **export identity file** on the original device. The real dialog also displays your secret passphrase; it is hidden in this documentation image.*
+![Export Identity dialog with Save identity file and a passphrase field hidden for documentation.](images/export-admin-identity.jpg)
 
-![Import Identity dialog with select identity file and use an identity passphrase instead controls.](images/import-admin-identity.jpg)
+*Choose **Save identity file** on the original device. The real dialog also displays your secret passphrase; it is hidden in this documentation image.*
 
-*On the other device, choose **import another identity** in the list of the identity control, then choose **select identity file**. The link below it opens the passphrase alternative. Review and confirm the import before reconnecting.*
+![Import Identity dialog with Choose identity file and Paste a passphrase instead controls.](images/import-admin-identity.jpg)
+
+*On the other device, choose **Choose identity file**. The **Paste a passphrase instead** button opens the manual alternative. Review the file and confirm the import.*
+
+If you use an older passphrase-only file or paste the passphrase manually, first select the original **Identity key size** under **Local settings → Identity**. New files restore that setting automatically. [Moving or backing up your identity](identity-files.md) explains both routes and compatibility with older clients.
 
 Anyone with the exported file or passphrase can act as that identity. Keep it with your private credentials rather than sending it to ordinary server users. Backing up the server settings alone does not back up your client's secret identity.
 

@@ -1,7 +1,6 @@
-/* Simple: the shared phone layout with a list of all rooms and lemon colours; included after theme-phone.style. */
+/* Simple: the shared phone layout with lemon colours; included after theme-phone.style. */
 :root
 {
-    --member-conversations-rooms: 1;
     --mono-bg: #ffffff;
     --mono-surface: #f5f3ec;
     --mono-text: #1d1c18;
@@ -13,6 +12,7 @@
     --phone-accent-soft: #fff5c7;
     --phone-accent-text: #332a00;
     --phone-microphone-icon: var(--phone-microphone-dark);
+    --phone-send-icon: var(--phone-send-dark);
 }
 
 @media (prefers-color-scheme: dark)
@@ -32,10 +32,16 @@
     }
 }
 
-/* The page of this theme is made for one server, so the button with the connections is not shown. */
+/* The page of this theme is made for one server, so the button with the connections is not shown. The top
+   bar of a conversation keeps room for the two buttons that are left. */
 :root #connections-menu
 {
     display: none !important;
+}
+
+:root
+{
+    --phone-bar-buttons: 88px;
 }
 
 :root #member-conversations-profile

@@ -1,11 +1,14 @@
-/* The phone layout with a bar of four screens (Chat, People, Channels, Me); included after theme-phone.style.
-   A theme asks for the bar with --member-conversations-tabs: 1. member-conversations.js then writes the
+/* The phone layout with a bar of four screens (People, Chat, Channels, Me); included after theme-phone.style.
+   Including this sheet enables the bar with --member-conversations-tabs: 1. member-conversations.js writes the
    shown screen into the attribute data-conversation-tab of the body: chat, people, channels or me.
-   The Channels screen is the full channel tree. The talk button stands in the message row.
+   The Channels screen is the full channel tree. The talk button stays above the composer on Chat, People and Channels.
    A theme gives its colours with the --tabs-... variables; without them Mono's colours are used. */
 :root
 {
+    --member-conversations-tabs: 1;
     --tabs-bar: 64px;
+    /* no <select> of all channels: the Channels screen lists them */
+    --member-conversations-rooms: 0;
 }
 
 /* the bar is always there while connected, so the page ends above it */
@@ -167,7 +170,8 @@
     width: 100% !important;
     height: auto !important;
     /* the rows keep clear of the edge of the page */
-    padding: 20px 16px 24px;
+    padding: 20px 16px max(24px, var(--phone-microphone-list-space));
+    scroll-padding-bottom: var(--phone-microphone-list-space);
     overflow-x: hidden;
     overflow-y: auto;
     border: 0;
@@ -276,6 +280,19 @@
     content: " (you)";
     color: var(--mono-muted);
     font-weight: 400;
+}
+
+/* The song name of a client that streams music: the light green and light blue letters of the Default
+   theme have a contrast of 1.2 to 1 and 1.4 to 1 on the white panel of this theme. The brackets take the
+   colour of secondary text and the song name the colour of normal text. */
+:root #space-devider1 .connected-client .marquee-music-playing-container > p
+{
+    color: var(--mono-muted);
+}
+
+:root #space-devider1 .connected-client .marquee > div
+{
+    color: var(--mono-text);
 }
 
 :root body #space-devider1 .connected-client > .client-audio-state
@@ -486,12 +503,6 @@
     margin-left: 8px;
 }
 
-/* Mono's band at the bottom of the window is not drawn: the bar is there. */
-:root:has(body[data-conversation-tab]) #head-menu-left-group::before
-{
-    content: none;
-}
-
 /* A switched-on microphone is marked on the Chat button while another screen is shown. */
 :root:has(#toggle-microphone:checked, #microphone-push-to-talk-button-touch-device.mic-continuous-active) #member-conversations-tabs > button[data-tab="chat"]:not([aria-pressed="true"])::after
 {
@@ -506,95 +517,12 @@
     background: #e5484d;
 }
 
-/* The talk button stands in the message row, where the Send button is; the Send button takes its
-   place as soon as the message field holds text. It is shown on the Chat screen only. */
-:root:has(body[data-conversation-tab]):has(body:not([data-conversation-tab="chat"])) :is(#toggle-microphone-label, #microphone-push-to-talk-button-touch-device),
-:root:has(body[data-conversation-tab]):has(#chat-input-container-text-input:not(:placeholder-shown)) :is(#toggle-microphone-label, #microphone-push-to-talk-button-touch-device)
+/* Me has fixed settings rows which can occupy the microphone's position on a short screen. Keep its
+   idle control hidden there; an active microphone stays accessible so it can always be stopped. */
+:root:has(body[data-conversation-tab="me"]) #toggle-microphone:not(:checked) ~ #toggle-microphone-label,
+:root:has(body[data-conversation-tab="me"]) #microphone-push-to-talk-button-touch-device:not(.ptt-pressed, .mic-continuous-active)
 {
     display: none !important;
-}
-
-:root:has(body[data-conversation-tab="chat"]):has(#chat-input-container-text-input:placeholder-shown):has(:is(#toggle-microphone-label, #microphone-push-to-talk-button-touch-device)[style*="display: block"]):not(:has(body:is(.server-voice-disabled, .current-channel-audio-disabled))) #chat-input-container-send-chat-input
-{
-    display: none !important;
-}
-
-:root:has(body[data-conversation-tab="chat"]):has(#chat-input-container-text-input:placeholder-shown):has(:is(#toggle-microphone-label, #microphone-push-to-talk-button-touch-device)[style*="display: block"]):not(:has(body:is(.server-voice-disabled, .current-channel-audio-disabled))) #space-devider4
-{
-    padding-right: 68px;
-}
-
-/* A round button. A theme draws it with --tabs-talk-background and --tabs-talk-shadow, and with the two
-   variables ending in -on while the microphone sends. */
-:root:has(body[data-conversation-tab]) #toggle-microphone-label,
-:root:has(body[data-conversation-tab]) #microphone-push-to-talk-button-touch-device
-{
-    inset: auto calc(13px + var(--phone-side)) calc(var(--mono-bottom) + 11px) auto;
-    width: 46px;
-    height: 46px;
-    border: 3px solid transparent;
-    border-radius: 50%;
-    background: var(--tabs-talk-background, var(--phone-microphone-icon) center / 22px no-repeat var(--phone-accent));
-    box-shadow: var(--tabs-talk-shadow, none);
-    font-size: 0;
-    filter: none;
-    transition: box-shadow 0.15s ease, transform 0.15s ease;
-}
-
-:root:has(body[data-conversation-tab]) #microphone-push-to-talk-button-touch-device:is(.ptt-pressed, .mic-continuous-active),
-:root:has(body[data-conversation-tab]) #toggle-microphone:checked ~ #toggle-microphone-label
-{
-    background: var(--tabs-talk-background-on, var(--phone-microphone-icon) center / 22px no-repeat var(--phone-accent));
-    box-shadow: var(--tabs-talk-shadow-on, 0 0 0 4px var(--mono-bg), 0 0 0 6px var(--phone-accent));
-    transform: scale(1.06);
-}
-
-:root:has(body[data-conversation-tab]) #microphone-push-to-talk-button-touch-device.mic-unavailable
-{
-    filter: grayscale(1);
-    opacity: 0.55;
-}
-
-:root:has(body[data-conversation-tab]) #toggle-microphone-label::before
-{
-    content: none;
-}
-
-/* the state in words is shown above the button while the microphone sends */
-:root:has(body[data-conversation-tab]) #toggle-microphone ~ #toggle-microphone-label::after
-{
-    content: none;
-}
-
-:root:has(body[data-conversation-tab]) #toggle-microphone:checked ~ #toggle-microphone-label::after,
-:root:has(body[data-conversation-tab="chat"]):has(#toggle-microphone-label[style*="display: none"]):not(:has(#microphone-push-to-talk-button-touch-device[style*="display: none"])):has(#microphone-push-to-talk-button-touch-device:is(.ptt-pressed, .mic-continuous-active)) body::after
-{
-    content: var(--phone-microphone-text);
-    position: fixed;
-    inset: auto calc(12px + var(--phone-side)) calc(var(--mono-bottom) + 72px) auto;
-    width: auto;
-    height: auto;
-    padding: 4px 13px;
-    border: var(--tabs-talk-words-border, 0);
-    border-radius: 15px;
-    background: var(--tabs-talk-words-background, var(--phone-accent));
-    box-shadow: var(--tabs-talk-words-shadow, none);
-    color: var(--phone-accent-text);
-    font: 600 12px/18px var(--set-font);
-    white-space: nowrap;
-    z-index: 46;
-}
-
-:root:has(body[data-conversation-tab]) #toggle-microphone:checked ~ #toggle-microphone-label::after
-{
-    content: "Microphone is on";
-    position: absolute;
-    inset: auto -4px calc(100% + 14px) auto;
-}
-
-:root:has(body[data-conversation-tab]):has(#toggle-microphone-label[style*="display: none"]):not(:has(#microphone-push-to-talk-button-touch-device[style*="display: none"])) body::after
-{
-    content: none;
 }
 
 /* The number of people in a channel and their pictures are larger here than in the channel tree of a computer theme. */

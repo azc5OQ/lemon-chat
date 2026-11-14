@@ -5,7 +5,8 @@
 // state private to this file
 var custom_key_count = 0; // no key field by default; the "add" button creates key 0, key 1, ... so connecting with zero keys matches a server configured with no extra metadata keys
 
-var pending_identity_file_string = ""; // passphrase read from a picked .lmn file, waiting for its confirm click
+var pending_identity_file = null; // validated file contents, applied only after confirmation
+var identity_file_read_generation = 0; // ignores callbacks from a replaced or dismissed file selection
 
 var is_server_settings_tab_visible = false;
 
@@ -543,12 +544,13 @@ var UI = {
                 document.getElementById(id_to_find).style.display = "block";
             }
 
+            chat_files__cancel_pending_read();
+            g_current_chat_context_id = id_to_find;
+            chat_replies__refresh();
+
             if (g_current_channel_id == channel_id)
             {
                 UI.enable_inputs();
-                chat_files__cancel_pending_read();
-                g_current_chat_context_id = id_to_find;
-                chat_replies__refresh();
                 console.log("changed current_chat_context_id to -> " + id_to_find);
             }
             else
@@ -572,8 +574,10 @@ var UI = {
     enable_inputs: function()
     {
         console.log("function enable inputs()");
+        utils__hide_custom_alert("", "channel-context");
         document.getElementById("chat-input-container-text-input").disabled = false;
         document.getElementById("chat-input-container-send-chat-input").disabled = false;
+        document.getElementById("chat-input-container-send-chat-input").title = "";
         document.getElementById("choose_image_input").disabled = false;
         document.getElementById("choose-file-input").disabled = false;
         document.getElementById("color-picker-selector-div").style.display = "block";
@@ -591,10 +595,12 @@ var UI = {
         console.log("function disable_inputs()");
         document.getElementById("chat-input-container-text-input").disabled = true;
         document.getElementById("chat-input-container-send-chat-input").disabled = true;
+        document.getElementById("chat-input-container-send-chat-input").title = CHANNEL_CONTEXT_SEND_WARNING;
         document.getElementById("choose_image_input").disabled = true;
         document.getElementById("choose-file-input").disabled = true;
         document.getElementById("color-picker-selector-div").style.display = "none";
         document.getElementById("chat-input-font-size-range").style.display = "none";
+        utils__custom_alert(CHANNEL_CONTEXT_SEND_WARNING, "channel-context");
     },
 
 
@@ -779,6 +785,7 @@ var UI = {
             chat__clear_channel_unread_count(g_current_channel_id); // opened it, so it is read
             g_chat_message_receiver_type = "channel";
             g_offline_chat_recipient_identity_hash = ""; // back on a channel: no offline target
+            UI.enable_inputs();
             UI.schedule_member_list_sync(); // active ring moves back to the channel circle
 
             for (let i = 0; i < document.getElementsByClassName("chat-context-selector").length; i++)
@@ -827,8 +834,17 @@ var UI = {
         chat__clear_channel_unread_count(g_current_channel_id); // opened it, so it is read
             document.querySelector('[data-chat-context-selector-id="channel-' + g_current_channel_id + '"]').style.backgroundColor = "#36393f";
 
+            g_chat_message_receiver_type = "channel";
+            g_offline_chat_recipient_identity_hash = "";
             UI.enable_inputs();
             UI.schedule_member_list_sync(); // active ring moves back to the channel circle
+        }
+
+        // Closing a background tab also returns to the joined channel; hide the conversation
+        // that was visible before the close so only the selected destination remains on screen.
+        for (let context of document.getElementsByClassName("chat-context"))
+        {
+            context.style.display = context.id === g_current_chat_context_id ? "block" : "none";
         }
     },
 
@@ -893,6 +909,13 @@ var UI = {
         if (currentTarget.classList.contains("music-bot-client"))
         {
             is_this_music_bot_client = true;
+        }
+
+        // A bot is not a direct-message recipient. Keep its management menu on right click/hold,
+        // but a normal activation must not change the current chat or its recipient.
+        if (is_this_music_bot_client && (event.which == 1 || is_touch_event == true && is_short_click == true))
+        {
+            return;
         }
 
         if (event.which == 1 || is_touch_event == true && is_short_click == true)
@@ -1571,14 +1594,13 @@ var UI = {
     },
 
     /**
-     * @brief the send button: sends the message and collapses the image-upload preview; a refused file stays attached, so its label comes back
+     * @brief sends the message; accepted sends clear their preview, while refused attachments stay visible for retry or removal
      *
      * @return void
      */
     send_chat_input_on_click: function()
     {
         chat__send_chat_message();
-        document.getElementById("image-upload-preview").style.display = "none";
 
         // a refused file stays attached, so its label comes back
         chat_files__render_pending_chat_file_label();
@@ -1809,6 +1831,7 @@ var UI = {
      */
     close_button_identity_string_use: function(event)
     {
+        UI.identity_clear_file_selection();
         document.getElementById("identity-string-use-container").style.display = "none";
         document.getElementById("background-container").style.display = "none";
     },
@@ -2343,6 +2366,7 @@ var UI = {
             sheets[i].setAttribute("media", "(max-width: 1px)");
         }
         document.getElementById(sheet_id).removeAttribute("media");
+        voice__update_microphone_button();
         if (typeof member_conversations__apply_theme === "function")
         {
             member_conversations__apply_theme();
@@ -2486,6 +2510,9 @@ var UI = {
         let changed_conversation = previous_channel != null
             && previous_channel.getAttribute("data-member-list-conversation-id") != String(g_current_chat_context_id);
         let focused_row = document.activeElement.closest(".member-list-channel, .member-list-client");
+        let focused_channel_control = document.activeElement.matches(".member-conversations-channel-switch")
+            ? ".member-list-channel-icon"
+            : document.activeElement.matches(".member-list-channel-name[role='button']") ? ".member-list-channel-name" : null;
         let focus_attribute = focused_row == null ? null : focused_row.hasAttribute("data-member-list-channel-id")
             ? "data-member-list-channel-id" : focused_row.hasAttribute("data-identity-hash")
                 ? "data-identity-hash" : "data-connected-client-id";
@@ -2576,8 +2603,16 @@ var UI = {
             // distinct class so the right member list can be styled independently of the tree rows
             // (re-added on every sync, since each clone is a fresh copy of a tree row)
             clone.classList.add("member-list-client");
-            clone.tabIndex = 0;
-            clone.setAttribute("role", "button");
+            if (clone.classList.contains("music-bot-client"))
+            {
+                clone.removeAttribute("tabindex");
+                clone.removeAttribute("role");
+            }
+            else
+            {
+                clone.tabIndex = 0;
+                clone.setAttribute("role", "button");
+            }
 
             // the local-client row carries the name in an editable <input>; swap it for text
             let inputs = clone.getElementsByTagName("input");
@@ -2743,7 +2778,9 @@ var UI = {
             {
                 if (row.getAttribute(focus_attribute) == focus_value)
                 {
-                    row.focus({ preventScroll: true });
+                    let focus_target = focused_channel_control != null ? row.querySelector(focused_channel_control) : row;
+                    focus_target.tabIndex = 0;
+                    focus_target.focus({ preventScroll: true });
                     break;
                 }
             }
@@ -3955,7 +3992,7 @@ var UI = {
     {
         document.getElementById("secret-identity-string-container").style.display = "none";
         document.getElementById("background-container").style.display = "none";
-        document.getElementById("p-secret-identity-string").innerHTML = "";
+        document.getElementById("p-secret-identity-string").value = "";
     },
 
     /**
@@ -4067,20 +4104,44 @@ var UI = {
      * @brief becomes the given identity: asks the worker to derive the rsa keypair from the passphrase and, when connected, drops the socket to reconnect as it
      *        the shared tail of the identity-file and the raw-passphrase import paths; the caller has already validated the string
      *
-     * @param string identity_passphrase_string -> the 200-character passphrase
+     * @param string identity_passphrase_string -> the complete passphrase
+     * @param number|null rsa_key_bits -> the file's key size; null keeps the current setting for raw passphrases
      *
      * @return void
      */
-    identity_apply_passphrase: function(identity_passphrase_string)
+    identity_apply_passphrase: function(identity_passphrase_string, rsa_key_bits = null)
     {
+        if (rsa_key_bits !== null)
+        {
+            if (!G_ALLOWED_RSA_KEY_BITS.includes(rsa_key_bits))
+            {
+                utils__custom_alert("This identity uses an unsupported RSA key size.");
+                return;
+            }
+            g_rsa_key_bits = rsa_key_bits;
+            utils__storage_set("lemon_rsa_key_bits", String(rsa_key_bits));
+            g_rsa_key_too_weak_prompted_for_bits = 0;
+            document.getElementById("local-settings-rsa-key-bits").value = String(rsa_key_bits);
+        }
+        UI.identity_clear_file_selection();
+
+        document.getElementById("identity-string-use-container").style.display = "none";
+        document.getElementById("background-container").style.display = "none";
+        if (identity_passphrase_string === g_identity_string && UI.identity_current_rsa_key_bits() === g_rsa_key_bits)
+        {
+            // A duplicate key request has no worker completion event; finish this import directly.
+            document.getElementById("another-buttons-sub-loading-container").style.display = "none";
+            document.getElementById("another-buttons-sub-container").style.display = "";
+            connection__identity_imported();
+            return;
+        }
+
         // the result is announced when the key pair exists (connection__identity_imported)
         g_is_identity_import_pending = true;
 
         // clears the identity slot; the connect loop connects again only once the new keypair exists
         connection__request_identity(identity_passphrase_string);
 
-        document.getElementById("identity-string-use-container").style.display = "none";
-        document.getElementById("background-container").style.display = "none";
         document.getElementById("another-buttons-sub-loading-container").style.display = "block";
         document.getElementById("another-buttons-sub-container").style.display = "none";
 
@@ -4139,7 +4200,118 @@ var UI = {
     },
 
     /**
-     * @brief "save identity file": wraps the identity passphrase in a <username>.lmn download; the android webview hands it to java, which writes it into Downloads
+     * @brief Finds the generation size of the identity currently in use, independently of the next-key preference.
+     * @return number Supported generation size, or zero while no valid identity is ready.
+     */
+    identity_current_rsa_key_bits: function()
+    {
+        if (!g_is_rsa_key_generated || typeof g_rsa_public_key_string !== "string" || !g_rsa_public_key_string)
+        {
+            return 0;
+        }
+        try
+        {
+            let key = lemon_crypto.publicKeyFromString(g_rsa_public_key_string);
+            let modulus_bits = key.n.toString(2).length;
+            // The product of two generated primes may have N-1 bits; the seed must be regenerated with N.
+            for (let size of G_ALLOWED_RSA_KEY_BITS)
+            {
+                if (modulus_bits === size || modulus_bits === size - 1)
+                {
+                    return size;
+                }
+            }
+        }
+        catch (error)
+        {
+            return 0;
+        }
+        return 0;
+    },
+
+    /**
+     * @brief Serializes both inputs needed to reproduce the current identity.
+     * @return string Versioned UTF-8 JSON file contents.
+     */
+    identity_export_file_content: function()
+    {
+        let rsa_key_bits = UI.identity_current_rsa_key_bits();
+        if (!rsa_key_bits || typeof g_identity_string !== "string" || g_identity_string.length < 199)
+        {
+            throw new Error("The identity is not ready yet. Wait for key generation to finish, then try again.");
+        }
+        let content = JSON.stringify(
+        {
+            format: "lemon-chat-identity",
+            version: 1,
+            rsa_key_bits: rsa_key_bits,
+            passphrase: g_identity_string
+        }, null, 2) + "\n";
+        if (new TextEncoder().encode(content).length > 65536)
+        {
+            throw new Error("This passphrase is too large for an identity file. Keep a copy of the passphrase and its key size instead.");
+        }
+        return content;
+    },
+
+    /**
+     * @brief Validates a versioned identity file or an older raw-passphrase file without applying either.
+     * @param string content UTF-8 file text.
+     * @return object Passphrase, optional key size, and whether the file is a legacy export.
+     */
+    identity_parse_file_content: function(content)
+    {
+        if (typeof content !== "string" || new TextEncoder().encode(content).length > 65536)
+        {
+            throw new Error("Choose an identity file no larger than 64 KB.");
+        }
+        let text = content.replace(/^\uFEFF/, "").trim();
+        let looks_like_json = /^[{[\"]/.test(text);
+        if (!looks_like_json && (text.length === 199 || text.length === 200))
+        {
+            return { passphrase: text, rsa_key_bits: null, legacy: true };
+        }
+
+        let record;
+        try
+        {
+            record = JSON.parse(text);
+        }
+        catch (error)
+        {
+            throw new Error("This is not a valid identity file. Choose a .lmn file saved by Export Identity.");
+        }
+        if (record === null || typeof record !== "object" || Array.isArray(record)
+            || record.format !== "lemon-chat-identity")
+        {
+            throw new Error("This file is not a Lemon Chat identity.");
+        }
+        if (record.version !== 1)
+        {
+            throw new Error("This identity file version is not supported by this client.");
+        }
+        if (!Number.isInteger(record.rsa_key_bits) || !G_ALLOWED_RSA_KEY_BITS.includes(record.rsa_key_bits))
+        {
+            throw new Error("This identity file uses an unsupported RSA key size.");
+        }
+        if (typeof record.passphrase !== "string" || record.passphrase.length < 199)
+        {
+            throw new Error("This identity file does not contain a complete passphrase.");
+        }
+        return { passphrase: record.passphrase, rsa_key_bits: record.rsa_key_bits, legacy: false };
+    },
+
+    /** @brief Invalidates a pending file read and its confirmation without changing the current identity. */
+    identity_clear_file_selection: function()
+    {
+        identity_file_read_generation++;
+        pending_identity_file = null;
+        document.getElementById("identity-file-status").textContent = "";
+        document.getElementById("identity-file-confirm-button").disabled = true;
+    },
+
+    /**
+     * @brief Saves the passphrase and actual key size as a versioned <username>.lmn identity file.
      *
      * @param object event -> the mouse event
      *
@@ -4149,9 +4321,14 @@ var UI = {
     {
         event.stopPropagation();
 
-        if (g_identity_string == null || g_identity_string.length == 0)
+        let content;
+        try
         {
-            utils__custom_alert("no identity yet - it is still being generated, try again in a moment");
+            content = UI.identity_export_file_content();
+        }
+        catch (error)
+        {
+            utils__custom_alert(error.message);
             return;
         }
 
@@ -4160,11 +4337,11 @@ var UI = {
         // the android webview cannot save a blob url; java writes it into Downloads
         if (typeof Android !== "undefined" && Android != null && typeof Android.JavaExportSaveFile === "function")
         {
-            Android.JavaExportSaveFile(file_name, "application/octet-stream", btoa(g_identity_string));
+            Android.JavaExportSaveFile(file_name, "application/octet-stream", utils__bytesToBase64String(new TextEncoder().encode(content)));
             return;
         }
 
-        let url = URL.createObjectURL(new Blob([g_identity_string], { type: "application/octet-stream" }));
+        let url = URL.createObjectURL(new Blob([content], { type: "application/octet-stream" }));
         let anchor = document.createElement("a");
 
         anchor.href = url;
@@ -4211,7 +4388,7 @@ var UI = {
     },
 
     /**
-     * @brief reads a picked or dropped identity file; a valid one enables the confirm button, anything else (too big, not a passphrase) is refused with a status line
+     * @brief Reads and validates a picked file; only its confirmation can change the identity or key size.
      *
      * @param File file -> the file
      *
@@ -4222,43 +4399,49 @@ var UI = {
         let status_line = document.getElementById("identity-file-status");
         let confirm_button = document.getElementById("identity-file-confirm-button");
 
-        pending_identity_file_string = "";
-        confirm_button.style.display = "none";
+        UI.identity_clear_file_selection();
+        let read_generation = identity_file_read_generation;
 
         if (file == null)
         {
             return;
         }
 
-        // an identity file holds a 200-char passphrase; anything big is some other file
-        if (file.size > 4096)
+        if (file.size > 65536)
         {
-            status_line.textContent = "'" + file.name + "' is not an identity file";
+            status_line.textContent = "Choose an identity file no larger than 64 KB.";
             return;
         }
 
         let reader = new FileReader();
+        status_line.textContent = "Reading " + file.name + "…";
 
         reader.onload = function()
         {
-            // tolerate editors: strip a BOM and any whitespace or newlines around the passphrase
-            let passphrase = String(reader.result).replace(/^﻿/, "").trim();
-
-            // strict on purpose: a longer string would derive a DIFFERENT identity without any error
-            if (passphrase.length < 199 || passphrase.length > 200)
+            if (read_generation !== identity_file_read_generation)
             {
-                status_line.textContent = "'" + file.name + "' does not contain an identity passphrase";
                 return;
             }
-
-            pending_identity_file_string = passphrase;
-            status_line.textContent = "'" + file.name + "' looks good - confirm to connect as that identity";
-            confirm_button.style.display = "inline-block";
+            try
+            {
+                pending_identity_file = UI.identity_parse_file_content(reader.result);
+                status_line.textContent = pending_identity_file.legacy
+                    ? file.name + " — legacy file: key size is not stored. Choose the original size in Local settings → Identity before importing."
+                    : file.name + " — " + pending_identity_file.rsa_key_bits + "-bit identity ready to import.";
+                confirm_button.disabled = false;
+            }
+            catch (error)
+            {
+                status_line.textContent = error.message;
+            }
         };
 
         reader.onerror = function()
         {
-            status_line.textContent = "could not read '" + file.name + "'";
+            if (read_generation === identity_file_read_generation)
+            {
+                status_line.textContent = "Could not read " + file.name + ". Choose the file again.";
+            }
         };
 
         reader.readAsText(file);
@@ -4275,14 +4458,14 @@ var UI = {
     {
         event.stopPropagation();
 
-        if (pending_identity_file_string.length == 0)
+        if (pending_identity_file === null)
         {
             return;
         }
 
-        let passphrase = pending_identity_file_string;
-        pending_identity_file_string = "";
-        UI.identity_apply_passphrase(passphrase);
+        let identity = pending_identity_file;
+        UI.identity_clear_file_selection();
+        UI.identity_apply_passphrase(identity.passphrase, identity.rsa_key_bits);
     },
 
     /**
@@ -4301,9 +4484,10 @@ var UI = {
         let toggle_link = document.getElementById("identity-mode-toggle-link");
         let is_file_mode_active = file_mode.style.display != "none";
 
+        UI.identity_clear_file_selection();
         file_mode.style.display = is_file_mode_active ? "none" : "block";
         string_mode.style.display = is_file_mode_active ? "block" : "none";
-        toggle_link.textContent = is_file_mode_active ? "use an identity file instead" : "use an identity passphrase instead";
+        toggle_link.textContent = is_file_mode_active ? "Choose a file instead" : "Paste a passphrase instead";
     },
 
     /**
@@ -4345,8 +4529,12 @@ var UI = {
         event.stopPropagation();
         document.getElementById("secret-identity-string-container").style.display = "block";
         document.getElementById("background-container").style.display = "block";
-        document.getElementById("p-secret-identity-string").innerHTML = g_identity_string;
-        document.getElementById("export-identity-file-name").textContent = "saves as " + UI.identity_export_file_name();
+        document.getElementById("p-secret-identity-string").value = g_identity_string || "";
+        document.getElementById("export-identity-file-name").textContent = UI.identity_export_file_name();
+        let rsa_key_bits = UI.identity_current_rsa_key_bits();
+        document.getElementById("identity-export-hint").textContent = rsa_key_bits
+            ? "To use this passphrase without a file, choose " + rsa_key_bits + " bits under Local settings → Identity → Identity key size on the other device, then paste it in Import Identity."
+            : "Wait for identity key generation to finish before exporting or copying this identity.";
     },
 
     /**
@@ -4415,12 +4603,10 @@ var UI = {
     import_identity_button_onclick: function()
     {
         // fresh walk-through every time: file side first, nothing picked yet
-        pending_identity_file_string = "";
-        document.getElementById("identity-file-status").textContent = "";
-        document.getElementById("identity-file-confirm-button").style.display = "none";
+        UI.identity_clear_file_selection();
         document.getElementById("identity-file-mode").style.display = "block";
         document.getElementById("identity-string-mode").style.display = "none";
-        document.getElementById("identity-mode-toggle-link").textContent = "use an identity passphrase instead";
+        document.getElementById("identity-mode-toggle-link").textContent = "Paste a passphrase instead";
 
         document.getElementById("identity-string-use-container").style.display = "block";
         document.getElementById("background-container").style.display = "block";

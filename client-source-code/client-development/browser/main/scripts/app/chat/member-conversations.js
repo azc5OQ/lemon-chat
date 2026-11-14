@@ -7,7 +7,9 @@ var member_conversations =
     is_room_list_shown: false,
     is_tab_bar_shown: false,
     observer: null,
-    pending: false
+    pending: false,
+    participant_events_bound: false,
+    participant_focus: null
 };
 
 function member_conversations__apply_theme()
@@ -16,16 +18,25 @@ function member_conversations__apply_theme()
     let style = getComputedStyle(document.documentElement);
     member_conversations.active = style.getPropertyValue("--member-conversations").trim() === "1";
     member_conversations.auto_open = style.getPropertyValue("--member-conversations-auto-open").trim() === "1";
-    member_conversations.is_room_list_shown = style.getPropertyValue("--member-conversations-rooms").trim() === "1";
+    member_conversations.is_room_list_shown = member_conversations.active && style.getPropertyValue("--member-conversations-rooms").trim() === "1";
     member_conversations.is_tab_bar_shown = member_conversations.active && style.getPropertyValue("--member-conversations-tabs").trim() === "1";
     document.body.classList.toggle("member-conversations-active", member_conversations.active);
     member_conversations__apply_tab_bar();
+    member_conversations__place_connection_menu();
+    member_conversations__bind_participant_events();
+    member_conversations__update_participant_triggers();
+    member_conversations__refresh_participant_dialog();
     if (member_conversations.observer != null)
     {
         member_conversations.observer.disconnect();
     }
     if (!member_conversations.active)
     {
+        for (let participants of document.querySelectorAll(".member-conversation-participants"))
+        {
+            participants.remove();
+        }
+        member_conversations__refresh_rooms();
         return;
     }
 
@@ -43,12 +54,6 @@ function member_conversations__apply_theme()
         input.addEventListener("input", member_conversations__filter_people);
         search.appendChild(input);
         list.prepend(search);
-
-        // the list of all channels; member_conversations__refresh_rooms fills it when the theme sets --member-conversations-rooms
-        let rooms = document.createElement("div");
-        rooms.id = "member-conversations-rooms";
-        rooms.addEventListener("click", member_conversations__room_onclick);
-        search.after(rooms);
 
         let empty = document.createElement("p");
         empty.id = "member-conversations-search-empty";
@@ -77,7 +82,51 @@ function member_conversations__apply_theme()
     {
         childList: true
     });
+    // the tab of a conversation is created when the conversation is opened; it gets its picture and its line then
+    member_conversations.observer.observe(document.getElementById("chat-context-selectors-container"),
+    {
+        childList: true
+    });
     member_conversations__schedule_refresh();
+}
+
+// Keep the existing connection actions and disconnect confirmation, but put them in Settings
+// for the conversation-list themes. Restore the original toolbar position when leaving them.
+function member_conversations__place_connection_menu()
+{
+    let menu = document.getElementById("connections-menu");
+    let settings = document.getElementById("member-conversations-connection-settings");
+    if (member_conversations.is_room_list_shown)
+    {
+        if (settings == null)
+        {
+            settings = document.createElement("div");
+            settings.id = "member-conversations-connection-settings";
+            let heading = document.createElement("h2");
+            heading.className = "local-settings-section-title";
+            heading.textContent = "Connection";
+            settings.appendChild(heading);
+            document.getElementById("local-settings-page-advanced").appendChild(settings);
+        }
+        if (menu.parentElement != settings)
+        {
+            member_conversations.connection_menu_home = document.createComment("Connection menu toolbar position");
+            menu.before(member_conversations.connection_menu_home);
+            settings.appendChild(menu);
+            head_menu__close_all();
+        }
+        settings.hidden = false;
+    }
+    else if (settings != null)
+    {
+        if (member_conversations.connection_menu_home != null)
+        {
+            member_conversations.connection_menu_home.replaceWith(menu);
+            member_conversations.connection_menu_home = null;
+            head_menu__close_all();
+        }
+        settings.hidden = true;
+    }
 }
 
 function member_conversations__schedule_refresh()
@@ -144,8 +193,13 @@ function member_conversations__refresh_people()
     // update channel list
     member_conversations__refresh_rooms();
 
-    // the button opens the channel list; it has the id of Pocket's button because one click handler in main.js serves both
-    document.getElementById("member-list-header").innerHTML = "People &amp; chats<button type='button' id='pocket-channel-switch' aria-haspopup='menu'>Switch channel</button>";
+    // mark new messages
+    member_conversations__mark_messages();
+
+    // Conversation-list layouts use the channel icon as a picker; tabbed layouts keep the header shortcut.
+    document.getElementById("member-list-header").innerHTML = member_conversations.is_room_list_shown
+        ? "Chats"
+        : "People &amp; chats<button type='button' id='pocket-channel-switch' aria-haspopup='menu'>Switch channel</button>";
     for (let row of body.querySelectorAll(".member-list-client, .member-list-channel"))
     {
         let context_id = "";
@@ -197,35 +251,60 @@ function member_conversations__refresh_people()
             let sent = last.querySelector(".single-chat-message-sender-time > p");
             time = sent != null ? sent.textContent.trim().replace(/(\d{1,2}:\d{2}):\d{2}/, "$1") : "";
         }
-        // the row of a channel names the people in it
+
+        // line about the conversation
+        let status = "";
         if (row.classList.contains("member-list-channel"))
         {
-            text = member_conversations__channel_people_text(row.getAttribute("data-member-list-channel-id"));
-            time = "";
+            let sender = last != null ? last.querySelector(".single-chat-message-sender-username-container") : null;
+            status = member_conversations__channel_people_text(row.getAttribute("data-member-list-channel-id"));
+            text = text && sender != null ? sender.textContent.trim() + ": " + text : text;
         }
-        // a person without messages: where the person is
-        else if (!text)
+        else
         {
             let channel = row.querySelector(".member-list-client-channel");
             let presence = row.querySelector(".member-list-presence");
-            if (!row.classList.contains("in-current-channel") && channel != null && channel.textContent.trim() != "")
+            status = !row.classList.contains("in-current-channel") && channel != null && channel.textContent.trim() != ""
+                ? "In " + channel.textContent : presence != null ? presence.textContent : "";
+        }
+
+        // mark the title
+        member_conversations__mark_title(row, context_id, status);
+
+        // Keep user text as text, including when it resembles markup.
+        let empty_preview = row.classList.contains("member-list-channel") ? status : "No messages yet";
+        if (row.classList.contains("music-bot-client"))
+        {
+            empty_preview = "Music bot · " + status;
+            let avatar = row.querySelector(".client-audio-state");
+            if (avatar != null && !avatar.style.backgroundImage && !avatar.style.getPropertyValue("--client-avatar"))
             {
-                text = "In " + channel.textContent;
-            }
-            else
-            {
-                text = presence != null ? presence.textContent : "";
+                avatar.dataset.initials = "♫";
             }
         }
-        // Keep user text as text, including when it resembles markup.
-        preview.textContent = text.slice(0, 200);
+        preview.textContent = (text || empty_preview).slice(0, 200);
+        preview.classList.toggle("member-conversation-preview-empty", !text);
         timestamp.textContent = time;
+
+        if (row.classList.contains("member-list-channel"))
+        {
+            member_conversations__render_participants(row, row.getAttribute("data-member-list-channel-id"), preview);
+        }
     }
+    // Update every open channel tab, including an older channel whose chat is still being read.
+    for (let tab of document.querySelectorAll('.chat-context-selector[data-chat-context-selector-type="channel"]'))
+    {
+        let channel_id = tab.dataset.chatContextSelectorId.replace("channel-", "");
+        tab.dataset.conversationStatus = member_conversations__channel_people_text(channel_id);
+        member_conversations__render_participants(tab, channel_id);
+    }
+    member_conversations__update_participant_triggers();
+    member_conversations__refresh_participant_dialog();
     member_conversations__filter_people();
 }
 
 /**
- * @brief Shows or hides the bar with the four screens (chat, people, channels, me), for a theme that
+ * @brief Shows or hides the bar with the four screens (people, chat, channels, me), for a theme that
  *        sets --member-conversations-tabs to 1. The bar is created the first time it is needed.
  *
  * @return void
@@ -233,7 +312,7 @@ function member_conversations__refresh_people()
 function member_conversations__apply_tab_bar()
 {
     let bar = document.getElementById("member-conversations-tabs");
-    let screens = [["chat", "Chat"], ["people", "People"], ["channels", "Channels"], ["me", "Me"]];
+    let screens = [["people", "People"], ["chat", "Chat"], ["channels", "Channels"], ["me", "Me"]];
 
     // nothing to hide
     if (bar == null && member_conversations.is_tab_bar_shown == false)
@@ -268,7 +347,7 @@ function member_conversations__apply_tab_bar()
         return;
     }
 
-    // the chat is the first screen
+    // Open Chat initially, regardless of its position in the bar.
     if (document.body.dataset.conversationTab == null)
     {
         member_conversations__mark_tab("chat");
@@ -437,26 +516,46 @@ function member_conversations__ask_join(channel)
 }
 
 /**
- * @brief Returns the names of the people in a channel as one line of text, for the row of that channel.
- *        Music bots and people in idle mode are not counted.
+ * @brief Collects the people and music bots currently in a channel, with the local user first.
+ *        Idle clients are not present in the channel.
+ */
+function member_conversations__channel_participants(channel_id)
+{
+    let participants = [];
+    for (let client of g_client_list)
+    {
+        if (Number(client.channel_id) !== Number(channel_id) || client.is_idle == true)
+        {
+            continue;
+        }
+        if (Number(client.client_id) === Number(g_local_client_id))
+        {
+            participants.unshift(client);
+        }
+        else
+        {
+            participants.push(client);
+        }
+    }
+    return participants;
+}
+
+/**
+ * @brief Returns the names of people and music bots in a channel as one line of text.
  *
  * @param string channel_id -> id of the channel
  *
  * @return string -> for example "Only you are here", "You, anna, peter" or "You, anna, peter, tom and 2 more"
  */
-function member_conversations__channel_people_text(channel_id)
+function member_conversations__channel_people_text(channel_id, participants)
 {
     let names = [];
     let is_local_inside = false;
     let shown = "";
 
     // collect the names
-    for (let client of g_client_list)
+    for (let client of participants || member_conversations__channel_participants(channel_id))
     {
-        if (Number(client.channel_id) !== Number(channel_id) || client.is_idle == true || client.is_music_bot == true)
-        {
-            continue;
-        }
         if (Number(client.client_id) === Number(g_local_client_id))
         {
             is_local_inside = true;
@@ -483,99 +582,350 @@ function member_conversations__channel_people_text(channel_id)
 }
 
 /**
- * @brief Lists every channel with the names of the people in it, for a theme that sets
- *        --member-conversations-rooms to 1. The list is built again only when its content changed.
- *        A person whose channel this client may not see has channel_id -1 and is in no row.
+ * @brief Shows a bounded row of circular participant pictures beside the channel's names.
+ *        Names stay as text; uploaded pictures follow the existing server avatar policy.
+ *        These are previews, not additional buttons inside the channel's navigation control.
+ */
+function member_conversations__render_participants(container, channel_id, before)
+{
+    let summary = container.querySelector(":scope > .member-conversation-participants");
+    if (!member_conversations.is_room_list_shown && !member_conversations.is_tab_bar_shown)
+    {
+        if (summary != null)
+        {
+            summary.remove();
+        }
+        return;
+    }
+
+    if (summary == null)
+    {
+        summary = document.createElement("span");
+        summary.className = "member-conversation-participants";
+        container.insertBefore(summary, before || null);
+    }
+    let participants = member_conversations__channel_participants(channel_id);
+    let avatars = document.createElement("span");
+    avatars.className = "member-conversation-avatars";
+    avatars.setAttribute("aria-hidden", "true");
+    let full_names = [];
+    for (let client of participants)
+    {
+        let name = String(client.username || "");
+        let label = name + (Number(client.client_id) === Number(g_local_client_id) ? " (you)" : client.is_music_bot == true ? " (music bot)" : "");
+        full_names.push(label);
+        if (avatars.children.length >= 3)
+        {
+            continue;
+        }
+        avatars.appendChild(member_conversations__participant_avatar(client));
+    }
+    if (participants.length > 3)
+    {
+        let more = document.createElement("span");
+        more.className = "member-conversation-avatar-more";
+        more.textContent = "+" + (participants.length - 3);
+        avatars.appendChild(more);
+    }
+    let names = document.createElement("span");
+    names.className = "member-conversation-participant-names";
+    names.textContent = member_conversations__channel_people_text(channel_id, participants);
+    summary.title = full_names.join(", ") || "Nobody is here";
+    summary.replaceChildren(avatars, names);
+}
+
+function member_conversations__participant_avatar(client)
+{
+    let name = String(client.username || "");
+    let avatar = document.createElement("span");
+    avatar.className = "member-conversation-avatar";
+    avatar.dataset.clientId = client.client_id;
+    avatar.title = name + (Number(client.client_id) === Number(g_local_client_id) ? " (you)" : client.is_music_bot == true ? " (music bot)" : "");
+    avatar.setAttribute("aria-hidden", "true");
+    let image = g_server_policy.is_avatar_upload_allowed == true && typeof client.base64_avatar === "string"
+        ? client.base64_avatar : "";
+    if (image)
+    {
+        avatar.style.backgroundImage = "url(" + JSON.stringify(image) + ")";
+    }
+    else
+    {
+        avatar.textContent = client.is_music_bot == true ? "♫" : UI.initials_for_name(name);
+    }
+    return avatar;
+}
+
+function member_conversations__update_participant_triggers()
+{
+    for (let tab of document.querySelectorAll('.chat-context-selector[data-chat-context-selector-type="channel"]'))
+    {
+        if (member_conversations.is_room_list_shown || member_conversations.is_tab_bar_shown)
+        {
+            tab.classList.add("channel-participants-trigger");
+            tab.tabIndex = 0;
+            tab.setAttribute("role", "button");
+            tab.setAttribute("aria-haspopup", "dialog");
+            let title = tab.querySelector(".p-container, p");
+            tab.setAttribute("aria-label", "Show participants in " + (title != null ? title.textContent.trim() : "this channel"));
+            tab.title = "Show everyone in this channel";
+        }
+        else if (tab.classList.contains("channel-participants-trigger"))
+        {
+            tab.classList.remove("channel-participants-trigger");
+            for (let attribute of ["tabindex", "role", "aria-haspopup", "aria-label", "title"])
+            {
+                tab.removeAttribute(attribute);
+            }
+        }
+    }
+}
+
+function member_conversations__bind_participant_events()
+{
+    let tabs = document.getElementById("chat-context-selectors-container");
+    if (member_conversations.participant_events_bound || tabs == null)
+    {
+        return;
+    }
+    member_conversations.participant_events_bound = true;
+    function open_from_header(event)
+    {
+        // Programmatic tab.click() still opens the conversation from the chat list.
+        if (!event.isTrusted || (!member_conversations.is_room_list_shown && !member_conversations.is_tab_bar_shown) || g_is_chat_hidden)
+        {
+            return;
+        }
+        if (event.type === "keydown" && event.key !== "Enter" && event.key !== " ")
+        {
+            return;
+        }
+        let tab = event.target.closest('.channel-participants-trigger[style*="background-color"]');
+        if (tab == null)
+        {
+            return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        member_conversations__open_participants(tab.dataset.chatContextSelectorId.replace("channel-", ""), tab);
+    }
+    tabs.addEventListener("click", open_from_header, true);
+    tabs.addEventListener("keydown", open_from_header, true);
+}
+
+/**
+ * @brief Opens everyone in the selected channel without changing channels or starting a private chat.
+ *        The native modal supplies focus containment and Escape; the original header regains focus.
+ */
+function member_conversations__open_participants(channel_id, trigger)
+{
+    let dialog = document.getElementById("channel-participants-dialog");
+    if (dialog == null)
+    {
+        dialog = document.createElement("dialog");
+        dialog.id = "channel-participants-dialog";
+        dialog.setAttribute("aria-labelledby", "channel-participants-title");
+        dialog.setAttribute("aria-describedby", "channel-participants-count");
+        dialog.innerHTML = '<div class="channel-participants-heading"><h2 id="channel-participants-title"></h2>'
+            + '<button type="button" id="channel-participants-close" aria-label="Close participants">×</button></div>'
+            + '<p id="channel-participants-count"></p>'
+            + '<input type="search" id="channel-participants-search" placeholder="Search participants" aria-label="Search participants" autocomplete="off">'
+            + '<ul id="channel-participants-list" tabindex="0" aria-label="Channel participants"></ul>'
+            + '<p id="channel-participants-empty" role="status" hidden></p>';
+        document.body.appendChild(dialog);
+        document.getElementById("channel-participants-close").addEventListener("click", function()
+        {
+            dialog.close();
+        });
+        document.getElementById("channel-participants-search").addEventListener("input", member_conversations__refresh_participant_dialog);
+        dialog.addEventListener("click", function(event)
+        {
+            let bounds = dialog.getBoundingClientRect();
+            if (event.target === dialog && (event.clientX < bounds.left || event.clientX > bounds.right
+                || event.clientY < bounds.top || event.clientY > bounds.bottom))
+            {
+                dialog.close();
+            }
+        });
+        dialog.addEventListener("close", function()
+        {
+            let previous = member_conversations.participant_focus;
+            member_conversations.participant_focus = null;
+            if (previous != null && previous.isConnected && previous.getClientRects().length > 0)
+            {
+                previous.focus({ preventScroll: true });
+            }
+        });
+    }
+    UI.delete_contextmenus(true);
+    member_conversations.participant_focus = trigger;
+    dialog.dataset.channelId = channel_id;
+    document.getElementById("channel-participants-search").value = "";
+    if (!dialog.open)
+    {
+        dialog.showModal();
+    }
+    member_conversations__refresh_participant_dialog();
+    // Focus Close initially so opening the list does not raise the phone keyboard.
+    document.getElementById("channel-participants-close").focus({ preventScroll: true });
+}
+
+function member_conversations__refresh_participant_dialog()
+{
+    let dialog = document.getElementById("channel-participants-dialog");
+    if (dialog == null || !dialog.open)
+    {
+        return;
+    }
+    let channel = g_channel_list.find(function(entry)
+    {
+        return Number(entry.channel_id) === Number(dialog.dataset.channelId);
+    });
+    if (channel == null || (!member_conversations.is_room_list_shown && !member_conversations.is_tab_bar_shown))
+    {
+        dialog.close();
+        return;
+    }
+    let participants = member_conversations__channel_participants(channel.channel_id);
+    document.getElementById("channel-participants-title").textContent = channel.name;
+    document.getElementById("channel-participants-count").textContent = participants.length + (participants.length === 1 ? " participant" : " participants");
+    let query = document.getElementById("channel-participants-search").value.trim().toLocaleLowerCase();
+    let list = document.getElementById("channel-participants-list");
+    let scroll = list.scrollTop;
+    let rows = document.createDocumentFragment();
+    let matches = 0;
+    for (let client of participants)
+    {
+        let row = document.createElement("li");
+        row.className = "channel-participant-row";
+        row.dataset.clientId = client.client_id;
+        let name = document.createElement("span");
+        name.className = "channel-participant-name";
+        name.textContent = String(client.username || "");
+        let description = document.createElement("span");
+        description.className = "channel-participant-description";
+        description.textContent = Number(client.client_id) === Number(g_local_client_id) ? "You"
+            : client.is_music_bot == true ? "Music bot" : "In this channel";
+        row.hidden = !(name.textContent + " " + description.textContent).toLocaleLowerCase().includes(query);
+        if (!row.hidden)
+        {
+            matches++;
+        }
+        row.append(member_conversations__participant_avatar(client), name, description);
+        rows.appendChild(row);
+    }
+    list.replaceChildren(rows);
+    list.scrollTop = scroll;
+    let empty = document.getElementById("channel-participants-empty");
+    empty.textContent = participants.length === 0 ? "Nobody is here" : "No matching participants";
+    empty.hidden = matches !== 0;
+}
+
+/**
+ * @brief Writes the picture and one line of text of a conversation onto the tab of that conversation.
+ *        The top bar of the phone layout shows the tab of the open conversation as its title and
+ *        draws these marks: data-conversation-status holds the line (the people in a channel, or
+ *        where a person is; the row of a conversation without a message shows the same line),
+ *        data-conversation-initials the letters of the round picture ("#" for a channel), and the
+ *        style value --conversation-picture the uploaded picture when there is one.
+ *
+ * @param object row -> the row of the conversation in the list
+ * @param string context_id -> id of the conversation's chat context, for example chat-context-pm-3
+ * @param string status -> the line of text
  *
  * @return void
  */
-function member_conversations__refresh_rooms()
+function member_conversations__mark_title(row, context_id, status)
 {
-    let holder = document.getElementById("member-conversations-rooms");
-    let rows = [];
-    let content = "";
+    let tab = document.querySelector('.chat-context-selector[data-chat-context-selector-id="' + context_id.replace("chat-context-", "").replace("pm-", "user-") + '"]');
+    let picture = row.querySelector(".client-audio-state, .member-list-channel-icon");
+    let image = "";
 
-    // list not created
-    if (holder == null)
+    // conversation not opened
+    if (tab == null)
     {
         return;
     }
 
-    // only when wanted
-    holder.hidden = !member_conversations.is_room_list_shown;
-    if (!member_conversations.is_room_list_shown)
+    // uploaded picture
+    if (picture != null)
     {
-        return;
+        image = (picture.style.getPropertyValue("--client-avatar") || picture.style.backgroundImage).trim();
     }
 
-    // collect the rows
-    for (let channel of g_channel_list)
+    // write the marks
+    tab.dataset.conversationStatus = status;
+    tab.dataset.conversationInitials = image ? "" : row.classList.contains("member-list-channel") ? "#" : picture != null && picture.dataset.initials ? picture.dataset.initials : "";
+    if (tab.style.getPropertyValue("--conversation-picture") !== (image || "none"))
     {
-        let names = [];
-        for (let client of g_client_list)
-        {
-            if (Number(client.channel_id) === Number(channel.channel_id) && client.is_idle != true)
-            {
-                names.push(Number(client.client_id) === Number(g_local_client_id) ? "You" : client.username);
-            }
-        }
-        rows.push([channel.channel_id, channel.name, names.join(", "),
-            Number(channel.channel_id) === Number(g_current_channel_id), channel.is_using_password == true]);
-    }
-
-    // skip when unchanged
-    content = JSON.stringify(rows);
-    if (holder.dataset.content === content)
-    {
-        return;
-    }
-
-    // build the rows
-    holder.dataset.content = content;
-    holder.replaceChildren();
-    for (let [channel_id, channel_name, people, is_current, is_locked] of rows)
-    {
-        let row = document.createElement("button");
-        let name = document.createElement("strong");
-        let inside = document.createElement("span");
-        row.type = "button";
-        row.className = "member-conversation-room" + (is_current ? " member-conversation-room-current" : "")
-            + (is_locked ? " member-conversation-room-locked" : "");
-        row.dataset.channelId = channel_id;
-        // user text stays text, also when it looks like markup
-        name.textContent = channel_name;
-        inside.textContent = people;
-        row.append(name, inside);
-        holder.appendChild(row);
+        tab.style.setProperty("--conversation-picture", image || "none");
     }
 }
 
 /**
- * @brief A press on a row of the channel list: the row of the channel the user is in opens the chat of
- *        that channel, every other row joins its channel.
- *
- * @param object event -> the click event
+ * @brief Makes the channel picture a visible, keyboard-accessible channel picker.
+ *        The rest of the row opens the conversation; its existing hold gesture also opens the picker.
+ */
+function member_conversations__refresh_rooms()
+{
+    for (let icon of document.querySelectorAll("#member-list-body .member-list-channel-icon"))
+    {
+        let row = icon.closest(".member-list-channel");
+        let name = row.querySelector(".member-list-channel-name");
+        icon.classList.toggle("member-conversations-channel-switch", member_conversations.is_room_list_shown);
+        if (member_conversations.is_room_list_shown)
+        {
+            row.setAttribute("role", "group");
+            row.removeAttribute("tabindex");
+            name.setAttribute("role", "button");
+            name.setAttribute("aria-label", "Open " + name.textContent + " chat");
+            name.tabIndex = 0;
+            icon.setAttribute("role", "button");
+            icon.tabIndex = 0;
+            icon.setAttribute("aria-label", "Switch channel");
+            icon.setAttribute("aria-haspopup", "menu");
+            icon.title = "Switch channel (tap or hold)";
+        }
+        else
+        {
+            row.setAttribute("role", "button");
+            row.tabIndex = 0;
+            for (let attribute of ["role", "tabindex", "aria-label"])
+            {
+                name.removeAttribute(attribute);
+            }
+            for (let attribute of ["role", "tabindex", "aria-label", "aria-haspopup", "title"])
+            {
+                icon.removeAttribute(attribute);
+            }
+        }
+    }
+}
+
+/**
+ * @brief Writes two marks into the messages of every conversation, for the message bubbles of the phone
+ *        layout: the time without seconds into data-short-time of the time line, and the class
+ *        chat-message-same-sender onto a message that follows a message of the same sender.
+ *        A message that has its marks is skipped.
  *
  * @return void
  */
-function member_conversations__room_onclick(event)
+function member_conversations__mark_messages()
 {
-    let row = event.target.closest(".member-conversation-room");
+    for (let message of document.querySelectorAll("#chat-context-container .single-chat-message:not([data-sender-key])"))
+    {
+        let time = message.querySelector(".single-chat-message-sender-time > p");
+        let sender = message.querySelector(".single-chat-message-sender-username-container, .single-chat-message-sender-local-username-container");
+        let previous = message.previousElementSibling;
 
-    // not a row
-    if (row == null)
-    {
-        return;
-    }
+        // time without seconds
+        if (time != null)
+        {
+            time.dataset.shortTime = time.textContent.trim().replace(/(\d{1,2}:\d{2}):\d{2}/, "$1");
+        }
 
-    // open or join
-    if (row.classList.contains("member-conversation-room-current"))
-    {
-        member_conversations__open_channel_chat(row.dataset.channelId);
-    }
-    else
-    {
-        member_conversations__join_channel(row.dataset.channelId);
+        // same sender as before
+        message.dataset.senderKey = sender != null ? sender.className + " " + sender.textContent.trim() : "";
+        message.classList.toggle("chat-message-same-sender", previous != null && previous.dataset.senderKey === message.dataset.senderKey);
     }
 }
 

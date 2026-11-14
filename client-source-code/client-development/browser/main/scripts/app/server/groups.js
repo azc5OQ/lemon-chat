@@ -1057,9 +1057,10 @@ function groups__refresh_channel_controls()
         input.readOnly = message_blocked;
 
         // say why
-        input.placeholder = message_blocked ? groups__channel_power_message("message")
-            : input.disabled ? "you are not in this channel and cannot write here" : input.dataset.channelPowerPlaceholder;
-        input.title = message_blocked ? groups__channel_power_message("message") : "";
+        input.placeholder = input.disabled ? CHANNEL_CONTEXT_SEND_WARNING
+            : message_blocked ? groups__channel_power_message("message") : input.dataset.channelPowerPlaceholder;
+        input.title = input.disabled ? CHANNEL_CONTEXT_SEND_WARNING
+            : message_blocked ? groups__channel_power_message("message") : "";
     }
     if (picture && input)
     {

@@ -5,6 +5,7 @@ Start with the guide for what you are trying to do. Screenshots use demonstratio
 ## Use and administer Lemon Chat
 
 - [Administration](administration.md): log in as an administrator, change settings, create moderator groups, manage channels and bans, read logs and make backups.
+- [Identity backups](identity-files.md): move your identity to another device, save its passphrase and key size, and import older files.
 - [Server settings](server-settings.md): understand the options and limits that apply to everyone on a server.
 - [Permissions](permissions.md#what-negate-skip-and-grant-are-for): start with server groups and channel groups, then learn what power, protection, Negate, Skip and Grant are for.
 - [Channels](channels.md): create and join channels, use audio and video, and understand maintainers and channel keys.

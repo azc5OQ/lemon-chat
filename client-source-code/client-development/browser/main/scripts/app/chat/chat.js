@@ -18,6 +18,8 @@ var TYPING_SEND_INTERVAL_MS = 3000;   // at most one message per 3s of continuou
 
 var TYPING_EXPIRY_MS = 6000;          // twice the send interval, so one lost message does not flicker
 
+var CHANNEL_CONTEXT_SEND_WARNING = "Join this channel before sending messages or attachments.";
+
 // the private-message ids this client already receipted; each is sent once, only to its author
 var seen_receipts_already_sent = {};
 
@@ -346,6 +348,10 @@ function chat__send_file_by_parts(parts, total_bytes_length, delay_ms)
  */
 function chat__send_pending_chat_file(receiver_type)
 {
+    if (receiver_type === "channel" && !chat__can_send_to_selected_channel())
+    {
+        return false;
+    }
     if (g_pending_chat_file == null)
     {
         return false;
@@ -494,6 +500,10 @@ function chat__normalize_composed_text(value)
  */
 function chat__send_composed_chat_message(target)
 {
+    if (target === "channel" && !chat__can_send_to_selected_channel())
+    {
+        return;
+    }
     if (g_pending_chat_file != null)
     {
         chat__send_pending_chat_file(target);
@@ -874,9 +884,22 @@ function chat__send_offline_chat_message(offline_contact)
 }
 
 /**
- * @brief the send-button entry point: routes to channel, direct or offline sending by the current receiver type, with fallbacks when the direct receiver went offline or came back
- *        every exit is logged, because a message that quietly goes nowhere is the hardest kind of bug to chase
- *
+ * @brief Prevents a channel send while another conversation is selected, before consuming the draft.
+ * @return boolean true when the selected conversation belongs to the joined channel
+ */
+function chat__can_send_to_selected_channel()
+{
+    if (g_current_chat_context_id === "chat-context-channel-" + g_current_channel_id)
+    {
+        return true;
+    }
+    utils__custom_log("[send] STOP: selected conversation is not the joined channel");
+    utils__custom_alert(CHANNEL_CONTEXT_SEND_WARNING, "channel-context");
+    return false;
+}
+
+/**
+ * @brief Routes Send to channel, direct or offline sending, with fallbacks when a direct recipient changes status.
  * @return void
  */
 function chat__send_chat_message()
@@ -889,6 +912,10 @@ function chat__send_chat_message()
 
     if (g_chat_message_receiver_type == "channel")
     {
+        if (!chat__can_send_to_selected_channel())
+        {
+            return;
+        }
         if (g_current_channel_keys == null)
         {
             utils__custom_log("[send] STOP: no channel keys");
