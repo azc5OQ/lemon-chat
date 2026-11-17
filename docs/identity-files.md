@@ -22,20 +22,29 @@ wait for it to finish before exporting.
 Keep the file private. It contains the secret needed to recreate your identity; it is not an
 encrypted backup and is not a public-key file.
 
+Android saves the file through the app. Its chat page does not display the stored passphrase;
+use **Save identity file** to move or back up the identity.
+
 ## Import on the other device
 
 Open **Import Identity**, choose the `.lmn` file, and check the displayed key size. You can also
 drop the file onto that window. Selecting a file only checks its contents; it does not replace
 your identity or change the key-size setting.
 
-Choose **Import identity** to proceed. In the example above, the client saves 4096 bits as its
-identity key size and generates the key pair using the file's passphrase. If it is connected,
+Choose **Import identity** to proceed. In the example above, the selected identity keeps its
+4096-bit size and the client generates its key pair using the file's passphrase. Your preference
+for the next identity stays separate. If the client is connected,
 switching identities reconnects it. Importing the identity already in use keeps the current
 connection. The server applies the groups and permissions it currently
 associates with the resulting public key.
 
 This restores the identity, rather than a snapshot of server permissions. A group removed by an
 administrator is not brought back by importing an old file.
+
+On Android, importing changes the identity saved by the app and used by its background connection.
+It also survives restarting the app. Saving the file's values is the first step; the client reports
+the import as complete after the matching key pair is ready. If saving or generation fails, it
+reports the failure instead of claiming that a different page identity has been imported.
 
 ## Older files and older clients
 
@@ -44,9 +53,19 @@ it shows a legacy-file notice because it cannot know the original key size. Sele
 **Local settings → Identity → Identity key size** before confirming the import.
 
 Older clients do not understand the new JSON file format. To move an identity to one of those
-clients, copy the raw passphrase shown in **Export Identity** instead. The same window states the
+clients from a browser, copy the raw passphrase shown in **Export Identity** instead. The same window states the
 current identity's key size. Set that size on the older client, then paste the complete passphrase
 into **Import Identity**. A newer client also supports this manual route.
+
+When pasting a passphrase in the current client, choose **Original identity key size** in the import
+window. For the 4096-bit identity in this example, select 4096 even if the device's next-key preference
+is 8192. Keep the complete passphrase, including any leading or trailing spaces and line breaks.
+
+An older browser may have saved your passphrase without its size. On startup, the updated client
+keeps that saved value and opens the import window with the passphrase already filled in. Choose its
+original size to restore it, or choose a versioned `.lmn` backup that records the size. The client
+does not guess from the next-key preference: a guess could connect you as a different identity.
+A damaged saved record also remains unchanged while you choose a backup.
 
 ## File format
 
@@ -64,12 +83,16 @@ characters to preserve compatibility with identities previously entered manually
 file may not exceed 65,536 bytes. Export applies the same limit, so it will not produce a file
 that this importer cannot read.
 
-Whitespace around the JSON and an initial UTF-8 byte-order mark are accepted. Whitespace inside
+Files are decoded as strict UTF-8. Invalid byte sequences are rejected rather than replaced with
+different characters in the secret. Whitespace around the JSON and an initial UTF-8 byte-order mark
+are accepted. Whitespace inside
 the `passphrase` value is preserved because changing it would change the identity. Unknown format
 markers, unsupported versions or sizes, invalid field types, and incomplete passphrases are
 rejected. Malformed JSON is not retried as a raw passphrase.
 
-Legacy raw files retain their 199- or 200-character check after removing an initial byte-order
-mark and surrounding whitespace. Content beginning with `{`, `[` or `"` is treated as structured
-JSON and must pass the JSON validation; it cannot bypass that validation merely by having the
-length of an old passphrase.
+Legacy raw files accept at least 199 characters within the file-size limit and preserve the text
+exactly; spaces and line breaks are not trimmed. Content whose first non-whitespace character is
+`{`, `[` or `"` is treated as structured JSON and must pass validation. A raw file beginning with a
+byte-order mark is also ambiguous. For either unusual legacy passphrase, use **Paste a passphrase
+instead** and preserve every character explicitly. Malformed structured files never silently become
+a new raw identity.

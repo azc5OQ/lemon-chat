@@ -4,7 +4,7 @@
 #include "../definitions.h"
 #include "../../third-party/dave-g-json/cJSON.h"
 
-// Readers and writers must accept the same maximum serialized document size.
+// readers and writers must accept the same maximum serialized document size
 #define SERVER_SETTINGS_MAX_FILE_BYTES (64ULL * 1024 * 1024)
 
 void settings__read_attachment_receive_policy(cJSON *message);

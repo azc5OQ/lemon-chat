@@ -1,0 +1,12 @@
+plugins
+{
+    id 'com.android.application' version '8.11.1' apply false
+}
+
+subprojects
+{
+    if (providers.gradleProperty('nativeBuildRoot').isPresent())
+    {
+        layout.buildDirectory.set(file(providers.gradleProperty('nativeBuildRoot').get() + '/' + project.name))
+    }
+}

@@ -1,5 +1,5 @@
-// This file configures Funnel using the installed Tailscale program.
-// Funnel is one of the solutions for self-hosting behind CGNAT.
+// this file configures Funnel using the installed Tailscale program
+// funnel is one of the solutions for self-hosting behind CGNAT
 
 #include "tailscale.h"
 #include "../clib/clib.h"
@@ -51,9 +51,11 @@ static uint64 _tailscale_internal__milliseconds(void);
 #endif
 
 /**
- * @brief Locates the same Tailscale executable used during startup.
+ * @brief locates the same Tailscale executable used during startup
+ *
  * @param char* path Buffer receiving its absolute path
  * @param uint64 capacity Buffer size in bytes
+ *
  * @return boole Whether the executable is installed
  */
 static boole _tailscale_internal__find_executable(char *path, uint64 capacity)
@@ -96,7 +98,8 @@ static boole _tailscale_internal__find_executable(char *path, uint64 capacity)
 }
 
 /**
- * @brief Checks whether the Tailscale command line program is installed.
+ * @brief checks whether the Tailscale command line program is installed
+ *
  * @return boole Whether startup can locate an executable
  */
 boole tailscale__is_available(void)
@@ -108,10 +111,12 @@ boole tailscale__is_available(void)
 
 #if defined(_WIN32) || defined(WIN32)
 /**
- * @brief Quotes one argument for the Windows process API.
+ * @brief quotes one argument for the Windows process API
+ *
  * @param char* command command buffer receiving the argument
  * @param uint64 capacity buffer size in bytes
  * @param cstring argument argument to append
+ *
  * @return boole whether the argument fit
  */
 static boole _tailscale_internal__append_argument(char *command, uint64 capacity, cstring argument)
@@ -183,7 +188,8 @@ static boole _tailscale_internal__append_argument(char *command, uint64 capacity
 }
 #elif !defined(__ANDROID__)
 /**
- * @brief Returns elapsed milliseconds from a monotonic clock.
+ * @brief returns elapsed milliseconds from a monotonic clock
+ *
  * @return uint64 elapsed milliseconds
  */
 static uint64 _tailscale_internal__milliseconds(void)
@@ -196,11 +202,13 @@ static uint64 _tailscale_internal__milliseconds(void)
 #endif
 
 /**
- * @brief Runs Tailscale with bounded output and a timeout.
- * @param const char* const* arguments arguments after the executable name
- * @param char* output combined standard output and error
- * @param uint64 capacity output buffer size in bytes
- * @return int64 exit code or a negative execution error
+ * @brief runs Tailscale with bounded output and a timeout
+ *
+ * @param const char* const* arguments Arguments after the executable name
+ * @param char* output Buffer receiving combined standard output and error
+ * @param uint64 capacity Output buffer size in bytes
+ *
+ * @return int64 Process exit code, or a negative execution error
  */
 static int64 _tailscale_internal__run(const char *const *arguments, char *output, uint64 capacity)
 {
@@ -563,7 +571,8 @@ cleanup:
 }
 
 /**
- * @brief Prints a bounded diagnostic without terminal control characters.
+ * @brief prints a bounded diagnostic without terminal control characters
+ *
  * @param cstring operation operation that failed
  * @param int64 result process exit code or execution error
  * @param cstring output diagnostic returned by Tailscale
@@ -612,10 +621,12 @@ static void _tailscale_internal__print_error(cstring operation, int64 result, cs
 }
 
 /**
- * @brief Reads one JSON response from Tailscale.
+ * @brief reads one JSON response from Tailscale
+ *
  * @param const char* const* arguments CLI arguments
  * @param cstring operation diagnostic name
  * @param boole allow_empty whether JSON null means no configured routes
+ *
  * @return cJSON* response owned by the caller or NULL_POINTER
  */
 static cJSON *_tailscale_internal__read_json(const char *const *arguments, cstring operation, boole allow_empty)
@@ -664,8 +675,10 @@ static cJSON *_tailscale_internal__read_json(const char *const *arguments, cstri
 }
 
 /**
- * @brief Reads a valid Tailscale hostname from a running daemon.
+ * @brief reads a valid Tailscale hostname from a running daemon
+ *
  * @param cJSON* status Tailscale status response
+ *
  * @return boole whether a usable hostname was found
  */
 static boole _tailscale_internal__read_hostname(cJSON *status)
@@ -748,10 +761,12 @@ static boole _tailscale_internal__read_hostname(cJSON *status)
 }
 
 /**
- * @brief Checks whether a temporary Tailscale session owns the selected port.
+ * @brief checks whether a temporary Tailscale session owns the selected port
+ *
  * @param cJSON* status Funnel configuration
  * @param int64 public_port Port required by Lemon Chat
  * @param uint64 depth Number of nested configurations already checked
+ *
  * @return boole Whether the port is occupied or the configuration is invalid
  */
 static boole _tailscale_internal__has_foreground_port(cJSON *status, int64 public_port, uint64 depth)
@@ -826,10 +841,12 @@ static boole _tailscale_internal__has_foreground_port(cJSON *status, int64 publi
 }
 
 /**
- * @brief Checks that the selected port has no conflicting service.
+ * @brief checks that the selected port has no conflicting service
+ *
  * @param cJSON* status Funnel configuration
  * @param int64 public_port Public HTTPS port
  * @param cstring target Expected local HTTP address
+ *
  * @return int64 Negative for conflict or zero if ready or one if setup is needed
  */
 static int64 _tailscale_internal__check_route(cJSON *status, int64 public_port, cstring target)
@@ -884,7 +901,7 @@ static int64 _tailscale_internal__check_route(cJSON *status, int64 public_port, 
         name_length = clib__strlen(item->string);
         if (name_length >= suffix_length && clib__strcmp(item->string + name_length - suffix_length, suffix) == 0 && clib__strcmp(item->string, endpoint) != 0)
         {
-            // a renamed computer can leave its old public Lemon Chat route behind.
+            // a renamed computer can leave its old public Lemon Chat route behind
             // only accept a single root proxy to this same backend; never publish private paths
             handlers = cJSON_GetObjectItemCaseSensitive(item, "Handlers");
             root = cJSON_GetObjectItemCaseSensitive(handlers, "/");
@@ -945,9 +962,11 @@ static int64 _tailscale_internal__check_route(cJSON *status, int64 public_port, 
 }
 
 /**
- * @brief Enables one root path without resetting other Funnel routes.
+ * @brief enables one root path without resetting other Funnel routes
+ *
  * @param int64 public_port public HTTPS port
  * @param cstring target local HTTP address
+ *
  * @return boole whether Tailscale accepted the command
  */
 static boole _tailscale_internal__set_route(int64 public_port, cstring target)
@@ -980,7 +999,8 @@ static boole _tailscale_internal__set_route(int64 public_port, cstring target)
 }
 
 /**
- * @brief Configures public page and WebSocket routes when Funnel is enabled.
+ * @brief configures public page and WebSocket routes when Funnel is enabled
+ *
  * @return boole whether both configured public routes were verified
  */
 boole tailscale__configure(void)
@@ -1092,7 +1112,8 @@ boole tailscale__configure(void)
 }
 
 /**
- * @brief Reports whether both Funnel routes were verified at startup.
+ * @brief reports whether both Funnel routes were verified at startup
+ *
  * @return boole whether the public addresses are ready to print
  */
 boole tailscale__is_ready(void)
@@ -1101,7 +1122,7 @@ boole tailscale__is_ready(void)
 }
 
 /**
- * @brief Prints the verified public page and WebSocket addresses.
+ * @brief prints the verified public page and WebSocket addresses
  */
 void tailscale__print_addresses(void)
 {

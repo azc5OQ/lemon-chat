@@ -1,6 +1,6 @@
 #include "../../clib/clib.h"
 #include "../../crypto/ciphers.h"
-// This file sends server settings, public server information, banners and changes to server rules.
+// this file sends server settings, public server information, banners and changes to server rules
 
 #include "server_msg.h"
 #include "../../core/musicbot_store.h"
@@ -13,8 +13,10 @@
 static void _server_msg_server_settings_internal__add_server_info(cJSON *message, boole include_banner, boole banner_changed);
 
 /**
- * @brief Tells clients which attachment types they are allowed to block.
+ * @brief tells clients which attachment types they are allowed to block
+ *
  * @param cJSON* message -> login, settings or policy message being built
+ *
  * @return void
  */
 void server_msg__server_settings__add_attachment_receive_policy(cJSON *message)
@@ -219,12 +221,14 @@ void server_msg__server_settings__send_to_single_client(client_t *receiver, bool
 }
 
 /**
- * @brief Adds only the server information the administrator has chosen to share.
+ * @brief adds only the server information the administrator has chosen to share
+ *
  * @param cJSON* message -> message object to fill
  * @param boole include_banner -> include the saved banner when TRUE
  * @param boole banner_changed -> ask visible clients to refresh their banner when TRUE
+ * @attention the caller holds the clients lock while reading settings and slots
+ *
  * @return void
- * @attention The caller holds the clients lock while reading settings and slots.
  */
 static void _server_msg_server_settings_internal__add_server_info(cJSON *message, boole include_banner, boole banner_changed)
 {
@@ -308,12 +312,14 @@ static void _server_msg_server_settings_internal__add_server_info(cJSON *message
 }
 
 /**
- * @brief Sends public server information to an authenticated client.
+ * @brief sends public server information to an authenticated client
+ *
  * @param client_t* receiver -> client that requested the information
  * @param boole include_banner -> include the saved banner when TRUE
  * @param boole banner_changed -> tell the client its cached banner needs refreshing
+ * @attention the caller holds the clients lock
+ *
  * @return void
- * @attention The caller holds the clients lock.
  */
 void server_msg__server_settings__send_info_to_single_client(client_t *receiver, boole include_banner, boole banner_changed)
 {
@@ -339,10 +345,12 @@ void server_msg__server_settings__send_info_to_single_client(client_t *receiver,
 }
 
 /**
- * @brief Updates every client's public server information, including users in idle mode.
+ * @brief updates every client's public server information, including users in idle mode
+ *
  * @param boole banner_changed -> ask clients to refresh the banner when it is published
+ * @attention the caller holds the clients lock
+ *
  * @return void
- * @attention The caller holds the clients lock.
  */
 void server_msg__server_settings__send_info_to_all_clients(boole banner_changed)
 {
@@ -368,9 +376,10 @@ void server_msg__server_settings__send_info_to_all_clients(boole banner_changed)
 }
 
 /**
- * @brief Announces a changed banner only when the administrator publishes it.
+ * @brief announces a changed banner only when the administrator publishes it
+ * @attention the caller holds the clients lock
+ *
  * @return void
- * @attention The caller holds the clients lock.
  */
 void server_msg__server_settings__send_banner_changed_to_all_clients(void)
 {
@@ -381,12 +390,14 @@ void server_msg__server_settings__send_banner_changed_to_all_clients(void)
 }
 
 /**
- * @brief Tells an administrator whether saving the banner succeeded.
+ * @brief tells an administrator whether saving the banner succeeded
+ *
  * @param client_t* receiver -> administrator that sent the change
  * @param boole success -> TRUE when the banner was saved
  * @param cstring error -> short failure code, or an empty string on success
+ * @attention the caller holds the clients lock
+ *
  * @return void
- * @attention The caller holds the clients lock.
  */
 void server_msg__server_settings__send_banner_result_to_single_client(client_t *receiver, boole success, cstring error)
 {
@@ -461,9 +472,10 @@ void server_msg__server_settings__send_policy_update_to_all_clients(void)
 }
 
 /**
- * @brief Confirms whether the server settings were written to disk.
- * @param receiver Administrator who requested the save.
- * @param success TRUE when the settings file was saved.
+ * @brief confirms whether the server settings were written to disk
+ *
+ * @param receiver Administrator who requested the save
+ * @param success TRUE when the settings file was saved
  */
 void server_msg__server_settings__send_saved(client_t *receiver, boole success)
 {

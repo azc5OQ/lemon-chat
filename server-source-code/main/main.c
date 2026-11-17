@@ -41,7 +41,7 @@
 
 // terminal status markers ([*] info, [+] ok, [-] off, [!] warn, [?] prompt) plus the banner color. they
 // default to plain ASCII and are upgraded to ANSI-colored versions by _main_internal__init_terminal (called
-// once at startup) when stdout is an interactive, color-capable console.
+// once at startup) when stdout is an interactive, color-capable console
 const char *g_mark_info = "[*]";
 const char *g_mark_ok = "[+]";
 const char *g_mark_off = "[-]";
@@ -64,8 +64,10 @@ static void _main_internal__log_lock(bool lock, void *udata);
 static void _main_internal__print_banner(void);
 
 /**
- * @brief Prints browser links using the page's configured port and available addresses.
+ * @brief prints browser links using the page's configured port and available addresses
+ *
  * @param boole is_stunnel_started -> whether the bundled TLS program was launched
+ *
  * @return void
  */
 static void _main_internal__print_browser_addresses(boole is_stunnel_started)
@@ -123,8 +125,8 @@ static void _main_internal__print_browser_addresses(boole is_stunnel_started)
 }
 
 /**
- * @brief prints a summary of which services are running and on which ports, after startup is done.
- *        uses the same [+]/[-] markers (green = running, red = off) as the setup prompts.
+ * @brief prints a summary of which services are running and on which ports, after startup is done
+ *        uses the same [+]/[-] markers (green = running, red = off) as the setup prompts
  *
  * @return void
  */
@@ -304,8 +306,10 @@ static void _main_internal__log_handler(juice_log_level_t level, const char *mes
 }
 
 /**
- * @brief Starts the STUN/TURN listener used by the WebRTC data channels.
+ * @brief starts the STUN/TURN listener used by the WebRTC data channels
+ *
  * @param void* argument -> unused thread argument
+ *
  * @return void* -> NULL_POINTER after starting the listener or if startup fails
  */
 static void *_main_internal__start_stun_turn_listener_for_webrtc_datachannel(void *argument)
@@ -367,7 +371,7 @@ error:
  *        time
  *
  *        each DBG_* macro expands to either the following printf or to nothing, so the startup output
- *        lists exactly the debug categories built into this binary.
+ *        lists exactly the debug categories built into this binary
  *
  * @return void
  */
@@ -479,9 +483,9 @@ static void _main_internal__print_banner(void)
 }
 
 /**
- * @brief entry point
+ * @brief initializes the server and runs its listeners
  *
- * @return int process exit code
+ * @return int EXIT_FAILURE if required startup fails. Normal operation keeps running
  */
 #ifdef __ANDROID__
 int lemon_server_main(void)
@@ -595,7 +599,7 @@ int main(void)
         return EXIT_FAILURE;
     }
 
-    // resolve the root even when HTTP starts disabled, for later live enabling.
+    // resolve the root even when HTTP starts disabled, for later live enabling
     // startup diagnostics still precede the worker threads
 
     {
@@ -656,7 +660,7 @@ int main(void)
     _main_internal__print_startup_summary();
 
 #ifndef DEBUG_ACTIVE
-    // console writes can block network threads on a slow Windows terminal.
+    // console writes can block network threads on a slow Windows terminal
     // release builds show the startup summary, then stop writing runtime logs
     log_set_quiet(true);
 #endif

@@ -11,9 +11,11 @@ static boole g_effect_registered;
 static void _ui_effects_internal__draw(gui_node_t *node, float scale);
 
 /**
- * @brief positions a theme's radial border highlight at the pointer without allocations or a background timer.
- * @param gui_node_t* node -> borrowed GUI node; only resolved drawing properties are changed
+ * @brief positions a theme's radial border highlight at the pointer without allocations or a background timer
+ *
+ * @param gui_node_t* node -> borrowed GUI node. Only resolved drawing properties are changed
  * @param float scale -> physical pixels per logical unit
+ *
  * @return void
  */
 void desktop_ui_effects__border(gui_node_t *node, float scale)
@@ -52,9 +54,11 @@ void desktop_ui_effects__border(gui_node_t *node, float scale)
 }
 
 /**
- * @brief adds pointer border lighting while retaining upstream widget drawing and popup behavior.
- * @param gui_node_t* node -> scene-owned control
+ * @brief adds pointer border lighting while retaining upstream widget drawing and popup behavior
+ *
+ * @param gui_node_t* node -> scene owned control
  * @param float scale -> physical pixels per logical unit
+ *
  * @return void
  */
 static void _ui_effects_internal__draw(gui_node_t *node, float scale)
@@ -76,7 +80,8 @@ static void _ui_effects_internal__draw(gui_node_t *node, float scale)
 }
 
 /**
- * @brief wraps existing public widget drawing hooks on the GUI thread; themes opt in with radial border colours.
+ * @brief wraps existing public widget drawing hooks on the GUI thread. Themes opt in with radial border colours
+ *
  * @return void
  */
 void desktop_ui_effects__register(void)

@@ -1,30 +1,30 @@
 #include "../util.h"
-// This file starts URL preview lookups when a client posts a website link in
+// this file starts URL preview lookups when a client posts a website link in
 // chat. The feature must be enabled in the server settings. It arranges for
 // the page's title, description and picture to be downloaded and sent back
-// to the client, which displays them below the message.
+// to the client, which displays them below the message
 //
-// Four background threads fetch pages while normal chat messages continue to
+// four background threads fetch pages while normal chat messages continue to
 // be handled. A small queue limits how many lookups can wait, and a cache keeps
-// recent results so repeated links do not need to be downloaded again.
+// recent results so repeated links do not need to be downloaded again
 //
-// The administrator can enable "show link previews" in the general server
+// the administrator can enable "show link previews" in the general server
 // settings, or set is_link_preview_allowed to true in server_settings.json. It is
 // off by default. Clients send a resolve_url message containing a URL and a
 // request_id. The server replies with url_resolved and the same request_id,
-// using the normal metadata encryption between that client and this server.
-// The reply's status is ok, disabled, or unavailable. Successful replies can
-// contain a title, description, site name and image bytes for the preview card.
+// using the normal metadata encryption between that client and this server
+// the reply's status is ok, disabled, or unavailable. Successful replies can
+// contain a title, description, site name and image bytes for the preview card
 //
-// The server learns the requested URL, including when it came from a private
+// the server learns the requested URL, including when it came from a private
 // message or a password-protected channel. The chat message itself keeps its
-// existing encryption. The result goes only to the client that requested it.
-// No website lookup holds the chat server's client lock while waiting.
+// existing encryption. The result goes only to the client that requested it
+// no website lookup holds the chat server's client lock while waiting
 //
-// There can be 32 waiting requests, and one client can submit a request every
+// there can be 32 waiting requests, and one client can submit a request every
 // 500 ms. The cache holds 16 results: successful lookups stay for ten minutes,
 // and failed lookups stay for one minute. A queued result is discarded if its
-// client disconnected or replaced the connection while the lookup was running.
+// client disconnected or replaced the connection while the lookup was running
 #include "../definitions.h"
 #include "../clib/clib.h"
 #include "../../third-party/dave-g-json/cJSON.h"
@@ -75,15 +75,15 @@ static void *_url_resolver_internal__worker(void *unused);
 static void _url_resolver_internal__start(void);
 
 /**
- * @brief Checks whether the client that requested a URL preview still has the same connection and
- *        keys.
+ * @brief checks whether the client that requested a URL preview still has the same connection and
+ *        keys
  *
- * The client array can reuse a disconnected client's slot. Checking its socket and keys
- * prevents a finished preview from reaching another person or a replacement connection.
+ * the client array can reuse a disconnected client's slot. Checking its socket and keys
+ * prevents a finished preview from reaching another person or a replacement connection
  *
  * @param const url_resolver_job_t* job -> the queued request and the connection details saved with it
  *
- * @attention The caller holds the clients read lock while checking the client slot.
+ * @attention the caller holds the clients read lock while checking the client slot
  *
  * @return boole -> TRUE when the original authenticated session still exists, otherwise FALSE
  */
@@ -103,8 +103,8 @@ static boole _url_resolver_internal__same_session(const url_resolver_job_t *job)
 }
 
 /**
- * @brief Gets a URL preview from the cache, or downloads the page and saves a copy for later
- *        requests.
+ * @brief gets a URL preview from the cache, or downloads the page and saves a copy for later
+ *        requests
  *
  * @param const char* url -> the website URL to look up, limited to 2048 characters by the request handler
  *
@@ -171,11 +171,11 @@ static cJSON *_url_resolver_internal__result(const char *url)
 }
 
 /**
- * @brief Waits for URL preview requests and sends each result only to the session that requested
- *        it.
+ * @brief waits for URL preview requests and sends each result only to the session that requested
+ *        it
  *
- * Website downloads run without the clients lock. The connection is checked before
- * downloading and again before replying because the client may disconnect meanwhile.
+ * website downloads run without the clients lock. The connection is checked before
+ * downloading and again before replying because the client may disconnect meanwhile
  *
  * @param void* unused -> unused thread argument, passed as NULL_POINTER when the worker starts
  *
@@ -240,10 +240,10 @@ static void *_url_resolver_internal__worker(void *unused)
 }
 
 /**
- * @brief Starts the background threads that handle queued URL preview requests.
+ * @brief starts the background threads that handle queued URL preview requests
  *
- * Called once through pthread_once. The worker count records how many threads
- * started successfully, so requests can be refused when no worker is available.
+ * called once through pthread_once. The worker count records how many threads
+ * started successfully, so requests can be refused when no worker is available
  *
  * @return void
  */
@@ -276,12 +276,13 @@ static void _url_resolver_internal__start(void)
 }
 
 /**
- * @brief Queues a page lookup and sends its result to the connection that requested it.
+ * @brief queues a page lookup and sends its result to the connection that requested it
+ *
  * @param cstring url -> checked HTTP or HTTPS URL, no more than 2048 characters
  * @param cstring request_id -> checked request ID, from 1 to 64 characters
  * @param uint64 client_id -> client requesting the preview
  * @param ws_cli_conn_t* socket -> connection that sent the request
- * @attention The caller must not hold the clients lock. The queue copies the strings.
+ * @attention the caller must not hold the clients lock. The queue copies the strings
  */
 void url_resolver__queue_lookup(cstring url, cstring request_id, uint64 client_id, ws_cli_conn_t *socket)
 {

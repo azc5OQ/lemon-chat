@@ -1,4 +1,4 @@
-// start-page.js: the page with the connect button and the import identity button, shown before the client connects; the click on connect lets the browser play sound
+// shows Connect and Import identity before connection startup
 
 // true from page load until the user pressed the connect button
 var start_page_is_active = false;
@@ -7,7 +7,7 @@ var start_page_is_active = false;
 var start_page_is_autoconnect_wanted = false;
 
 /**
- * @brief reads the page options and tells whether the start page is shown
+ * @brief checks whether page options require the start page
  *
  * @return boolean true when the page options ask for the connect button and the page does not run in the android app
  */
@@ -19,8 +19,7 @@ function start_page__is_wanted()
 }
 
 /**
- * @brief shows the start page and keeps the page from connecting until the connect button is pressed.
- *        called once at page load, after the page options were read and before the connect loop starts
+ * @brief shows the start page and pauses automatic connection attempts
  *
  * @return void
  */
@@ -67,9 +66,7 @@ function start_page__init()
 }
 
 /**
- * @brief the connect button of the start page: this press is the user action that lets the
- *        browser play sound. the start page closes; a page with the server written into it
- *        connects now, any other page shows the connect window for the address
+ * @brief enables sound, then connects or opens the connection form
  *
  * @return void
  */
@@ -94,7 +91,7 @@ function start_page__connect_button_onclick()
     // connect if wanted
     if (start_page_is_autoconnect_wanted == true)
     {
-        // back to what the page options asked for: connect without the connect window, and connect again after a lost connection
+        // restore the configured autoconnect preference
         g_is_autoconnect_without_user_action_active = true;
         connection__set_connect_holdback_loader_visible(true);
         connection__request_connect("button");
@@ -102,8 +99,7 @@ function start_page__connect_button_onclick()
 }
 
 /**
- * @brief the import identity button of the start page: opens the import dialog (identity file
- *        or pasted identity passphrase). the result is reported by connection__identity_imported
+ * @brief opens identity import from the start page
  *
  * @return void
  */
@@ -113,9 +109,7 @@ function start_page__import_identity_button_onclick()
 }
 
 /**
- * @brief makes the browser accept sound from this page, inside the press on the connect button.
- *        an audio context that exists and is suspended is resumed, and one sound effect is
- *        started without volume, which marks the page's sound elements as started by the user
+ * @brief resumes existing audio and starts a silent sound during the user's click
  *
  * @return void
  */

@@ -1,7 +1,5 @@
 package com.lemonchat;
 
-import static android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE;
-import static android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_PHONE_CALL;
 import static androidx.core.app.ActivityCompat.startActivityForResult;
 
 import android.Manifest;
@@ -12,7 +10,9 @@ import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.content.MutableContextWrapper;
 import android.content.pm.PackageManager;
+import android.content.pm.ServiceInfo;
 import android.graphics.PixelFormat;
 import android.media.AudioAttributes;
 import android.media.RingtoneManager;
@@ -23,6 +23,7 @@ import android.os.IBinder;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.WindowManager;
+import android.webkit.MimeTypeMap;
 import android.webkit.PermissionRequest;
 import android.webkit.ValueCallback;
 import android.webkit.WebChromeClient;
@@ -39,6 +40,11 @@ public class BackgroundService extends Service
 {
 	public class LocalBinder extends Binder
 	{
+		/**
+		 * Returns the service instance associated with this local binding.
+		 *
+		 * @return the bound background service
+		 */
 		BackgroundService getService()
 		{
 			return BackgroundService.this;
@@ -58,13 +64,16 @@ public class BackgroundService extends Service
 	private WindowManager windowManager = null;
 
 	public NotificationManager notificationManager;
+	private Notification foregroundNotification;
+	private boolean foregroundAdmitted;
+	private long microphoneGeneration = -1;
 
 	//its recommended to create separate notification channels for notifications of different purpose
 	private NotificationChannel notificationChannelAppRunningInBackground;
 
-	// v2: android locks a channel's importance once it exists, so demoting it needs a new id
-	public static final String RUNNING_IN_BACKGROUND_NOTIFICATION_CHANNEL_ID = "com.lemonchat.running_in_background_notification_v2";
-	private static final String RUNNING_IN_BACKGROUND_NOTIFICATION_CHANNEL_ID_OLD = "com.lemonchat.running_in_background_notification";
+	// android retains the importance of an existing notification channel
+	public static final String RUNNING_IN_BACKGROUND_NOTIFICATION_CHANNEL_ID = "com.lemonchat.running_in_background_notification_v3";
+	private static final String RUNNING_IN_BACKGROUND_NOTIFICATION_CHANNEL_ID_OLD = "com.lemonchat.running_in_background_notification_v2";
 
 	private NotificationChannel notificationChannelAcceptRefuseCall;
 
@@ -102,8 +111,18 @@ public class BackgroundService extends Service
 
 	final long[] vibrationPattern = { 1000, 1000 };
 
+	/**
+	 * Creates the UI WebView only when an activity binds to the background service.
+	 *
+	 * @param intent binding request from the activity
+	 * @return the local service binder
+	 */
 	@Nullable @Override public IBinder onBind(Intent intent)
 	{
+		if (!this.foregroundAdmitted)
+		{
+			return null;
+		}
 		//the webview is UI and nothing else now: node owns the connection and every protocol
 		//action, so it is built when a ui actually binds and never for a headless start.
 		//(it still lives in the service rather than the activity so it survives rotation and
@@ -116,11 +135,15 @@ public class BackgroundService extends Service
 		return this.binder;
 	}
 
-	public WebView webView;
+	public volatile WebView webView;
+
+	// the context of the WebView: the activity that shows it, or this service while no activity shows it.
+	// the list of a <select> and other pop-up windows of the page need the window of an activity
+	private MutableContextWrapper webViewContext;
 
 	JavascriptJavaBridge javascriptJavaBridge;
 
-	NodeBridge nodeBridge = null;
+	volatile NodeBridge nodeBridge = null;
 
 	// keeps the cpu ticking so node's heartbeat fires while the screen is off
 	private android.os.PowerManager.WakeLock nodeWakeLock = null;
@@ -129,82 +152,102 @@ public class BackgroundService extends Service
 	// audio into 100-400ms clumps and voice stutters (the cpu lock does not cover this)
 	private android.net.wifi.WifiManager.WifiLock nodeWifiLock = null;
 
-	///this function is not for initialization, thats what onCreate is for
-	///every time intent is passed to this service, onStartCommand gets run
-	///for example the ACTION_ACCEPT_CALL, basically app passes intent to itself
+	/**
+	 * Handles a native call action while keeping the service eligible for sticky restart.
+	 *
+	 * @param intent service command, or {@code null} after a sticky restart
+	 * @param flags framework start flags
+	 * @param startId identifier of this start request
+	 * @return {@link #START_STICKY}
+	 */
 	@Override public int onStartCommand(Intent intent, int flags, int startId)
 	{
-		if (intent != null && intent.getAction() != null)
+		if (!this.foregroundAdmitted)
 		{
-			switch (intent.getAction())
-			{
-			case ACTION_ACCEPT_CALL:
-				this.notificationManager.cancel(INCOMING_CALL_NOTIFICATION_ID);
-
-				int channelId = intent.getIntExtra("channelId", 0);
-
-				// through node, not the webview: node holds the connection, and after a boot
-				// start there is no webview to call into (this used to be an NPE waiting for
-				// the first incoming call - exactly what autostart is for)
-				if (this.nodeBridge != null)
-				{
-					this.nodeBridge.sendComeFromIdle(channelId);
-				}
-
-				// the webview keeps its own idle logic: stamp the accept there too, so its gentle
-				// idle (onStop during the accept transition) waits the presence grace out
-				if (this.webView != null)
-				{
-					this.webView.evaluateJavascript("if (typeof JavascriptJavaBridge__mark_call_accept_presence === 'function') { JavascriptJavaBridge__mark_call_accept_presence(); }", null);
-				}
-
-				//bring app to foreground by calling startActivity from service context
-				//single_top so an already visible MainActivity is reused instead of stacked;
-				//when the notification's accept lands here MainActivity is already coming up
-				Intent intent1 = new Intent(this, MainActivity.class);
-				intent1.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-				this.startActivity(intent1);
-
-				return START_NOT_STICKY;
-
-			case ACTION_DECLINE_CALL:
-				this.notificationManager.cancel(INCOMING_CALL_NOTIFICATION_ID);
-				BackgroundService.suppressNextIdleExit = true;
-				return START_NOT_STICKY;
-			}
+			return START_NOT_STICKY;
 		}
-
+		this.handleCallAction(intent);
 		return START_STICKY;
 	}
 
-	/** the user swiped the app out of the recent apps list. the service keeps running, so we
-	    have to tell node ourselves that nobody is looking any more. */
-	@Override public void onTaskRemoved(Intent rootIntent)
+	/**
+	 * Consumes only the current unexpired native call capability and forwards its action to Node.
+	 *
+	 * @param intent Accept or Decline intent carrying the call and session IDs
+	 */
+	public synchronized void handleCallAction(Intent intent)
 	{
-		Log.d("Info", "[lemonchat] onTaskRemoved: task swiped away, reporting the ui as gone");
-
-		MainActivity.instance = null;
-
-		//swiping the app away means stop everything audible: FORCED idle, from any channel
-		//(home/backgrounding stays gentle so in-channel music keeps playing there)
-		if (this.webView != null)
+		if (intent != null && (ACTION_ACCEPT_CALL.equals(intent.getAction()) || ACTION_DECLINE_CALL.equals(intent.getAction())))
 		{
-			this.webView.evaluateJavascript("if (typeof JavascriptJavaBridge__send_go_to_idle_mode_request === 'function') { JavascriptJavaBridge__send_go_to_idle_mode_request(true); }", null);
+			String callId = intent.getStringExtra("call_id");
+			String sessionId = intent.getStringExtra("session_id");
+			if (!this.isCurrentCall(callId, sessionId))
+			{
+				return;
+			}
+			boolean accepted = ACTION_ACCEPT_CALL.equals(intent.getAction());
+			this.activeCallId = "";
+			this.notificationManager.cancel(INCOMING_CALL_NOTIFICATION_ID);
+			if (this.nodeBridge != null)
+			{
+				this.nodeBridge.sendCallAction(accepted ? "accept" : "decline", callId, sessionId);
+			}
+			BackgroundService.suppressNextIdleExit = !accepted;
+			if (accepted && this.webView != null && this.isTrustedPage())
+			{
+				this.webView.evaluateJavascript("if (typeof JavascriptJavaBridge__mark_call_accept_presence === 'function')\n{\n    JavascriptJavaBridge__mark_call_accept_presence();\n}", null);
+			}
 		}
-
-		//the app is gone, so a file picker it opened will never answer
-		this.abandonPendingFileChooser();
-
-		if (this.nodeBridge != null)
-		{
-			this.nodeBridge.sendUiVisible(false);
-		}
-
-		super.onTaskRemoved(rootIntent);
 	}
 
-	/** launcher-icon badge: a silent notification carrying the count is how android exposes it.
-	    zero cancels it. launchers that do not support badges simply ignore the number. */
+	/**
+	 * Stops page media and forces Node into idle when the user removes the task.
+	 * Native presence cleanup runs even if the page is absent or its callback fails.
+	 *
+	 * @param rootIntent original task intent supplied by Android
+	 */
+	@Override public void onTaskRemoved(Intent rootIntent)
+	{
+		MainActivity.instance = null;
+		this.retirePageMedia();
+		try
+		{
+			// The page stops capture/playback; Node receives the presence command independently.
+			try
+			{
+				if (this.webView != null && this.isTrustedPage())
+				{
+					this.webView.evaluateJavascript("if (typeof JavascriptJavaBridge__send_go_to_idle_mode_request === 'function')\n{\n    JavascriptJavaBridge__send_go_to_idle_mode_request(true);\n}", null);
+				}
+			}
+			catch (RuntimeException unavailable)
+			{
+				Log.w("lemonchat", "task removal media cleanup unavailable");
+			}
+			try
+			{
+				this.abandonPendingFileChooser();
+			}
+			catch (RuntimeException unavailable)
+			{
+				Log.w("lemonchat", "task removal chooser cleanup unavailable");
+			}
+			if (this.nodeBridge != null)
+			{
+				this.nodeBridge.sendUiVisible(false, false, true);
+			}
+		}
+		finally
+		{
+			super.onTaskRemoved(rootIntent);
+		}
+	}
+
+	/**
+	 * Updates the launcher badge and its silent supporting notification.
+	 *
+	 * @param unreadCount unread total, or zero to remove the notification
+	 */
 	public void showUnreadBadge(int unreadCount)
 	{
 		// the count on the launcher icon itself (alias switch), next to the notification badge
@@ -248,7 +291,11 @@ public class BackgroundService extends Service
 		}
 	}
 
-	/** does the device have ANY usable network right now (wifi, mobile data, ethernet) */
+	/**
+	 * Checks whether Android currently reports an active network.
+	 *
+	 * @return false if Android confirms there is no active network, otherwise true
+	 */
 	public boolean isNetworkAvailable()
 	{
 		try
@@ -264,6 +311,10 @@ public class BackgroundService extends Service
 		}
 	}
 
+	/**
+	 * Leaves the WebView detached while Node maintains the background connection.
+	 * The legacy overlay implementation remains disabled.
+	 */
 	public void attachWebViewToInvisibleWindow()
 	{
 		// THE OVERLAY IS DISABLED. it existed only to keep the webview's javascript timers alive while
@@ -331,6 +382,28 @@ public class BackgroundService extends Service
 		}
 	}
 
+	/**
+	 * @brief Sets the context of the WebView. While an activity shows the WebView, the activity is its
+	 *        context, so that pop-up windows of the page (the list of a <select>) belong to the activity's
+	 *        window. While no activity shows it, this service is its context, so that no closed activity
+	 *        is kept in memory.
+	 *
+	 * @param Context owner -> the activity that shows the WebView, or null for this service
+	 *
+	 * @return void
+	 */
+	public void setWebViewWindowOwner(Context owner)
+	{
+		// replace the context
+		if (this.webViewContext != null)
+		{
+			this.webViewContext.setBaseContext(owner != null ? owner : this);
+		}
+	}
+
+	/**
+	 * Attempts to remove a legacy overlay attachment before reusing or destroying the WebView.
+	 */
 	public void detachWebViewFromInvisibleWindow()
 	{
 		try
@@ -356,41 +429,215 @@ public class BackgroundService extends Service
 		}
 	}
 
-	public void askForPermission(String origin, String permission, int requestCode, PermissionRequest myRequest)
-	{
-		Log.d("WebView", "inside askForPermission for" + origin + "with" + permission);
+	private PermissionRequest pendingPermission;
+	private MainActivity permissionOwner;
+	private boolean permissionPromptPending;
+	private long permissionGeneration;
+	private volatile long pageGeneration;
+	private volatile boolean trustedPage;
+	private MainActivity fileChooserOwner;
+	private long fileChooserGeneration;
+	private int fileChooserRequestCode;
+	private static int nextFileChooserRequestCode = 20000;
+	private android.net.ConnectivityManager.NetworkCallback networkCallback;
 
-		if (MainActivity.instance == null)
+	/**
+	 * Reports whether the current WebView document passed the bundled-page check.
+	 *
+	 * @return whether native callbacks may target the current document
+	 */
+	public boolean isTrustedPage()
+	{
+		return this.trustedPage;
+	}
+
+	/**
+	 * Identifies the current document generation for delayed native callbacks.
+	 *
+	 * @return the monotonically advancing page generation
+	 */
+	public long getPageGeneration()
+	{
+		return this.pageGeneration;
+	}
+
+	/**
+	 * Revokes current document authority and settles its pending picker and permission callbacks.
+	 */
+	public void invalidatePage()
+	{
+		this.pageGeneration++;
+		this.trustedPage = false;
+		this.microphoneGeneration = -1;
+		this.retirePageMedia();
+		this.abandonPendingFileChooser();
+		if (this.pendingPermission != null)
 		{
+			this.pendingPermission.deny();
+			this.pendingPermission = null;
+		}
+	}
+
+	/**
+	 * Starts a new document generation and evaluates whether its URL is trusted.
+	 *
+	 * @param url document URL reported by the WebView client
+	 */
+	public void beginPage(String url)
+	{
+		this.invalidatePage();
+		this.trustedPage = TrustedWebViewClient.trusted(url);
+		this.resumePageMedia(MainActivity.instance);
+	}
+
+	/**
+	 * Resolves or requests native microphone permission for the current trusted page.
+	 * Requests without a live activity or from an untrusted origin are denied.
+	 *
+	 * @param origin origin supplied by the WebView permission request
+	 * @param permission Android permission to check or request
+	 * @param requestCode activity permission request code
+	 * @param request WebView audio capture request to settle
+	 */
+	public void askForPermission(String origin, String permission, int requestCode, PermissionRequest request)
+	{
+		MainActivity activity = MainActivity.instance;
+		if (!this.trustedPage || activity == null || !activity.isMediaActivityVisible()
+			|| !("file://".equals(origin) || "file:///".equals(origin)))
+		{
+			request.deny();
 			return;
 		}
-
-		if (ContextCompat.checkSelfPermission(getApplicationContext(), permission) != PackageManager.PERMISSION_GRANTED)
+		if (ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED)
 		{
-			// Should we show an explanation?
-			if (ActivityCompat.shouldShowRequestPermissionRationale(MainActivity.instance, permission))
+			if (this.admitMicrophone(activity))
 			{
-				// Show an expanation to the user *asynchronously* -- don't block
-				// this thread waiting for the user's response! After the user
-				// sees the explanation, try again to request the permission.
+				request.grant(new String[] { PermissionRequest.RESOURCE_AUDIO_CAPTURE });
 			}
 			else
 			{
-				// No explanation needed, we can request the permission.
-
-				ActivityCompat.requestPermissions(MainActivity.instance, new String[] { permission }, requestCode);
+				request.deny();
 			}
+			return;
+		}
+		if (this.permissionPromptPending)
+		{
+			request.deny();
+			return;
+		}
+		this.pendingPermission = request;
+		this.permissionOwner = activity;
+		this.permissionPromptPending = true;
+		this.permissionGeneration = this.pageGeneration;
+		try
+		{
+			ActivityCompat.requestPermissions(activity, new String[] { permission }, requestCode);
+		}
+		catch (RuntimeException unavailable)
+		{
+			this.cancelPendingPermission(activity);
+		}
+	}
+
+	/**
+	 * Settles the pending audio request only for its owning activity and document generation.
+	 *
+	 * @param owner activity receiving the Android permission result
+	 */
+	public void completeAudioPermission(MainActivity owner)
+	{
+		if (owner != this.permissionOwner)
+		{
+			return;
+		}
+		if (MainActivity.instance != owner || !owner.isMediaActivityVisible())
+		{
+			return;
+		}
+		PermissionRequest request = this.pendingPermission;
+		this.pendingPermission = null;
+		this.permissionOwner = null;
+		this.permissionPromptPending = false;
+		if (request == null)
+		{
+			return;
+		}
+		if (this.trustedPage && this.permissionGeneration == this.pageGeneration
+			&& this.admitMicrophone(owner))
+		{
+			request.grant(new String[] { PermissionRequest.RESOURCE_AUDIO_CAPTURE });
 		}
 		else
 		{
-			myRequest.grant(myRequest.getResources());
+			request.deny();
 		}
+	}
+
+	/**
+	 * Denies a pending WebView permission request and releases its native owner.
+	 *
+	 * @param owner activity whose request is being cancelled, or {@code null} to cancel any request
+	 */
+	public void cancelPendingPermission(MainActivity owner)
+	{
+		if (owner != null && owner != this.permissionOwner)
+		{
+			return;
+		}
+		PermissionRequest request = this.pendingPermission;
+		this.pendingPermission = null;
+		this.permissionOwner = null;
+		this.permissionPromptPending = false;
+		if (request != null)
+		{
+			request.deny();
+		}
+	}
+
+	/**
+	 * Delivers a selected file only to the matching activity, request and current trusted document.
+	 *
+	 * @param activity activity receiving the picker result
+	 * @param requestCode picker request code
+	 * @param resultCode Android result status
+	 * @param data returned picker intent, which may be {@code null}
+	 */
+	public void completeFileChooser(MainActivity activity, int requestCode, int resultCode, Intent data)
+	{
+		if (this.fileChooserCallback == null || activity != this.fileChooserOwner || requestCode != this.fileChooserRequestCode)
+		{
+			return;
+		}
+		ValueCallback<Uri[]> callback = this.fileChooserCallback;
+		this.fileChooserCallback = null;
+		this.fileChooserOwner = null;
+		Uri[] result = null;
+		if (this.trustedPage && this.fileChooserGeneration == this.pageGeneration && resultCode == android.app.Activity.RESULT_OK
+			&& data != null && data.getData() != null)
+		{
+			result = new Uri[] { data.getData() };
+		}
+		callback.onReceiveValue(result);
 	}
 
 	public ValueCallback<Uri[]> fileChooserCallback;
 
-	/** forgets a file picker that is never going to come back with an answer. while one is
-	    remembered the app refuses to go idle, so a forgotten one blocks idle forever. */
+	/**
+	 * Cancels the picker callback only when the specified activity owns it.
+	 *
+	 * @param owner activity being closed or replaced
+	 */
+	public void abandonPendingFileChooser(MainActivity owner)
+	{
+		if (owner == this.fileChooserOwner)
+		{
+			this.abandonPendingFileChooser();
+		}
+	}
+
+	/**
+	 * Settles and forgets a picker callback that can no longer return a usable file.
+	 */
 	public void abandonPendingFileChooser()
 	{
 		if (this.fileChooserCallback == null)
@@ -400,38 +647,86 @@ public class BackgroundService extends Service
 
 		Log.d("Info", "[lemonchat] releasing an unanswered file chooser callback");
 
-		this.fileChooserCallback.onReceiveValue(null);
+		ValueCallback<Uri[]> callback = this.fileChooserCallback;
 		this.fileChooserCallback = null;
+		this.fileChooserOwner = null;
+		try
+		{
+			callback.onReceiveValue(null);
+		}
+		catch (RuntimeException unavailable)
+		{
+			Log.w("lemonchat", "file chooser page already unavailable");
+		}
 	}
 
+	/**
+	 * Converts the accept list of the page's file input (".mp3", "image/*", "audio/mpeg") into the MIME types
+	 * the Android file picker filters by. A file name extension is looked up in Android's MIME table; an entry
+	 * Android does not know (".lmn") is left out.
+	 *
+	 * @param params file chooser parameters the WebView passed for the input
+	 *
+	 * @return MIME types, empty when the input accepts every file or no entry is known
+	 */
+	private static String[] acceptedMimeTypes(WebChromeClient.FileChooserParams params)
+	{
+		java.util.ArrayList<String> types = new java.util.ArrayList<>();
+		String[] accepted = params != null ? params.getAcceptTypes() : null;
+		if (accepted == null)
+		{
+			return new String[0];
+		}
+		for (String entry : accepted)
+		{
+			for (String part : entry.split(","))
+			{
+				String type = part.trim().toLowerCase(java.util.Locale.ROOT);
+
+				// extension to type
+				if (type.startsWith("."))
+				{
+					type = MimeTypeMap.getSingleton().getMimeTypeFromExtension(type.substring(1));
+				}
+				if (type != null && type.contains("/") && !types.contains(type))
+				{
+					types.add(type);
+				}
+			}
+		}
+		return types.toArray(new String[0]);
+	}
+
+	/**
+	 * Creates the service WebView, installs trusted native interfaces and loads the bundled page.
+	 */
 	public void createWebViewInServiceContext()
 	{
 		this.javascriptJavaBridge = new JavascriptJavaBridge(this, ChatSettings.getInstance(), this);
 
 		//create WebView in service context
-		this.webView = new WebView(this);
-		this.webView.setWebViewClient(new WebViewClient());
+		this.webViewContext = new MutableContextWrapper(this);
+		this.webView = new WebView(this.webViewContext);
+		this.webView.setWebViewClient(new TrustedWebViewClient(this));
 		this.webView.setWebChromeClient(new WebChromeClient() {
 			@Override public void onPermissionRequest(final PermissionRequest request)
 			{
-				for (String permission : request.getResources())
+				String[] resources = request.getResources();
+				if (resources.length != 1 || !PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(resources[0]))
 				{
-					switch (permission)
-					{
-					case "android.webkit.resource.AUDIO_CAPTURE": {
-						Log.d("Info", "[lemonchat] android.webkit.resource.AUDIO_CAPTURE :");
-						int MY_PERMISSIONS_REQUEST_RECORD_AUDIO = 101;
-						askForPermission(request.getOrigin().toString(), Manifest.permission.RECORD_AUDIO, MY_PERMISSIONS_REQUEST_RECORD_AUDIO, request);
-						break;
-					}
-					}
+					request.deny();
+					return;
 				}
+				askForPermission(request.getOrigin().toString(), Manifest.permission.RECORD_AUDIO, 101, request);
 			}
 
-			//			@Override
-			//			public void onPermissionRequest(final PermissionRequest request) {
-			//				request.grant(request.getResources());
-			//			}
+			@Override public void onPermissionRequestCanceled(PermissionRequest request)
+			{
+				if (BackgroundService.this.pendingPermission == request)
+				{
+					BackgroundService.this.pendingPermission = null;
+				}
+			}
 
 			//anything the page prints gets handed to node, which writes it to the log file.
 			//without this the webview's half of a problem is not saved anywhere
@@ -449,21 +744,36 @@ public class BackgroundService extends Service
 			//so WebView allows user to select file form disk..
 			@Override public boolean onShowFileChooser(WebView vw, ValueCallback<Uri[]> filePathCallback, FileChooserParams fileChooserParams)
 			{
-				if (fileChooserCallback != null)
+				BackgroundService.this.abandonPendingFileChooser();
+				MainActivity activity = MainActivity.instance;
+				if (!BackgroundService.this.trustedPage || activity == null || activity.isFinishing() || nextFileChooserRequestCode > 65000)
 				{
-					fileChooserCallback.onReceiveValue(null);
+					filePathCallback.onReceiveValue(null);
+					return true;
 				}
 				fileChooserCallback = filePathCallback;
-
+				fileChooserOwner = activity;
+				fileChooserGeneration = pageGeneration;
+				fileChooserRequestCode = nextFileChooserRequestCode++;
 				Intent selectionIntent = new Intent(Intent.ACTION_GET_CONTENT);
 				selectionIntent.addCategory(Intent.CATEGORY_OPENABLE);
 				selectionIntent.setType("*/*");
 				selectionIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
 
-				Intent chooserIntent = new Intent(Intent.ACTION_CHOOSER);
-				chooserIntent.putExtra(Intent.EXTRA_INTENT, selectionIntent);
-				startActivityForResult(MainActivity.instance, chooserIntent, MainActivity.FILE_CHOOSER_RESULT_CODE, null);
-
+				// accepted types only
+				String[] mimeTypes = BackgroundService.acceptedMimeTypes(fileChooserParams);
+				if (mimeTypes.length > 0)
+				{
+					selectionIntent.putExtra(Intent.EXTRA_MIME_TYPES, mimeTypes);
+				}
+				try
+				{
+					activity.startActivityForResult(Intent.createChooser(selectionIntent, "Select file"), fileChooserRequestCode);
+				}
+				catch (RuntimeException unavailable)
+				{
+					BackgroundService.this.abandonPendingFileChooser();
+				}
 				return true;
 			}
 		});
@@ -487,7 +797,7 @@ public class BackgroundService extends Service
 		webSettings.setLoadWithOverviewMode(false); //zooms page out
 		//webSettings.setUseWideViewPort(true); //sets device screen width to virtual size of 960pixels
 		webSettings.setSaveFormData(false);
-		webSettings.setJavaScriptCanOpenWindowsAutomatically(true);
+		webSettings.setJavaScriptCanOpenWindowsAutomatically(false);
 		webSettings.setSupportMultipleWindows(false);
 		webSettings.setCacheMode(WebSettings.LOAD_NO_CACHE);
 
@@ -498,16 +808,23 @@ public class BackgroundService extends Service
 		Log.d("Info", "[lemonchat] WebView loaded :");
 	}
 
+	/**
+	 * Starts the foreground notification, initializes settings and attaches the process runtime.
+	 * Network and settings listeners then publish changes to the same Node owner.
+	 */
 	@Override public void onCreate()
 	{
-		// android kills a foreground service that shows no notification within 5 seconds, and a
-		// just-booted phone is slow - so the notification comes first, node startup after
-		this.announceForegroundService();
+		super.onCreate();
+		// publish the notification before preparing the runtime
+		if (!this.announceForegroundService())
+		{
+			this.stopSelf();
+			return;
+		}
 
 		// the second autostart path, independent of the boot broadcast (see scheduleRestartJob)
 		this.scheduleRestartJob();
 
-		if (BackgroundService.isRunning == false)
 		{
 			BackgroundService.isRunning = true;
 
@@ -518,6 +835,7 @@ public class BackgroundService extends Service
 			// it empty: sendSettings() found no json, logged "no settings to hand to node yet",
 			// and node sat connected to nothing until the user opened the app
 			ChatSettings.attachContext(this);
+			ChatSettings.getInstance().loadPersistedState();
 
 			//read the saved log setting now, before anything has a chance to print
 			BackgroundService.isFileLoggingEnabled = ChatSettings.getInstance().isFileLoggingEnabled();
@@ -552,12 +870,7 @@ public class BackgroundService extends Service
 
 			// the bridge first (node needs its port and token), then node itself. node owns the
 			// server connection permanently; the webview renders via the loopback
-			this.nodeBridge = new NodeBridge(this);
-
-			if (this.nodeBridge.start())
-			{
-				NodeRuntime.start(this.getApplicationContext(), this.nodeBridge.getPort(), this.nodeBridge.getToken());
-			}
+			this.nodeBridge = AndroidRuntimeHost.attach(this);
 
 			// tell node whether the device has ANY network, now and whenever it changes. without
 			// this a wifi-off phone reported "the server probably rejected the keys"
@@ -570,26 +883,39 @@ public class BackgroundService extends Service
 				{
 					final BackgroundService networkOwner = this;
 
-					connectivity.registerDefaultNetworkCallback(new android.net.ConnectivityManager.NetworkCallback()
+					this.networkCallback = new android.net.ConnectivityManager.NetworkCallback()
 					{
 						public void onAvailable(android.net.Network network)
 						{
-							if (networkOwner.nodeBridge != null) { networkOwner.nodeBridge.sendNetworkState(true); }
+							NodeBridge bridge = networkOwner.nodeBridge;
+							if (bridge != null)
+							{
+								bridge.sendNetworkState(networkOwner.isNetworkAvailable());
+							}
 						}
 
 						public void onLost(android.net.Network network)
 						{
-							if (networkOwner.nodeBridge != null) { networkOwner.nodeBridge.sendNetworkState(false); }
+							NodeBridge bridge = networkOwner.nodeBridge;
+							if (bridge != null)
+							{
+								bridge.sendNetworkState(networkOwner.isNetworkAvailable());
+							}
 						}
-					});
+					};
+					connectivity.registerDefaultNetworkCallback(this.networkCallback);
 
 					// the callbacks only fire on CHANGE; the current answer is stated again the
 					// moment node attaches to the bridge (this early one is usually dropped)
-					this.nodeBridge.sendNetworkState(connectivity.getActiveNetwork() != null);
+					if (this.nodeBridge != null)
+					{
+						this.nodeBridge.sendNetworkState(connectivity.getActiveNetwork() != null);
+					}
 				}
 			}
 			catch (Exception networkWatchFailed)
 			{
+				this.networkCallback = null;
 				Log.w("lemonchat", "network state watch unavailable", networkWatchFailed);
 			}
 
@@ -611,22 +937,77 @@ public class BackgroundService extends Service
 				}
 			};
 		}
-		super.onCreate();
 	}
 
-	// the ongoing notification, every channel, then startForeground - moved out of onCreate's
-	// tail so the 5 second foreground deadline is met before any slow node startup
-	private void announceForegroundService()
+	/**
+	 * Revokes page authority, detaches native listeners and releases service resources.
+	 * The shared Node runtime is not restarted or replaced by service teardown.
+	 */
+	@Override public void onDestroy()
+	{
+		this.foregroundAdmitted = false;
+		this.microphoneGeneration = -1;
+		try
+		{
+			BackgroundService.isRunning = false;
+			this.trustedPage = false;
+			this.pageGeneration++;
+			this.abandonPendingFileChooser();
+			this.cancelPendingPermission(null);
+			AndroidRuntimeHost.detach(this);
+			this.nodeBridge = null;
+			ChatSettings.onSettingsSaved = null;
+			if (this.networkCallback != null)
+			{
+				android.net.ConnectivityManager connectivity = (android.net.ConnectivityManager)getSystemService(Context.CONNECTIVITY_SERVICE);
+				try
+				{
+					connectivity.unregisterNetworkCallback(this.networkCallback);
+				}
+				catch (RuntimeException alreadyReleased)
+				{
+					Log.w("lemonchat", "network listener already released");
+				}
+				this.networkCallback = null;
+			}
+			if (this.nodeWakeLock != null && this.nodeWakeLock.isHeld())
+			{
+				this.nodeWakeLock.release();
+			}
+			if (this.nodeWifiLock != null && this.nodeWifiLock.isHeld())
+			{
+				this.nodeWifiLock.release();
+			}
+			this.detachWebViewFromInvisibleWindow();
+			if (this.webView != null)
+			{
+				this.webView.removeJavascriptInterface("Android");
+				this.webView.destroy();
+				this.webView = null;
+			}
+		}
+		finally
+		{
+			super.onDestroy();
+		}
+	}
+
+	/**
+	 * creates notification channels before runtime preparation
+	 *
+	 * @return whether Android admitted the messaging service
+	 */
+	private boolean announceForegroundService()
 	{
 		if (Build.VERSION.SDK_INT >= 26)
 		{
 			this.notificationManager = (NotificationManager)getSystemService(Context.NOTIFICATION_SERVICE);
 
-			// the system will not let this notification go away, but IMPORTANCE_MIN keeps it silent and
-			// parks it at the bottom of the shade instead of showing an ongoing card near the top
+			// replace the old minimum importance channel
 			this.notificationManager.deleteNotificationChannel(RUNNING_IN_BACKGROUND_NOTIFICATION_CHANNEL_ID_OLD);
+			this.notificationManager.deleteNotificationChannel("com.lemonchat.running_in_background_notification");
 
-			this.notificationChannelAppRunningInBackground = new NotificationChannel(RUNNING_IN_BACKGROUND_NOTIFICATION_CHANNEL_ID, "lemon chat", NotificationManager.IMPORTANCE_MIN);
+			this.notificationChannelAppRunningInBackground = new NotificationChannel(RUNNING_IN_BACKGROUND_NOTIFICATION_CHANNEL_ID, "lemon chat", NotificationManager.IMPORTANCE_LOW);
 			this.notificationChannelAppRunningInBackground.setShowBadge(false);
 			this.notificationChannelAppRunningInBackground.setSound(null, null);
 			this.notificationChannelAppRunningInBackground.enableVibration(false);
@@ -634,9 +1015,10 @@ public class BackgroundService extends Service
 
 			Notification notification = new NotificationCompat.Builder(this, RUNNING_IN_BACKGROUND_NOTIFICATION_CHANNEL_ID)
 				.setContentTitle("lemon chat")
-				.setContentText("running in background")
+				.setContentText("Running in background")
+				.setSmallIcon(android.R.drawable.ic_dialog_email)
 				.setSilent(true)
-				.setPriority(NotificationCompat.PRIORITY_MIN)
+				.setPriority(NotificationCompat.PRIORITY_LOW)
 				.setOngoing(true)
 				.build();
 
@@ -665,24 +1047,100 @@ public class BackgroundService extends Service
 			messageChannel.setLockscreenVisibility(Notification.VISIBILITY_PRIVATE);
 			this.notificationManager.createNotificationChannel(messageChannel);
 
-			int notificationId = 1;
+			this.foregroundNotification = notification;
+			return this.updateForeground(false, false);
+		}
+		return false;
+	}
 
-			if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+	/**
+	 * restores media eligibility through the visible trusted page
+	 *
+	 * @param owner activity presenting the page
+	 */
+	public void resumePageMedia(MainActivity owner)
+	{
+		if (owner == null || owner != MainActivity.instance || !owner.isMediaActivityVisible() || !this.trustedPage || !this.foregroundAdmitted)
+		{
+			return;
+		}
+		boolean microphone = this.microphoneGeneration == this.pageGeneration && ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED;
+		this.updateForeground(true, microphone);
+	}
+
+	/** releases media types until the visible page returns */
+	private void retirePageMedia()
+	{
+		if (this.foregroundAdmitted)
+		{
+			this.updateForeground(false, false);
+		}
+	}
+
+	/**
+	 * admits capture before WebView receives its microphone grant
+	 *
+	 * @param owner activity requesting capture
+	 * @return whether the current visible document can capture
+	 */
+	private boolean admitMicrophone(MainActivity owner)
+	{
+		if (!this.foregroundAdmitted || !this.trustedPage || owner == null || owner != MainActivity.instance || !owner.isMediaActivityVisible() || ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED)
+		{
+			return false;
+		}
+		if (!this.updateForeground(true, true))
+		{
+			return false;
+		}
+		this.microphoneGeneration = this.pageGeneration;
+		return true;
+	}
+
+	/**
+	 * applies the foreground types before the corresponding work starts
+	 *
+	 * @param playback whether visible UI admitted playback
+	 * @param microphone whether visible UI admitted microphone capture
+	 * @return whether Android admitted the requested types
+	 */
+	private boolean updateForeground(boolean playback, boolean microphone)
+	{
+		try
+		{
+			if (Build.VERSION.SDK_INT >= 29)
 			{
-				this.startForeground(notificationId, notification, FOREGROUND_SERVICE_TYPE_MICROPHONE | FOREGROUND_SERVICE_TYPE_PHONE_CALL);
+				int types = Build.VERSION.SDK_INT >= 34 ? ServiceInfo.FOREGROUND_SERVICE_TYPE_REMOTE_MESSAGING : 0;
+				if (playback)
+				{
+					types |= ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK;
+				}
+				if (microphone && Build.VERSION.SDK_INT >= 30)
+				{
+					types |= ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE;
+				}
+				this.startForeground(1, this.foregroundNotification, types);
 			}
 			else
 			{
-				this.startForeground(notificationId, notification);
+				this.startForeground(1, this.foregroundNotification);
 			}
+			this.foregroundAdmitted = true;
+			return true;
+		}
+		catch (RuntimeException refused)
+		{
+			Log.w("lemonchat", "foreground service request refused", refused);
+			return false;
 		}
 	}
 
 	// job id of the restart job, any fixed number unique inside this app
 	private static final int RESTART_JOB_ID = 1001;
 
-	// registers a persisted periodic job: the system remembers it across reboots and runs it a
-	// few minutes after boot even when the boot broadcast never reaches this app (huawei)
+	/**
+	 * Registers the persisted periodic service restart job when it is not already scheduled.
+	 */
 	private void scheduleRestartJob()
 	{
 		try
@@ -711,26 +1169,60 @@ public class BackgroundService extends Service
 
 	// which call we last rang for, and when. node and the webview both hear about the same call,
 	// so without this the phone would ring twice for one caller
-	private String lastIncomingCallKey = "";
-	private long lastIncomingCallTimestamp = 0;
+	private volatile String activeCallId = "";
+	private volatile String activeCallSession = "";
+	private volatile long activeCallExpiry;
 
-	public void showIncomingCall(String callerName, int channelid)
+	/**
+	 * Retires the displayed incoming call when its remote session is no longer connected.
+	 * Submitted actions remain owned by NodeBridge until their scoped result or expiry.
+	 */
+	public synchronized void clearIncomingCall()
+	{
+		this.activeCallId = "";
+		this.activeCallSession = "";
+		this.activeCallExpiry = 0;
+		if (this.notificationManager != null)
+		{
+			this.notificationManager.cancel(INCOMING_CALL_NOTIFICATION_ID);
+		}
+	}
+
+	/**
+	 * Checks whether a native action still belongs to the displayed unexpired call.
+	 *
+	 * @param callId call capability supplied by the native action
+	 * @param sessionId session that owns the capability
+	 * @return whether both identifiers match the current unexpired call
+	 */
+	public synchronized boolean isCurrentCall(String callId, String sessionId)
+	{
+		return callId != null && sessionId != null && !callId.isEmpty() && callId.equals(this.activeCallId)
+			&& sessionId.equals(this.activeCallSession) && System.currentTimeMillis() < this.activeCallExpiry;
+	}
+
+	/**
+	 * Shows a valid current call once with its Accept and Decline actions.
+	 *
+	 * @param callerName caller name displayed by Android
+	 * @param channelid channel requested by the call and checked by Node
+	 * @param callId unpredictable call capability
+	 * @param sessionId logical session owning the call
+	 * @param expiresAt absolute expiry time in milliseconds
+	 */
+	public synchronized void showIncomingCall(String callerName, int channelid, String callId, String sessionId, long expiresAt)
 	{
 		try
 		{
-			//ring once per call. a second one would restart the ringtone and pop the call
-			//screen open again on top of the one already showing
-			String callKey = callerName + "@" + channelid;
-			long now = android.os.SystemClock.elapsedRealtime();
-
-			if (callKey.equals(this.lastIncomingCallKey) && (now - this.lastIncomingCallTimestamp) < 5000)
+			long now = System.currentTimeMillis();
+			if (callId == null || !callId.matches("[a-fA-F0-9]{32}") || sessionId == null || sessionId.length() > 128
+				|| sessionId.isEmpty() || expiresAt <= now || expiresAt > now + 120000 || this.isCurrentCall(callId, sessionId))
 			{
-				Log.d("Info", "[lemonchat] duplicate incoming call ignored: " + callKey);
 				return;
 			}
-
-			this.lastIncomingCallKey = callKey;
-			this.lastIncomingCallTimestamp = now;
+			this.activeCallId = callId;
+			this.activeCallSession = sessionId;
+			this.activeCallExpiry = expiresAt;
 
 			//these intents get send to onStartCommand
 			//basically app sends intents to itself
@@ -739,6 +1231,10 @@ public class BackgroundService extends Service
 			// android 12+ blocks a service tapped from a notification from starting an activity
 			// (trampoline ban), so accepting used to run the js but never bring the app forward
 			Intent acceptIntent = new Intent(this, MainActivity.class);
+			acceptIntent.putExtra("call_id", callId);
+			acceptIntent.putExtra("session_id", sessionId);
+			acceptIntent.putExtra("expires_at", expiresAt);
+			acceptIntent.setData(Uri.parse("lemonchat-call://accept/" + callId));
 			acceptIntent.setAction(ACTION_ACCEPT_CALL);
 			acceptIntent.putExtra("channelId", channelid);
 			acceptIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
@@ -746,11 +1242,19 @@ public class BackgroundService extends Service
 
 			// 4️⃣ Decline action PendingIntent → handled by service
 			Intent declineIntent = new Intent(this, BackgroundService.class);
+			declineIntent.putExtra("call_id", callId);
+			declineIntent.putExtra("session_id", sessionId);
+			declineIntent.putExtra("expires_at", expiresAt);
+			declineIntent.setData(Uri.parse("lemonchat-call://decline/" + callId));
 			declineIntent.setAction(ACTION_DECLINE_CALL);
 			PendingIntent declinePendingIntent = PendingIntent.getService(this, 2, declineIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 
 			// 5️⃣ Full-screen intent → can be MainActivity (no custom CallActivity required)
 			Intent fullScreenIntentActivity = new Intent(this, IncomingCallActivity.class);
+			fullScreenIntentActivity.putExtra("call_id", callId);
+			fullScreenIntentActivity.putExtra("session_id", sessionId);
+			fullScreenIntentActivity.putExtra("expires_at", expiresAt);
+			fullScreenIntentActivity.setData(Uri.parse("lemonchat-call://screen/" + callId));
 			fullScreenIntentActivity.putExtra("channelId", channelid);
 			fullScreenIntentActivity.putExtra("callerName", callerName);
 			// NEW_TASK only: CLEAR_TOP pulled this into the chat's task, so declining revealed
@@ -760,23 +1264,26 @@ public class BackgroundService extends Service
 
 			androidx.core.app.Person caller = new androidx.core.app.Person.Builder().setName(callerName).setImportant(true).build();
 
-			Notification notification = new NotificationCompat.Builder(this, CALL_NOTIFICATION_CHANNEL_ID)
+			NotificationCompat.Builder callNotification = new NotificationCompat.Builder(this, CALL_NOTIFICATION_CHANNEL_ID)
 							    .setContentIntent(fullScreenIntent)
-							    .setFullScreenIntent(fullScreenIntent, true)
 							    .setContentText(callerName)
 							    .setContentTitle("Incoming call")
 							    .setAutoCancel(true)
 							    .setOngoing(true) //cant be cancelled by swipe, only be accept / refuse
 							    .setTimeoutAfter(15000)
 							    .setPriority(NotificationCompat.PRIORITY_HIGH)
-							    .setCategory(Notification.CATEGORY_ALARM)
+							    .setCategory(Notification.CATEGORY_CALL)
 							    .setSound(this.callSoundUri)
 							    .setSmallIcon(android.R.drawable.ic_menu_call) //wont work without this
 							    .setVibrate(this.vibrationPattern)
 							    .setStyle(NotificationCompat.CallStyle.forIncomingCall(caller, declinePendingIntent, acceptPendingIntent))
 							    .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-							    .addPerson(caller)
-							    .build();
+							    .addPerson(caller);
+			if (Build.VERSION.SDK_INT < 34 || this.notificationManager.canUseFullScreenIntent())
+			{
+				callNotification.setFullScreenIntent(fullScreenIntent, true);
+			}
+			Notification notification = callNotification.build();
 
 			notification.flags |= NotificationCompat.FLAG_INSISTENT; //notification should persistent in the status bar until its dismissed
 
@@ -789,12 +1296,11 @@ public class BackgroundService extends Service
 	}
 
 	/**
-	 * shows a poke as a normal android notification - the banner a messenger message arrives with.
-	 * the web client draws pokes inside the page, which nobody sees while the app sits in the
-	 * background (exactly when a poke is worth sending), so the java side has to surface it.
-	 * tapping it brings the app back up.
+	 * Displays a background message notification whose tap opens the chat activity.
+	 *
+	 * @param senderName title identifying the sender
+	 * @param messageText notification body supplied by the bridge
 	 */
-	// raised by the node bridge for messages that arrive while the app is closed
 	public void showMessageNotification(String senderName, String messageText)
 	{
 		try
@@ -827,6 +1333,12 @@ public class BackgroundService extends Service
 		}
 	}
 
+	/**
+	 * Displays a background poke notification whose tap opens the chat activity.
+	 *
+	 * @param senderName title identifying the sender
+	 * @param pokeMessage poke text displayed by Android
+	 */
 	public void showPokeNotification(String senderName, String pokeMessage)
 	{
 		try

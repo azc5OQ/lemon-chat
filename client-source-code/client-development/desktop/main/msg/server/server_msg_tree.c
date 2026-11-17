@@ -10,9 +10,11 @@ static void _server_msg_tree_internal__icon(desktop_session_t *session, const cJ
 static void _server_msg_tree_internal__song(desktop_client_t *client, const cJSON *item);
 
 /**
- * @brief accepts only the server's two-letter country code; empty codes clear hidden flags.
+ * @brief accepts only the server's two letter country code. Empty codes clear hidden flags
+ *
  * @param desktop_client_t* client -> worker-owned client
  * @param const char* code -> borrowed country code
+ *
  * @return void
  */
 static void _server_msg_tree_internal__country(desktop_client_t *client, const char *code)
@@ -44,9 +46,11 @@ static void _server_msg_tree_internal__country(desktop_client_t *client, const c
 }
 
 /**
- * @brief replaces a bounded song title, clearing old titles on a stopped stream.
+ * @brief replaces a bounded song title, clearing old titles on a stopped stream
+ *
  * @param desktop_client_t* client -> worker-owned client
- * @param const cJSON* item -> initial record or active-stream record
+ * @param const cJSON* item -> initial record or active stream record
+ *
  * @return void
  */
 static void _server_msg_tree_internal__song(desktop_client_t *client, const cJSON *item)
@@ -62,9 +66,11 @@ static void _server_msg_tree_internal__song(desktop_client_t *client, const cJSO
 }
 
 /**
- * @brief reads identity-linked tree decorations without inventing a separate identity scheme.
+ * @brief reads identity linked tree decorations without inventing a separate identity scheme
+ *
  * @param desktop_client_t* client -> cleared client being inserted
  * @param const cJSON* item -> borrowed client record
+ *
  * @return void
  */
 void server_msg__tree__read_client(desktop_client_t *client, const cJSON *item)
@@ -96,10 +102,12 @@ void server_msg__tree__read_client(desktop_client_t *client, const cJSON *item)
 }
 
 /**
- * @brief replaces one catalog entry, including the channel-admin built-in icon.
+ * @brief replaces one catalog entry, including the channel admin built in icon
+ *
  * @param desktop_session_t* session -> worker-owned session
  * @param const cJSON* item -> borrowed catalog entry
  * @param boole channel -> TRUE for a channel group
+ *
  * @return void
  */
 static void _server_msg_tree_internal__group(desktop_session_t *session, const cJSON *item, boole channel)
@@ -152,10 +160,12 @@ static void _server_msg_tree_internal__group(desktop_session_t *session, const c
 }
 
 /**
- * @brief decodes outside the publication lock and copies only completed fixed-size icon pixels under it.
+ * @brief decodes outside the publication lock and copies only completed fixed size icon pixels under it
+ *
  * @param desktop_session_t* session -> worker-owned session with a GUI reader
  * @param const cJSON* item -> authenticated icon record
  * @param boole remove -> TRUE to clear a deleted icon
+ *
  * @return void
  */
 static void _server_msg_tree_internal__icon(desktop_session_t *session, const cJSON *item, boole remove)
@@ -185,12 +195,14 @@ static void _server_msg_tree_internal__icon(desktop_session_t *session, const cJ
 }
 
 /**
- * @brief returns an isolated icon copy rather than exposing worker-owned pixels to the renderer.
- * @param desktop_session_t* session -> lifetime-stable session
+ * @brief returns an isolated icon copy rather than exposing worker-owned pixels to the renderer
+ *
+ * @param desktop_session_t* session -> lifetime stable session
  * @param int64 id -> server icon ID
  * @param uint64 revision -> expected published tree revision
- * @param ubyte* pixels -> caller-owned pixel buffer
+ * @param ubyte* pixels -> caller owned pixel buffer
  * @param uint64 capacity -> actual buffer capacity
+ *
  * @return boole -> TRUE if this snapshot's icon is available
  */
 boole desktop_session__tree_icon(desktop_session_t *session, int64 id, uint64 revision, ubyte *pixels, uint64 capacity)
@@ -224,9 +236,11 @@ boole desktop_session__tree_icon(desktop_session_t *session, int64 id, uint64 re
 }
 
 /**
- * @brief updates flags, badges and music titles after the main dispatcher has updated membership.
+ * @brief updates flags, badges and music titles after the main dispatcher has updated membership
+ *
  * @param desktop_session_t* session -> authenticated worker-owned session
  * @param const cJSON* message -> borrowed decoded server event
+ *
  * @return void
  */
 void server_msg__tree__receive(desktop_session_t *session, const cJSON *message)

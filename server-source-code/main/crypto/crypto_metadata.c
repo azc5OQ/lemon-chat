@@ -1,19 +1,9 @@
 #include "../clib/clib.h"
 #include "keys_session.h"
 #include "ciphers.h"
-// This file handles the encryption and decryption of Lemon Chat metadata sent
-// between a client and the server. Metadata is information such as channel
-// names, usernames and message types. The server needs to read this information
-// to know what a client is asking it to do.
-//
-// When sending a message, this file chooses the order of the encryption keys
-// and puts the encrypted result into the JSON message sent over the connection.
-// When receiving a message, it checks whether the protected message was changed
-// and uses the keys in the required order to read it. The encryption functions
-// themselves are also here. crypto_media.c calls the same functions for audio
-// and video, so both kinds of traffic use the same encryption code.
-// Private message contents are encrypted and decrypted by the clients; they
-// are separate from the metadata handled here.
+// encrypts and authenticates connection metadata
+// shared cipher helpers also protect audio and video packets
+// private message contents remain encrypted by the clients
 #include "crypto_metadata.h"
 #include "../util.h"
 
@@ -36,8 +26,16 @@
 #error "Application crypto requires tiny-AES configured for AES-256-CTR"
 #endif
 
-// A snapshot has one owner on its client and one for each queued encryption job.
-// The last owner erases it, including after disconnect or a cancelled queue job.
+// A snapshot has one owner on its client and one for each queued encryption job
+// the last owner erases it, including after disconnect or a cancelled queue job
+/**
+ * @brief copies password keys into a reference-counted snapshot
+ *
+ * @param const crypto_key_t * keys -> source key array, required when count is nonzero
+ * @param uint64 count -> key count from zero to 100
+ *
+ * @return crypto_password_set_t * -> owned snapshot with one reference, or NULL_POINTER on invalid input or allocation failure
+ */
 crypto_password_set_t *crypto_metadata__snapshot_passwords(const crypto_key_t *keys, uint64 count)
 {
     crypto_password_set_t *result = NULL_POINTER;
@@ -64,6 +62,13 @@ crypto_password_set_t *crypto_metadata__snapshot_passwords(const crypto_key_t *k
     return result;
 }
 
+/**
+ * @brief adds a reference to an existing password snapshot
+ *
+ * @param crypto_password_set_t * passwords -> live snapshot already held by the caller, or NULL_POINTER
+ *
+ * @return crypto_password_set_t * -> the same snapshot pointer
+ */
 crypto_password_set_t *crypto_metadata__retain_passwords(crypto_password_set_t *passwords)
 {
     // add one reference
@@ -74,6 +79,13 @@ crypto_password_set_t *crypto_metadata__retain_passwords(crypto_password_set_t *
     return passwords;
 }
 
+/**
+ * @brief releases a password snapshot and wipes it after its last reference
+ *
+ * @param crypto_password_set_t * passwords -> owned snapshot reference, or NULL_POINTER
+ *
+ * @return void
+ */
 void crypto_metadata__release_passwords(crypto_password_set_t *passwords)
 {
     // free after last reference
@@ -86,12 +98,35 @@ void crypto_metadata__release_passwords(crypto_password_set_t *passwords)
 
 static char *_crypto_metadata_internal__encrypt(const char *plaintext, int64 *out_size, const crypto_session_keys_t *session, const crypto_key_t *passwords, uint64 password_count);
 
+/**
+ * @brief encrypts a metadata message using a connection password snapshot
+ * release the result with memorymanager__free
+ * session keys and relevant server settings must remain stable
+ *
+ * @param const char * plaintext -> terminated message text
+ * @param int64 * out_size -> receives envelope bytes including the final zero, or zero on failure
+ * @param const crypto_session_keys_t * session -> ready session keys, or NULL_POINTER before agreement
+ * @param const crypto_password_set_t * passwords -> stable password snapshot, or NULL_POINTER for no password layers
+ *
+ * @return char * -> allocated envelope or NULL_POINTER on failure
+ */
 char *crypto_metadata__encrypt_for_connection(const char *plaintext, int64 *out_size, const crypto_session_keys_t *session, const crypto_password_set_t *passwords)
 {
     return _crypto_metadata_internal__encrypt(plaintext, out_size, session, passwords != NULL_POINTER ? passwords->keys : NULL_POINTER, passwords != NULL_POINTER ? passwords->count : 0);
 }
 
-// Legacy helper for callers holding the settings lock. Socket queues always use snapshots.
+// legacy helper for callers holding the settings lock. Socket queues always use snapshots
+/**
+ * @brief encrypts a metadata message using the current server password keys
+ * release the result with memorymanager__free
+ * session keys and server settings must remain stable
+ *
+ * @param const char * plaintext -> terminated message text
+ * @param int64 * out_size -> receives envelope bytes including the final zero, or zero on failure
+ * @param const crypto_session_keys_t * session -> ready session keys, or NULL_POINTER before agreement
+ *
+ * @return char * -> allocated envelope or NULL_POINTER on failure
+ */
 char *crypto_metadata__encrypt(const char *plaintext, int64 *out_size, const crypto_session_keys_t *session)
 {
     return _crypto_metadata_internal__encrypt(plaintext, out_size, session, g_server_settings.keys, g_server_settings.keys_count);
@@ -101,15 +136,14 @@ char *crypto_metadata__encrypt(const char *plaintext, int64 *out_size, const cry
 static boole _crypto_metadata_internal__tag(const crypto_session_keys_t *session, const char *iv, const char *data, ubyte *out, boole sending);
 
 /**
- * @brief Copies key bytes into a key structure and records which encryption or checking method uses
- *        them.
+ * @brief copies key bytes and records the selected cipher or authentication method
  *
- * @param crypto_key_t* key -> structure to fill; it is cleared if the type or byte count is unsupported
+ * @param crypto_key_t* key -> structure to fill. It is cleared if the type or byte count is unsupported
  * @param crypto_key_type_t type -> method the key will be used with
- * @param const ubyte* bytes -> key bytes to copy; the caller keeps this buffer
+ * @param const ubyte* bytes -> key bytes to copy. The caller keeps this buffer
  * @param uint64 size -> number of bytes in the supplied key
  *
- * @return boole -> 1 when the key is ready, or 0 when an argument, key type, or key size is invalid.
+ * @return boole -> 1 when the key is ready, or 0 when an argument, key type, or key size is invalid
  */
 boole crypto_metadata__key_init(crypto_key_t *key, crypto_key_type_t type, const ubyte *bytes, uint64 size)
 {
@@ -163,13 +197,13 @@ boole crypto_metadata__key_init(crypto_key_t *key, crypto_key_type_t type, const
 }
 
 /**
- * @brief Hashes a server password into key bytes for the selected encryption method.
+ * @brief hashes a server password into key bytes for the selected encryption method
  *
- * @param crypto_key_t* key -> structure to fill; it is cleared if the key cannot be created
+ * @param crypto_key_t* key -> structure to fill. It is cleared if the key cannot be created
  * @param crypto_key_type_t type -> supported encryption method to record with the key
- * @param const char* password -> zero-terminated password text to hash with SHA256
+ * @param const char* password -> terminated password text to hash with SHA256
  *
- * @return boole -> 1 when the key was created, or 0 when the input or key type is unsupported or hashing fails.
+ * @return boole -> 1 when the key was created, or 0 when the input or key type is unsupported or hashing fails
  */
 boole crypto_metadata__key_from_password(crypto_key_t *key, crypto_key_type_t type, const char *password)
 {
@@ -186,9 +220,7 @@ boole crypto_metadata__key_from_password(crypto_key_t *key, crypto_key_type_t ty
     // clear the key
     clib__memset(key, 0, sizeof(*key));
 
-    // the server settings currently store passwords as text. SHA256 turns each
-    // password into its 32 stored key bytes, just as the client does. the key
-    // type records which supported encryption method will use those bytes
+    // hash the password into 32 key bytes, matching the client
     if (ciphers__name(type) != NULL && password != NULL && md != NULL)
     {
         if (mbedtls_md(md, (const ubyte *)password, clib__strlen(password), digest) == 0)
@@ -203,13 +235,11 @@ boole crypto_metadata__key_from_password(crypto_key_t *key, crypto_key_type_t ty
 }
 
 /**
- * @brief Overwrites the session's AES and HMAC keys with zeroes.
+ * @brief overwrites the session's AES and HMAC keys with zeroes
  *
- * This clears temporary keys after use and connection keys when their creation
- * fails, so the old key bytes do not remain until the memory is reused.
- * mbedtls_platform_zeroize prevents the compiler from removing the wipe.
+ * the wipe remains even when compiler optimization is enabled
  *
- * @param crypto_session_keys_t* keys -> structure containing the key bytes to clear; NULL is allowed
+ * @param crypto_session_keys_t* keys -> structure containing the key bytes to clear. NULL is allowed
  *
  * @return void
  */
@@ -222,15 +252,14 @@ void crypto_metadata__clear_session_keys(crypto_session_keys_t *keys)
 }
 
 /**
- * @brief Creates the connection encryption key and message-checking key from its agreed shared
- *        secret.
+ * @brief derives the connection encryption and authentication keys from the shared secret
  *
- * The client uses the same salt, labels, and text representation to produce the same two keys.
+ * the client uses the same salt, labels, and text representation to produce the same two keys
  *
- * @param const char* shared_secret -> nonempty, zero-terminated decimal text of the Diffie-Hellman shared secret
- * @param crypto_session_keys_t* keys -> structure to fill; it is cleared on failure
+ * @param const char* shared_secret -> nonempty, terminated decimal text of the Diffie Hellman shared secret
+ * @param crypto_session_keys_t* keys -> structure to fill. It is cleared on failure
  *
- * @return boole -> 1 when both keys are ready, or 0 when the secret is missing or either key cannot be created.
+ * @return boole -> 1 when both keys are ready, or 0 when the secret is missing or either key cannot be created
  */
 boole crypto_metadata__derive_session_keys(const char *shared_secret, crypto_session_keys_t *keys)
 {
@@ -250,10 +279,7 @@ boole crypto_metadata__derive_session_keys(const char *shared_secret, crypto_ses
     // clear the old keys
     crypto_metadata__clear_session_keys(keys);
 
-    // the client uses the same salt and info strings and writes the shared
-    // secret as decimal text too. both ends must do this exactly the same way
-    // to get the same keys: the first 32 bytes are the encryption key, and the
-    // next 32 bytes are the key used to check whether a message was changed
+    // match the client's decimal secret, salt and derivation labels
     status = shared_secret != NULL;
     if (status == TRUE)
     {
@@ -297,16 +323,16 @@ boole crypto_metadata__derive_session_keys(const char *shared_secret, crypto_ses
 }
 
 /**
- * @brief Encrypts or decrypts the supplied bytes using the method recorded in the key.
+ * @brief encrypts or decrypts the supplied bytes using the method recorded in the key
  *
  * @param const crypto_key_t* key -> key and encryption method to use
- * @param const ubyte* nonce -> starting value for this operation; AES-256-CTR requires 16 bytes
+ * @param const ubyte* nonce -> starting value for this operation. AES-256-CTR requires 16 bytes
  * @param uint64 nonce_size -> number of bytes in the starting value
  * @param ubyte* data -> buffer whose contents are replaced with the result
  * @param uint64 size -> number of bytes to encrypt or decrypt
  * @param crypto_direction_t direction -> CRYPTO_ENCRYPT to encrypt or CRYPTO_DECRYPT to decrypt
  *
- * @return boole -> 1 when the bytes were processed, or 0 when the arguments, key type, or starting value are invalid.
+ * @return boole -> 1 when the bytes were processed, or 0 when the arguments, key type, or starting value are invalid
  */
 boole crypto_metadata__crypt(const crypto_key_t *key, const ubyte *nonce, uint64 nonce_size, ubyte *data, uint64 size, crypto_direction_t direction)
 {
@@ -335,10 +361,7 @@ boole crypto_metadata__crypt(const crypto_key_t *key, const ubyte *nonce, uint64
             return 0;
         }
 
-        // use tiny-AES to encrypt or decrypt the supplied bytes. with this
-        // AES mode, applying the same key and starting value a second time
-        // turns the encrypted bytes back into the original bytes, so both
-        // directions call the same function
+        // CTR encryption and decryption use the same operation
         AES_init_ctx_iv(&aes, key->material.aes_256_ctr, nonce);
         AES_CTR_xcrypt_buffer(&aes, data, size);
         mbedtls_platform_zeroize(&aes, sizeof(aes));
@@ -352,9 +375,9 @@ boole crypto_metadata__crypt(const crypto_key_t *key, const ubyte *nonce, uint64
 }
 
 /**
- * @brief Applies every key to the same buffer, reversing their order when decrypting.
+ * @brief applies every key to the same buffer, reversing their order when decrypting
  *
- * @param const crypto_key_t* keys -> array of keys in encryption order; may be NULL when count is zero
+ * @param const crypto_key_t* keys -> array of keys in encryption order. May be NULL when count is zero
  * @param uint64 count -> number of keys to apply
  * @param const ubyte* nonce -> starting value supplied to each encryption method
  * @param uint64 nonce_size -> number of bytes in the starting value
@@ -362,9 +385,9 @@ boole crypto_metadata__crypt(const crypto_key_t *key, const ubyte *nonce, uint64
  * @param uint64 size -> number of bytes to process in the buffer
  * @param crypto_direction_t direction -> CRYPTO_ENCRYPT for stored order or CRYPTO_DECRYPT for reverse order
  *
- * @attention On failure, earlier steps may already have changed data; the caller must discard that result.
+ * @attention on failure, earlier steps may already have changed data. The caller must discard that result
  *
- * @return boole -> 1 when all keys were applied, including an empty key array; 0 when an argument or a step fails.
+ * @return boole -> 1 when all keys were applied, including an empty key array; 0 when an argument or a step fails
  */
 boole crypto_metadata__crypt_layers(const crypto_key_t *keys, uint64 count, const ubyte *nonce, uint64 nonce_size, ubyte *data, uint64 size, crypto_direction_t direction)
 {
@@ -384,10 +407,7 @@ boole crypto_metadata__crypt_layers(const crypto_key_t *keys, uint64 count, cons
         return 0;
     }
 
-    // encrypt with the keys in their stored order, then decrypt in the opposite
-    // order. for example, data encrypted with A, then B, then C must be opened
-    // with C, then B, then A. keep this rule even though the current AES mode
-    // also happens to work when the order changes; another method might not
+    // reverse the layer order when decrypting
     for (i = 0; i < count; i++)
     {
         index = direction == CRYPTO_ENCRYPT ? i : count - 1 - i;
@@ -400,16 +420,16 @@ boole crypto_metadata__crypt_layers(const crypto_key_t *keys, uint64 count, cons
 }
 
 /**
- * @brief Calculates the message-checking value for two consecutive pieces of data.
+ * @brief calculates the authentication value for two consecutive pieces of data
  *
  * @param const crypto_key_t* key -> HMAC-SHA256 key used to check the data
- * @param const ubyte* first -> first piece of data; may be NULL when first_size is zero
+ * @param const ubyte* first -> first piece of data. May be NULL when first_size is zero
  * @param uint64 first_size -> number of bytes in the first piece
- * @param const ubyte* second -> second piece of data; may be NULL when second_size is zero
+ * @param const ubyte* second -> second piece of data. May be NULL when second_size is zero
  * @param uint64 second_size -> number of bytes in the second piece
- * @param ubyte* out_tag -> caller-owned buffer with room for the 32-byte result
+ * @param ubyte* out_tag -> caller owned buffer with room for the 32 byte result
  *
- * @return boole -> 1 when the check value was written, or 0 when the arguments are invalid or calculation fails.
+ * @return boole -> 1 when the check value was written, or 0 when the arguments are invalid or calculation fails
  */
 boole crypto_metadata__hmac_sha256(const crypto_key_t *key, const ubyte *first, uint64 first_size, const ubyte *second, uint64 second_size, ubyte *out_tag)
 {
@@ -467,13 +487,13 @@ boole crypto_metadata__hmac_sha256(const crypto_key_t *key, const ubyte *first, 
 }
 
 /**
- * @brief Compares every byte of two buffers without stopping at the first difference.
+ * @brief compares every byte of two buffers without stopping at the first difference
  *
  * @param const ubyte* left -> first buffer, readable for size bytes
  * @param const ubyte* right -> second buffer, readable for size bytes
  * @param uint64 size -> number of bytes to compare
  *
- * @return boole -> 1 when all compared bytes match, including when size is zero; otherwise 0.
+ * @return boole -> 1 when all compared bytes match, including when size is zero. Otherwise 0
  */
 boole crypto_metadata__equal(const ubyte *left, const ubyte *right, uint64 size)
 {
@@ -489,15 +509,15 @@ boole crypto_metadata__equal(const ubyte *left, const ubyte *right, uint64 size)
 }
 
 /**
- * @brief Calculates the metadata message check over its encoded starting value followed by its
- *        encrypted text.
+ * @brief authenticates the encoded IV followed by the encoded ciphertext
  *
- * @param const crypto_session_keys_t* session -> connection keys containing the message-checking key
- * @param const char* iv -> zero-terminated base64 text of the message starting value
- * @param const char* data -> zero-terminated base64 text of the encrypted message
- * @param ubyte* out -> caller-owned buffer with room for the 32-byte check value
+ * @param const crypto_session_keys_t* session -> connection keys containing the authentication key
+ * @param const char* iv -> terminated base64 text of the message IV
+ * @param const char* data -> terminated base64 text of the encrypted message
+ * @param ubyte* out -> buffer receiving the 32 byte tag
+ * @param boole sending -> TRUE for an outgoing message, FALSE for an incoming message
  *
- * @return boole -> 1 when the check value was written, or 0 when its calculation fails.
+ * @return boole -> TRUE if the tag was calculated successfully
  */
 static boole _crypto_metadata_internal__tag(const crypto_session_keys_t *session, const char *iv, const char *data, ubyte *out, boole sending)
 {
@@ -519,16 +539,17 @@ static boole _crypto_metadata_internal__tag(const crypto_session_keys_t *session
 }
 
 /**
- * @brief Encrypts metadata with the server keys and optional connection keys, then builds the JSON
- *        text to send.
+ * @brief encrypts metadata and builds its JSON envelope
  *
- * @param const char* plaintext -> zero-terminated message text; the caller keeps this buffer
+ * @param const char* plaintext -> terminated message text. The caller keeps the buffer
  * @param int64* out_size -> receives the JSON byte count including its final zero byte, or zero on failure
- * @param const crypto_session_keys_t* session -> ready connection keys; NULL sends only the server-key layers before key agreement
+ * @param const crypto_session_keys_t* session -> ready connection keys, or NULL before key agreement
+ * @param const crypto_key_t* passwords -> server password keys to apply first
+ * @param uint64 password_count -> number of server password keys
  *
- * @attention The server key settings must remain valid throughout this call. The caller supplies connection keys that cannot change during encryption.
+ * @attention the supplied keys and server settings must remain stable during encryption
  *
- * @return char* -> allocated, zero-terminated JSON text to release with memorymanager__free, or NULL_POINTER on failure.
+ * @return char* -> allocated JSON text, or NULL_POINTER on failure. Release with memorymanager__free
  */
 static char *_crypto_metadata_internal__encrypt(const char *plaintext, int64 *out_size, const crypto_session_keys_t *session, const crypto_key_t *passwords, uint64 password_count)
 {
@@ -599,9 +620,7 @@ static char *_crypto_metadata_internal__encrypt(const char *plaintext, int64 *ou
         return NULL_POINTER;
     }
 
-    // memorymanager__allocate fills new memory with zero bytes. after the text
-    // is copied in, those zeros fill the rest of a short message up to 1026
-    // bytes. this keeps the same minimum encrypted message size as before
+    // zeroed allocation supplies the message padding
     buffer = (ubyte *)memorymanager__allocate(buffer_size, MEMALLOC_TYPE_ENCRYPT);
     encoded = (ubyte *)memorymanager__allocate(encoded_capacity, MEMALLOC_TYPE_ENCRYPT);
     status0 = buffer == NULL_POINTER;
@@ -612,9 +631,7 @@ static char *_crypto_metadata_internal__encrypt(const char *plaintext, int64 *ou
     }
     clib__memcpy(buffer, plaintext, text_size);
 
-    // for a message sent by the server, encrypt with each key from the server
-    // settings first. then encrypt that result with the key that this client
-    // and the server made from their shared secret when they connected
+    // apply server password keys before connection keys
     if (!crypto_metadata__crypt_layers(passwords, password_count, iv, sizeof(iv), buffer, buffer_size, CRYPTO_ENCRYPT))
     {
         goto done;
@@ -640,10 +657,7 @@ static char *_crypto_metadata_internal__encrypt(const char *plaintext, int64 *ou
         goto done;
     }
 
-    // make a check value from the message's starting value and encrypted data,
-    // using the separate message-checking key. the client calculates it again
-    // when the message arrives. if the values differ, it rejects the message.
-    // both ends calculate this over the base64 text sent in the JSON fields
+    // authenticate the base64 fields with the connection's HMAC key
     if (session != NULL_POINTER)
     {
         status0 = _crypto_metadata_internal__tag(session, (char *)iv_base64, (char *)encoded, tag, TRUE) != 0;
@@ -666,9 +680,7 @@ static char *_crypto_metadata_internal__encrypt(const char *plaintext, int64 *ou
         goto done;
     }
 
-    // these values contain only base64 characters, so there are no quotes or
-    // backslashes inside them that need special handling. they can be written
-    // straight into the JSON string without creating a cJSON object first
+    // base64 fields need no JSON escaping
     if (session != NULL_POINTER)
     {
         envelope_size = clib__string_format(envelope, envelope_capacity, "{\"iv\":\"%s\",\"data\":\"%s\",\"tag\":\"%s\"}", iv_base64, encoded, tag_base64);
@@ -706,14 +718,14 @@ done:
 }
 
 /**
- * @brief Derives temporary connection keys, encrypts metadata, and erases those temporary keys
- *        afterward.
+ * @brief derives temporary connection keys, encrypts metadata, and erases those temporary keys
+ *        afterward
  *
- * @param const char* plaintext -> zero-terminated metadata text to encrypt
+ * @param const char* plaintext -> terminated metadata text to encrypt
  * @param int64* out_size -> receives the JSON byte count including its final zero byte, or zero on failure
- * @param const char* shared_secret -> zero-terminated agreed secret; NULL_POINTER uses only the server keys
+ * @param const char* shared_secret -> terminated agreed secret. NULL_POINTER uses only the server keys
  *
- * @return char* -> allocated, zero-terminated JSON text to release with memorymanager__free, or NULL_POINTER on failure.
+ * @return char* -> allocated, terminated JSON text to release with memorymanager__free, or NULL_POINTER on failure
  */
 char *crypto_metadata__encrypt_with_secret(const char *plaintext, int64 *out_size, const char *shared_secret)
 {
@@ -743,7 +755,13 @@ char *crypto_metadata__encrypt_with_secret(const char *plaintext, int64 *out_siz
     return result;
 }
 
-/** @brief Rejects non-flat or oversized envelope structure before JSON allocates its tree. */
+/**
+ * @brief rejects nested or excessive envelope fields before parsing JSON
+ *
+ * @param const char* text -> terminated envelope text to check
+ *
+ * @return boole -> TRUE if the structure passes the preliminary checks. JSON parsing is still required
+ */
 static boole _crypto_metadata_internal__is_flat_envelope(const char *text)
 {
     const char *cursor = NULL_POINTER;
@@ -828,16 +846,16 @@ static boole _crypto_metadata_internal__is_flat_envelope(const char *text)
 }
 
 /**
- * @brief Checks an incoming metadata message and decrypts it into text the server can read.
+ * @brief checks an incoming metadata message and decrypts it into text the server can read
  *
  * @param const client_t* client -> existing client whose connection keys and login state apply to this message
- * @param const char* envelope_text -> zero-terminated JSON text containing the encoded starting value, encrypted data, and required check value
- * @param ubyte* out -> caller-owned buffer that receives zero-terminated plaintext and is cleared on failure
+ * @param const char* envelope_text -> terminated JSON text containing the encoded starting value, encrypted data, and required check value
+ * @param ubyte* out -> caller owned buffer that receives terminated plaintext and is cleared on failure
  * @param uint64 capacity -> size of out in bytes, including space for the final zero byte
  *
- * @attention The caller must keep the client and its keys stable, normally by holding the clients lock. Messages after key agreement must include a valid check value.
+ * @attention the caller must keep the client and its keys stable, normally by holding the clients lock. Messages after key agreement must include a valid check value
  *
- * @return boole -> TRUE when the message was checked and decrypted, or FALSE when it is invalid or cannot fit.
+ * @return boole -> TRUE when the message was checked and decrypted, or FALSE when it is invalid or cannot fit
  */
 boole crypto_metadata__decrypt_from_client(const client_t *client, const char *envelope_text, ubyte *out, uint64 capacity)
 {
@@ -957,10 +975,7 @@ boole crypto_metadata__decrypt_from_client(const client_t *client, const char *e
         // find the tag
         tag_item = cJSON_GetObjectItemCaseSensitive(envelope, "tag");
 
-        // once the client and server have agreed on a secret, every message
-        // must include this check value, called the tag. reject a message that
-        // leaves it out; otherwise someone could remove the tag to skip the
-        // check that the message has not been changed
+        // require authentication after key exchange
         status0 = cJSON_IsString(tag_item) != 0;
         if (status0 == FALSE)
         {
@@ -996,18 +1011,13 @@ boole crypto_metadata__decrypt_from_client(const client_t *client, const char *e
         }
     }
 
-    // leave room for the zero byte that marks the end of a C string. if the
-    // incoming base64 text is invalid or its decoded bytes will not fit, stop
-    // here without trying to decrypt them
+    // decode within the buffer and leave room for the string terminator
     if (mbedtls_base64_decode(out, capacity - 1, &decoded_size, (const ubyte *)data_item->valuestring, clib__strlen(data_item->valuestring)) != 0)
     {
         goto done;
     }
 
-    // a client encrypts its outgoing message with its own connection key first
-    // and then with the keys from the server settings. undo those steps in the
-    // opposite order: use the server keys from last to first, then use the
-    // client's connection key to get the original text
+    // remove server password layers before the connection layer
     if (!crypto_metadata__crypt_layers(client->password_keys != NULL_POINTER ? client->password_keys->keys : NULL_POINTER, client->password_keys != NULL_POINTER ? client->password_keys->count : 0, iv, sizeof(iv), out, decoded_size, CRYPTO_DECRYPT))
     {
         goto done;
@@ -1038,7 +1048,18 @@ done:
     return result;
 }
 
-/** @brief Applies negotiated session layers, preserving the legacy one-layer format. */
+/**
+ * @brief applies negotiated connection keys or the legacy single key
+ *
+ * @param const crypto_session_keys_t* session -> connection keys to use
+ * @param const ubyte* nonce -> starting value for the cipher
+ * @param uint64 nonce_size -> number of nonce bytes. Negotiated layers require 16
+ * @param ubyte* data -> buffer to transform in place
+ * @param uint64 size -> number of buffer bytes
+ * @param crypto_direction_t direction -> CRYPTO_ENCRYPT for outgoing data, CRYPTO_DECRYPT for incoming data
+ *
+ * @return boole -> TRUE if every cipher operation succeeded
+ */
 boole crypto_metadata__crypt_session(const crypto_session_keys_t *session, const ubyte *nonce, uint64 nonce_size, ubyte *data, uint64 size, crypto_direction_t direction)
 {
     // use the negotiated layers

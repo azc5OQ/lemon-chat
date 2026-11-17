@@ -31,8 +31,10 @@ static gui_node_t *_ui_attachments_internal__node(gui_node_t *parent, gui_node_t
 static const desktop_attachment_t *_ui_attachments_internal__find(uint64 id);
 
 /**
- * @brief finds display metadata by stable ID; no worker-owned payload is exposed.
+ * @brief finds display metadata by stable ID. No worker-owned payload is exposed
+ *
  * @param uint64 id -> selected attachment
+ *
  * @return const desktop_attachment_t* -> borrowed GUI snapshot or NULL
  */
 static const desktop_attachment_t *_ui_attachments_internal__find(uint64 id)
@@ -51,9 +53,11 @@ static const desktop_attachment_t *_ui_attachments_internal__find(uint64 id)
 }
 
 /**
- * @brief copies a plain label and requests a redraw without interpreting markup.
+ * @brief copies a plain label and requests a redraw without interpreting markup
+ *
  * @param const char* id -> existing control ID
  * @param const char* text -> copied text
+ *
  * @return void
  */
 static void _ui_attachments_internal__text(const char *id, const char *text)
@@ -72,9 +76,11 @@ static void _ui_attachments_internal__text(const char *id, const char *text)
 }
 
 /**
- * @brief opens only the floating panel, preserving interaction with chat outside it.
+ * @brief opens only the floating panel, preserving interaction with chat outside it
+ *
  * @param const char* id -> panel ID
  * @param boole visible -> desired visibility
+ *
  * @return void
  */
 static void _ui_attachments_internal__panel(const char *id, boole visible)
@@ -97,13 +103,15 @@ static void _ui_attachments_internal__panel(const char *id, boole visible)
 }
 
 /**
- * @brief appends a scene-owned control; attachment IDs are values, never borrowed record pointers.
- * @param gui_node_t* parent -> scene-owned row
+ * @brief appends a scene owned control. Attachment IDs are values, never borrowed record pointers
+ *
+ * @param gui_node_t* parent -> scene owned row
  * @param gui_node_type_e type -> label or button
  * @param const char* text -> copied plain text
  * @param const char* klass -> copied class
  * @param uint64 id -> stable attachment ID
- * @return gui_node_t* -> scene-owned node or NULL
+ *
+ * @return gui_node_t* -> scene owned node or NULL
  */
 static gui_node_t *_ui_attachments_internal__node(gui_node_t *parent, gui_node_type_e type, const char *text, const char *klass, uint64 id)
 {
@@ -125,9 +133,11 @@ static gui_node_t *_ui_attachments_internal__node(gui_node_t *parent, gui_node_t
 }
 
 /**
- * @brief displays progress, explicit offer decisions and save controls for one transfer.
- * @param gui_node_t* parent -> scene-owned message row
+ * @brief displays progress, explicit offer decisions and save controls for one transfer
+ *
+ * @param gui_node_t* parent -> scene owned message row
  * @param uint64 id -> stable attachment ID
+ *
  * @return void
  */
 void desktop_ui_attachments__append(gui_node_t *parent, uint64 id)
@@ -182,8 +192,10 @@ void desktop_ui_attachments__append(gui_node_t *parent, uint64 id)
 }
 
 /**
- * @brief opens a file picker bound to the selected conversation at the time of the click.
- * @param gui_event_t* event -> Picture or File button
+ * @brief opens a file picker bound to the selected conversation at the time of the click
+ *
+ * @param gui_event_t* event -> picture or File button
+ *
  * @return void
  */
 static void _ui_attachments_internal__open(gui_event_t *event)
@@ -225,8 +237,10 @@ static void _ui_attachments_internal__open(gui_event_t *event)
 }
 
 /**
- * @brief drops an unsent file selection without affecting transfers already accepted by the session.
+ * @brief drops an unsent file selection without affecting transfers already accepted by the session
+ *
  * @param gui_event_t* event -> unused event
+ *
  * @return void
  */
 static void _ui_attachments_internal__close(gui_event_t *event)
@@ -243,8 +257,10 @@ static void _ui_attachments_internal__close(gui_event_t *event)
 }
 
 /**
- * @brief copies the picker event while it is valid; selecting never sends or writes a file.
- * @param gui_event_t* event -> borrowed file-picker event
+ * @brief copies the picker event while it is valid. Selecting never sends or writes a file
+ *
+ * @param gui_event_t* event -> borrowed file picker event
+ *
  * @return void
  */
 static void _ui_attachments_internal__pick(gui_event_t *event)
@@ -285,8 +301,10 @@ static void _ui_attachments_internal__pick(gui_event_t *event)
 }
 
 /**
- * @brief queues one explicit send or save; remote filenames cannot choose the output directory.
+ * @brief queues one explicit send or save. Remote filenames cannot choose the output directory
+ *
  * @param gui_event_t* event -> unused click event
+ *
  * @return void
  */
 static void _ui_attachments_internal__submit(gui_event_t *event)
@@ -329,8 +347,10 @@ static void _ui_attachments_internal__submit(gui_event_t *event)
 }
 
 /**
- * @brief dispatches an explicit transfer decision or opens a Save as picker.
- * @param gui_event_t* event -> scene-owned action with a stable attachment ID
+ * @brief dispatches an explicit transfer decision or opens a Save as picker
+ *
+ * @param gui_event_t* event -> scene owned action with a stable attachment ID
+ *
  * @return void
  */
 static void _ui_attachments_internal__action(gui_event_t *event)
@@ -380,8 +400,10 @@ static void _ui_attachments_internal__action(gui_event_t *event)
 }
 
 /**
- * @brief updates the draft slider label; saved chat scale is unchanged until Save changes.
+ * @brief updates the draft slider label. Saved chat scale is unchanged until Save changes
+ *
  * @param gui_event_t* event -> unused change event
+ *
  * @return void
  */
 static void _ui_attachments_internal__values(gui_event_t *event)
@@ -399,8 +421,10 @@ static void _ui_attachments_internal__values(gui_event_t *event)
 }
 
 /**
- * @brief opens local display and receiving settings with a fresh draft of saved values.
+ * @brief opens local display and receiving settings with a fresh draft of saved values
+ *
  * @param gui_event_t* event -> unused click event
+ *
  * @return void
  */
 static void _ui_attachments_internal__settings(gui_event_t *event)
@@ -456,8 +480,10 @@ static void _ui_attachments_internal__settings(gui_event_t *event)
 }
 
 /**
- * @brief changes only the draft filename when a built-in theme is selected.
- * @param gui_event_t* event -> select change; saved appearance changes only on Save
+ * @brief changes only the draft filename when a built in theme is selected
+ *
+ * @param gui_event_t* event -> select change. Saved appearance changes only on Save
+ *
  * @return void
  */
 static void _ui_attachments_internal__theme(gui_event_t *event)
@@ -482,8 +508,10 @@ static void _ui_attachments_internal__theme(gui_event_t *event)
 }
 
 /**
- * @brief closes the unsaved local settings draft.
+ * @brief closes the unsaved local settings draft
+ *
  * @param gui_event_t* event -> unused click event
+ *
  * @return void
  */
 static void _ui_attachments_internal__close_settings(gui_event_t *event)
@@ -493,8 +521,10 @@ static void _ui_attachments_internal__close_settings(gui_event_t *event)
 }
 
 /**
- * @brief validates dimensions and commits settings before applying them to the running client.
+ * @brief validates dimensions and commits settings before applying them to the running client
+ *
  * @param gui_event_t* event -> unused click event
+ *
  * @return void
  */
 static void _ui_attachments_internal__save_settings(gui_event_t *event)
@@ -563,7 +593,8 @@ static void _ui_attachments_internal__save_settings(gui_event_t *event)
 }
 
 /**
- * @brief applies saved display scale only to the conversation and forwards receiving choices to the session.
+ * @brief applies saved display scale only to the conversation and forwards receiving choices to the session
+ *
  * @return void
  */
 void desktop_ui_attachments__apply(void)
@@ -601,10 +632,12 @@ void desktop_ui_attachments__apply(void)
 }
 
 /**
- * @brief registers attachment controls against stable GUI state and the session-owned manager.
+ * @brief registers attachment controls against stable GUI state and the session owned manager
+ *
  * @param desktop_session_t* session -> borrowed session
  * @param desktop_session_view_t* view -> borrowed GUI snapshot
  * @param desktop_settings_t* settings -> borrowed saved settings
+ *
  * @return void
  */
 void desktop_ui_attachments__initialize(desktop_session_t *session, desktop_session_view_t *view, desktop_settings_t *settings)
@@ -631,7 +664,8 @@ void desktop_ui_attachments__initialize(desktop_session_t *session, desktop_sess
 }
 
 /**
- * @brief releases GPU ownership before shutdown and clears retained file selections.
+ * @brief releases GPU ownership before shutdown and clears retained file selections
+ *
  * @return void
  */
 void desktop_ui_attachments__shutdown(void)

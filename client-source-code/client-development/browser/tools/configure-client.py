@@ -476,7 +476,7 @@ def configure(page, config):
     if not script:
         raise ConfigureError('This file has no script element "lemon-cfg". It is not a built client.html.')
 
-    # the same text as JSON.stringify writes; "<" is escaped so the options cannot end the script element
+    # the same text as JSON.stringify writes. "<" is escaped so the options cannot end the script element
     options = json.dumps(config, separators=(",", ":"), ensure_ascii=False).replace("<", "\\u003c")
     body = ("window.__SERVER_CONFIG__=" + options + ";").encode("utf-8")
     return page[:script.start(1)] + body + page[script.end(1):]

@@ -27,11 +27,13 @@
 static uint64 _ip_tools_internal__add_local_ipv4(struct sockaddr *address, char addresses[][IPV4_ADDRESS_STRING_LENGTH], uint64 count, uint64 capacity);
 
 /**
- * @brief Adds one IPv4 address, skipping duplicates, loopback and unusable addresses.
+ * @brief adds one IPv4 address, skipping duplicates, loopback and unusable addresses
+ *
  * @param struct sockaddr* address -> address supplied by the operating system
  * @param char[][IPV4_ADDRESS_STRING_LENGTH] addresses -> output list
  * @param uint64 count -> entries already written
  * @param uint64 capacity -> number of entries that fit in the list
+ *
  * @return uint64 -> updated number of entries
  */
 static uint64 _ip_tools_internal__add_local_ipv4(struct sockaddr *address, char addresses[][IPV4_ADDRESS_STRING_LENGTH], uint64 count, uint64 capacity)
@@ -69,9 +71,11 @@ static uint64 _ip_tools_internal__add_local_ipv4(struct sockaddr *address, char 
 }
 
 /**
- * @brief Lists this machine's IPv4 addresses on active network interfaces without a DNS lookup.
+ * @brief lists this machine's IPv4 addresses on active network interfaces without a DNS lookup
+ *
  * @param char[][IPV4_ADDRESS_STRING_LENGTH] addresses -> receives addresses for startup links
  * @param uint64 capacity -> number of entries that fit in the output list
+ *
  * @return uint64 -> number written, or zero if none could be found
  */
 uint64 ip_tools__get_local_ipv4_addresses(char addresses[][IPV4_ADDRESS_STRING_LENGTH], uint64 capacity)
@@ -164,15 +168,11 @@ uint64 ip_tools__get_local_ipv4_addresses(char addresses[][IPV4_ADDRESS_STRING_L
 }
 
 /**
- * @brief appends a null-terminated string to a StringBuffer, growing the backing buffer if needed.
+ * @brief appends text and grows the buffer when needed
  *
- *        when the resulting length no longer fits in the current capacity the buffer is reallocated
- *        to twice the new length, then the string is concatenated with strcat and the stored length
- *        is updated. a failed reallocation is logged through DBG_IP_TOOLS and terminates the process
- *        with exit(1).
- *
- * @param StringBuffer* sb -> the string buffer to append to
- * @param const char* str -> the null-terminated string to append
+ * @param StringBuffer* sb -> buffer whose contents and length are updated
+ * @param const char* str -> string ending in a zero byte to append
+ * @attention exits the process if allocation, size checking or append fails
  *
  * @return void
  */
@@ -214,10 +214,10 @@ void append_to_string_buffer(StringBuffer *sb, const char *str)
 }
 
 /**
- * @brief returns the StringBuffer's current contents.
+ * @brief returns the StringBuffer's current contents
  *
  *        hands back the backing buffer pointer itself, no copy is made, so the caller must not free
- *        it and must not keep it across a later append that can reallocate the buffer.
+ *        it and must not keep it across a later append that can reallocate the buffer
  *
  * @param const StringBuffer* sb -> the string buffer to read the contents from
  *
@@ -229,11 +229,11 @@ const char *get_string_from_buffer(const StringBuffer *sb)
 }
 
 /**
- * @brief cleans up a StringBuffer by releasing its backing buffer.
+ * @brief cleans up a StringBuffer by releasing its backing buffer
  *
  *        only the allocated buffer is freed, the StringBuffer struct itself is not, and the capacity
  *        and length fields are left untouched, so the struct must be re-initialised with
- *        init_string_buffer before it is used again.
+ *        init_string_buffer before it is used again
  *
  * @param StringBuffer* sb -> the string buffer whose backing buffer is freed
  *
@@ -245,11 +245,11 @@ void free_string_buffer(StringBuffer *sb)
 }
 
 /**
- * @brief initialises a StringBuffer and allocates its backing buffer.
+ * @brief initialises a StringBuffer and allocates its backing buffer
  *
  *        capacity is set to INITIAL_CAPACITY, length to zero, and a buffer of that capacity is
  *        allocated and started as an empty string. a failed allocation is logged through
- *        DBG_IP_TOOLS and terminates the process with exit(1).
+ *        DBG_IP_TOOLS and terminates the process with exit(1)
  *
  * @param StringBuffer* sb -> the string buffer to initialize and allocate
  *
@@ -273,7 +273,10 @@ void init_string_buffer(StringBuffer *sb)
 }
 
 /**
- * @brief Resolves an IP address to its country code. The output buffer needs 3 bytes.
+ * @brief resolves an IP address to its country code. The output buffer needs 3 bytes
+ *
+ * @param char* ip_address_to_resolve -> IP address to look up
+ * @param char* out_memory_to_write_country_code_to -> output buffer with room for two letters and a terminator
  */
 void ip_tools_load_iso_country_code(char *ip_address_to_resolve, char *out_memory_to_write_country_code_to)
 {

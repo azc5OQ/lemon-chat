@@ -1,0 +1,196 @@
+import java.io.*;
+import java.nio.file.*;
+import java.util.*;
+
+@interface JavascriptInterface
+{
+}
+class Build
+{
+    static class VERSION
+    {
+        static int SDK_INT = 28;
+    }
+    static class VERSION_CODES
+    {
+        static final int Q = 29;
+    }
+}
+class Environment
+{
+    static final String DIRECTORY_DOWNLOADS = "downloads";
+}
+class Log
+{
+    static void e(String tag, String message, Exception error)
+    {
+    }
+    static void w(String tag, String message, Exception error)
+    {
+    }
+    static void w(String tag, String message)
+    {
+    }
+}
+class DownloadManager
+{
+    int registrations;
+    boolean failRegistration;
+    void addCompletedDownload(String name, String description, boolean scanned, String mime, String path, long length, boolean notify)
+    {
+        if (this.failRegistration)
+        {
+            throw new SecurityException("synthetic registry failure");
+        }
+        this.registrations++;
+    }
+}
+class Context
+{
+    static final String DOWNLOAD_SERVICE = "download";
+    File directory;
+    boolean unavailable;
+    DownloadManager manager = new DownloadManager();
+    File getExternalFilesDir(String type)
+    {
+        return this.unavailable ? null : this.directory;
+    }
+    Object getSystemService(String name)
+    {
+        return this.manager;
+    }
+}
+class BackgroundService
+{
+    boolean trusted = true;
+    boolean isTrustedPage()
+    {
+        return this.trusted;
+    }
+}
+class FileOutputStream extends OutputStream
+{
+    static boolean failWrite;
+    static boolean failClose;
+    private final java.io.FileOutputStream stream;
+    FileOutputStream(File target) throws IOException
+    {
+        this.stream = new java.io.FileOutputStream(target);
+    }
+    @Override public void write(int value) throws IOException
+    {
+        this.stream.write(value);
+    }
+    @Override public void write(byte[] bytes) throws IOException
+    {
+        if (failWrite)
+        {
+            if (bytes.length > 0)
+            {
+                this.stream.write(bytes[0]);
+            }
+            throw new IOException("synthetic failure after a partial write");
+        }
+        this.stream.write(bytes);
+    }
+    @Override public void close() throws IOException
+    {
+        this.stream.close();
+        if (failClose)
+        {
+            throw new IOException("synthetic close failure");
+        }
+    }
+}
+class JavascriptJavaBridge
+{
+    Context mContext = new Context();
+    BackgroundService backgroundServiceInstance = new BackgroundService();
+    List<String> toasts = new ArrayList<>();
+    void showToastOnMainThread(String text)
+    {
+        this.toasts.add(text);
+    }
+    boolean saveToMediaStoreDownloads(String name, String mime, byte[] bytes)
+    {
+        throw new AssertionError("This regression must use the API 26–28 path");
+    }
+    __ENTRY__
+    __SANITIZE__
+    __SAVE__
+}
+public class FileSaveRegression
+{
+    static List<String> failures = new ArrayList<>();
+    static void check(boolean condition, String message)
+    {
+        if (!condition)
+        {
+            failures.add(message);
+        }
+    }
+    public static void main(String[] args) throws Exception
+    {
+        Path directory = Files.createTempDirectory("lemon-save-operation-");
+        try
+        {
+            JavascriptJavaBridge bridge = new JavascriptJavaBridge();
+            bridge.mContext.directory = directory.toFile();
+            bridge.JavaExportSaveFile("identity.lmn", "application/json", "AQID");
+            bridge.JavaExportSaveFile("identity.lmn", "application/json", "BAUG");
+            check(Arrays.equals(Files.readAllBytes(directory.resolve("identity.lmn")), new byte[] {1, 2, 3}), "Duplicate save overwrote the original");
+            check(Arrays.equals(Files.readAllBytes(directory.resolve("identity (1).lmn")), new byte[] {4, 5, 6}), "Duplicate save did not select another name");
+            for (int mode = 0; mode < 2; mode++)
+            {
+                FileOutputStream.failWrite = mode == 0;
+                FileOutputStream.failClose = mode == 1;
+                String name = mode == 0 ? "failed-write.lmn" : "failed-close.lmn";
+                bridge.JavaExportSaveFile(name, "application/json", "AQID");
+                check(!Files.exists(directory.resolve(name)), "Failed operation left an incomplete file: " + name);
+                check(bridge.toasts.get(bridge.toasts.size() - 1).startsWith("could not"), "Failed write reported success");
+            }
+            FileOutputStream.failWrite = false;
+            FileOutputStream.failClose = false;
+            int registrations = bridge.mContext.manager.registrations;
+            int feedback = bridge.toasts.size();
+            try
+            {
+                bridge.JavaExportSaveFile("missing.bin", null, null);
+            }
+            catch (RuntimeException escaped)
+            {
+                failures.add("Missing file data escaped native entry: " + escaped.getClass().getSimpleName());
+            }
+            check(bridge.toasts.size() == feedback + 1, "Missing file data did not report failure");
+            bridge.JavaExportSaveFile("damaged.bin", null, "!bad!");
+            check(bridge.mContext.manager.registrations == registrations, "Invalid data reached storage");
+            bridge.mContext.unavailable = true;
+            bridge.JavaExportSaveFile("unavailable.bin", null, "AQID");
+            check(!Files.exists(directory.resolve("unavailable.bin")), "Unavailable storage created a file");
+            bridge.mContext.unavailable = false;
+            bridge.mContext.manager.failRegistration = true;
+            bridge.JavaExportSaveFile("unlisted.bin", null, "AQID");
+            check(Files.size(directory.resolve("unlisted.bin")) == 3, "Registry failure removed a successfully saved file");
+            bridge.backgroundServiceInstance.trusted = false;
+            bridge.JavaExportSaveFile("untrusted.bin", null, "AQID");
+            check(!Files.exists(directory.resolve("untrusted.bin")), "Untrusted page saved a file");
+        }
+        finally
+        {
+            // Only direct children created in this private temporary directory are removed.
+            try (java.util.stream.Stream<Path> files = Files.list(directory))
+            {
+                for (Path file : (Iterable<Path>)files::iterator)
+                {
+                    Files.delete(file);
+                }
+            }
+            Files.delete(directory);
+        }
+        if (!failures.isEmpty())
+        {
+            throw new AssertionError(String.join("; ", failures));
+        }
+        System.out.println("PASS: missing/invalid data, duplicate names, partial/close failure cleanup, unavailable storage and registration failure");
+    }
+}

@@ -1,12 +1,10 @@
-// generates the golden vectors for the wasm port: runs the REAL vendored js keygen
-// (jsbn + seedrandom + cryptico) for a set of passphrases and records every key part.
-// the wasm module must reproduce these numbers bit for bit, because an identity is
-// exactly this deterministic prime walk
-//   node make-vectors.js [bits] [outfile]
+// generate reference RSA keys with the legacy JavaScript implementation
+// save every key component for comparison with Wasm
+// run: node make-vectors.js [bits] [outfile]
 
 let fs = require("fs");
 
-// the client no longer ships these; they live here as the reference the wasm is held to
+// load the legacy key generator used as the reference
 let vendor_path = __dirname + "/../../../main/scripts/vendor/";
 let legacy_path = __dirname + "/legacy-reference/";
 let source = ["jsbn.js", "sha256.js", "rsa.js", "cryptico.js"]
@@ -17,7 +15,7 @@ let source = ["jsbn.js", "sha256.js", "rsa.js", "cryptico.js"]
     })
     .join("\n");
 
-// the vendor files expect a browser at load time; these shims satisfy them
+// provide the browser globals required by the legacy libraries
 let navigator = { appName: "node", appVersion: "5" };
 let window = {};
 let cryptico_ref = null;
@@ -27,7 +25,7 @@ eval(source + "\ncryptico_ref = cryptico;");
 let bits = parseInt(process.argv[2]) || 2048;
 let outfile = process.argv[3] || (__dirname + "/vectors-" + bits + ".json");
 
-// a mix of realistic identity passphrases (the app uses 199+ char strings) and short ones
+// include long identity passphrases and short test inputs
 let passphrases = [
     "a".repeat(199),
     "lemon-chat test identity passphrase 0123456789 ".repeat(5),
@@ -61,7 +59,7 @@ for (let i = 0; i < count; i++)
 
     console.log("vector " + (i + 1) + "/" + count + " done in " + took + "ms (" + bits + " bits)");
 
-    // written after every key, because a long 2048 run once died on key 3 and lost everything
+    // save each completed key so an interrupted run keeps its progress
     fs.writeFileSync(outfile, JSON.stringify(vectors, null, 1));
 }
 

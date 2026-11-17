@@ -1,5 +1,5 @@
-// This file adds quoted replies to channel and private messages.
-// The quote is sent inside the encrypted message along with the reply text.
+// this file adds quoted replies to channel and private messages
+// the quote is sent inside the encrypted message along with the reply text
 
 var chat_replies =
 {
@@ -10,10 +10,12 @@ var chat_replies =
 };
 
 /**
- * @brief Finds the quoted message by its identifier and author in the same conversation.
- * @param context Conversation containing the reply.
- * @param quote Identifier and author saved with the reply.
- * @return Original message element or null when it is no longer stored.
+ * @brief finds the quoted message by its identifier and author in the same conversation
+ *
+ * @param context conversation containing the reply
+ * @param quote identifier and author saved with the reply
+ *
+ * @return original message element or null when it is no longer stored
  */
 function chat_replies__find_original(context, quote)
 {
@@ -33,9 +35,10 @@ function chat_replies__find_original(context, quote)
 }
 
 /**
- * @brief Offers the quoted author's picture to themes that show a reply avatar.
- * @param block Quoted preview whose author identity determines the picture.
- * @param original Matching original message, when it is still in this conversation.
+ * @brief offers the quoted author's picture to themes that show a reply avatar
+ *
+ * @param block quoted preview whose author identity determines the picture
+ * @param original matching original message, when it is still in this conversation
  */
 function chat_replies__update_avatar(block, original)
 {
@@ -73,8 +76,9 @@ function chat_replies__update_avatar(block, original)
 }
 
 /**
- * @brief Refreshes reply pictures after an avatar arrives, changes or is deleted.
- * @param sender_client_id Optional sender whose current avatar changed.
+ * @brief refreshes reply pictures after an avatar arrives, changes or is deleted
+ *
+ * @param sender_client_id optional sender whose current avatar changed
  */
 function chat_replies__refresh_avatars(sender_client_id)
 {
@@ -96,8 +100,9 @@ function chat_replies__refresh_avatars(sender_client_id)
 }
 
 /**
- * @brief Shows whether the quoted message is still available without changing its saved text.
- * @param block Quoted preview displayed above a reply.
+ * @brief shows whether the quoted message is still available without changing its saved text
+ *
+ * @param block quoted preview displayed above a reply
  */
 function chat_replies__update_reference(block)
 {
@@ -113,14 +118,14 @@ function chat_replies__update_reference(block)
     reference.status.textContent = unavailable ? "Original message is not in this chat history" : "";
     block.classList.toggle("chat-reply-unavailable", unavailable);
     block.title = unavailable ? "The quoted text is saved with this reply" : "Show the original message";
-    block.setAttribute("aria-label", "Reply to " + reference.quote.author_name + ": "
-        + reference.text.textContent + (unavailable ? ". " + reference.status.textContent : ". Show the original message"));
+    block.setAttribute("aria-label", "Reply to " + reference.quote.author_name + ": " + reference.text.textContent + (unavailable ? ". " + reference.status.textContent : ". Show the original message"));
 }
 
 /**
- * @brief Updates previews when their original message arrives or is removed.
- * @param context Conversation containing the changed message.
- * @param id Identifier of the changed message.
+ * @brief updates previews when their original message arrives or is removed
+ *
+ * @param context conversation containing the changed message
+ * @param id identifier of the changed message
  */
 function chat_replies__update_references(context, id)
 {
@@ -135,9 +140,10 @@ function chat_replies__update_references(context, id)
 }
 
 /**
- * @brief Keeps deleted messages reachable and updates quotes when history is trimmed.
- * @param state Message whose reaction controls are being removed.
- * @param is_deleted Whether the message was deleted rather than removed from local history.
+ * @brief keeps deleted messages reachable and updates quotes when history is trimmed
+ *
+ * @param state message whose reaction controls are being removed
+ * @param is_deleted whether the message was deleted rather than removed from local history
  */
 function chat_replies__forget(state, is_deleted)
 {
@@ -160,15 +166,15 @@ function chat_replies__forget(state, is_deleted)
 }
 
 /**
- * @brief Checks a received quote and limits the text shown in it.
+ * @brief checks a received quote and limits the text shown in it
+ *
  * @param object quote -> quote from the encrypted message
+ *
  * @return object -> checked quote or null
  */
 function chat_replies__validate(quote)
 {
-    if (!quote || typeof quote.message_id !== "string" || !/^[a-f0-9]{32}$/.test(quote.message_id)
-        || typeof quote.author_public_key !== "string" || !quote.author_public_key || quote.author_public_key.length > 16384
-        || typeof quote.author_name !== "string" || typeof quote.text !== "string")
+    if (!quote || typeof quote.message_id !== "string" || !/^[a-f0-9]{32}$/.test(quote.message_id) || typeof quote.author_public_key !== "string" || !quote.author_public_key || quote.author_public_key.length > 16384 || typeof quote.author_name !== "string" || typeof quote.text !== "string")
     {
         return null;
     }
@@ -183,7 +189,8 @@ function chat_replies__validate(quote)
 }
 
 /**
- * @brief Adds the Reply button and displays the quote attached to a message.
+ * @brief adds the Reply button and displays the quote attached to a message
+ *
  * @param object state -> displayed message and its author
  * @param string name -> author name supplied with the message
  * @param object quote -> optional quote inside the encrypted message
@@ -206,8 +213,7 @@ function chat_replies__register(state, name, quote)
     button.onclick = function()
     {
         let input = document.getElementById("chat-input-container-text-input");
-        if (!chat_replies.enabled || !state.element.isConnected || input.disabled
-            || state.element.closest(".chat-context").id !== g_current_chat_context_id)
+        if (!chat_replies.enabled || !state.element.isConnected || input.disabled || state.element.closest(".chat-context").id !== g_current_chat_context_id)
         {
             return;
         }
@@ -287,8 +293,10 @@ function chat_replies__register(state, name, quote)
 }
 
 /**
- * @brief Takes the selected quote when sending a text message in this chat.
+ * @brief takes the selected quote when sending a text message in this chat
+ *
  * @param Element context -> chat receiving the new message
+ *
  * @return object -> quote to encrypt with the message or null
  */
 function chat_replies__take(context)
@@ -300,8 +308,7 @@ function chat_replies__take(context)
     let pending = chat_replies.pending.get(context);
     chat_replies.pending.delete(context);
     chat_replies__refresh();
-    if (!chat_replies.enabled || !pending || pending.generation !== g_worker_connection_generation
-        || !pending.state.element.isConnected)
+    if (!chat_replies.enabled || !pending || pending.generation !== g_worker_connection_generation || !pending.state.element.isConnected)
     {
         return null;
     }
@@ -316,7 +323,7 @@ function chat_replies__take(context)
 }
 
 /**
- * @brief Shows the selected quote for the chat currently open in the composer.
+ * @brief shows the selected quote for the chat currently open in the composer
  */
 function chat_replies__refresh()
 {
@@ -331,8 +338,7 @@ function chat_replies__refresh()
     }
     let context = document.getElementById(g_current_chat_context_id);
     let pending = context && chat_replies.pending.get(context);
-    let visible = chat_replies.enabled && pending && pending.generation === g_worker_connection_generation
-        && pending.state.element.isConnected;
+    let visible = chat_replies.enabled && pending && pending.generation === g_worker_connection_generation && pending.state.element.isConnected;
     preview.hidden = !visible;
     if (visible)
     {
@@ -343,7 +349,7 @@ function chat_replies__refresh()
 }
 
 /**
- * @brief Restores the local reply preference and connects the cancel button.
+ * @brief restores the local reply preference and connects the cancel button
  */
 function chat_replies__setup()
 {

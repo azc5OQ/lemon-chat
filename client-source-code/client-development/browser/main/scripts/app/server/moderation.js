@@ -1,4 +1,4 @@
-// This file provides controls for delegated moderation and channel permissions.
+// this file provides controls for delegated moderation and channel permissions
 var moderation =
 {
     channels: new Map(),
@@ -12,9 +12,12 @@ var moderation =
 };
 
 /**
- * @brief Creates a control using the settings window button styles.
- * @param label Visible action name.
- * @param action Click handler.
+ * @brief creates a control using the settings window button styles
+ *
+ * @param label visible action name
+ * @param action click handler
+ *
+ * @return HTMLButtonElement button with the click handler attached
  */
 function moderation__button(label, action)
 {
@@ -26,8 +29,12 @@ function moderation__button(label, action)
 }
 
 /**
- * @brief Opens a nonblocking dialog and restores the emoji panel on close.
- * @param title Window title.
+ * @brief opens the moderation dialog and restores emoji controls on close
+ *
+ * @param title window title
+ * @param modal true to block interaction outside the dialog
+ *
+ * @return HTMLElement empty dialog body for the caller to fill
  */
 function moderation__open(title, modal = true)
 {
@@ -88,7 +95,7 @@ function moderation__open(title, modal = true)
 }
 
 /**
- * @brief Returns the shared emoji controls to server settings.
+ * @brief returns the shared emoji controls to server settings
  */
 function moderation__restore_emojis()
 {
@@ -100,7 +107,7 @@ function moderation__restore_emojis()
 }
 
 /**
- * @brief Sets up moderation state and client dragging for this connection.
+ * @brief sets up moderation state and client dragging for this connection
  */
 function moderation__setup()
 {
@@ -128,7 +135,7 @@ function moderation__setup()
 }
 
 /**
- * @brief Refreshes controls after the server changes the user's permissions.
+ * @brief refreshes controls after the server changes the user's permissions
  */
 function moderation__refresh()
 {
@@ -160,15 +167,14 @@ function moderation__refresh()
     {
         server_emojis__render_admin();
     }
-    if (moderation.dialog && moderation.dialog.open && moderation.dialog.dataset.page === "bans"
-        && !groups__has_permission("view_bans"))
+    if (moderation.dialog && moderation.dialog.open && moderation.dialog.dataset.page === "bans" && !groups__has_permission("view_bans"))
     {
         moderation.dialog.close();
     }
 }
 
 /**
- * @brief Opens management features without requesting full server settings.
+ * @brief opens management features without requesting full server settings
  */
 function moderation__tools()
 {
@@ -211,9 +217,10 @@ function moderation__tools()
 }
 
 /**
- * @brief Sends an ordinary authenticated server request.
- * @param type Message type.
- * @param fields Additional request fields.
+ * @brief sends an ordinary authenticated server request
+ *
+ * @param type message type
+ * @param fields additional request fields
  */
 function moderation__send(type, fields = {})
 {
@@ -221,9 +228,12 @@ function moderation__send(type, fields = {})
 }
 
 /**
- * @brief Checks the server's latest rights for a channel.
- * @param channel_id Channel being changed.
- * @param permission Required action.
+ * @brief checks the server's latest rights for a channel
+ *
+ * @param channel_id channel being changed
+ * @param permission required action
+ *
+ * @return boolean true when the action is allowed
  */
 function moderation__allows(channel_id, permission)
 {
@@ -245,9 +255,12 @@ function moderation__allows(channel_id, permission)
 }
 
 /**
- * @brief Builds a select control with safely rendered labels.
- * @param label Accessible control name.
- * @param choices Pairs of values and visible names.
+ * @brief builds a select control with safely rendered labels
+ *
+ * @param label accessible control name
+ * @param choices pairs of values and visible names
+ *
+ * @return HTMLSelectElement select containing the supplied choices
  */
 function moderation__select(label, choices)
 {
@@ -263,14 +276,28 @@ function moderation__select(label, choices)
     return select;
 }
 
-/** Resolves the selected identity again, since a menu can outlive a channel move. */
+/**
+ * @brief finds the captured client in its original channel
+ *
+ * @param client_id captured client ID
+ * @param identity captured public key
+ * @param channel_id captured channel ID
+ *
+ * @return object|null matching active client, or null after it changes
+ */
 function moderation__target(client_id, identity, channel_id)
 {
     let target = channel_tree__get_client_by_client_id(Number(client_id));
-    return g_is_authenticated && target && !target.is_idle && !target.is_music_bot
-        && target.public_key === identity && Number(target.channel_id) === Number(channel_id) ? target : null;
+    return g_is_authenticated && target && !target.is_idle && !target.is_music_bot && target.public_key === identity && Number(target.channel_id) === Number(channel_id) ? target : null;
 }
 
+/**
+ * @brief requests channel moderation rights for a connected human client
+ *
+ * @param object|null target -> client whose current channel access is requested
+ *
+ * @return void
+ */
 function moderation__request_client_access(target)
 {
     if (target && !target.is_idle && !target.is_music_bot)
@@ -282,12 +309,27 @@ function moderation__request_client_access(target)
     }
 }
 
+/**
+ * @brief finds cached moderation rights matching the target identity and channel
+ *
+ * @param object|null target -> current client record
+ *
+ * @return object|null -> matching access record or null
+ */
 function moderation__client_access(target)
 {
     let access = target && moderation.clients.get(Number(target.client_id));
     return access && access.identity === target.public_key && Number(access.channel_id) === Number(target.channel_id) ? access : null;
 }
 
+/**
+ * @brief checks whether a channel moderation action is allowed for this target
+ *
+ * @param object|null target -> current client record
+ * @param string action -> moderation action name
+ *
+ * @return boolean -> true when target restrictions and cached access or admin status allow it
+ */
 function moderation__can_act(target, action)
 {
     if (!target || target.is_idle || target.is_music_bot || Number(target.client_id) === Number(g_local_client_id))
@@ -302,6 +344,14 @@ function moderation__can_act(target, action)
     return access ? access.actions?.[action] === true : g_is_local_client_admin;
 }
 
+/**
+ * @brief checks whether cached access or admin status permits assigning a channel group
+ *
+ * @param object|null target -> client receiving the group
+ * @param number role -> channel group ID, including zero to remove a group
+ *
+ * @return boolean -> true when the role is allowed for this target
+ */
 function moderation__can_assign_role(target, role)
 {
     let access = moderation__client_access(target);
@@ -309,15 +359,14 @@ function moderation__can_assign_role(target, role)
 }
 
 /**
- * @brief Confirms kick or ban against a captured identity before sending a request.
- * @param target Selected client, captured before the context menu closes.
- * @param action Server kick, server ban, or kick_from_channel.
+ * @brief confirms kick or ban against a captured identity before sending a request
+ *
+ * @param target selected client, captured before the context menu closes
+ * @param action server kick, server ban, or kick_from_channel
  */
 function moderation__confirm_client_action(target, action)
 {
-    if (!G_HAS_DOM || !g_is_authenticated || !target || target.is_music_bot
-        || Number(target.client_id) === Number(g_local_client_id)
-        || !["kick", "ban", "kick_from_channel"].includes(action))
+    if (!G_HAS_DOM || !g_is_authenticated || !target || target.is_music_bot || Number(target.client_id) === Number(g_local_client_id) || !["kick", "ban", "kick_from_channel"].includes(action))
     {
         return;
     }
@@ -326,21 +375,23 @@ function moderation__confirm_client_action(target, action)
     let channel_id = Number(target.channel_id);
     let generation = g_worker_connection_generation;
     let channel_action = action === "kick_from_channel";
+    /**
+     * @brief rechecks connection generation, identity and permission before confirming moderation
+     *
+     * @return object|null -> current permitted target or null if the captured action is stale
+     */
     function current_target()
     {
         if (!g_is_authenticated || generation !== g_worker_connection_generation)
         {
             return null;
         }
-        let current = channel_action ? moderation__target(client_id, identity, channel_id)
-            : channel_tree__get_client_by_client_id(client_id);
-        if (!current || current.public_key !== identity || current.is_music_bot
-            || Number(current.client_id) === Number(g_local_client_id))
+        let current = channel_action ? moderation__target(client_id, identity, channel_id) : channel_tree__get_client_by_client_id(client_id);
+        if (!current || current.public_key !== identity || current.is_music_bot || Number(current.client_id) === Number(g_local_client_id))
         {
             return null;
         }
-        let allowed = channel_action ? channel_id !== 0 && moderation__can_act(current, action)
-            : groups__can_moderate(current, action);
+        let allowed = channel_action ? channel_id !== 0 && moderation__can_act(current, action) : groups__can_moderate(current, action);
         return allowed ? current : null;
     }
     if (!current_target())
@@ -356,10 +407,7 @@ function moderation__confirm_client_action(target, action)
     moderation.dialog.dataset.page = "confirmation";
     question.id = "moderation-confirm-question";
     question.textContent = label + ": “" + target.username + "”?";
-    explanation.textContent = action === "ban"
-        ? "They will be disconnected and blocked from reconnecting until the ban is removed."
-        : channel_action ? "They will leave this channel and remain connected to the server."
-            : "They will be disconnected, but can connect again.";
+    explanation.textContent = action === "ban" ? "They will be disconnected and blocked from reconnecting until the ban is removed." : channel_action ? "They will leave this channel and remain connected to the server." : "They will be disconnected, but can connect again.";
     let cancel = moderation__button("Cancel", function()
     {
         moderation.dialog.close();
@@ -398,6 +446,15 @@ function moderation__confirm_client_action(target, action)
     cancel.focus();
 }
 
+/**
+ * @brief confirms a channel kick or sends another permitted channel moderation action
+ *
+ * @param object|null target -> current client record
+ * @param string action -> moderation action name
+ * @param object extra -> additional fields such as mute duration or destination channel
+ *
+ * @return void
+ */
 function moderation__act(target, action, extra = {})
 {
     if (!target || !moderation__can_act(target, action))
@@ -416,7 +473,15 @@ function moderation__act(target, action, extra = {})
     UI.delete_contextmenus(true);
 }
 
-/** Keeps restricted actions discoverable without permitting activation. */
+/**
+ * @brief keeps restricted actions visible without allowing activation
+ *
+ * @param item menu item to update
+ * @param allowed whether the item can be activated
+ * @param reason explanation shown for a disabled item
+ *
+ * @return void
+ */
 function moderation__set_menu_access(item, allowed, reason = "Your permissions do not allow this action.")
 {
     item.hidden = false;
@@ -427,7 +492,14 @@ function moderation__set_menu_access(item, allowed, reason = "Your permissions d
     item.title = allowed ? "" : reason;
 }
 
-/** Rechecks ordinary menu actions both when rendered and when clicked. */
+/**
+ * @brief checks permissions when a menu is rendered or activated
+ *
+ * @param action menu action identifier
+ * @param menu menu holding the target, or null to use the current selection
+ *
+ * @return boolean true when the action can be offered
+ */
 function moderation__menu_action_allowed(action, menu)
 {
     let channel_id = Number(menu?.dataset.contextChannel ?? g_selected_channel_id);
@@ -464,6 +536,11 @@ function moderation__menu_action_allowed(action, menu)
     }
 }
 
+/**
+ * @brief updates open menu permissions and adds keyboard activation to action items
+ *
+ * @return void
+ */
 function moderation__refresh_menu_access()
 {
     if (!G_HAS_DOM)
@@ -478,8 +555,7 @@ function moderation__refresh_menu_access()
             {
                 item.prepend(moderation__menu_icon("server_moderation"));
             }
-            let reason = item.dataset.action === "server-info" && groups__has_permission("view_server_info")
-                ? "The server is not sharing this information." : "Your permissions do not allow this action.";
+            let reason = item.dataset.action === "server-info" && groups__has_permission("view_server_info") ? "The server is not sharing this information." : "Your permissions do not allow this action.";
             moderation__set_menu_access(item, moderation__menu_action_allowed(item.dataset.action, menu), reason);
             if (!item.dataset.menuKeyboard)
             {
@@ -501,7 +577,13 @@ function moderation__refresh_menu_access()
     }
 }
 
-/** Uses the same icon slot and theme visibility as group assignment actions. */
+/**
+ * @brief builds a themed moderation action icon
+ *
+ * @param action moderation action name
+ *
+ * @return SVGElement icon for the action
+ */
 function moderation__menu_icon(action)
 {
     let paths =
@@ -522,6 +604,14 @@ function moderation__menu_icon(action)
     return icon;
 }
 
+/**
+ * @brief binds a client identity and channel to its menu and refreshes moderation choices
+ *
+ * @param HTMLElement|null menu -> client context menu
+ * @param object|null target -> client represented by the menu
+ *
+ * @return void
+ */
 function moderation__attach_client_menu(menu, target)
 {
     if (!menu || !target || target.is_music_bot)
@@ -544,6 +634,13 @@ function moderation__attach_client_menu(menu, target)
     }
 }
 
+/**
+ * @brief rebuilds channel moderation choices for the current menu target
+ *
+ * @param HTMLElement menu -> menu carrying the target identity and channel
+ *
+ * @return void
+ */
 function moderation__render_client_menu(menu)
 {
     menu.querySelectorAll(".client-moderation-action").forEach(function(item)
@@ -568,13 +665,19 @@ function moderation__render_client_menu(menu)
         item.className = "context-menu-item client-moderation-action" + (submenu ? " group-assignment-parent" : "");
         item.append(moderation__menu_icon(action), document.createTextNode(label));
         item.dataset.moderationAction = action;
-        moderation__set_menu_access(item, moderation__can_act(target, action),
-            action === "kick_from_channel" && Number(target.channel_id) === 0 ? "This user is already in root." : undefined);
+        moderation__set_menu_access(item, moderation__can_act(target, action), action === "kick_from_channel" && Number(target.channel_id) === 0 ? "This user is already in root." : undefined);
         if (submenu)
         {
             item.setAttribute("aria-haspopup", "menu");
             item.setAttribute("aria-expanded", "false");
         }
+        /**
+         * @brief rechecks the menu target and permission before opening or running its moderation action
+         *
+         * @param Event event -> click, hover or keyboard activation
+         *
+         * @return void
+         */
         function activate(event)
         {
             event.stopPropagation();
@@ -617,9 +720,18 @@ function moderation__render_client_menu(menu)
         items.insertBefore(item, before);
     }
     let box = menu.getBoundingClientRect();
-    menu.style.top = Math.max(8, Math.min(box.top, window.innerHeight - box.height - 8)) + "px";
+    menu.style.top = utils__position_px(Math.max(8, Math.min(box.top, utils__viewport_height() - box.height - 8)));
 }
 
+/**
+ * @brief opens destination choices for moving a client or duration choices for channel muting
+ *
+ * @param HTMLElement item -> parent moderation item
+ * @param object target -> current client record
+ * @param string action -> move or mute action
+ *
+ * @return void
+ */
 function moderation__open_action_menu(item, target, action)
 {
     groups__close_assignment_menu();
@@ -658,7 +770,13 @@ function moderation__open_action_menu(item, target, action)
     groups__show_submenu(menu, item);
 }
 
-/** Ask for password bypass before presenting the password form. */
+/**
+ * @brief ask for password bypass before presenting the password form
+ *
+ * @param channel_id channel to join
+ *
+ * @return void
+ */
 function moderation__join_channel(channel_id)
 {
     moderation.pending_join = null;
@@ -679,11 +797,20 @@ function moderation__join_channel(channel_id)
     }
 }
 
-/** Only our own client drag is accepted; file drops continue through their existing handlers. */
+/**
+ * @brief binds client drag controls while leaving file drops to their existing handlers
+ *
+ * @return void
+ */
 function moderation__setup_drag()
 {
     let tree = document.getElementById("channel-list-container");
     let dragging = null;
+    /**
+     * @brief removes the channel drop highlight after dragging a client
+     *
+     * @return void
+     */
     function clear()
     {
         tree.querySelectorAll(".channel-drop-target").forEach(function(row)
@@ -751,8 +878,9 @@ function moderation__setup_drag()
 
 
 /**
- * @brief Receives moderation results and channel rights from the server.
- * @param message Decrypted server message.
+ * @brief receives moderation results and channel rights from the server
+ *
+ * @param message decrypted server message
  */
 function moderation__receive(message)
 {
@@ -840,16 +968,14 @@ function moderation__receive(message)
             utils__custom_alert(message.text);
         }
     }
-    else if (G_HAS_DOM && message.type === "ban_list" && groups__has_permission("view_bans")
-        && moderation.dialog && moderation.dialog.open && moderation.dialog.dataset.page === "bans")
+    else if (G_HAS_DOM && message.type === "ban_list" && groups__has_permission("view_bans") && moderation.dialog && moderation.dialog.open && moderation.dialog.dataset.page === "bans")
     {
         moderation.body.replaceChildren();
         for (let ban of message.entries)
         {
             let row = document.createElement("div");
             let label = document.createElement("span");
-            label.textContent = (groups__has_permission("view_ip_addresses") && ban.ip_address || ban.identity || "Address hidden")
-                + " · " + new Date(ban.timestamp).toLocaleString();
+            label.textContent = (groups__has_permission("view_ip_addresses") && ban.ip_address || ban.identity || "Address hidden") + " · " + new Date(ban.timestamp).toLocaleString();
             row.append(label);
             if (groups__has_permission("remove_bans"))
             {
@@ -877,8 +1003,9 @@ function moderation__receive(message)
 }
 
 /**
- * @brief Enables only the channel fields the server permits this user to edit.
- * @param channel_id Edited channel, or null when creating a channel.
+ * @brief enables only the channel fields the server permits this user to edit
+ *
+ * @param channel_id edited channel, or null when creating a channel
  */
 function moderation__channel_fields(channel_id)
 {
@@ -911,15 +1038,20 @@ function moderation__channel_fields(channel_id)
     }
 }
 
-/** Retained entry point for menu creation; restricted rows stay visible. */
+/**
+ * @brief refreshes music menu permissions while keeping restricted rows visible
+ *
+ * @return void
+ */
 function moderation__filter_music_menu()
 {
     moderation__refresh_menu_access();
 }
 
 /**
- * @brief Shows playback and upload controls separately from track deletion.
- * @param message Song list with the bot ID and playback state.
+ * @brief shows playback and upload controls separately from track deletion
+ *
+ * @param message song list with the bot ID and playback state
  */
 function moderation__music_controls(message)
 {

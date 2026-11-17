@@ -7,9 +7,11 @@
 #include "mbedtls/platform_util.h"
 
 /**
- * @brief reads channel key reuse settings at login and when the operator changes them.
+ * @brief reads channel key reuse settings at login and when the operator changes them
+ *
  * @param desktop_session_t* session -> worker-owned connection and policy
  * @param const cJSON* message -> authentication_status or server_policy message
+ *
  * @return void
  */
 void server_msg__channel__read_key_policy(desktop_session_t *session, const cJSON *message)
@@ -73,9 +75,11 @@ void server_msg__channel__read_key_policy(desktop_session_t *session, const cJSO
 }
 
 /**
- * @brief updates worker-owned state from one authenticated server message.
- * @param desktop_session_t* session -> session state; worker-owned unless this is a GUI entry point
+ * @brief updates worker-owned state from one authenticated server message
+ *
+ * @param desktop_session_t* session -> session state. Worker owned unless this is a GUI entry point
  * @param const cJSON* message -> borrowed authenticated server message
+ *
  * @return void
  */
 void server_msg__dispatch(desktop_session_t *session, const cJSON *message)
@@ -347,7 +351,7 @@ void server_msg__dispatch(desktop_session_t *session, const cJSON *message)
     }
     else if (clib__strcmp(type, "chat_message_edit") == 0)
     {
-        // legacy outer edits are not content-encrypted and must never alter retained text
+        // legacy outer edits are not content encrypted and must never alter retained text
         return;
     }
     else if (clib__strcmp(type, "error") == 0 || clib__strcmp(type, "permission_denied") == 0)

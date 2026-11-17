@@ -1,4 +1,4 @@
-// This file sends picture and file information, file chunks and transfer results.
+// this file sends picture and file information, file chunks and transfer results
 
 #include "server_msg.h"
 #include "../../base.h"
@@ -8,13 +8,15 @@
 static void _server_msg_attachments_internal__send_attachment_to_channel(cJSON *root, uint64 channel_id, client_t *except, cstring receive_type);
 
 /**
- * @brief Announces a channel attachment only to clients who will receive its data.
+ * @brief announces a channel attachment only to clients who will receive its data
+ *
  * @param cJSON* root -> attachment details owned by the caller
  * @param uint64 channel_id -> receiving channel
  * @param client_t* except -> sender to skip
  * @param cstring receive_type -> channel_chat_picture or channel_chat_file
+ * @attention the caller holds the clients lock
+ *
  * @return void
- * @attention The caller holds the clients lock.
  */
 static void _server_msg_attachments_internal__send_attachment_to_channel(cJSON *root, uint64 channel_id, client_t *except, cstring receive_type)
 {
@@ -100,7 +102,7 @@ void server_msg__attachments__send_channel_chat_picture_to_clients_in_same_chann
 }
 
 /**
- * @brief This function sends the image status to the client that SENT the image, so the client
+ * @brief this function sends the image status to the client that SENT the image, so the client
  *        knows that the server received and sent its message to the other clients / client
  *
  * @param client_t* receiver -> self explanatory
@@ -166,9 +168,7 @@ void server_msg__attachments__send_chat_picture_metadata_to_single_client(client
 }
 
 /**
- * @brief sends chat-file metadata to all clients in the sender's channel: the sender's encrypted
- *        name/size/mime header (opaque here) and the encrypted body length, so receivers can draw
- *        the file card and a progress ring before the chunks arrive
+ * @brief sends an opaque encrypted file header and encrypted body length to channel members
  *
  * @param client_t* sender -> client that sent the file
  * @param uint64 channel_id -> channel whose other members receive the file details
@@ -243,9 +243,7 @@ void server_msg__attachments__send_chat_file_metadata_to_single_client(client_t 
 }
 
 /**
- * @brief tells the client that SENT a chat file why the server refused it, so the failure is never
- *        silent on its side. reasons: file_uploads_disabled, file_too_large, receiver_unavailable,
- *        private_messages_disabled
+ * @brief returns the file refusal reason and local message identifier to its sender
  *
  * @param client_t* receiver -> the sender
  * @param char* reason -> one of the reason strings above
@@ -304,12 +302,8 @@ void server_msg__attachments__send_file_send_completed_status_to_single_client(c
 }
 
 /**
- * @brief sends one chunk of a file transfer as a file_receive_chunk message to the single receiving
- *        client, encrypted with that receiver's shared secret.
- *
- *        the receiver is looked up by index in g_clients_array. the chunk is passed through as the
- *        "value" field exactly as given, together with the sender id and the server chat message id so
- *        the client can append the chunk to the right transfer.
+ * @brief forwards an unchanged file chunk with its sender and transfer identifiers
+ *        the outgoing message uses the receiver's transport encryption
  *
  * @param client_t* receiver -> the client this chunk goes to
  * @param client_t* sender -> the client that sends the file
@@ -334,10 +328,12 @@ int64 server_msg__attachments__send_file_by_chunk_to_single_client(client_t *rec
 }
 
 /**
- * @brief Builds one file-piece message so it can be reused for every receiver.
+ * @brief builds one file-piece message so it can be reused for every receiver
+ *
  * @param uint64 sender_id -> client sending the file
  * @param char* chunk -> encrypted file bytes, ending with a zero byte
  * @param uint64 server_chat_message_id -> message containing the file
+ *
  * @return char* -> JSON text to release with cJSON_free, or NULL_POINTER on failure
  */
 char *server_msg__attachments__prepare_file_chunk(uint64 sender_id, char *chunk, uint64 server_chat_message_id)
@@ -361,9 +357,11 @@ char *server_msg__attachments__prepare_file_chunk(uint64 sender_id, char *chunk,
 }
 
 /**
- * @brief Tries to queue a file piece without waiting for a slow receiver.
+ * @brief tries to queue a file piece without waiting for a slow receiver
+ *
  * @param client_t* receiver -> current connection, protected by the clients lock
  * @param const char* plaintext -> prepared message; the caller keeps its copy
+ *
  * @return int64 -> 0 queued, 1 retry later, -1 connection unavailable
  */
 int64 server_msg__attachments__queue_file_chunk(client_t *receiver, const char *plaintext)
@@ -372,12 +370,8 @@ int64 server_msg__attachments__queue_file_chunk(client_t *receiver, const char *
 }
 
 /**
- * @brief tells one receiving client that a file transfer is finished, as a file_receive_completed
- *        message encrypted with that receiver's shared secret.
- *
- *        sender and receiver are both looked up by index in g_clients_array. the message carries the
- *        receive type, the sender's client id and the server chat message id, so the client can close
- *        the right transfer and render it.
+ * @brief sends the transfer type, sender and message identifiers when a file completes
+ *        the outgoing message uses the receiver's transport encryption
  *
  * @param client_t* receiver -> the client that gets the notification
  * @param data_for_file_send_thread_t* info -> the transfer descriptor, read for client_sender_id and server_chat_message_id

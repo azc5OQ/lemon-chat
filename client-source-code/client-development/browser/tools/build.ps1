@@ -1,4 +1,4 @@
-# Bootstrap only Node here; build.cjs handles Zig, optional Terser, and the build.
+# Bootstrap only Node here. Build.cjs handles Zig, optional Terser, and the build.
 $ErrorActionPreference = 'Stop'
 $buildArguments = $args
 if ($buildArguments -contains '--download-tools' -and $buildArguments -contains '--no-download-tools')

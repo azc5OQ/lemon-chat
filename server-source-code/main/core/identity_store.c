@@ -1,5 +1,5 @@
 #include "../clib/clib_vector.h"
-// This file remembers clients' identities, avatars and groups, and holds messages for offline clients.
+// this file remembers clients' identities, avatars and groups, and holds messages for offline clients
 #include "identity_store.h"
 #include "permissions.h"
 #include "../definitions.h"
@@ -19,18 +19,18 @@ offline_chat_message_t *g_offline_messages = NULL_POINTER;
 pthread_mutex_t g_offline_messages_mutex = PTHREAD_MUTEX_INITIALIZER;
 client_stored_data_t *g_client_stored_data;
 
-// Take the identity or offline-message mutex after the other server locks.
-// Do not take another lock while holding either of these mutexes.
+// take the identity or offline-message mutex after the other server locks
+// do not take another lock while holding either of these mutexes
 pthread_mutex_t g_client_stored_data_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 // declarations
 
 /**
- * @brief returns TRUE if the given public key is present in the stored client data
+ * @brief looks for the supplied key string in stored identity records
  *
- * @param char* public_key -> the public key to look for
+ * @param char* public_key -> key string to compare with stored records
  *
- * @return boole
+ * @return boole TRUE if a matching record exists, otherwise FALSE
  */
 boole identity_store__is_public_key_present_in_client_stored_data(char *public_key)
 {
@@ -58,7 +58,7 @@ boole identity_store__is_public_key_present_in_client_stored_data(char *public_k
 }
 
 /**
- * @brief Copies the username that was saved with an identity when it was last connected.
+ * @brief copies the username that was saved with an identity when it was last connected
  *
  * @param const char* public_key -> the public key of the client that is logging in
  * @param char* out_username -> receives the saved username
@@ -102,14 +102,14 @@ boole identity_store__read_identity_username(const char *public_key, char *out_u
 }
 
 /**
- * @brief Restores a client's saved groups using the hash of its public key. Restoring the admin
- *        group also restores admin access.
+ * @brief restores a client's saved groups using the hash of its public key. Restoring the admin
+ *        group also restores admin access
  *
- * @attention The caller must check that identity storage is enabled.
+ * @attention the caller must check that identity storage is enabled
  *
  * @param client_t* client -> the freshly authenticated client whose groups should be restored
  *
- * @note the caller must hold the clients write lock (client->group_ids and is_admin are written) and the groups read lock (g_groups_array is read). the store itself is guarded by g_client_stored_data_mutex.
+ * @note the caller must hold the clients write lock (client->group_ids and is_admin are written) and the groups read lock (g_groups_array is read). the store itself is guarded by g_client_stored_data_mutex
  *
  * @return void
  */
@@ -172,7 +172,7 @@ void identity_store__restore_identity_groups(client_t *client)
         {
             group_id = g_client_stored_data[i].group_ids[t];
 
-            // Guest is assigned from the current memberships after restoration
+            // guest is assigned from the current memberships after restoration
             if (group_id == g_guest_group_id || group_id >= MAX_GROUPS || g_groups_array[group_id].is_existing == FALSE)
             {
                 DBG_IDENTITIES log_info("%s %llu %s", "restore_identity_groups: skipping stored group id", group_id, "- it no longer exists on the server \n");
@@ -211,13 +211,13 @@ void identity_store__restore_identity_groups(client_t *client)
 
 /**
  * @brief restores a reconnecting identity's persisted avatar (matched by public-key hash) into the
- *        live client, so it can be served to others immediately without waiting for a re-upload.
+ *        live client, so it can be served to others immediately without waiting for a re-upload
  *        kept separate from group restore so it can run when avatars are allowed even if
- *        group-identities are disabled.
+ *        group-identities are disabled
  *
  * @param client_t* client -> the just-authenticated client
  *
- * @note takes g_client_stored_data_mutex (a leaf lock). call with the clients lock held (it writes client->base64_avatar, a heap block freed on disconnect).
+ * @note takes g_client_stored_data_mutex (a leaf lock). call with the clients lock held (it writes client->base64_avatar, a heap block freed on disconnect)
  *
  * @return void
  */
@@ -273,8 +273,8 @@ void identity_store__restore_identity_avatar(client_t *client)
 }
 
 /**
- * @brief Saves connected users' current groups and offline messaging keys in memory. The caller
- *        holds the clients and groups locks.
+ * @brief saves connected users' current groups and offline messaging keys in memory. The caller
+ *        holds the clients and groups locks
  */
 void identity_store__snapshot_connected_clients_into_identity_store(void)
 {
@@ -289,14 +289,14 @@ void identity_store__snapshot_connected_clients_into_identity_store(void)
 }
 
 /**
- * @brief Copies a client's current groups to the identity store for later reconnects. Saving
- *        settings separately persists the changes to disk.
+ * @brief copies a client's current groups to the identity store for later reconnects. Saving
+ *        settings separately persists the changes to disk
  *
- * @details Does nothing when identity storage is disabled. Removing all groups keeps an entry only when it still has an avatar or offline messaging key.
+ * @details Does nothing when identity storage is disabled. Removing all groups keeps an entry only when it still has an avatar or offline messaging key
  *
  * @param client_t* client -> the client whose groups just changed
  *
- * @note the caller must hold the clients lock (client->group_ids is read). the store itself is guarded by g_client_stored_data_mutex, taken here.
+ * @note the caller must hold the clients lock (client->group_ids is read). the store itself is guarded by g_client_stored_data_mutex, taken here
  *
  * @return void
  */
@@ -422,13 +422,13 @@ void identity_store__sync_client_identity_in_store(client_t *client)
  * @brief removes one stored identity (by its base64(SHA256(public_key)) hash) from the in-memory
  *        store. the on-disk copy is untouched until the next "save server settings" re-serializes
  *        the store without it. stripping the groups off a currently-connected holder is the
- *        caller's job.
+ *        caller's job
  *
  * @param char* identity_hash -> the base64 hash identifying the identity to drop
  *
  * @return boole TRUE if a matching entry was found and cleared
  *
- * @note the store is guarded by g_client_stored_data_mutex, taken here (a leaf lock).
+ * @note the store is guarded by g_client_stored_data_mutex, taken here (a leaf lock)
  */
 boole identity_store__delete_identity_from_store_by_hash(char *identity_hash)
 {
@@ -463,15 +463,15 @@ boole identity_store__delete_identity_from_store_by_hash(char *identity_hash)
 }
 
 /**
- * @brief Stores or clears an identity's avatar by public-key hash. Creates an entry when needed;
- *        changes reach disk on the next settings save.
+ * @brief stores or clears an identity's avatar by public-key hash. Creates an entry when needed;
+ *        changes reach disk on the next settings save
  *
- * @details A null or empty avatar clears it and removes the entry if no groups or offline messaging key remain.
+ * @details A null or empty avatar clears it and removes the entry if no groups or offline messaging key remain
  *
  * @param char* identity_hash -> base64(SHA256(public_key)) of the identity, the store's key
  * @param char* base64_avatar -> the base64 avatar to store, or NULL/empty to clear it
  *
- * @note guarded by g_client_stored_data_mutex (a leaf lock).
+ * @note guarded by g_client_stored_data_mutex (a leaf lock)
  *
  * @return void
  */
@@ -555,8 +555,8 @@ void identity_store__set_identity_avatar_by_hash(char *identity_hash, char *base
 }
 
 /**
- * @brief Updates a stored identity's last-seen time in Unix seconds. Requires identity storage and
- *        last-seen recording to be enabled. The timestamp reaches disk on the next settings save.
+ * @brief updates a stored identity's last-seen time in Unix seconds. Requires identity storage and
+ *        last-seen recording to be enabled. The timestamp reaches disk on the next settings save
  *
  * @param char* identity_hash -> base64 hash of the client's public key
  *
@@ -596,9 +596,9 @@ void identity_store__touch_identity_last_seen_by_hash(char *identity_hash)
 }
 
 /**
- * @brief Stores an identity's RSA public key so peers can send it offline messages. Requires
+ * @brief stores an identity's RSA public key so peers can send it offline messages. Requires
  *        identity storage and offline messaging to be enabled. Creates an entry if the identity has
- *        none.
+ *        none
  *
  * @param char* identity_hash -> base64 hash of the public key (the store's key)
  * @param char* raw_public_key -> the public key itself
@@ -676,8 +676,9 @@ void identity_store__store_identity_raw_public_key(char *identity_hash, char *ra
 }
 
 /**
- * @brief Removes the public key used to send offline messages to this identity.
- * @param identity_hash Identity whose saved public key is removed.
+ * @brief removes the public key used to send offline messages to this identity
+ *
+ * @param identity_hash Identity whose saved public key is removed
  */
 void identity_store__clear_identity_raw_public_key(char *identity_hash)
 {
@@ -709,7 +710,7 @@ void identity_store__clear_identity_raw_public_key(char *identity_hash)
 /**
  * @brief stores one text message for an identity that is not connected right now. the payload is
  *        copied onto the heap and is never inspected: it arrived encrypted with the RECIPIENT's
- *        public key, so the server cannot read it and neither can anybody else.
+ *        public key, so the server cannot read it and neither can anybody else
  *
  * @param char* recipient_identity_hash -> recipient identity
  * @param char* sender_identity_hash -> who sent it
@@ -835,7 +836,7 @@ boole identity_store__queue_offline_message(char *recipient_identity_hash, char 
 
 /**
  * @brief drops every queued message for one identity, freeing their payloads. used after delivery
- *        and when an identity is deleted from the store.
+ *        and when an identity is deleted from the store
  *
  * @param char* identity_hash -> whose messages to drop
  *
@@ -875,13 +876,13 @@ void identity_store__free_offline_messages_for_identity(char *identity_hash)
 
 /**
  * @brief copies an identity's stored avatar (by hash) into out_buffer. out_buffer is always
- *        null-terminated, and the copy is truncated to out_buffer_size - 1 bytes.
+ *        null-terminated, and the copy is truncated to out_buffer_size - 1 bytes
  *
  * @param char* identity_hash -> base64(SHA256(public_key)) of the identity to look up
  * @param char* out_buffer -> receives the stored base64 avatar, emptied first
  * @param uint64 out_buffer_size -> size of out_buffer in bytes, including the null terminator
  *
- * @note guarded by g_client_stored_data_mutex (a leaf lock).
+ * @note guarded by g_client_stored_data_mutex (a leaf lock)
  *
  * @return boole -> TRUE only if the identity was found and held a non-empty avatar
  */
@@ -922,10 +923,10 @@ boole identity_store__get_identity_avatar_by_hash(char *identity_hash, char *out
 }
 
 /**
- * @brief Adds or removes a group on a stored identity, including an offline identity. Changes reach
- *        disk on the next settings save.
+ * @brief adds or removes a group on a stored identity, including an offline identity. Changes reach
+ *        disk on the next settings save
  *
- * @details An entry without groups, an avatar or an offline key is removed. The caller must separately update any connected client with this identity.
+ * @details An entry without groups, an avatar or an offline key is removed. The caller must separately update any connected client with this identity
  *
  * @param char* identity_hash -> base64 hash of the identity to modify
  * @param uint64 group_id -> the group id to add or remove
@@ -933,7 +934,7 @@ boole identity_store__get_identity_avatar_by_hash(char *identity_hash, char *out
  *
  * @return boole -> TRUE if the identity existed (whether or not the group set actually changed)
  *
- * @note the store is guarded by g_client_stored_data_mutex, taken here (a leaf lock).
+ * @note the store is guarded by g_client_stored_data_mutex, taken here (a leaf lock)
  */
 boole identity_store__modify_identity_group_in_store(char *identity_hash, uint64 group_id, boole add)
 {
@@ -1015,8 +1016,9 @@ boole identity_store__modify_identity_group_in_store(char *identity_hash, uint64
 }
 
 /**
- * @brief Removes a deleted group from saved memberships before its id can be reused.
- * @param group_id -> group being deleted
+ * @brief removes a deleted group from saved memberships before its id can be reused
+ *
+ * @param group_id -> -> group being deleted
  */
 void identity_store__remove_group_from_all_identities(uint64 group_id)
 {
@@ -1044,9 +1046,10 @@ void identity_store__remove_group_from_all_identities(uint64 group_id)
 }
 
 /**
- * @brief Saves an offline messaging key only when the user's groups allow receiving offline
- *        messages. The caller holds the clients and groups locks.
- * @param client Connected user whose saved key is updated.
+ * @brief saves an offline messaging key only when the user's groups allow receiving offline
+ *        messages. The caller holds the clients and groups locks
+ *
+ * @param client Connected user whose saved key is updated
  */
 void identity_store__update_offline_public_key(client_t *client)
 {

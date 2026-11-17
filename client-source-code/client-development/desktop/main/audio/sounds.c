@@ -38,6 +38,15 @@ static const char *const g_sound_names[DESKTOP_SOUND_COUNT] = {
     "connected", "user_entered_your_channel", "user_joined_your_channel", "channel_created", "channel_switched", "channel_edited", "channel_deleted", "user_left_your_channel", "user_disconnected_from_your_channel", "poke", "message_sent", "message_received", "call", "insufficient_permissions", "connection_lost", "disconnected", "error", "server_group_assigned", "server_group_revoked", "user_was_moved_out_of_your_channel", "user_was_moved_to_your_channel", "user_in_your_channel_was_banned_from_the_server", "user_was_kicked_to_your_channel", "user_was_kicked_out_of_your_channel", "you_edited_the_server", "microphone_muted", "microphone_activated", "you_were_kicked_from_the_server", "you_were_banned_from_the_server",
 };
 
+/**
+ * @brief decodes a notification clip to mono PCM at 48 kHz
+ *
+ * @param sound_clip_t* clip -> output clip that owns the decoded samples
+ * @param const ubyte* bytes -> encoded audio bytes
+ * @param size_t size -> encoded byte count
+ *
+ * @return boole -> true when at least one frame was decoded within the duration limit
+ */
 static boole _sounds_internal__decode(sound_clip_t *clip, const ubyte *bytes, size_t size)
 {
     ma_decoder decoder;
@@ -71,7 +80,14 @@ static boole _sounds_internal__decode(sound_clip_t *clip, const ubyte *bytes, si
     return valid;
 }
 
-// File reading and decoding run on the watcher, never on the speaker callback.
+// file reading and decoding run on the watcher, never on the speaker callback
+/**
+ * @brief loads changed sound definitions while retaining the previous valid catalog on failure
+ *
+ * @param desktop_sounds_t* sounds -> sound owner with the catalog path
+ *
+ * @return boole -> true when the current file contains a valid catalog
+ */
 boole desktop_sounds__reload(desktop_sounds_t *sounds)
 {
     FILE *file = fopen(sounds->path, "rb");
@@ -200,6 +216,13 @@ boole desktop_sounds__reload(desktop_sounds_t *sounds)
     return valid;
 }
 
+/**
+ * @brief reloads changed sound definitions until shutdown is requested
+ *
+ * @param void* context -> sound owner passed to the watcher thread
+ *
+ * @return void
+ */
 static void _sounds_internal__watch(void *context)
 {
     desktop_sounds_t *sounds = context;
@@ -230,7 +253,15 @@ static void _sounds_internal__watch(void *context)
     }
 }
 
-// Runtime Base64 audio is loaded from a text file. The optional watcher reloads edits.
+// runtime Base64 audio is loaded from a text file. The optional watcher reloads edits
+/**
+ * @brief creates the notification sound owner and optionally watches its catalog
+ *
+ * @param const char* path -> sound catalog path
+ * @param boole watch -> whether to watch for catalog changes
+ *
+ * @return desktop_sounds_t* -> sound owner, or null if allocation fails
+ */
 desktop_sounds_t *desktop_sounds__create(const char *path, boole watch)
 {
     desktop_sounds_t *sounds = calloc(1, sizeof(*sounds));
@@ -271,6 +302,13 @@ desktop_sounds_t *desktop_sounds__create(const char *path, boole watch)
     return sounds;
 }
 
+/**
+ * @brief stops the catalog watcher and releases decoded sounds
+ *
+ * @param desktop_sounds_t* sounds -> sound owner to release, or null
+ *
+ * @return void
+ */
 void desktop_sounds__destroy(desktop_sounds_t *sounds)
 {
     int index = 0;
@@ -305,6 +343,14 @@ void desktop_sounds__destroy(desktop_sounds_t *sounds)
     free(sounds);
 }
 
+/**
+ * @brief starts a decoded sound in an available playback slot
+ *
+ * @param desktop_sounds_t* sounds -> sound owner
+ * @param desktop_sound_t id -> notification sound to play
+ *
+ * @return boole -> true when a playback slot was started
+ */
 boole desktop_sounds__play(desktop_sounds_t *sounds, desktop_sound_t id)
 {
     int index = 0;
@@ -332,6 +378,14 @@ boole desktop_sounds__play(desktop_sounds_t *sounds, desktop_sound_t id)
     return FALSE;
 }
 
+/**
+ * @brief stops all active playbacks of one sound
+ *
+ * @param desktop_sounds_t* sounds -> sound owner, or null to do nothing
+ * @param desktop_sound_t id -> notification sound to stop
+ *
+ * @return void
+ */
 void desktop_sounds__stop(desktop_sounds_t *sounds, desktop_sound_t id)
 {
     int index = 0;
@@ -354,6 +408,13 @@ void desktop_sounds__stop(desktop_sounds_t *sounds, desktop_sound_t id)
     desktop_mutex__unlock(sounds->mutex);
 }
 
+/**
+ * @brief stops all notification playbacks
+ *
+ * @param desktop_sounds_t* sounds -> sound owner, or null to do nothing
+ *
+ * @return void
+ */
 void desktop_sounds__clear(desktop_sounds_t *sounds)
 {
     // clear all playbacks
@@ -365,7 +426,17 @@ void desktop_sounds__clear(desktop_sounds_t *sounds)
     }
 }
 
-// Called from the existing speaker callback: no decoding, allocation or file access.
+// called from the existing speaker callback: no decoding, allocation or file access
+/**
+ * @brief adds active notifications to stereo output without waiting for the sound lock
+ *
+ * @param desktop_sounds_t* sounds -> sound owner, or null to do nothing
+ * @param float* stereo -> interleaved stereo samples to update
+ * @param uint64 frames -> number of stereo frames
+ * @param int64 volume -> notification volume percentage
+ *
+ * @return void
+ */
 void desktop_sounds__mix(desktop_sounds_t *sounds, float *stereo, uint64 frames, int64 volume)
 {
     int index = 0;

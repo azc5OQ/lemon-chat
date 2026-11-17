@@ -1,9 +1,7 @@
-// This file lets themes move their lighting with the mouse. A theme enables it
-// with --theme-pointer-light: 1 and uses --theme-pointer-x and --theme-pointer-y.
-// --theme-pointer-surfaces lists the selectors that also receive local light positions.
-// Those two values follow the mouse with a short delay, as a light would. A theme that
-// draws something on the cursor itself uses --theme-pointer-raw-x and --theme-pointer-raw-y,
-// the exact mouse position in pixels, written on the root element at the same time.
+// --theme-pointer-light enables lighting
+// --theme-pointer-x and --theme-pointer-y follow the smoothed pointer position
+// --theme-pointer-raw-x and --theme-pointer-raw-y use its current position
+// --theme-pointer-surfaces selects elements that also receive local coordinates
 
 var theme_effects__refresh = (function()
 {
@@ -31,10 +29,12 @@ var theme_effects__refresh = (function()
     let written_styles = new WeakMap();
 
     /**
-     * @brief Writes a light value only when it changed.
+     * @brief writes a light value only when it changed
+     *
      * @param Element element -> element receiving the value
      * @param string name -> CSS property name
      * @param string value -> new CSS value
+     *
      * @return void
      */
     function _internal__set_value(element, name, value)
@@ -47,8 +47,10 @@ var theme_effects__refresh = (function()
     }
 
     /**
-     * @brief Removes the light values from a panel that no longer uses them.
+     * @brief removes the light values from a panel that no longer uses them
+     *
      * @param Element element -> panel to clear
+     *
      * @return void
      */
     function _internal__clear_surface(element)
@@ -68,8 +70,10 @@ var theme_effects__refresh = (function()
     }
 
     /**
-     * @brief Registers a bordered element without reading its position yet.
+     * @brief registers a bordered element without reading its position yet
+     *
      * @param Element element -> element selected by the theme
+     *
      * @return void
      */
     function _internal__add_surface(element)
@@ -92,8 +96,10 @@ var theme_effects__refresh = (function()
     }
 
     /**
-     * @brief Stops watching an element that was removed or no longer has a themed border.
+     * @brief stops watching an element that was removed or no longer has a themed border
+     *
      * @param Element element -> element to forget
+     *
      * @return void
      */
     function _internal__remove_surface(element)
@@ -112,8 +118,10 @@ var theme_effects__refresh = (function()
     }
 
     /**
-     * @brief Keeps offscreen messages and closed dialogs out of the mouse calculations.
+     * @brief keeps offscreen messages and closed dialogs out of the mouse calculations
+     *
      * @param IntersectionObserverEntry[] entries -> elements whose visibility changed
+     *
      * @return void
      */
     function _internal__visibility_changed(entries)
@@ -153,7 +161,8 @@ var theme_effects__refresh = (function()
     }
 
     /**
-     * @brief Schedules one update when the mouse light is in use.
+     * @brief schedules one update when the mouse light is in use
+     *
      * @return void
      */
     function _internal__schedule()
@@ -165,8 +174,10 @@ var theme_effects__refresh = (function()
     }
 
     /**
-     * @brief Refreshes a panel after its opening animation finishes.
+     * @brief refreshes a panel after its opening animation finishes
+     *
      * @param Event event -> completed transition or animation
+     *
      * @return void
      */
     function _internal__layout_finished(event)
@@ -184,8 +195,10 @@ var theme_effects__refresh = (function()
     }
 
     /**
-     * @brief Finds borders in new messages and controls without rescanning the chat history.
+     * @brief finds borders in new messages and controls without rescanning the chat history
+     *
      * @param MutationRecord[] records -> changes to the page
+     *
      * @return void
      */
     function _internal__surface_changes(records)
@@ -232,8 +245,7 @@ var theme_effects__refresh = (function()
                     changed = true;
                 }
             }
-            else if (!record.target.classList.contains("theme-pointer-border-light")
-                && (record.attributeName != "style" || written_styles.get(record.target) != record.target.style.cssText))
+            else if (!record.target.classList.contains("theme-pointer-border-light") && (record.attributeName != "style" || written_styles.get(record.target) != record.target.style.cssText))
             {
                 if (record.target.matches(surface_selector))
                 {
@@ -253,7 +265,8 @@ var theme_effects__refresh = (function()
     }
 
     /**
-     * @brief Starts watching the borders selected by the current theme.
+     * @brief starts watching the borders selected by the current theme
+     *
      * @return void
      */
     function _internal__collect_surfaces()
@@ -301,7 +314,8 @@ var theme_effects__refresh = (function()
     }
 
     /**
-     * @brief Stops the lighting where it is when the pointer leaves the page.
+     * @brief stops the lighting where it is when the pointer leaves the page
+     *
      * @return void
      */
     function _internal__pause()
@@ -330,9 +344,11 @@ var theme_effects__refresh = (function()
     }
 
     /**
-     * @brief Keeps a separate border light inside the same scrolling and popup layers as its control.
+     * @brief keeps a separate border light inside the same scrolling and popup layers as its control
+     *
      * @param Element element -> field, picture or audio icon
      * @param DOMRect rectangle -> control position on the screen
+     *
      * @return object -> parent and dimensions for the light
      */
     function _internal__separate_light_layout(element, rectangle)
@@ -363,9 +379,11 @@ var theme_effects__refresh = (function()
     }
 
     /**
-     * @brief Adds a light without covering a native control or replacing an audio icon's CSS drawing.
+     * @brief adds a light without covering a native control or replacing an audio icon's CSS drawing
+     *
      * @param Element element -> control or picture to highlight
      * @param object layout -> previously measured position inside its parent
+     *
      * @return Element -> decorative light, which cannot receive clicks or focus
      */
     function _internal__separate_light(element, layout)
@@ -392,8 +410,10 @@ var theme_effects__refresh = (function()
     }
 
     /**
-     * @brief Moves the light toward the latest mouse position, then stops when it arrives.
+     * @brief moves the light toward the latest mouse position, then stops when it arrives
+     *
      * @param number time -> time supplied by the browser for this frame
+     *
      * @return void
      */
     function _internal__draw(time)
@@ -442,16 +462,13 @@ var theme_effects__refresh = (function()
         for (element of visible_surfaces)
         {
             rectangle = element.getBoundingClientRect();
-            near = rectangle.width > 0 && rectangle.height > 0
-                && light_x > rectangle.left - 210 && light_x < rectangle.right + 210
-                && light_y > rectangle.top - 210 && light_y < rectangle.bottom + 210;
+            near = rectangle.width > 0 && rectangle.height > 0 && light_x > rectangle.left - 210 && light_x < rectangle.right + 210 && light_y > rectangle.top - 210 && light_y < rectangle.bottom + 210;
             elements.push(element);
             rectangles.push(rectangle);
-            layouts.push(near && element.matches(separate_border_selector)
-                ? _internal__separate_light_layout(element, rectangle) : null);
+            layouts.push(near && element.matches(separate_border_selector) ? _internal__separate_light_layout(element, rectangle) : null);
         }
 
-        // Read every panel first so our CSS writes do not force repeated layout work.
+        // read every panel first so our CSS writes do not force repeated layout work
         _internal__set_value(root, "--theme-pointer-x", current_x.toFixed(3) + "%");
         _internal__set_value(root, "--theme-pointer-y", current_y.toFixed(3) + "%");
         _internal__set_value(root, "--theme-pointer-raw-x", pointer_x.toFixed(1) + "px");
@@ -487,8 +504,10 @@ var theme_effects__refresh = (function()
     }
 
     /**
-     * @brief Keeps the newest mouse position without drawing for every mouse event.
+     * @brief keeps the newest mouse position without drawing for every mouse event
+     *
      * @param PointerEvent event -> pointer movement inside the page
+     *
      * @return void
      */
     function _internal__pointer_move(event)
@@ -508,7 +527,8 @@ var theme_effects__refresh = (function()
     }
 
     /**
-     * @brief Enables mouse lighting only when the selected theme and device allow it.
+     * @brief enables mouse lighting only when the selected theme and device allow it
+     *
      * @return void
      */
     function _internal__refresh()
@@ -519,9 +539,7 @@ var theme_effects__refresh = (function()
         let next_selector = "";
         let element = null;
 
-        if (typeof window === "undefined" || typeof document === "undefined"
-            || typeof window.matchMedia !== "function" || typeof window.requestAnimationFrame !== "function"
-            || typeof window.getComputedStyle !== "function" || document.documentElement == null)
+        if (typeof window === "undefined" || typeof document === "undefined" || typeof window.matchMedia !== "function" || typeof window.requestAnimationFrame !== "function" || typeof window.getComputedStyle !== "function" || document.documentElement == null)
         {
             return;
         }
@@ -549,8 +567,7 @@ var theme_effects__refresh = (function()
         }
 
         computed = window.getComputedStyle(root);
-        should_enable = document.hidden == false && mouse_available.matches == true
-            && computed.getPropertyValue("--theme-pointer-light").trim() === "1";
+        should_enable = document.hidden == false && mouse_available.matches == true && computed.getPropertyValue("--theme-pointer-light").trim() === "1";
         next_selector = should_enable ? computed.getPropertyValue("--theme-pointer-surfaces").trim() : "";
         if (next_selector != surface_selector)
         {

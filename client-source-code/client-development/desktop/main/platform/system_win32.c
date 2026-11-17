@@ -1,4 +1,4 @@
-// Windows clock, executable directory and installed-font access.
+// Windows clock, executable directory and installed font access
 #include <windows.h>
 #include "platform/system.h"
 #include "clib.h"
@@ -7,9 +7,11 @@
 static BOOL CALLBACK _system_internal__window_icon(HWND window, LPARAM context);
 
 /**
- * @brief applies process-shared icon resources to the application's windows on the UI thread.
+ * @brief applies process shared icon resources to the application's windows on the UI thread
+ *
  * @param HWND window -> window owned by this thread
  * @param LPARAM context -> unused callback context
+ *
  * @return BOOL -> TRUE to continue enumeration
  */
 static BOOL CALLBACK _system_internal__window_icon(HWND window, LPARAM context)
@@ -34,7 +36,8 @@ static BOOL CALLBACK _system_internal__window_icon(HWND window, LPARAM context)
 }
 
 /**
- * @brief loads the executable's embedded lemon icon after the native window is created.
+ * @brief loads the executable's embedded lemon icon after the native window is created
+ *
  * @return void
  */
 void desktop_system__window_icon(void)
@@ -43,7 +46,8 @@ void desktop_system__window_icon(void)
 }
 
 /**
- * @brief reads monotonic elapsed time for display updates and timeouts.
+ * @brief reads monotonic elapsed time for display updates and timeouts
+ *
  * @return uint64 -> milliseconds since system startup
  */
 uint64 desktop_system__milliseconds(void)
@@ -52,8 +56,10 @@ uint64 desktop_system__milliseconds(void)
 }
 
 /**
- * @brief pauses a development probe or worker without spinning.
+ * @brief pauses a development probe or worker without spinning
+ *
  * @param int64 milliseconds -> requested delay
+ *
  * @return void
  */
 void desktop_system__sleep(int64 milliseconds)
@@ -70,8 +76,9 @@ void desktop_system__sleep(int64 milliseconds)
 }
 
 /**
- * @brief resolves assets beside the executable regardless of its launch directory.
- * @return boole -> 1 on success; 0 on a path or directory error
+ * @brief resolves assets beside the executable regardless of its launch directory
+ *
+ * @return boole -> 1 on success. 0 on a path or directory error
  */
 boole desktop_system__asset_directory(void)
 {
@@ -101,11 +108,13 @@ boole desktop_system__asset_directory(void)
 }
 
 /**
- * @brief finds installed Segoe UI without redistributing Windows font files.
+ * @brief finds installed Segoe UI without redistributing Windows font files
+ *
  * @param char* path -> destination path buffer
  * @param uint64 capacity -> destination capacity including the terminator
  * @param boole bold -> nonzero for the bold font
- * @return boole -> 1 when a complete path was written; 0 otherwise
+ *
+ * @return boole -> 1 when a complete path was written. 0 otherwise
  */
 boole desktop_system__font_path(char *path, uint64 capacity, boole bold)
 {

@@ -1,27 +1,154 @@
-// dispatch.js is embedded in template.html along with the other client files, and in the node bundle
-// it is the main thread's message dispatcher: everything the workers post back (decrypted server
-// messages, encryption results, socket events) arrives in dispatch__mainthread_onmessage and is routed to the
-// handlers in messages.js and the feature files
+// routes worker replies to the shared client handlers
+var dispatch_failed_deliveries = new Set();
+var dispatch_accepted_deliveries = new Set();
+var dispatch_processed_deliveries = new Set();
+var dispatch_discarded_deliveries = new Set();
 
 /**
- * @brief the main thread's message handler for everything the workers post back
- *        decrypted server messages go to their server_msg handler, encoder output to the
- *        datachannel, log lines to the log, and so on, one branch per message type
+ * @brief dispatches a current worker message and acknowledges accepted local delivery
  *
- * @param object e -> the worker message event; e.data.type picks the branch
+ * @param object e -> the worker message event
  *
  * @return void
  */
 function dispatch__mainthread_onmessage(e)
 {
-    if (e.data.connection_generation != null
-        && (e.data.connection_generation !== g_worker_connection_generation
-            || (g_worker_connection_ended && e.data.type !== "websocket_worker_onclose"
-                && e.data.type !== "websocket_worker_onerror")))
+    if (!e || !e.data)
     {
         return;
     }
-    if (DBG_WORKER_BOOT_LOG) { console.log("[m<-w] " + (e.data && e.data.type)); }
+    if (e.data.connection_generation != null && (e.data.connection_generation !== g_worker_connection_generation || (g_worker_connection_ended && e.data.type !== "websocket_worker_onclose" && e.data.type !== "websocket_worker_onerror")))
+    {
+        return;
+    }
+    // bind local delivery to the page's current session
+    const completion = e.data.type === "data_processing_worker__local_delivery_accepted";
+    const delivery = completion ? e.data.value : e.data.local_delivery;
+    const key = delivery ? delivery.session_id + ":" + delivery.id : null;
+    if (delivery && (!android_host__is_ui_only_runtime() || delivery.session_id !== node_session_id))
+    {
+        return;
+    }
+    if (completion)
+    {
+        // acknowledge only content the page successfully processed
+        if (!dispatch_failed_deliveries.has(key) && (dispatch_processed_deliveries.has(key) || dispatch_accepted_deliveries.has(key)))
+        {
+            dispatch_accepted_deliveries.add(key);
+            if (dispatch_accepted_deliveries.size > 4096)
+            {
+                dispatch_accepted_deliveries.delete(dispatch_accepted_deliveries.values().next().value);
+            }
+            connection__send_message_object(
+            {
+                message:
+                {
+                    type: "local_delivery_ack", id: delivery.id, session_id: delivery.session_id,
+                    discard_attachment: dispatch_discarded_deliveries.has(key)
+                }
+            });
+            // mark the visible conversation read after its content was accepted
+            if (typeof chat__is_the_user_actually_looking === "function" && chat__is_the_user_actually_looking())
+            {
+                const channel = /^chat-context-channel-([0-9]+)$/.exec(g_current_chat_context_id);
+                const peer = /^chat-context-pm-([0-9]+)$/.exec(g_current_chat_context_id);
+                if (channel)
+                {
+                    chat__clear_channel_unread_count(Number(channel[1]));
+                }
+                else if (peer)
+                {
+                    chat__clear_unread_count(Number(peer[1]));
+                }
+                else if (g_current_chat_context_id.indexOf("chat-context-offline-") === 0)
+                {
+                    const context = g_chat_context_array.find(function(candidate)
+                    {
+                        return candidate.chat_context_id === g_current_chat_context_id;
+                    });
+                    const identity_hash = context && context.peer_identity_hash;
+                    const public_key = context && context.peer_public_key;
+                    if (identity_hash || public_key)
+                    {
+                        chat__send_read_command(identity_hash ? "identity:" + identity_hash : "key:" + public_key,
+                        {
+                            identity_hash: identity_hash || "",
+                            public_key: public_key || ""
+                        });
+                    }
+                }
+            }
+        }
+        dispatch_failed_deliveries.delete(key);
+        dispatch_processed_deliveries.delete(key);
+        dispatch_discarded_deliveries.delete(key);
+        return;
+    }
+    // ignore content already accepted before this replay
+    if (key && dispatch_accepted_deliveries.has(key))
+    {
+        return;
+    }
+    try
+    {
+        const result = dispatch__mainthread_onmessage_impl(e);
+        if (key)
+        {
+            if (result === false)
+            {
+                dispatch_processed_deliveries.delete(key);
+                dispatch_failed_deliveries.add(key);
+                connection__send_message_object({message:
+                {
+                    type: "local_delivery_ack", id: delivery.id, session_id: delivery.session_id,
+                    accepted: false
+                }});
+                return;
+            }
+            if (result === "deferred")
+            {
+                return;
+            }
+            // attachment discard also cancels its retained body
+            if (result === "discarded" && /^data_processing_worker__(direct|channel)_chat_(file|picture)_metadata$/.test(e.data.type))
+            {
+                dispatch_discarded_deliveries.add(key);
+            }
+            dispatch_processed_deliveries.add(key);
+            const context_id = chat__delivery_context(e.data.value);
+            if (context_id)
+            {
+                chat_last_delivery_by_context.set(context_id, delivery.id);
+            }
+        }
+    }
+    catch (error)
+    {
+        if (key)
+        {
+            dispatch_failed_deliveries.add(key);
+        }
+        throw error;
+    }
+}
+
+/**
+ * @brief routes a worker event to its connection, chat or media handler
+ *
+ * @param object e -> the worker message event
+ *
+ * @return boolean|string|undefined the handler's delivery result
+ */
+function dispatch__mainthread_onmessage_impl(e)
+{
+    if (e.data.connection_generation != null && (e.data.connection_generation !== g_worker_connection_generation || (g_worker_connection_ended && e.data.type !== "websocket_worker_onclose" && e.data.type !== "websocket_worker_onerror")))
+    {
+        return;
+    }
+    if (DBG_WORKER_BOOT_LOG)
+    {
+        console.log("[m<-w] " + (e.data && e.data.type));
+    }
 
     if (e.data.type == "log")
     {
@@ -34,8 +161,7 @@ function dispatch__mainthread_onmessage(e)
     }
     else if (e.data.type == "opus_encoder_worker__encode_result")
     {
-        // chunks already inside the encoder when push-to-talk ended arrive here after
-        // mic-off; dropping them keeps the old end of the recording out of the receivers' playback buffers
+        // discard encoder output queued before the microphone stopped
         if (g_is_microphone_active == false && (typeof is_playing_music == "undefined" || is_playing_music != true))
         {
             return;
@@ -47,9 +173,7 @@ function dispatch__mainthread_onmessage(e)
 
             for (var i = 0; i < opus_data_chunks.length; i++)
             {
-                // prepend a 2-byte little-endian sequence number INSIDE the encrypted payload;
-                // receivers use it to reorder frames the unordered datachannel scrambled and to
-                // detect losses. the server relay never sees it (it is inside the encrypted part)
+                // put the sequence number inside encryption so receivers can reorder frames privately
                 let opus_chunk_bytes = new Uint8Array(opus_data_chunks[i]);
                 let sequenced_chunk = new Uint8Array(2 + opus_chunk_bytes.length);
 
@@ -94,8 +218,6 @@ function dispatch__mainthread_onmessage(e)
             }
             return;
         }
-        let data_chunks = voice__chunk_buffers(e.data.value, 4096);
-
         let message_object1 = {
             message:
             {
@@ -106,7 +228,7 @@ function dispatch__mainthread_onmessage(e)
 
         connection__send_message_object(message_object1);
 
-        voice__stream_local_mp3_file_to_other_clients(data_chunks, e.data.mp3_sample_rate);
+        voice__stream_local_mp3_file_to_other_clients(e.data.value, e.data.mp3_sample_rate);
 
         if (g_alert_streaming_music_shown_once == false)
         {
@@ -116,12 +238,16 @@ function dispatch__mainthread_onmessage(e)
     }
     else if (e.data.type == "websocket_worker_onmessage")
     {
-        if (e.data.value != null && e.data.value.length > 0) { g_session.bytes_received += e.data.value.length; }
+        if (e.data.value != null && e.data.value.length > 0)
+        {
+            g_session.bytes_received += e.data.value.length;
+        }
 
-        // data from g_websocket_worker are passed to main thread and then to g_data_processing_worker
+        // forward socket worker frames to the data worker
         g_data_processing_worker.postMessage({
             type: "mainthread__process_received_websocket_message",
             value: e.data.value,
+            connection_generation: e.data.connection_generation,
             // loopback frames arrive as plain json, the worker skips decryption
             is_plaintext: android_host__is_ui_only_runtime()
         });
@@ -136,30 +262,30 @@ function dispatch__mainthread_onmessage(e)
     }
     else if (e.data.type == "websocket_worker_onclose")
     {
+        if (android_host__is_ui_only_runtime())
+        {
+            connection_loopback_ready = false;
+        }
         connection__play_disconnect_sound(e.data.close_code);
         if (e.data.reason)
         {
             g_last_disconnect_reason = e.data.reason;
         }
-        if (!android_host__is_ui_only_runtime()
-            && (e.data.close_code === G_SERVER_CLOSE_KICKED || e.data.close_code === G_SERVER_CLOSE_BANNED))
+        if (!android_host__is_ui_only_runtime() && (e.data.close_code === G_SERVER_CLOSE_KICKED || e.data.close_code === G_SERVER_CLOSE_BANNED))
         {
-            g_last_disconnect_reason = e.data.close_code === G_SERVER_CLOSE_KICKED
-                ? "you were kicked from the server" : "you were banned from the server";
-            // A moderator ended this connection. Wait for an explicit connect request.
+            g_last_disconnect_reason = e.data.close_code === G_SERVER_CLOSE_KICKED ? "you were kicked from the server" : "you were banned from the server";
+            // a moderator ended this connection. wait for an explicit connect request
             is_connection_ended_by_user = true;
             is_connect_loop_wake_pending = false;
             g_fast_reconnect.in_progress = false;
         }
-        utils__custom_log("WebSocket closed: code=" + e.data.close_code + ", clean=" + e.data.was_clean
-            + (e.data.close_reason ? ", reason=" + e.data.close_reason : ""));
+        utils__custom_log("WebSocket closed: code=" + e.data.close_code + ", clean=" + e.data.was_clean + (e.data.close_reason ? ", reason=" + e.data.close_reason : ""));
         audio_transport__reset();
-        // the connect loop of connection.js waits for this signal; it decides whether and when to connect again
+        // let the connection loop decide whether to reconnect
         g_last_connect_attempt_failed = true;
 
-        // Without an explicit server reason, infer the cause from where the socket died.
-        // in the webview the socket is the loopback to node, so its close says nothing
-        // about the real connection: node owns that story and reports it separately
+        // without an explicit server reason, infer the cause from where the socket died
+        // a local page socket closing does not describe the remote connection. Node reports that state
         if (android_host__is_ui_only_runtime() == false)
         {
             if (g_is_authenticated == true)
@@ -173,24 +299,21 @@ function dispatch__mainthread_onmessage(e)
             }
             else if (g_last_disconnect_reason === "")
             {
-                g_last_disconnect_reason = (g_device_has_network === false)
-                    ? "no network connection (wifi and mobile data are off)"
-                    : "the server probably rejected the keys (it closed the connection during login)";
+                g_last_disconnect_reason = (g_device_has_network === false) ? "no network connection (wifi and mobile data are off)" : "the server probably rejected the keys (it closed the connection during login)";
             }
         }
 
         connection__signal_connection_closed();
         console.warn("server connection lost (identity switch in progress: " + g_is_identity_switch_in_progress + ")");
 
-        // A transport failure may be temporary. The connect loop retries until
-        // the original recovery deadline; every attempt still requires a valid login.
+        // retry within the original recovery deadline and require a valid login on every attempt
         if (g_fast_reconnect.in_progress == true)
         {
             console.warn("resume socket closed; retrying within the recovery deadline");
         }
         else if (connection__try_start_fast_reconnect("socket closed") == false)
         {
-            // a deliberate close (an identity switch, "disconnect" in the connections menu) is not a lost connection - no scary alert
+            // do not show connection loss for an intentional close
             let is_connection_lost = (g_is_authenticated && g_is_identity_switch_in_progress == false && is_connection_ended_by_user == false);
             if (is_connection_lost && g_is_running_in_android_webview == false)
             {
@@ -243,16 +366,29 @@ function dispatch__mainthread_onmessage(e)
     }
     else if (e.data.type == "data_processing_worker__generate_rsa_keypair_failed")
     {
-        connection__identity_generation_failed();
+        if (connection__accept_identity_result(e.data))
+        {
+            connection__identity_generation_failed();
+            if (g_node_frame_listener != null)
+            {
+                g_node_frame_listener(JSON.stringify({message:
+                {
+                    type: "local_identity_result", identity_revision: e.data.identity_revision,
+                    rsa_key_bits: e.data.rsa_key_bits, success: false, public_key_string: ""
+                }}));
+            }
+        }
     }
     else if (e.data.type == "data_processing_worker__generate_rsa_keypair_result")
     {
+        if (!connection__accept_identity_result(e.data))
+        {
+            return;
+        }
         g_rsa_public_key_string = e.data.value;
-        console.log("public key string -> " + g_rsa_public_key_string);
         g_is_rsa_key_generated = true;
 
-        // the keygen phase is over: stop claiming it. when nothing will connect on its own the
-        // status goes idle (empty), otherwise the connect loop's "connecting" replaces it right away
+        // clear the completed key generation phase before the next connection attempt
         if (g_is_authenticated == false && g_is_autoconnect_without_user_action_active == false)
         {
             connection__report_connection_status("idle", "");
@@ -260,6 +396,14 @@ function dispatch__mainthread_onmessage(e)
         document.getElementById("another-buttons-sub-loading-container").style.display = "none";
         document.getElementById("another-buttons-sub-container").style.display = "";
         g_identity_string = e.data.identity_string;
+        if (g_node_frame_listener != null)
+        {
+            g_node_frame_listener(JSON.stringify({message:
+            {
+                type: "local_identity_result", identity_revision: g_identity_revision,
+                rsa_key_bits: g_identity_rsa_key_bits, success: true, public_key_string: g_rsa_public_key_string
+            }}));
+        }
 
         // wakes the connect loop if it is waiting to connect with this identity
         g_identity_slot.set({ public_key_string: e.data.value, identity_string: e.data.identity_string });
@@ -277,17 +421,39 @@ function dispatch__mainthread_onmessage(e)
             connection__identity_imported();
         }
 
-        // persist the identity (the passphrase) so the next launch reconstructs this same keypair
-        // instead of a fresh random one. covers first launch (random) and identity switches alike:
-        // the last identity used is the one remembered.
+        // save the selected passphrase so the next launch restores this identity
         if (typeof window.__SERVER_CONFIG__ !== "undefined" && window.__SERVER_CONFIG__ != null && window.__SERVER_CONFIG__.persist_identity === true)
         {
             utils__storage_set("lemon_identity_string", g_identity_string);
+            utils__storage_set("lemon_identity_record_v1", JSON.stringify(
+            {
+                passphrase: g_identity_string,
+                rsa_key_bits: g_identity_rsa_key_bits
+            }));
         }
     }
     else if (e.data.type == "data_processing_worker__loopback_status")
     {
-        // node still working keeps the spinner; a failed or idle state shows the page
+        const state = e.data.value;
+        if (state == null || typeof state.state !== "string")
+        {
+            return;
+        }
+        if (android_host__is_ui_only_runtime())
+        {
+            connection_loopback_ready = true;
+            connection__flush_local_connect_intent();
+            if ((state.state === "idle" || state.state === "error") && (g_is_authenticated || g_is_client_list_retrieved || node_session_id))
+            {
+                connection__reset_chat_app_keep_identity(true);
+                node_session_id = "";
+            }
+            else if (state.state === "connecting")
+            {
+                g_is_authenticated = false;
+            }
+        }
+        // keep the spinner while Node is working. reveal the page when it stops
         if (e.data.value.state == "connecting" || e.data.value.state == "connected")
         {
             connection__extend_connect_page_holdback();
@@ -297,19 +463,93 @@ function dispatch__mainthread_onmessage(e)
             connection__reveal_connect_page();
         }
 
-        // node owns the real connection; its report replaces the local guesswork
+        // use Node's report for the remote connection state
         g_connection_status.state = e.data.value.state;
         g_connection_status.reason = e.data.value.reason;
         g_connection_status.next_retry_at = e.data.value.next_retry_at;
         g_connection_status.last_connected_at = e.data.value.last_connected_at;
         connection__render_connection_status();
     }
+    else if (e.data.type == "data_processing_worker__local_transfer_ack")
+    {
+        connection__send_message_object(e.data.value);
+    }
+    else if (e.data.type == "data_processing_worker__local_upload_result")
+    {
+        const finish = connection_local_uploads.get(e.data.value.request_id);
+        if (finish != null)
+        {
+            finish(e.data.value.accepted === true);
+        }
+    }
+    else if (e.data.type == "data_processing_worker__local_session_state")
+    {
+        const state = e.data.value;
+        if (!android_host__is_ui_only_runtime() || typeof state.public_key_string !== "string" || !Number.isSafeInteger(state.identity_revision) || state.identity_revision < g_identity_revision)
+        {
+            return;
+        }
+        if (node_session_id && node_session_id !== state.session_id)
+        {
+            connection__reset_chat_app_keep_identity(true);
+        }
+        g_rsa_public_key_string = state.public_key_string;
+        g_identity_revision = state.identity_revision;
+        node_session_id = state.session_id;
+        g_is_rsa_key_generated = true;
+        chat__hydrate_peer_states(state.peer_states);
+        chat__hydrate_channel_counts(state.channel_counts);
+    }
+    else if (e.data.type == "data_processing_worker__local_peer_state")
+    {
+        const state = e.data.value;
+        if (!android_host__is_ui_only_runtime() || state.session_id !== node_session_id)
+        {
+            return;
+        }
+        chat__hydrate_peer_states(state.peer_states);
+        chat__hydrate_channel_counts(state.channel_counts);
+        chat__restore_peer_state();
+        for (const client of g_client_list)
+        {
+            chat__render_unread_badge(client.client_id, client.unread_count > 0);
+        }
+        UI.schedule_member_list_sync();
+    }
+    else if (e.data.type == "data_processing_worker__local_identity_result")
+    {
+        const result = e.data.value;
+        if (!android_host__is_ui_only_runtime() || !Number.isSafeInteger(result.identity_revision) || result.identity_revision < g_identity_revision)
+        {
+            return;
+        }
+        g_identity_revision = result.identity_revision;
+        g_is_rsa_key_generated = result.success === true;
+        if (result.success === true)
+        {
+            g_rsa_public_key_string = result.public_key_string;
+            g_identity_rsa_key_bits = result.rsa_key_bits;
+        }
+        if (g_is_identity_import_pending && result.identity_revision === g_identity_import_expected_revision)
+        {
+            g_identity_import_expected_revision = 0;
+            if (result.success === true)
+            {
+                document.getElementById("another-buttons-sub-loading-container").style.display = "none";
+                document.getElementById("another-buttons-sub-container").style.display = "";
+                connection__identity_imported();
+            }
+            else
+            {
+                connection__identity_generation_failed();
+            }
+        }
+    }
     else if (e.data.type == "data_processing_worker__authentication_status")
     {
         if (e.data.value == "success")
         {
-            // The server already removed the old session. Clear stale UI state and
-            // reconnect normally once, instead of abandoning a recoverable connection.
+            // clear the expired session and retry with a fresh login
             if (g_fast_reconnect.in_progress == true && g_fast_reconnect.resumed == false)
             {
                 utils__custom_log("old session expired; reconnecting with a fresh session");
@@ -323,38 +563,33 @@ function dispatch__mainthread_onmessage(e)
             g_connection_status.next_retry_at = 0;
             connection__report_connection_status("connected");
 
-            // node that logs in with nobody watching belongs in idle straight away,
-            // otherwise it stands in the root channel looking present
-            if (typeof android_host__node_apply_idle_for_ui_state === "function")
-            {
-                android_host__node_apply_idle_for_ui_state();
-            }
-
-            // A resumed login still needs its refreshed lists. Its notice is cleared once those
-            // arrive, without dismissing another alert that may have replaced it meanwhile.
+            // wait for refreshed lists before dismissing this resume notice
             if (g_fast_reconnect.resumed == false)
             {
                 utils__hide_custom_alert();
             }
 
-            // the same policy set arrives again as "server_policy" whenever an admin saves,
-            // so both paths share one application function
+            // apply login policy and later server_policy updates through the same handler
             server_settings_tab__apply_server_policy_fields(e.data.policy);
 
             // fresh session: the info card counts from this moment. a resumed one keeps counting
             if (g_fast_reconnect.resumed == false)
             {
+                if (!android_host__is_ui_only_runtime())
+                {
+                    android_host__begin_session();
+                }
                 g_session.connected_at = new Date().valueOf();
                 g_session.bytes_sent = 0;
                 g_session.bytes_received = 0;
                 g_session.last_ping_ms = -1;
             }
 
-            // Wait for the client and group lists before checking access to stored users.
+            // wait for the client and group lists before checking access to stored users
             groups_window.stored_users_allowed = null;
             groups_window.access = null;
 
-            // the idle panel gets its handler once; a resume still has it (a second listener would cancel the first)
+            // bind the idle handler once, including across resumed logins
             if (e.data.is_idle_mode_allowed && g_fast_reconnect.resumed == false)
             {
                 document.getElementById('channel-list-container').style.height = "calc(70% - 30px)";
@@ -363,16 +598,20 @@ function dispatch__mainthread_onmessage(e)
             }
 
             g_is_authenticated = true;
+            // presence changes require the newly accepted login to be active first
+            if (typeof android_host__node_apply_idle_for_ui_state === "function")
+            {
+                android_host__node_apply_idle_for_ui_state();
+            }
             groups__apply_server_mode();
             server_emojis__connected();
             chat_files__refresh_receive_preferences_controls();
             chat_files__send_receive_preferences();
-            // the audio connection mode was picked above, with the policy; the socket of a previous session is dropped here
+            // close the previous audio socket after applying the new policy
             audio_transport__reset();
             console.log("client authenticated");
 
-            // the attempt is over once the adopted session accepted the login; the refreshed
-            // lists are still on their way and are applied together when the last one arrives
+            // login finishes the attempt. the last refreshed list completes recovery
             if (g_fast_reconnect.resumed == true)
             {
                 g_fast_reconnect.in_progress = false;
@@ -384,8 +623,7 @@ function dispatch__mainthread_onmessage(e)
 
             if (g_is_running_in_android_webview)
             {
-                // the bar gear is the connected state's settings button; the connect screen has its
-                // own, and tapping this one while connected asks first (it edits the live connection)
+                // connected settings require confirmation before editing the live connection
                 document.getElementById("android-settings-button").style.display = "block";
             }
 
@@ -400,8 +638,7 @@ function dispatch__mainthread_onmessage(e)
             layout__layout_apply();
             connection__mark_connected_ui_hidden(false);
 
-            // an open list of the head menu closes with the page switch, and the "disconnect" entry becomes available
-            // (head-menu.js, which the node bundle does not have)
+            // refresh the browser connection menu after login
             if (typeof head_menu__close_all === "function")
             {
                 head_menu__close_all();
@@ -409,19 +646,22 @@ function dispatch__mainthread_onmessage(e)
             }
             connection__refresh_connect_button_state();
 
-            // the window may be opened while connected ("connections" -> "connect"): it then shows the fields and the
-            // disabled connect button, not the spinner and the "connecting" line of the attempt that just ended
+            // show connection fields when the dialog is opened after login
             document.getElementById("another-buttons-sub-loading-container").style.display = "none";
             document.getElementById("another-buttons-sub-container").style.display = "";
 
             // the connect screen is gone, so the mic may come back out
             voice__update_microphone_button();
 
-            // people on touch device dont need to see chat by default, current UI isnt suitable for that
-            // most likely they will just want to call with voice. a resume leaves the chat as the user had it
+            // open People on a fresh touch session. preserve the selected page on resume
             if (g_is_client_running_under_touch_device && g_fast_reconnect.resumed == false)
             {
-                UI.hide_chat_container();
+                // theme opens chat
+                let is_chat_shown_after_login = getComputedStyle(document.documentElement).getPropertyValue("--chat-shown-after-login").trim() === "1";
+                if (!is_chat_shown_after_login)
+                {
+                    UI.hide_chat_container();
+                }
             }
 
             if (!g_worker_connection_active && !g_should_connection_check_be_running)
@@ -430,8 +670,7 @@ function dispatch__mainthread_onmessage(e)
                 connection__websocket_connection_check();
             }
 
-            // a fresh session starts the server's datachannel attempt count from zero, so a retry loop
-            // sitting out a cooldown may try again now (a resumed session keeps the server's cooldown)
+            // reset the data channel retry count only for a fresh session
             if (g_fast_reconnect.resumed == false)
             {
                 g_webrtc_datachannel_cooldown_until_ms = 0;
@@ -448,8 +687,7 @@ function dispatch__mainthread_onmessage(e)
             }
             else
             {
-                // the connected sound waits a second: on android the client list that follows makes
-                // java push the user settings (with the sound preference) right after this point
+                // allow native sound settings to arrive before playing the connected sound
                 setTimeout( () => {
                     if (g_are_sound_effects_enabled)
                     {
@@ -461,7 +699,7 @@ function dispatch__mainthread_onmessage(e)
     }
     else if (e.data.type == "data_processing_worker__audio_enabled")
     {
-        // default stun port is 3478 for this chat. Stun port is given to client with websocket connection, stun port can be changed if needed, there are two places that need to be edited in code of server to set different stun port
+        // use the STUN port announced by the server
 
         g_iceconfig = {
             iceServers: Number(e.data.stun_port) > 0 ? [{
@@ -469,21 +707,17 @@ function dispatch__mainthread_onmessage(e)
             }] : [],
         };
 
-        // the datachannel/playback below is set up whenever audio is on for clients or music bots,
-        // so this flag (which keeps the datachannel established/reconnected) is always true here.
-        // whether this client may transmit its own microphone is a separate flag, gated on client voice
+        // maintain the data channel for voice or bot playback. microphone permission is separate
         g_is_voice_chat_allowed_by_server = true;
         g_is_client_microphone_allowed_by_server = (e.data.client_voice_allowed == true);
-        // from here on it is playback and webrtc; the headless service has no webaudio, no opus
-        // decoder worker and no RTCPeerConnection, so it leaves before the constructor throws
+        // Node has no browser audio or WebRTC objects
         if (typeof window.AudioContext !== "function" && typeof window.webkitAudioContext !== "function")
         {
             console.log("no webaudio in this runtime, skipping playback and datachannel setup");
             return;
         }
 
-        // decoded audio is 48 kHz pcm pushed in untouched, so the context is asked for 48 kHz and the
-        // browser converts to the device rate; a 44.1 kHz context played it 9% slow and lagged more each second
+        // Opus produces 48 kHz PCM. let the browser convert it to the device rate
         try
         {
             g_audio_context = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 });
@@ -494,8 +728,7 @@ function dispatch__mainthread_onmessage(e)
         }
         console.log("audio_context.sampleRate" + g_audio_context.sampleRate);
 
-        // without a user gesture the browser creates the context suspended and drops every frame;
-        // resume now if a gesture already happened, else the first-gesture handler in main.js does
+        // resume after a user gesture or wait for the gesture handler in main.js
         if (g_audio_context.state === "suspended")
         {
             console.log("audio_context created suspended (autoplay policy, no user gesture yet); audio stays silent until a gesture resumes it");
@@ -506,9 +739,7 @@ function dispatch__mainthread_onmessage(e)
         let opus_decoding_sampler_input_rate = 48000;
         let opus_decoding_sampler_output_rate = g_audio_context.sampleRate;
 
-        g_opus_decoding_sampler = new SpeexResampler(opus_decoding_sampler_channels,
-            opus_decoding_sampler_input_rate,
-            opus_decoding_sampler_output_rate);
+        g_opus_decoding_sampler = new SpeexResampler(opus_decoding_sampler_channels, opus_decoding_sampler_input_rate, opus_decoding_sampler_output_rate);
 
         g_opus_decoder_worker.postMessage({
             type: "init",
@@ -519,8 +750,7 @@ function dispatch__mainthread_onmessage(e)
         g_audio_player_gain_node = g_audio_context.createGain();
         g_audio_player_gain_node.connect(g_audio_context.destination);
 
-        // AudioWorklet playback when the context supports it, ScriptProcessorNode otherwise. guarded,
-        // because an exception here used to abort the handler before the webrtc datachannel check below
+        // use AudioWorklet when supported and retain fallback playback if setup fails
         try
         {
             audio__create_audio_player_output();
@@ -534,8 +764,7 @@ function dispatch__mainthread_onmessage(e)
         {
             console.log("voice__create_new_peer_connection_object_for_use");
 
-            // a re-login burst can arrive while a previous check loop is still sleeping;
-            // that loop will pick the fresh config up itself, a second one just fights it
+            // the existing check loop uses the new settings. do not start a second loop
             if (g_is_webrtc_datachannel_check_running == false)
             {
                 g_is_webrtc_datachannel_check_running = true;
@@ -549,11 +778,10 @@ function dispatch__mainthread_onmessage(e)
             return;
         }
 
-        // android app went to background while the connect was still in progress - enter idle now
+        // apply idle requested while the connection was starting
         if (g_is_deep_idle_pending == true)
         {
-            g_is_deep_idle_pending = false;
-            android_host__enter_deep_idle();
+            android_host__apply_pending_deep_idle_if_any();
         }
     }
     else if (e.data.type == "data_processing_worker__music_bot_key")
@@ -580,7 +808,10 @@ function dispatch__mainthread_onmessage(e)
     }
     else if (e.data.type == "data_processing_worker__client_list_from_server")
     {
-        server_info__clients_changed();
+        if (typeof server_info__clients_changed === "function")
+        {
+            server_info__clients_changed();
+        }
         if (connection__fast_reconnect_buffer_list("client", e.data.value) == false)
         {
             channel_tree__apply_server_update(server_msg.process_client_list_from_server, e.data.value);
@@ -771,10 +1002,8 @@ function dispatch__mainthread_onmessage(e)
         }
         let media_keys = keys__media_session_layer();
 
-        // on android the node runtime does this key exchange for a webview that has no shared secret of
-        // its own. the webview needs the session and server keys to encrypt and check its audio and video frames
-        // (keys.js, keys__media_session_layer), so the node runtime hands them over through the loopback
-        // connection as a local message; it never leaves the device. a browser page has no listener here
+        // Node gives the local page the connection keys needed for audio and video
+        // this callback never sends those keys to the remote server
         if (android_host__is_ui_only_runtime() == false && typeof g_node_frame_listener !== "undefined" && g_node_frame_listener != null)
         {
             try
@@ -800,9 +1029,9 @@ function dispatch__mainthread_onmessage(e)
             }
         }
 
-        // removed: never log key material (g_metadata_keys holds the session key)
+        // keep connection keys out of logs
 
-        // here the g_metadata_keys object within data_processing web worker is updated aswell
+        // update the data worker's copy of the connection keys
 
 
 
@@ -810,13 +1039,12 @@ function dispatch__mainthread_onmessage(e)
             message: {
                 type: "public_key_challenge_response",
                 value: msg.message.decryption_result,
-                // asks the server to adopt the still-open session of this identity (fast reconnect)
+                // ask the server to resume this identity's existing session
                 fast_reconnect: (g_fast_reconnect.in_progress == true)
             }
         };
 
-        // the chosen username is sent with the last login message, because the server
-        // assigns the final name right after accepting this response
+        // send the requested username before the server assigns the final login name
         if (typeof g_chosen_username === "string" && g_chosen_username.length > 0)
         {
             message_object.message.chosen_username = g_chosen_username;
@@ -862,7 +1090,7 @@ function dispatch__mainthread_onmessage(e)
     }
     else if (e.data.type == "data_processing_worker__force_admin_password_change")
     {
-        // the admin password set during server setup was typed in cleartext; prompt once for a new one
+        // prompt to replace the initial administrator password
         let new_admin_password = prompt("The admin password set at server setup was typed in cleartext in the console. Please set a new admin password now.");
         if (new_admin_password != null && new_admin_password != "")
         {
@@ -896,6 +1124,10 @@ function dispatch__mainthread_onmessage(e)
     }
     else if (e.data.type == "data_processing_worker__server_settings_values_from_server")
     {
+        if (!G_HAS_DOM)
+        {
+            return;
+        }
         let msg = e.data.value;
         if (msg.message.memory_only === true)
         {
@@ -938,7 +1170,10 @@ function dispatch__mainthread_onmessage(e)
     }
     else if (e.data.type == "data_processing_worker__client_connect_from_server")
     {
-        server_info__clients_changed();
+        if (typeof server_info__clients_changed === "function")
+        {
+            server_info__clients_changed();
+        }
         channel_tree__apply_server_update(server_msg.process_client_connect_from_server, e.data.value);
     }
     else if (e.data.type == "data_processing_worker__client_rename_from_server")
@@ -947,7 +1182,10 @@ function dispatch__mainthread_onmessage(e)
     }
     else if (e.data.type == "data_processing_worker__client_disconnect_from_server")
     {
-        server_info__clients_changed();
+        if (typeof server_info__clients_changed === "function")
+        {
+            server_info__clients_changed();
+        }
         channel_tree__apply_server_update(server_msg.process_client_disconnect_from_server, e.data.value);
     }
     else if (e.data.type == "data_processing_worker__audio_state_of_single_client_from_server")
@@ -963,7 +1201,6 @@ function dispatch__mainthread_onmessage(e)
     {
         console.log("data_processing_worker__current_channel_active_microphone_usage_from_server");
 
-        console.log(e.data.value);
         for (var i = 0; i < e.data.value.message.clients.length; i++)
         {
             voice__process_audio_state_of_single_client(e.data.value.message.clients[i]);
@@ -1003,31 +1240,35 @@ function dispatch__mainthread_onmessage(e)
     }
     else if (e.data.type == "data_processing_worker__channel_chat_picture_metadata")
     {
-        server_msg.process_channel_chat_picture_metadata_from_server(e.data.value);
+        return server_msg.process_channel_chat_picture_metadata_from_server(e.data.value);
     }
     else if (e.data.type == "data_processing_worker__direct_chat_picture_metadata")
     {
-        server_msg.process_direct_chat_picture_metadata_from_server(e.data.value);
+        return server_msg.process_direct_chat_picture_metadata_from_server(e.data.value);
     }
     else if (e.data.type == "data_processing_worker__channel_chat_file_metadata")
     {
-        server_msg.process_channel_chat_file_metadata_from_server(e.data.value);
+        return server_msg.process_channel_chat_file_metadata_from_server(e.data.value);
     }
     else if (e.data.type == "data_processing_worker__direct_chat_file_metadata")
     {
-        server_msg.process_direct_chat_file_metadata_from_server(e.data.value);
+        return server_msg.process_direct_chat_file_metadata_from_server(e.data.value);
     }
     else if (e.data.type == "data_processing_worker__direct_chat_file")
     {
-        server_msg.process_direct_chat_file_from_server(e.data.value);
+        return server_msg.process_direct_chat_file_from_server(e.data.value);
     }
     else if (e.data.type == "data_processing_worker__channel_chat_file")
     {
-        server_msg.process_channel_chat_file_from_server(e.data.value);
+        return server_msg.process_channel_chat_file_from_server(e.data.value);
     }
     else if (e.data.type == "data_processing_worker__chat_file_decrypt_failed")
     {
-        server_msg.process_chat_file_decrypt_failed_from_server(e.data.value);
+        return server_msg.process_chat_file_decrypt_failed_from_server(e.data.value);
+    }
+    else if (e.data.type == "data_processing_worker__chat_picture_decrypt_failed")
+    {
+        return server_msg.process_chat_picture_decrypt_failed_from_server(e.data.value);
     }
     else if (e.data.type == "data_processing_worker__file_send_error_from_server")
     {
@@ -1043,23 +1284,23 @@ function dispatch__mainthread_onmessage(e)
     }
     else if (e.data.type == "data_processing_worker__channel_chat_message")
     {
-        server_msg.process_channel_chat_message_from_server(e.data.value);
+        return server_msg.process_channel_chat_message_from_server(e.data.value);
     }
     else if (e.data.type == "data_processing_worker__direct_chat_message")
     {
-        server_msg.process_direct_chat_message_from_server(e.data.value);
+        return server_msg.process_direct_chat_message_from_server(e.data.value);
     }
     else if (e.data.type == "data_processing_worker__offline_chat_message")
     {
-        server_msg.process_offline_chat_message_from_server(e.data.value);
+        return server_msg.process_offline_chat_message_from_server(e.data.value);
     }
     else if (e.data.type == "data_processing_worker__direct_chat_picture")
     {
-        server_msg.process_direct_chat_picture_from_server(e.data.value);
+        return server_msg.process_direct_chat_picture_from_server(e.data.value);
     }
     else if (e.data.type == "data_processing_worker__channel_chat_picture")
     {
-        server_msg.process_channel_chat_picture_from_server(e.data.value);
+        return server_msg.process_channel_chat_picture_from_server(e.data.value);
     }
     else if (e.data.type == "data_processing_worker__image_sent_status_from_server")
     {
@@ -1084,8 +1325,7 @@ function dispatch__mainthread_onmessage(e)
         {
             return;
         }
-        // node is the maintainer: it generated these keys itself, so no inbound frame
-        // exists to forward. deliver our own copy to the attached ui directly
+        // when Node maintains the channel, deliver its generated keys directly to the page
         if (g_node_frame_listener != null)
         {
             console.log("delivering locally generated channel keys to the ui");
@@ -1112,7 +1352,7 @@ function dispatch__mainthread_onmessage(e)
         }
         keys__set_current_channel_keys(e.data.value);
 
-        // data processing worker created new channel keys and sent them to UI thread, now send them from UI thread to opus_decoder worker
+        // install the channel keys in the audio decoder
         g_opus_decoder_worker.postMessage({
             type: "mainthread__channel_keys_for_opus_decoder",
             value: g_current_channel_keys
@@ -1124,14 +1364,16 @@ function dispatch__mainthread_onmessage(e)
     }
     else if (e.data.type == "data_processing_worker__tell_websocket_worker_to_send_data")
     {
-        // the last stop before the socket: if a message reaches here and still does not
-        // arrive, the fault is past the webview (node or the server), not in it
-        utils__custom_log("[send-out] worker produced "
-            + (e.data.data_to_be_sent_over_websocket || "").length + " chars for the socket");
+        // trace the worker result before handing it to the socket
+        utils__custom_log("[send-out] worker produced " + (e.data.data_to_be_sent_over_websocket || "").length + " chars for the socket");
         connection__websocket_worker_send(e.data.data_to_be_sent_over_websocket);
     }
     else if (e.data.type == "data_processing_worker__direct_chat_picture_to_be_uploaded_by_parts")
     {
+        if (!chat__picture_preparation_succeeded(e.data))
+        {
+            return;
+        }
         let total_bytes_length = e.data.data_for_upload_process.length;
         let parts = chat__split_upload_into_chunks(e.data.data_for_upload_process);
 
@@ -1143,6 +1385,10 @@ function dispatch__mainthread_onmessage(e)
     }
     else if (e.data.type == "data_processing_worker__channel_chat_picture_to_be_uploaded_by_parts")
     {
+        if (!chat__picture_preparation_succeeded(e.data))
+        {
+            return;
+        }
         let total_bytes_length = e.data.data_for_upload_process.length;
         let parts = chat__split_upload_into_chunks(e.data.data_for_upload_process);
 
@@ -1152,11 +1398,9 @@ function dispatch__mainthread_onmessage(e)
         g_is_file_being_uploaded = false;
         chat__send_file_by_parts(parts, total_bytes_length, 5);
     }
-    else if (e.data.type == "data_processing_worker__direct_chat_file_to_be_uploaded_by_parts"
-        || e.data.type == "data_processing_worker__channel_chat_file_to_be_uploaded_by_parts")
+    else if (e.data.type == "data_processing_worker__direct_chat_file_to_be_uploaded_by_parts" || e.data.type == "data_processing_worker__channel_chat_file_to_be_uploaded_by_parts")
     {
-        // the send path took the upload lock before handing the file to the worker, so this
-        // cannot collide with another upload the way a refused picture could
+        // the send path already holds the upload lock for this file
         let total_bytes_length = e.data.data_for_upload_process.length;
         let parts = chat__split_upload_into_chunks(e.data.data_for_upload_process);
 
@@ -1167,10 +1411,14 @@ function dispatch__mainthread_onmessage(e)
     }
     else if (e.data.type == "data_processing_worker__chat_file_send_failed")
     {
-        // the worker could not encrypt it (bad receiver key); the card and the lock are ours to clean up
+        // release the upload lock and mark the card after encryption fails
         chat__release_file_upload_lock();
         utils__custom_alert("file not sent: " + e.data.reason);
         chat_files__mark_local_chat_file_card_failed(e.data.local_message_id, "not sent: " + e.data.reason);
+    }
+    else if (e.data.type == "data_processing_worker__chat_picture_send_failed")
+    {
+        chat__picture_preparation_failed(e.data);
     }
     else if (e.data.type == "data_processing_worker__music_bot_song_list_from_server")
     {
@@ -1186,6 +1434,6 @@ function dispatch__mainthread_onmessage(e)
     }
     else if (e.data.type == "data_processing_worker__file_receive_completed_from_server")
     {
-        server_msg.process_file_receive_completed_from_server_from_server(e.data.value);
+        return server_msg.process_file_receive_completed_from_server_from_server(e.data.value);
     }
 }

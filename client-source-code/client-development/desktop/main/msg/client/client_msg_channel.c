@@ -7,10 +7,12 @@
 #include "mbedtls/platform_util.h"
 
 /**
- * @brief requests a channel move; the server remains responsible for passwords and permissions.
+ * @brief requests a channel move. The server remains responsible for passwords and permissions
+ *
  * @param desktop_session_t* session -> worker-owned connection
  * @param int64 channel -> destination server channel ID
  * @param const char* password -> password for this request only
+ *
  * @return boole -> 1 when accepted by transport
  */
 boole client_msg__channel__send_join_request(desktop_session_t *session, int64 channel, const char *password)
@@ -21,8 +23,10 @@ boole client_msg__channel__send_join_request(desktop_session_t *session, int64 c
 }
 
 /**
- * @brief asks the server to recover a channel whose keys have not arrived within the timeout.
+ * @brief asks the server to recover a channel whose keys have not arrived within the timeout
+ *
  * @param desktop_session_t* session -> worker-owned connection
+ *
  * @return boole -> 1 when accepted by transport
  */
 boole client_msg__channel__send_reset_maintainer(desktop_session_t *session)
@@ -31,8 +35,10 @@ boole client_msg__channel__send_reset_maintainer(desktop_session_t *session)
 }
 
 /**
- * @brief counts people currently using this channel, excluding idle clients and music bots.
+ * @brief counts people currently using this channel, excluding idle clients and music bots
+ *
  * @param desktop_session_t* session -> worker-owned channel and client state
+ *
  * @return int64 -> active people, including the local client
  */
 static int64 _client_msg_channel_internal__member_count(desktop_session_t *session)
@@ -54,9 +60,11 @@ static int64 _client_msg_channel_internal__member_count(desktop_session_t *sessi
 }
 
 /**
- * @brief checks the server's permission and size limit after a membership change.
+ * @brief checks the server's permission and size limit after a membership change
+ *
  * @param desktop_session_t* session -> worker-owned channel and policy state
  * @param boole joining -> TRUE for an arrival, FALSE for a departure
+ *
  * @return boole -> TRUE when existing keys may remain in use
  */
 static boole _client_msg_channel_internal__may_reuse(desktop_session_t *session, boole joining)
@@ -68,9 +76,11 @@ static boole _client_msg_channel_internal__may_reuse(desktop_session_t *session,
 }
 
 /**
- * @brief removes unfinished delivery for a person who left or changed identity.
+ * @brief removes unfinished delivery for a person who left or changed identity
+ *
  * @param desktop_session_t* session -> worker-owned recipient queue
  * @param int64 id -> server client ID to remove
+ *
  * @return void
  */
 static void _client_msg_channel_internal__remove_recipient(desktop_session_t *session, int64 id)
@@ -93,9 +103,11 @@ static void _client_msg_channel_internal__remove_recipient(desktop_session_t *se
 }
 
 /**
- * @brief queues one current identity without duplicating arrivals already waiting for keys.
+ * @brief queues one current identity without duplicating arrivals already waiting for keys
+ *
  * @param desktop_session_t* session -> worker-owned recipient queue
  * @param const desktop_client_t* client -> current channel member
+ *
  * @return void
  */
 static void _client_msg_channel_internal__queue_recipient(desktop_session_t *session, const desktop_client_t *client)
@@ -128,8 +140,10 @@ static void _client_msg_channel_internal__queue_recipient(desktop_session_t *ses
 }
 
 /**
- * @brief cancels unfinished delivery and requests new keys from the current maintainer.
+ * @brief cancels unfinished delivery and requests new keys from the current maintainer
+ *
  * @param desktop_session_t* session -> worker-owned connection
+ *
  * @return void
  */
 void client_msg__channel__refresh_keys(desktop_session_t *session)
@@ -149,10 +163,12 @@ void client_msg__channel__refresh_keys(desktop_session_t *session)
 }
 
 /**
- * @brief applies join and departure rules after the client list has been updated.
+ * @brief applies join and departure rules after the client list has been updated
+ *
  * @param desktop_session_t* session -> worker-owned channel and current client list
  * @param const desktop_client_t* previous -> previous member state, or NULL for a new connection
  * @param const desktop_client_t* current -> current member state, or NULL for a disconnection
+ *
  * @return void
  */
 void client_msg__channel__member_changed(desktop_session_t *session, const desktop_client_t *previous, const desktop_client_t *current)
@@ -204,8 +220,10 @@ void client_msg__channel__member_changed(desktop_session_t *session, const deskt
 }
 
 /**
- * @brief sends at most one recipient's keys per tick so keepalives and cancellation remain responsive.
- * @param desktop_session_t* session -> session state; worker-owned unless this is a GUI entry point
+ * @brief sends at most one recipient's keys per tick so keepalives and cancellation remain responsive
+ *
+ * @param desktop_session_t* session -> session state. Worker owned unless this is a GUI entry point
+ *
  * @return boole -> 1 on success or when no recipient is due, 0 on failure
  */
 boole client_msg__channel__distribute_keys(desktop_session_t *session)

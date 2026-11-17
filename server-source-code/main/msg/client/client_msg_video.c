@@ -1,4 +1,4 @@
-// This file checks requests to start, stop or watch video streams and to allow viewers.
+// this file checks requests to start, stop or watch video streams and to allow viewers
 #include "client_msg.h"
 #include "../server/server_msg.h"
 #include "../../core/video_channel.h"
@@ -12,9 +12,7 @@
 static boole _client_msg_video_internal__is_json_video_stream_start_valid(cJSON *json_root);
 
 /**
- * @brief checks a video_stream_start request: source is "screen" or "file", codec is a short
- *        webcodecs string of letters, digits and dots, width / height / fps are numbers inside the
- *        server's caps, is_sound_included is a boolean when present
+ * @brief validates the video source, codec, dimensions, frame rate and optional audio flag
  *
  * @param cJSON* json_root -> the parsed client request
  *

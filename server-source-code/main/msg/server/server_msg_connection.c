@@ -1,7 +1,7 @@
 #include "../../clib/clib.h"
 #include "../../core/channel_groups.h"
 #include "../../core/channel.h"
-// This file sends login replies, client lists, connection notices and keepalive replies.
+// this file sends login replies, client lists, connection notices and keepalive replies
 
 #include "server_msg.h"
 #include "../../base.h"
@@ -50,9 +50,7 @@ static char *_server_msg_connection_internal__encode_client_list(void *context, 
 static void _server_msg_connection_internal__release_client_list(void *context);
 
 /**
- * @brief tells a client its rsa key is too weak, naming the required size, so it can offer to
- *        regenerate. only sent when the admin enabled is_minimum_rsa_key_bits_announced; otherwise
- *        the client is dropped without a word and never learns the requirement.
+ * @brief announces the required RSA size when is_minimum_rsa_key_bits_announced allows it
  *
  * @attention sent in PLAINTEXT on purpose: the key is rejected before the diffie-hellman exchange completes, so there is no shared secret to encrypt with yet. the message carries nothing secret - only the already-public policy the admin chose to publish
  *
@@ -82,12 +80,12 @@ void server_msg__connection__send_rsa_key_too_weak_to_single_client(client_t *re
 }
 
 /**
- * @brief the first message of the key exchange: the challenge the client must sign and the server's
- *        diffie hellman mix
+ * @brief sends the signing challenge and server's Diffie Hellman public value
  *
- * @param client_t* receiver -> the client that receives it; no shared secret exists for it yet
+ * @param client_t* receiver -> client starting key exchange
  * @param char* random_value_challenge_string -> randomly generated string to be sent as challenge
- * @param char* dh_public_mix_for_client -> dh public mix that the client needs to set on its side, result of diffie hellman key exchange
+ * @param char* dh_public_mix_for_client -> server's Diffie Hellman public value
+ * @param cJSON* crypto -> negotiation fields to copy, or NULL to omit them
  *
  * @return void
  */
@@ -170,9 +168,7 @@ void server_msg__connection__send_authentication_status_to_single_client(client_
     // the receiver keeps marquees of streaming bots in other channels visible when this is on
     cJSON_AddBoolToObject(message, "is_music_bot_marquee_visible_to_everyone", g_server_settings.is_music_bot_marquee_visible_to_everyone);
 
-    // avatars policy travels in-protocol so clients that were NOT served by this server's http
-    // server (the android app loads the page from its assets) still learn it - otherwise they
-    // fall back to "avatars off" and hide the set/delete avatar actions
+    // send avatar policy to every client, including Android pages loaded from app assets
     cJSON_AddBoolToObject(message, "is_avatar_upload_allowed", g_server_settings.is_avatar_upload_allowed);
     cJSON_AddBoolToObject(message, "is_typing_indicator_allowed", g_server_settings.is_typing_indicator_allowed);
 
@@ -191,7 +187,7 @@ void server_msg__connection__send_authentication_status_to_single_client(client_
     cJSON_AddNumberToObject(message, "chat_picture_max_size", (double)g_server_settings.chat_picture_max_size_bytes);
     cJSON_AddBoolToObject(message, "is_chat_picture_allowed", g_server_settings.is_chat_picture_allowed);
 
-    // a masquerading tunnel cannot report the visitor's reflexive address.
+    // a masquerading tunnel cannot report the visitor's reflexive address
     // clients initiate ICE toward our explicitly advertised public candidates instead
     cJSON_AddNumberToObject(message, "stun_port", g_server_settings.is_wireguard_mode_active ? 0 : 3478);
 
@@ -201,9 +197,11 @@ void server_msg__connection__send_authentication_status_to_single_client(client_
 }
 
 /**
- * @brief Builds and encrypts the copied client list without taking the clients lock.
+ * @brief builds and encrypts the copied client list without taking the clients lock
+ *
  * @param void* context -> client details and connection keys copied during login
  * @param size_t* size -> receives the encrypted message length
+ *
  * @return char* -> encrypted message owned by the outgoing queue, or NULL_POINTER
  */
 static char *_server_msg_connection_internal__encode_client_list(void *context, size_t *size)
@@ -324,8 +322,10 @@ static char *_server_msg_connection_internal__encode_client_list(void *context, 
 }
 
 /**
- * @brief Erases and frees the client-list copy, including its copied connection and music keys.
+ * @brief erases and frees the client-list copy, including its copied connection and music keys
+ *
  * @param void* context -> client-list copy owned by the outgoing queue
+ *
  * @return void
  */
 static void _server_msg_connection_internal__release_client_list(void *context)
@@ -340,9 +340,11 @@ static void _server_msg_connection_internal__release_client_list(void *context)
 }
 
 /**
- * @brief Copies the visible client details so a worker can build the login list later.
+ * @brief copies the visible client details so a worker can build the login list later
+ *
  * @param client_t* receiver -> newly authenticated client receiving the list
- * @attention The caller holds the clients and channels locks. The queued copy contains no pointers to live client records, so disconnects cannot change it.
+ * @attention the caller holds the clients and channels locks. The queued copy contains no pointers to live client records, so disconnects cannot change it
+ *
  * @return void
  */
 void server_msg__connection__send_client_list_to_single_client(client_t *receiver)
@@ -470,14 +472,14 @@ void server_msg__connection__send_client_list_to_single_client(client_t *receive
 }
 
 /**
- * @brief Announces a connected client, building each version of the message only once.
+ * @brief announces a connected client, building each version of the message only once
  *
  * @param client_t* subject -> the client that connected
  *
  * @attention it doesnt need readlock, already called within writelock in msg/client/
  *
- * Recipients in other channels must not receive active microphone state or
- * music bot keys. Those recipients receive a separate version of the message.
+ * recipients in other channels must not receive active microphone state or
+ * music bot keys. Those recipients receive a separate version of the message
  *
  * @return void
  */
@@ -600,8 +602,10 @@ void server_msg__connection__send_client_connect_message_to_all_clients(client_t
 }
 
 /**
- * @brief Queues a keepalive reply ahead of waiting uploads and announcements.
+ * @brief queues a keepalive reply ahead of waiting uploads and announcements
+ *
  * @param client_t* receiver -> authenticated connection, kept alive by the clients lock
+ *
  * @return void
  */
 void server_msg__connection__send_connection_check_response_to_single_client(client_t *receiver)
@@ -638,9 +642,10 @@ void server_msg__connection__send_fast_reconnect_ok_to_single_client(client_t *r
 }
 
 /**
- * @brief broadcasts a client-disconnected event to all clients
+ * @brief broadcasts a client disconnection to the other clients
  *
  * @param uint64 client_index -> array index of the disconnected client
+ * @param const char* reason -> disconnection reason, or NULL to omit it
  *
  * @attention used within acquired write lock for clients_array
  *

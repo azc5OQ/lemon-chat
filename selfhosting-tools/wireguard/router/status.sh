@@ -1,5 +1,5 @@
 #!/bin/sh
-# tunnel router status - runs on the VPS. POSIX sh, started by the host's status script over ssh.
+# Reports router status on the VPS through the host script's SSH session.
 # prints the tunnel state, the forwarding rules and the firewall state, read-only.
 # Upload cleanup is performed by the caller.
 

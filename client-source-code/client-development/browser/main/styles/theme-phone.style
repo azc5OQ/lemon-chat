@@ -1,6 +1,4 @@
-/* The phone layout shared by Mono, Pocket and Simple; included after theme-default.style and theme-mono.style.
-   Two screens: the list of people, and one conversation with a back arrow and its name in the top bar.
-   A theme sets the three --phone-accent colours; without them the accent is Mono's text colour. */
+/* Shared conversation and people layouts for Mono, Pocket and Simple. Theme variables supply the accent colors. */
 :root
 {
     --phone-accent: var(--mono-text);
@@ -115,10 +113,7 @@
     width: calc(100% - 140px);
 }
 
-/* The conversation screen: the top bar holds the back arrow, the picture and the name of the conversation, and
-   at the right the buttons of the list screen as icons without their names, so that no button disappears
-   when a conversation is opened. The user's own name and picture are on the list screen only. Pocket hides
-   the buttons itself on every screen but Me (theme-phone-tabs.style). */
+/* Show the back arrow, conversation title and toolbar actions above chat. Keep the local profile on the people screen. */
 :root:has(#hide-chat-button.chat-hidden) #communication-system-head-menu > #hide-chat-button,
 :root:not(:has(#hide-chat-button.chat-hidden)) #communication-system-head-menu > #msgr-me-button,
 :root:not(:has(#hide-chat-button.chat-hidden)) #member-conversations-profile
@@ -155,8 +150,7 @@
     background-position: center;
 }
 
-/* The name is the tab of the open conversation, drawn in the top bar; the tabs of the other conversations are not shown.
-   The top bar is drawn above the page, so it is transparent here and the name under it stays visible. */
+/* Use the active conversation tab as the toolbar title and hide the other tabs. */
 :root:not(:has(#hide-chat-button.chat-hidden)) #communication-system-head-menu
 {
     background: transparent;
@@ -234,10 +228,7 @@
     display: none !important;
 }
 
-/* The top bar of a conversation: a round picture, the name, and
-   under the name one line about the conversation (the people in a channel, or where a person is).
-   member-conversations.js writes the line, the letters of the picture and an uploaded picture onto the
-   tab of the conversation. */
+/* Show the conversation avatar, name and one line of context supplied by member-conversations.js. */
 :root:has(body.member-conversations-active) .chat-context-selector[style*="background-color"]
 {
     display: grid;
@@ -336,10 +327,7 @@
     scroll-padding-bottom: var(--phone-microphone-chat-space);
 }
 
-/* A round button. A theme draws it with --tabs-talk-background and --tabs-talk-shadow, and with the two
-   variables ending in -on while the microphone sends. The second selector is for the time while the
-   microphone is on: theme-default.style has a rule for that state with two ids, which gave the button
-   the Default theme's dark green and reset the size and the repetition of its background. */
+/* Keep theme colors and size on the round talk button, including its active state. */
 :root #toggle-microphone-label,
 :root #toggle-microphone:checked ~ #toggle-microphone-label,
 :root #microphone-push-to-talk-button-touch-device
@@ -572,10 +560,7 @@
     text-transform: capitalize;
 }
 
-/* Bubbles as in a messenger. The time stands inside the bubble,
-   at the end of its last line; member-conversations.js writes it without seconds into data-short-time. The
-   name of the sender stands above the first message of a run of messages from one person, and not at all
-   in a conversation with one person, whose name is in the top bar. */
+/* Place short timestamps inside bubbles. Show sender names once per message run in channels and hide them in private chats. */
 :root:has(body.member-conversations-active) .single-chat-message
 {
     padding: 1px 12px;
@@ -591,9 +576,7 @@
     text-align: right;
 }
 
-/* The local setting "disable custom fonts in chat messages" gives every message the text colour of a
-   received message (layout.style). The user's own bubble has the accent colour, so its text keeps the
-   colour that can be read on it. */
+/* Preserve readable outgoing bubble text when custom message fonts are disabled. */
 :root body.chat-use-theme-formatting #chat-context-container .single-chat-message:has(.single-chat-message-sender-local-username-container) .single-chat-message-content-p,
 :root body.chat-use-theme-formatting #chat-context-container .single-chat-message:has(.single-chat-message-sender-local-username-container) .single-chat-message-content-p :is(span, font, b, strong, i, em, u, s, strike, small, big, sub, sup, a, code, pre)
 {
@@ -685,13 +668,7 @@
     font-size: 11px;
 }
 
-/* A reply shows the message it answers the way Termix does: the name of that message's sender and one line
-   of its text, in small letters above the bubble, without a box, joined to the bubble by a thin line. A
-   filled box took too much of the width of a phone screen.
-   The quote is placed above the bubble with position: absolute, so its width does not change the width of
-   the bubble (the time stands in the corner of the bubble). The content keeps 36px free above the bubble
-   for the two lines of the quote, and 52px when the quote has a third line with its state.
-   The user's own messages are on the right, so their quote ends at the right and its line is on the right. */
+/* Place reply quotes above the bubble without widening it. Reserve 36px for two quote lines or 52px when a state line is present. Align outgoing quotes to the right. */
 :root:has(body.member-conversations-active) .single-chat-message .single-chat-message-content:has(> .chat-reply-quote)
 {
     position: relative;
@@ -710,7 +687,7 @@
     left: 16px;
     display: block;
     width: max-content;
-    max-width: min(72vw, 320px);
+    max-width: min(calc(72vw / var(--ui-display-scale, 1)), 320px);
     margin: 0;
     padding: 0;
     border: 0;
@@ -911,10 +888,10 @@
     inset: auto 8px calc(8px + env(safe-area-inset-bottom, 0px)) 8px !important;
     width: auto !important;
     max-width: none;
-    max-height: 60dvh;
+    max-height: calc(60dvh / var(--ui-display-scale, 1));
     padding: 6px 0 8px;
     border-radius: 20px;
-    box-shadow: 0 0 0 100vmax #00000040, 0 -8px 32px #00000026;
+    box-shadow: 0 0 0 calc(100vmax / var(--ui-display-scale, 1)) #00000040, 0 -8px 32px #00000026;
     /* above the talk bar */
     z-index: 60;
 }
@@ -987,7 +964,7 @@
 /* On a wide screen the layout keeps the width of a phone and stands in the middle of the window. */
 :root
 {
-    --phone-side: max(0px, calc((100vw - 760px) / 2));
+    --phone-side: max(0px, calc((calc(100vw / var(--ui-display-scale, 1)) - 760px) / 2));
 }
 
 :root #communication-system-head-menu,

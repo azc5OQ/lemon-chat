@@ -53,6 +53,15 @@
 
                 </LinearLayout>
 
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/run_connection_setup"
+                    style="@style/Widget.MaterialComponents.Button.TextButton"
+                    android:text="Run setup again"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:onClick="runConnectionSetup" />
+
                 <!-- saved servers: picking one fills in every field below it, and "save server"
                      stores whatever is in those fields under a name -->
                 <TextView
@@ -193,6 +202,14 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/settings_call_alerts"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    android:text="Call screen permission"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="20dp" />
 
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/save_settings"

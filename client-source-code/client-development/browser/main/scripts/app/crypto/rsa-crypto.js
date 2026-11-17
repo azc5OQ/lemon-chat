@@ -1,16 +1,10 @@
-// rsa-crypto.js is embedded in template.html along with the other client files, and in the node bundle
-// it is the client's rsa layer (lemon_crypto): keypair from a passphrase, encrypt, decrypt and the pkcs#1
-// challenge, with the modular exponentiation in rsa_keygen.wasm and everything else native BigInt
-// every byte format of the keys and messages is identical to the old cryptico stack, so identities and messages stay compatible
-// identity-crypto.js, worker-data-processing.js and chat-files.js call it
+// implements the client's RSA operations with Wasm and native BigInt
+// key generation and envelope formats remain compatible with cryptico identities
 
 var rsa_keygen_wasm_exports = null;
 
 /**
- * @brief the rsa keygen wasm, compiled on first use
- *        the module imports nothing and is ~23 KB. synchronous compilation is fine because every
- *        rsa caller is in the data-processing worker; the main thread only ever uses the
- *        diffie-hellman helper, which needs no wasm
+ * @brief compiles and caches the RSA Wasm module
  *
  * @return object the wasm exports
  */
@@ -40,13 +34,10 @@ var lemon_crypto = (function ()
     var base64_chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     var hex_chars = "0123456789abcdef";
 
-    // marks a signed payload inside the envelope. lemon-chat never signs, but the
-    // separator is still split on so a signed message from any other cryptico client
-    // yields the same plaintext it always did
+    // recognize cryptico's signed payload separator without verifying signatures
     var signature_separator = "::52cee64bb3a38f6403386519a39ac91c::";
 
-    // conversions, ported unchanged from cryptico: the envelope is built out of these, so a single
-    // differing character would break older clients
+    // keep these conversions compatible with existing cryptico envelopes
 
     /**
      * @brief binary string (one character per byte) -> base64
@@ -80,7 +71,10 @@ var lemon_crypto = (function ()
                 r += base64_chars.charAt(c & 63);
             }
             s += 1;
-            if (s == 3) { s = 0; }
+            if (s == 3)
+            {
+                s = 0;
+            }
         }
 
         if (s > 0)
@@ -96,7 +90,7 @@ var lemon_crypto = (function ()
     };
 
     /**
-     * @brief base64 -> binary string (one character per byte)
+     * @brief Base64 -> binary string (one character per byte)
      *
      * @param string t -> the base64 text
      *
@@ -113,7 +107,10 @@ var lemon_crypto = (function ()
             c = base64_chars.indexOf(t.charAt(n));
             if (c >= 0)
             {
-                if (s) { r += String.fromCharCode(a | (c >> (6 - s)) & 255); }
+                if (s)
+                {
+                    r += String.fromCharCode(a | (c >> (6 - s)) & 255);
+                }
                 s = (s + 2) & 7;
                 a = (c << s) & 255;
             }
@@ -133,7 +130,10 @@ var lemon_crypto = (function ()
         var i, c;
         var ret = "";
 
-        if (h.length % 2 == 1) { h = "0" + h; }
+        if (h.length % 2 == 1)
+        {
+            h = "0" + h;
+        }
 
         for (i = 0; i + 3 <= h.length; i += 3)
         {
@@ -150,12 +150,15 @@ var lemon_crypto = (function ()
             c = parseInt(h.substring(i, i + 2), 16);
             ret += base64_chars.charAt(c >> 2) + base64_chars.charAt((c & 3) << 4);
         }
-        while ((ret.length & 3) > 0) { ret += "="; }
+        while ((ret.length & 3) > 0)
+        {
+            ret += "=";
+        }
         return ret;
     };
 
     /**
-     * @brief base64 -> hex
+     * @brief Base64 -> hex
      *
      * @param string s -> the base64 text
      *
@@ -170,9 +173,15 @@ var lemon_crypto = (function ()
 
         for (i = 0; i < s.length; ++i)
         {
-            if (s.charAt(i) == "=") { break; }
+            if (s.charAt(i) == "=")
+            {
+                break;
+            }
             v = base64_chars.indexOf(s.charAt(i));
-            if (v < 0) { continue; }
+            if (v < 0)
+            {
+                continue;
+            }
 
             if (k == 0)
             {
@@ -200,7 +209,10 @@ var lemon_crypto = (function ()
                 k = 0;
             }
         }
-        if (k == 1) { ret += hex_chars.charAt(slop << 2); }
+        if (k == 1)
+        {
+            ret += hex_chars.charAt(slop << 2);
+        }
         return ret;
     };
 
@@ -239,8 +251,7 @@ var lemon_crypto = (function ()
     };
 
     /**
-     * @brief zero padding to a whole number of aes blocks
-     *        not pkcs#7: this is the padding cryptico shipped, and the envelope format is fixed by old clients
+     * @brief pads bytes with zeros to complete AES blocks in the cryptico format
      *
      * @param array bytes -> the plaintext bytes
      *
@@ -251,7 +262,10 @@ var lemon_crypto = (function ()
         var new_bytes = bytes.slice(0);
         var padding = (16 - (bytes.length % 16)) % 16;
 
-        for (var i = 0; i < padding; i++) { new_bytes.push(0); }
+        for (var i = 0; i < padding; i++)
+        {
+            new_bytes.push(0);
+        }
         return new_bytes;
     };
 
@@ -265,12 +279,14 @@ var lemon_crypto = (function ()
     my.depad = function (bytes)
     {
         var end = bytes.length;
-        while (end > 0 && bytes[end - 1] == 0) { end--; }
+        while (end > 0 && bytes[end - 1] == 0)
+        {
+            end--;
+        }
         return bytes.slice(0, end);
     };
 
-    // random material from getRandomValues, the csprng the rest of the client uses (the old stack
-    // drew it from an arcfour pool seeded with Math.random)
+    // use cryptographic randomness for keys and padding
 
     /**
      * @brief random bytes from the cryptographically secure RNG
@@ -285,29 +301,38 @@ var lemon_crypto = (function ()
         var bytes = new Array(count);
 
         crypto.getRandomValues(buffer);
-        for (var i = 0; i < count; i++) { bytes[i] = buffer[i]; }
+        for (var i = 0; i < count; i++)
+        {
+            bytes[i] = buffer[i];
+        }
         return bytes;
     }
 
     /**
-     * @brief a fresh random 32-byte aes key
+     * @brief creates a random AES key of 32 bytes
      *
      * @return array the key bytes
      */
-    my.generateAESKey = function () { return random_bytes(32); };
+    my.generateAESKey = function ()
+    {
+        return random_bytes(32);
+    };
     /**
-     * @brief a fresh random 16-byte aes iv
+     * @brief creates a random AES IV of 16 bytes
      *
      * @return array the iv bytes
      */
-    my.blockIV = function () { return random_bytes(16); };
+    my.blockIV = function ()
+    {
+        return random_bytes(16);
+    };
 
     // -----------------------------------------------------------------------
     // big number helpers
     // -----------------------------------------------------------------------
 
     /**
-     * @brief a BigInt from a hex string; throws when the text is not hex
+     * @brief parses a hexadecimal string as a BigInt
      *
      * @param string hex -> the hex text
      *
@@ -323,7 +348,7 @@ var lemon_crypto = (function ()
     }
 
     /**
-     * @brief minimal big-endian bytes of a positive value, the shape jsbn's toByteArray produced once its leading zero byte is skipped
+     * @brief encodes a positive integer with its most significant byte first
      *
      * @param bigint value -> the value
      *
@@ -334,7 +359,10 @@ var lemon_crypto = (function ()
         var hex = value.toString(16);
         var bytes = [];
 
-        if (hex.length % 2 == 1) { hex = "0" + hex; }
+        if (hex.length % 2 == 1)
+        {
+            hex = "0" + hex;
+        }
         for (var i = 0; i < hex.length; i += 2)
         {
             bytes.push(parseInt(hex.substring(i, i + 2), 16));
@@ -351,12 +379,15 @@ var lemon_crypto = (function ()
      */
     function bit_length(value)
     {
-        if (value <= 0n) { return 0; }
+        if (value <= 0n)
+        {
+            return 0;
+        }
         return value.toString(2).length;
     }
 
     /**
-     * @brief base^exponent mod modulus on the wasm, in hex; the modulus must be odd, which every rsa n, p and q is
+     * @brief computes modular exponentiation in Wasm for an odd modulus
      *
      * @param string base_hex -> the base
      * @param string exponent_hex -> the exponent
@@ -423,9 +454,7 @@ var lemon_crypto = (function ()
     }
 
     /**
-     * @brief base^exponent mod modulus by square and multiply over native BigInt
-     *        the diffie-hellman step runs on the main thread, which never instantiates the wasm
-     *        module, so it uses this instead
+     * @brief computes modular exponentiation with native BigInt for Diffie Hellman
      *
      * @param bigint base -> the base
      * @param bigint exponent -> the exponent
@@ -440,20 +469,20 @@ var lemon_crypto = (function ()
         base = base % modulus;
         while (exponent > 0n)
         {
-            if ((exponent & 1n) == 1n) { result = (result * base) % modulus; }
+            if ((exponent & 1n) == 1n)
+            {
+                result = (result * base) % modulus;
+            }
             base = (base * base) % modulus;
             exponent >>= 1n;
         }
         return result;
     };
 
-    // -----------------------------------------------------------------------
-    // pkcs#1 v1.5, ported from rsa.js including its utf-8 expansion of the payload
-    // -----------------------------------------------------------------------
+    // PKCS#1 v1.5 padding with the existing UTF8 payload encoding
 
     /**
-     * @brief pkcs#1 type 2 padding of a text into an n-byte block: utf8 encoding, random non-zero padding, the 0x02 marker
-     *        throws when the text does not fit
+     * @brief encodes text with PKCS#1 type 2 padding. throws if it does not fit
      *
      * @param string s -> the text
      * @param number n -> the block length in bytes
@@ -466,7 +495,10 @@ var lemon_crypto = (function ()
         var i = s.length - 1;
         var pad;
 
-        if (n < s.length + 11) { throw new Error("Message too long for RSA (n=" + n + ", l=" + s.length + ")"); }
+        if (n < s.length + 11)
+        {
+            throw new Error("Message too long for RSA (n=" + n + ", l=" + s.length + ")");
+        }
 
         while (i >= 0 && n > 0)
         {
@@ -490,15 +522,16 @@ var lemon_crypto = (function ()
         }
         ba[--n] = 0;
 
-        // the pad bytes must all be non-zero, because the first zero after the header
-        // is what marks where the payload starts. drawn as one block, with any zeros
-        // redrawn individually so each byte stays uniform over 1..255
+        // redraw zero padding bytes because zero marks the start of the payload
         var pad_block = random_bytes(n > 2 ? n - 2 : 0);
         var pad_index = 0;
         while (n > 2)
         {
             pad = pad_block[pad_index++];
-            while (pad == 0) { pad = random_bytes(1)[0]; }
+            while (pad == 0)
+            {
+                pad = random_bytes(1)[0];
+            }
             ba[--n] = pad;
         }
         ba[--n] = 2;
@@ -526,13 +559,22 @@ var lemon_crypto = (function ()
         var i = 0;
         var ret = "";
 
-        while (i < b.length && b[i] == 0) { ++i; }
-        if (b.length - i != n - 1 || b[i] != 2) { return null; }
+        while (i < b.length && b[i] == 0)
+        {
+            ++i;
+        }
+        if (b.length - i != n - 1 || b[i] != 2)
+        {
+            return null;
+        }
 
         ++i;
         while (b[i] != 0)
         {
-            if (++i >= b.length) { return null; }
+            if (++i >= b.length)
+            {
+                return null;
+            }
         }
 
         while (++i < b.length)
@@ -557,13 +599,12 @@ var lemon_crypto = (function ()
         return ret;
     }
 
-    // the key object: native BigInt fields under the names the old RSAKey used, so anything
-    // holding a key keeps working
+    // preserve the field names used by existing RSAKey callers
 
     /**
-     * @brief an rsa key: n and e, and for a private key d, p, q, dmp1, dmq1 and coeff, all BigInts
+     * @brief initializes the public and private RSA fields
      *
-     * @return void a constructor, used with new
+     * @return void
      */
     function RSAKey()
     {
@@ -578,7 +619,7 @@ var lemon_crypto = (function ()
     }
 
     /**
-     * @brief loads the public half from hex; throws when either part is missing
+     * @brief loads the public modulus and exponent from hexadecimal strings
      *
      * @param string N -> the modulus in hex
      * @param string E -> the exponent in hex
@@ -587,28 +628,34 @@ var lemon_crypto = (function ()
      */
     RSAKey.prototype.setPublic = function (N, E)
     {
-        if (N == null || E == null || N.length == 0 || E.length == 0) { throw new Error("Invalid RSA public key"); }
+        if (N == null || E == null || N.length == 0 || E.length == 0)
+        {
+            throw new Error("Invalid RSA public key");
+        }
         this.n = bigint_from_hex(N);
         this.e = BigInt(parseInt(E, 16));
     };
 
     /**
-     * @brief loads a whole private key from hex; throws when the public part is missing
+     * @brief loads the public and private RSA components from hexadecimal strings
      *
      * @param string N -> the modulus
      * @param string E -> the public exponent
      * @param string D -> the private exponent
      * @param string P -> the first prime
      * @param string Q -> the second prime
-     * @param string DP -> d mod (p-1)
-     * @param string DQ -> d mod (q-1)
+     * @param string DP -> D mod (p-1)
+     * @param string DQ -> D mod (q-1)
      * @param string C -> the crt coefficient
      *
      * @return void
      */
     RSAKey.prototype.setPrivateEx = function (N, E, D, P, Q, DP, DQ, C)
     {
-        if (N == null || E == null || N.length == 0 || E.length == 0) { throw new Error("Invalid RSA private key"); }
+        if (N == null || E == null || N.length == 0 || E.length == 0)
+        {
+            throw new Error("Invalid RSA private key");
+        }
         this.n = bigint_from_hex(N);
         this.e = BigInt(parseInt(E, 16));
         this.d = bigint_from_hex(D);
@@ -620,7 +667,7 @@ var lemon_crypto = (function ()
     };
 
     /**
-     * @brief x^e mod n, on the wasm
+     * @brief X^e mod n, on the wasm
      *
      * @param bigint x -> the block
      *
@@ -632,7 +679,7 @@ var lemon_crypto = (function ()
     };
 
     /**
-     * @brief x^d mod n, by the crt combination rsa.js did when p and q are known, both exponentiations on the wasm
+     * @brief computes x^d mod n using the private CRT components when available
      *
      * @param bigint x -> the block
      *
@@ -649,7 +696,10 @@ var lemon_crypto = (function ()
         var xp = modpow_wasm(x % this.p, this.dmp1, this.p);
         var xq = modpow_wasm(x % this.q, this.dmq1, this.q);
 
-        while (xp < xq) { xp = xp + this.p; }
+        while (xp < xq)
+        {
+            xp = xp + this.p;
+        }
         return (((xp - xq) * this.coeff) % this.p) * this.q + xq;
     };
 
@@ -658,7 +708,7 @@ var lemon_crypto = (function ()
      *
      * @param string text -> the plaintext
      *
-     * @return string the ciphertext as an even-length hex string
+     * @return string the ciphertext as hex with two digits per byte
      */
     RSAKey.prototype.encrypt = function (text)
     {
@@ -666,7 +716,10 @@ var lemon_crypto = (function ()
         var c = this.doPublic(m);
         var h = c.toString(16);
 
-        if ((h.length & 1) == 0) { return h; }
+        if ((h.length & 1) == 0)
+        {
+            return h;
+        }
         return "0" + h;
     };
 
@@ -681,8 +734,14 @@ var lemon_crypto = (function ()
     {
         var c;
 
-        try { c = bigint_from_hex(ctext); }
-        catch (err) { return null; }
+        try
+        {
+            c = bigint_from_hex(ctext);
+        }
+        catch (err)
+        {
+            return null;
+        }
 
         var m = this.doPrivate(c);
         return pkcs1_unpad(m, (bit_length(this.n) + 7) >> 3);
@@ -690,12 +749,10 @@ var lemon_crypto = (function ()
 
     my.RSAKey = RSAKey;
 
-    // -----------------------------------------------------------------------
-    // aes-cbc over aes-js, in cryptico's layout: the iv is block 0 of the output
-    // -----------------------------------------------------------------------
+    // AES CBC envelopes start with the IV, followed by the ciphertext
 
     /**
-     * @brief aes-cbc under a random iv, the iv prepended, as base64
+     * @brief encrypts with AES CBC and prepends a random IV
      *
      * @param string plaintext -> the text
      * @param array key -> the aes key bytes
@@ -713,7 +770,7 @@ var lemon_crypto = (function ()
     };
 
     /**
-     * @brief the inverse of encryptAESCBC; a partial trailing block is cut, since aes-js rejects it
+     * @brief decrypts AES CBC content after discarding any incomplete trailing block
      *
      * @param string encrypted_text -> the base64 ciphertext, iv first
      * @param array key -> the aes key bytes
@@ -726,9 +783,12 @@ var lemon_crypto = (function ()
         var iv = bytes.slice(0, 16);
         var body = bytes.slice(16);
 
-        // aes-js rejects a partial trailing block; the old code fed it garbage instead
+        // discard an incomplete block before passing bytes to aes-js
         body = body.slice(0, body.length - (body.length % 16));
-        if (iv.length < 16 || body.length == 0) { return ""; }
+        if (iv.length < 16 || body.length == 0)
+        {
+            return "";
+        }
 
         var cbc = new aesjs.ModeOfOperation.cbc(key, iv);
         var decrypted = Array.prototype.slice.call(cbc.decrypt(body));
@@ -741,7 +801,7 @@ var lemon_crypto = (function ()
     // -----------------------------------------------------------------------
 
     /**
-     * @brief the identity keypair: the seeded prime walk in the wasm, which reproduces the old jsbn walk bit for bit (see client-webassemblies/rsa-keygen)
+     * @brief recreates the identity keypair with the compatible Wasm prime generator
      *
      * @param string passphrase -> the seed, hashed with sha256
      * @param number bitlength -> the modulus size
@@ -805,7 +865,7 @@ var lemon_crypto = (function ()
     };
 
     /**
-     * @brief a public key from its string form (the modulus in base64, anything after a "|" ignored), exponent 3
+     * @brief reads a public modulus before any signature suffix and uses exponent 3
      *
      * @param string string -> the public key string
      *
@@ -821,7 +881,7 @@ var lemon_crypto = (function ()
     };
 
     /**
-     * @brief hybrid encryption for a receiver: a fresh aes key rsa-encrypted with their public key, "?", then the aes-cbc ciphertext
+     * @brief encrypts with a fresh AES key protected by the recipient's RSA key
      *
      * @param string plaintext -> the text
      * @param string publickeystring -> the receiver's public key string
@@ -848,9 +908,7 @@ var lemon_crypto = (function ()
     };
 
     /**
-     * @brief the inverse of lemon_crypto.encrypt with our private key
-     *        lemon-chat never signs; a signed payload from another cryptico client still yields its
-     *        plaintext, it just is not verified here
+     * @brief decrypts hybrid RSA and AES content without verifying optional signatures
      *
      * @param string ciphertext -> the hybrid ciphertext
      * @param RSAKey key -> our private key
@@ -862,12 +920,14 @@ var lemon_crypto = (function ()
         var cipherblock = ciphertext.split("?");
         var aeskey = key.decrypt(my.b64to16(cipherblock[0]));
 
-        if (aeskey == null) { return { status: "failure" }; }
+        if (aeskey == null)
+        {
+            return { status: "failure" };
+        }
 
         aeskey = my.string2bytes(aeskey);
 
-        // lemon-chat never signs; a signed payload from another cryptico client still
-        // yields its plaintext, it just is not verified here
+        // read signed cryptico payloads without verifying their signatures
         var plaintext = my.decryptAESCBC(cipherblock[1], aeskey).split(signature_separator);
 
         return {

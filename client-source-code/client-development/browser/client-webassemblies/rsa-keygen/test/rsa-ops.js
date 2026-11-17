@@ -1,10 +1,8 @@
-// differential test for the runtime rsa ops: the wasm modpow (and the crt combine the
-// client glue builds on it) must produce exactly what jsbn's doPublic/doPrivate produce,
-// for every golden key and a spread of deterministic messages plus edge values.
-//   node rsa-ops.js
+// compare Wasm RSA operations with jsbn using saved keys and boundary inputs
+// run: node rsa-ops.js
 let fs = require("fs");
 
-// jsbn/rsa are the reference the wasm ops are held to; the client itself no longer ships them
+// use the legacy libraries as the reference
 let vendor_path = __dirname + "/../../../main/scripts/vendor/";
 let legacy_path = __dirname + "/legacy-reference/";
 let source = ["jsbn.js", "rsa.js"]
@@ -22,7 +20,7 @@ eval(source + "\nprobe = { BigInteger: BigInteger, RSAKey: RSAKey, parseBigInt: 
 
 let wasm_bytes = fs.readFileSync(process.env.LEMON_RSA_WASM || (__dirname + "/../build/rsa_keygen.wasm"));
 
-// deterministic message stream, so failures reproduce
+// use fixed message data so failures can be reproduced
 let lcg_state = 0x12345678;
 function lcg_hex_below(n_hex)
 {
@@ -46,23 +44,35 @@ WebAssembly.instantiate(wasm_bytes, {}).then(function(result)
         for (let i = 0; i < 3; i++)
         {
             let ptr = wasm.rsa_keygen__get_modpow_buffer(i);
-            for (let j = 0; j < ops[i].length; j++) { mem[ptr + j] = ops[i].charCodeAt(j); }
+            for (let j = 0; j < ops[i].length; j++)
+            {
+                mem[ptr + j] = ops[i].charCodeAt(j);
+            }
             mem[ptr + ops[i].length] = 0;
         }
-        if (wasm.rsa_keygen__modpow() != 1) { throw new Error("modpow rejected"); }
+        if (wasm.rsa_keygen__modpow() != 1)
+        {
+            throw new Error("modpow rejected");
+        }
         mem = new Uint8Array(wasm.memory.buffer);
         let ptr = wasm.rsa_keygen__get_modpow_result();
         let hex = "";
-        for (let b = ptr; mem[b] != 0; b++) { hex += String.fromCharCode(mem[b]); }
+        for (let b = ptr; mem[b] != 0; b++)
+        {
+            hex += String.fromCharCode(mem[b]);
+        }
         return hex;
     }
 
-    // the crt combine exactly as the client glue does it
+    // combine the CRT results as the client does
     function wasm_do_private(key, x)
     {
         let xp = probe.parseBigInt(modpow_hex(x.mod(key.p).toString(16), key.dmp1.toString(16), key.p.toString(16)), 16);
         let xq = probe.parseBigInt(modpow_hex(x.mod(key.q).toString(16), key.dmq1.toString(16), key.q.toString(16)), 16);
-        while (xp.compareTo(xq) < 0) { xp = xp.add(key.p); }
+        while (xp.compareTo(xq) < 0)
+        {
+            xp = xp.add(key.p);
+        }
         return xp.subtract(xq).multiply(key.coeff).mod(key.p).multiply(key.q).add(xq);
     }
 
@@ -89,7 +99,10 @@ WebAssembly.instantiate(wasm_bytes, {}).then(function(result)
             key.setPrivateEx(v.n, v.e, v.d, v.p, v.q, v.dmp1, v.dmq1, v.coeff);
 
             let messages = [];
-            for (let m = 0; m < 8; m++) { messages.push(lcg_hex_below(v.n)); }
+            for (let m = 0; m < 8; m++)
+            {
+                messages.push(lcg_hex_below(v.n));
+            }
             messages.push("0");
             messages.push("1");
             messages.push(key.n.subtract(probe.BigInteger.ONE).toString(16));
@@ -106,14 +119,10 @@ WebAssembly.instantiate(wasm_bytes, {}).then(function(result)
                 expect_equal(tag + " doPrivate", js_priv.toString(16), wasm_do_private(key, js_pub).toString(16));
             });
 
-            // no-crt private path and a base larger than the modulus
+            // check private RSA without CRT and an input larger than the modulus
             let c = key.doPublic(probe.parseBigInt(messages[0], 16));
-            expect_equal(file + " v" + (vi + 1) + " modPow(d)",
-                c.modPow(key.d, key.n).toString(16),
-                modpow_hex(c.toString(16), v.d, v.n));
-            expect_equal(file + " v" + (vi + 1) + " base>n",
-                probe.parseBigInt(v.n + v.p, 16).mod(key.n).toString(16),
-                modpow_hex(v.n + v.p, "1", v.n));
+            expect_equal(file + " v" + (vi + 1) + " modPow(d)", c.modPow(key.d, key.n).toString(16), modpow_hex(c.toString(16), v.d, v.n));
+            expect_equal(file + " v" + (vi + 1) + " base>n", probe.parseBigInt(v.n + v.p, 16).mod(key.n).toString(16), modpow_hex(v.n + v.p, "1", v.n));
         });
     });
 

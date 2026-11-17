@@ -1,4 +1,4 @@
-// Linux and macOS settings files, with private temporary files and atomic replacement.
+// Linux and macOS settings files, with private temporary files and atomic replacement
 #define _POSIX_C_SOURCE 200809L
 #include <errno.h>
 #include <fcntl.h>
@@ -13,11 +13,13 @@
 static boole _settings_internal__path(char *path, uint64 capacity, boole create);
 
 /**
- * @brief resolves the platform's per-user settings directory and optionally creates it.
+ * @brief resolves the platform's per user settings directory and optionally creates it
+ *
  * @param char* path -> destination buffer
  * @param uint64 capacity -> destination capacity including the terminator
  * @param boole create -> nonzero when saving and directory creation is allowed
- * @return boole -> 1 on success; 0 on a missing home directory or a path error
+ *
+ * @return boole -> 1 on success. 0 on a missing home directory or a path error
  */
 static boole _settings_internal__path(char *path, uint64 capacity, boole create)
 {
@@ -83,11 +85,13 @@ static boole _settings_internal__path(char *path, uint64 capacity, boole create)
 }
 
 /**
- * @brief reads a bounded regular settings file and leaves a terminating zero.
+ * @brief reads a bounded regular settings file and leaves a terminating zero
+ *
  * @param char* bytes -> destination buffer, cleared before reading
  * @param uint64 capacity -> buffer capacity including its terminator
  * @param uint64* length -> receives the number of bytes read
- * @return boole -> 1 on success; 0 if absent, oversized or unreadable
+ *
+ * @return boole -> 1 on success. 0 if absent, oversized or unreadable
  */
 boole desktop_settings_file__read(char *bytes, uint64 capacity, uint64 *length)
 {
@@ -146,10 +150,12 @@ boole desktop_settings_file__read(char *bytes, uint64 capacity, uint64 *length)
 }
 
 /**
- * @brief writes a private temporary file and atomically replaces the settings file.
+ * @brief writes a private temporary file and atomically replaces the settings file
+ *
  * @param const char* bytes -> serialized settings
  * @param uint64 length -> byte count
- * @return boole -> 1 when saved; 0 on a filesystem error
+ *
+ * @return boole -> 1 when saved. 0 on a filesystem error
  */
 boole desktop_settings_file__write(const char *bytes, uint64 length)
 {

@@ -1,6 +1,6 @@
-// This file helps the server stay responsive when many clients connect at once.
-// It limits simultaneous login key calculations. Connections waiting for a turn
-// sleep on their existing threads until a login slot becomes free.
+// this file helps the server stay responsive when many clients connect at once
+// it limits simultaneous login key calculations. Connections waiting for a turn
+// sleep on their existing threads until a login slot becomes free
 #include "login_admission.h"
 
 #include <errno.h>
@@ -26,7 +26,7 @@ static void _login_admission_internal__wake_next(void);
 static void _login_admission_internal__remove_waiter(login_waiter_t *waiter);
 
 /**
- * @brief Reads elapsed time without being affected by changes to the system clock.
+ * @brief reads elapsed time without being affected by changes to the system clock
  *
  * @return uint64 -> clock value in milliseconds
  */
@@ -39,9 +39,9 @@ static uint64 _login_admission_internal__now_ms(void)
 }
 
 /**
- * @brief Wakes the first waiting connection when another login can begin.
+ * @brief wakes the first waiting connection when another login can begin
  *
- * @attention The caller must hold g_login_mutex while checking the queue.
+ * @attention the caller must hold g_login_mutex while checking the queue
  *
  * @return void
  */
@@ -54,11 +54,11 @@ static void _login_admission_internal__wake_next(void)
 }
 
 /**
- * @brief Removes a waiting connection and wakes the next one if a slot is free.
+ * @brief removes a waiting connection and wakes the next one if a slot is free
  *
  * @param login_waiter_t* waiter -> the entry currently linked into the waiting list
  *
- * @attention The caller holds g_login_mutex and owns the entry.
+ * @attention the caller holds g_login_mutex and owns the entry
  *
  * @return void
  */
@@ -87,7 +87,7 @@ static void _login_admission_internal__remove_waiter(login_waiter_t *waiter)
 }
 
 /**
- * @brief Changes the login limit without interrupting calculations already running.
+ * @brief changes the login limit without interrupting calculations already running
  *
  * @param uint64 limit -> simultaneous logins allowed, clamped to 1 through 64
  *
@@ -113,13 +113,13 @@ void login_admission__set_limit(uint64 limit)
 }
 
 /**
- * @brief Waits in arrival order for a free login slot, using the connection's reader thread.
+ * @brief waits in arrival order for a free login slot, using the connection's reader thread
  *
  * @param boole (*)(void*) connection_is_valid -> returns TRUE while the connection may log in
  * @param void* connection -> callback data, kept alive by the caller until this returns
  * @param uint64 timeout_ms -> maximum wait in milliseconds
  *
- * @attention Call without the clients lock. After success, release the slot exactly once when key calculations finish, including on failure.
+ * @attention call without the clients lock. After success, release the slot exactly once when key calculations finish, including on failure
  *
  * @return boole -> TRUE when a slot was acquired; FALSE on cancellation, timeout or error
  */
@@ -214,9 +214,9 @@ boole login_admission__acquire(boole (*connection_is_valid)(void *), void *conne
 }
 
 /**
- * @brief Returns a login slot and wakes the next waiting connection if one may begin.
+ * @brief returns a login slot and wakes the next waiting connection if one may begin
  *
- * @attention Call exactly once for each successful login_admission__acquire call.
+ * @attention call exactly once for each successful login_admission__acquire call
  *
  * @return void
  */

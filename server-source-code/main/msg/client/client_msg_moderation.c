@@ -1,5 +1,5 @@
 #include "../../clib/clib.h"
-// This file checks requests to moderate clients and manage channel assignments and bans.
+// this file checks requests to moderate clients and manage channel assignments and bans
 #include "client_msg.h"
 #include "../server/server_msg.h"
 #include "../../base.h"
@@ -17,9 +17,10 @@ static boole _client_msg_moderation_internal__read_index(cJSON *object, cstring 
 static boole _client_msg_moderation_internal__save(void);
 
 /**
- * @brief Creates, edits or deletes a channel group without granting server rights.
- * @param json_root Complete group definition and requested action.
- * @param sender_client_id Authenticated client making the change.
+ * @brief creates, edits or deletes a channel group without granting server rights
+ *
+ * @param json_root Complete group definition and requested action
+ * @param sender_client_id Authenticated client making the change
  */
 void client_msg__moderation__process_channel_group(cJSON *json_root, uint64 sender_client_id)
 {
@@ -217,9 +218,10 @@ end:
 }
 
 /**
- * @brief Persists emoji changes without accepting other server settings.
- * @param json_root Request without settings fields.
- * @param sender_client_id Authenticated requester.
+ * @brief persists emoji changes without accepting other server settings
+ *
+ * @param json_root Request without settings fields
+ * @param sender_client_id Authenticated requester
  */
 void client_msg__moderation__process_save_emojis(cJSON *json_root, uint64 sender_client_id)
 {
@@ -256,9 +258,10 @@ void client_msg__moderation__process_save_emojis(cJSON *json_root, uint64 sender
 }
 
 /**
- * @brief Applies a permitted playback control to a music bot.
- * @param json_root Request containing bot_id and play, pause or next.
- * @param sender_client_id Authenticated requester.
+ * @brief applies a permitted playback control to a music bot
+ *
+ * @param json_root Request containing bot_id and play, pause or next
+ * @param sender_client_id Authenticated requester
  */
 void client_msg__moderation__process_music_control(cJSON *json_root, uint64 sender_client_id)
 {
@@ -316,11 +319,14 @@ void client_msg__moderation__process_music_control(cJSON *json_root, uint64 send
 }
 
 /**
- * @brief Reads an integer before it is used as an array index.
- * @param object Request fields.
- * @param name Field to read.
- * @param limit Exclusive upper bound.
- * @param result Validated index.
+ * @brief reads an integer before it is used as an array index
+ *
+ * @param object Request fields
+ * @param name Field to read
+ * @param limit Exclusive upper bound
+ * @param result Validated index
+ *
+ * @return TRUE if the field is an integer within the limit
  */
 static boole _client_msg_moderation_internal__read_index(cJSON *object, cstring name, uint64 limit, uint64 *result)
 {
@@ -355,7 +361,9 @@ static boole _client_msg_moderation_internal__read_index(cJSON *object, cstring 
 }
 
 /**
- * @brief Saves a channel assignment while the clients and channels locks are held.
+ * @brief saves a channel assignment while the clients and channels locks are held
+ *
+ * @return boole -> TRUE if the server settings were saved successfully
  */
 static boole _client_msg_moderation_internal__save(void)
 {
@@ -373,9 +381,10 @@ static boole _client_msg_moderation_internal__save(void)
 }
 
 /**
- * @brief Returns the sender's current rights for a channel.
- * @param json_root Request containing channel_id.
- * @param sender_client_id Authenticated requester.
+ * @brief returns the sender's current rights for a channel
+ *
+ * @param json_root Request containing channel_id
+ * @param sender_client_id Authenticated requester
  */
 void client_msg__moderation__process_channel_access(cJSON *json_root, uint64 sender_client_id)
 {
@@ -427,9 +436,10 @@ void client_msg__moderation__process_channel_access(cJSON *json_root, uint64 sen
 }
 
 /**
- * @brief Applies a permitted action to a client in the specified channel.
- * @param json_root Request containing the action and the target's current identity.
- * @param sender_client_id Authenticated requester.
+ * @brief applies a permitted action to a client in the specified channel
+ *
+ * @param json_root Request containing the action and the target's current identity
+ * @param sender_client_id Authenticated requester
  */
 void client_msg__moderation__process_client_action(cJSON *json_root, uint64 sender_client_id)
 {
@@ -656,9 +666,10 @@ end:
 }
 
 /**
- * @brief Lists bans or removes a selected ban without requiring its IP address.
- * @param json_root Request with an optional removal token.
- * @param sender_client_id Authenticated requester.
+ * @brief lists bans or removes a selected ban without requiring its IP address
+ *
+ * @param json_root Request with an optional removal token
+ * @param sender_client_id Authenticated requester
  */
 void client_msg__moderation__process_bans(cJSON *json_root, uint64 sender_client_id)
 {

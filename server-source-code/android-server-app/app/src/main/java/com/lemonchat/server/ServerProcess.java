@@ -62,7 +62,7 @@ final class ServerProcess
             if (child != null)
             {
                 child.getOutputStream().close();
-                // Drain bytes even without newlines; keep at most about 2 MiB of log.
+            // Drain bytes without waiting for newlines and keep about 2 MiB of log.
                 try (InputStream input = child.getInputStream())
                 {
                     byte[] buffer = new byte[8192];

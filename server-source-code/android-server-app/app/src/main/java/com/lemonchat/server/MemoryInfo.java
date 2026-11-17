@@ -6,11 +6,13 @@ import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 
-/** Sizes come from the executable built for this phone, not a desktop estimate. */
+/** reads array sizes from the executable built for this phone */
 final class MemoryInfo
 {
     static volatile long slotBytes;
     static volatile long fixedBytes;
+    static volatile long channelBytes;
+    static volatile int defaultChannels = 100;
 
     static void Load(File executable)
     {
@@ -31,6 +33,8 @@ final class MemoryInfo
             }
             JSONObject json = new JSONObject(new String(buffer, 0, count, StandardCharsets.UTF_8));
             fixedBytes = json.getLong("fixed_bytes");
+            channelBytes = json.getLong("channel_bytes");
+            defaultChannels = json.getInt("default_channels");
             slotBytes = json.getLong("slot_bytes");
         }
         catch (Exception ignored)
@@ -45,7 +49,26 @@ final class MemoryInfo
         }
     }
 
-    static String Describe(int slots)
+    /**
+     * calculates reserved array memory for the saved capacity
+     *
+     * @param slots reserved client slots
+     * @param channels saved channel capacity
+     * @return estimated bytes before active connections and media
+     */
+    static long Estimate(int slots, int channels)
+    {
+        return fixedBytes + slotBytes * slots + channelBytes * channels;
+    }
+
+    /**
+     * explains the startup memory estimate
+     *
+     * @param slots reserved client slots
+     * @param channels saved channel capacity
+     * @return readable estimate or an unavailable notice
+     */
+    static String Describe(int slots, int channels)
     {
         if (slotBytes == 0)
         {
@@ -53,8 +76,8 @@ final class MemoryInfo
                    "phone.";
         }
         return String.format(Locale.getDefault(),
-                             "Each reserved slot uses about %.1f KiB. %,d slots + fixed tables reserve at least %.1f " +
+                             "Each reserved slot uses about %.1f KiB. %,d slots, %,d channel entries and fixed tables reserve at least %.1f " +
                              "MiB. Active clients, audio/video and Android need extra RAM.",
-                             slotBytes / 1024.0, slots, (fixedBytes + slotBytes * slots) / 1048576.0);
+                             slotBytes / 1024.0, slots, channels, Estimate(slots, channels) / 1048576.0);
     }
 }

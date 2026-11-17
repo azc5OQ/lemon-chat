@@ -1,19 +1,19 @@
 #include "../../util.h"
 #include "../../clib/clib.h"
-// This file sends music bot audio keys, song lists and playback notices.
+// this file sends music bot audio keys, song lists and playback notices
 
 #include "server_msg.h"
 #include "../../base.h"
 #include "../../../third-party/rxi-log/log.h"
 
 /**
- * @brief Adds a music bot's audio keys when the receiver is active in its channel.
+ * @brief adds a music bot's audio keys when the receiver is active in its channel
  *
  * @param cJSON* object -> message to receive the encryption flag and eligible keys
  * @param client_t* receiver -> client that will receive the message
  * @param client_t* bot -> music bot whose keys are being shared
  *
- * @attention The caller holds the clients lock.
+ * @attention the caller holds the clients lock
  *
  * @return void
  */
@@ -59,12 +59,12 @@ void server_msg__musicbot__add_keys(cJSON *object, client_t *receiver, client_t 
 }
 
 /**
- * @brief Queues a music bot's audio keys for a client joining its channel.
+ * @brief queues a music bot's audio keys for a client joining its channel
  *
  * @param client_t* receiver -> active client in the bot's channel
  * @param client_t* bot -> music bot whose keys are being shared
  *
- * @attention The caller holds the clients lock and checks the receiver's channel and idle state.
+ * @attention the caller holds the clients lock and checks the receiver's channel and idle state
  *
  * @return void
  */

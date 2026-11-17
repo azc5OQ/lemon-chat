@@ -6,9 +6,11 @@
 #include "mbedtls/platform_util.h"
 
 /**
- * @brief verifies the RSA challenge and server DH mix before sending any response.
+ * @brief verifies the RSA challenge and server DH mix before sending any response
+ *
  * @param desktop_session_t* session -> worker-owned connection and local identity
  * @param const cJSON* message -> decoded public_key_challenge payload
+ *
  * @return boole -> 1 when the response was accepted by transport
  */
 boole server_msg__connection__process_challenge(desktop_session_t *session, const cJSON *message)
@@ -32,9 +34,11 @@ boole server_msg__connection__process_challenge(desktop_session_t *session, cons
 }
 
 /**
- * @brief validates and inserts one server client record; identity is its existing public key.
- * @param desktop_session_t* session -> session state; worker-owned unless this is a GUI entry point
+ * @brief validates and inserts one server client record. Identity is its existing public key
+ *
+ * @param desktop_session_t* session -> session state. Worker owned unless this is a GUI entry point
  * @param const cJSON* data -> borrowed server state record
+ *
  * @return boole -> 1 when the bounded state accepted this client
  */
 boole server_msg__connection__read_client(desktop_session_t *session, const cJSON *data)

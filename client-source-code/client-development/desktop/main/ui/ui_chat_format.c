@@ -10,6 +10,13 @@ static boole g_format_changed;
 static boole g_format_controls_visible;
 static uint64 g_format_save_at;
 
+/**
+ * @brief converts a validated RGB hex color to opaque floating point components
+ *
+ * @param const char* text -> color text in #rrggbb form
+ *
+ * @return gui_color_t -> opaque RGB color
+ */
 static gui_color_t _ui_chat_format_internal__color(const char *text)
 {
     unsigned int value = 0;
@@ -30,7 +37,14 @@ static gui_color_t _ui_chat_format_internal__color(const char *text)
     return color;
 }
 
-/** @brief Applies validated text appearance directly; font tokens are never parsed as layout. */
+/**
+ * @brief applies message formatting and keeps legacy default text readable
+ *
+ * @param gui_node_t* node -> text node, or NULL
+ * @param const desktop_chat_format_t* format -> requested format, or NULL to use defaults
+ *
+ * @return void
+ */
 void desktop_ui_chat_format__message(gui_node_t *node, const desktop_chat_format_t *format)
 {
     desktop_chat_format_t fallback;
@@ -65,6 +79,11 @@ void desktop_ui_chat_format__message(gui_node_t *node, const desktop_chat_format
     }
 }
 
+/**
+ * @brief rebuilds the font choices and selects the saved font
+ *
+ * @return void
+ */
 static void _ui_chat_format_internal__choices(void)
 {
     gui_node_t *select = scene__find_by_id("chat-font");
@@ -118,6 +137,11 @@ static void _ui_chat_format_internal__choices(void)
     }
 }
 
+/**
+ * @brief updates the composer and formatting controls from the current settings
+ *
+ * @return void
+ */
 static void _ui_chat_format_internal__preview(void)
 {
     gui_node_t *input = scene__find_by_id("message-input");
@@ -168,6 +192,11 @@ static void _ui_chat_format_internal__preview(void)
     }
 }
 
+/**
+ * @brief applies the current format and schedules its settings save
+ *
+ * @return void
+ */
 static void _ui_chat_format_internal__changed(void)
 {
     // apply the new format
@@ -179,6 +208,13 @@ static void _ui_chat_format_internal__changed(void)
     g_format_changed = TRUE;
 }
 
+/**
+ * @brief applies the selected chat font
+ *
+ * @param gui_event_t* event -> font selection event, or null for the default font
+ *
+ * @return void
+ */
 static void _ui_chat_format_internal__font(gui_event_t *event)
 {
     int64 index = event && event->sender ? (int64)event->sender->value - 1 : -1;
@@ -186,6 +222,13 @@ static void _ui_chat_format_internal__font(gui_event_t *event)
     _ui_chat_format_internal__changed();
 }
 
+/**
+ * @brief applies the selected text size within the supported range
+ *
+ * @param gui_event_t* event -> size control event, or null for the default size
+ *
+ * @return void
+ */
 static void _ui_chat_format_internal__size(gui_event_t *event)
 {
     int64 size = event && event->sender ? (int64)event->sender->value : 12;
@@ -193,6 +236,13 @@ static void _ui_chat_format_internal__size(gui_event_t *event)
     _ui_chat_format_internal__changed();
 }
 
+/**
+ * @brief closes the color panel and returns focus to the composer
+ *
+ * @param gui_event_t* event -> unused UI event
+ *
+ * @return void
+ */
 static void _ui_chat_format_internal__close_color(gui_event_t *event)
 {
     gui_node_t *panel = scene__find_by_id("chat-color-panel");
@@ -208,7 +258,11 @@ static void _ui_chat_format_internal__close_color(gui_event_t *event)
     scene__set_focus(scene__find_by_id("message-input"));
 }
 
-/** @brief Keeps the formatting row's open state when a theme or layout is reloaded. */
+/**
+ * @brief updates formatting controls and their toggle
+ *
+ * @return void
+ */
 static void _ui_chat_format_internal__controls(void)
 {
     gui_node_t *controls = scene__find_by_id("chat-format-controls");
@@ -227,7 +281,13 @@ static void _ui_chat_format_internal__controls(void)
     }
 }
 
-/** @brief Opens formatting only when requested and returns focus to the draft when closed. */
+/**
+ * @brief toggles formatting controls and closes their popups when hidden
+ *
+ * @param gui_event_t* event -> unused click event
+ *
+ * @return void
+ */
 static void _ui_chat_format_internal__toggle(gui_event_t *event)
 {
     (void)event;
@@ -247,6 +307,13 @@ static void _ui_chat_format_internal__toggle(gui_event_t *event)
     g_format_changed = TRUE;
 }
 
+/**
+ * @brief opens the color picker at the current message color
+ *
+ * @param gui_event_t* event -> unused UI event
+ *
+ * @return void
+ */
 static void _ui_chat_format_internal__open_color(gui_event_t *event)
 {
     gui_node_t *panel = scene__find_by_id("chat-color-panel");
@@ -296,6 +363,13 @@ static void _ui_chat_format_internal__open_color(gui_event_t *event)
     _ui_chat_format_internal__preview();
 }
 
+/**
+ * @brief stores and applies the color selected in the picker
+ *
+ * @param gui_event_t* event -> color picker event
+ *
+ * @return void
+ */
 static void _ui_chat_format_internal__color_change(gui_event_t *event)
 {
     gui_color_t color = event->color.value;
@@ -303,6 +377,13 @@ static void _ui_chat_format_internal__color_change(gui_event_t *event)
     _ui_chat_format_internal__changed();
 }
 
+/**
+ * @brief applies a valid typed color and closes the color panel
+ *
+ * @param gui_event_t* event -> unused UI event
+ *
+ * @return void
+ */
 static void _ui_chat_format_internal__hex(gui_event_t *event)
 {
     desktop_chat_format_t candidate = g_format_settings->chat_format;
@@ -318,6 +399,13 @@ static void _ui_chat_format_internal__hex(gui_event_t *event)
     }
 }
 
+/**
+ * @brief restores default chat formatting and schedules a settings save
+ *
+ * @param gui_event_t* event -> unused UI event
+ *
+ * @return void
+ */
 static void _ui_chat_format_internal__reset(gui_event_t *event)
 {
     (void)event;
@@ -328,6 +416,14 @@ static void _ui_chat_format_internal__reset(gui_event_t *event)
     _ui_chat_format_internal__changed();
 }
 
+/**
+ * @brief binds chat formatting controls to the current session and settings
+ *
+ * @param desktop_session_t* session -> session receiving format changes
+ * @param desktop_settings_t* settings -> settings updated by the controls
+ *
+ * @return void
+ */
 void desktop_ui_chat_format__initialize(desktop_session_t *session, desktop_settings_t *settings)
 {
     // store the arguments
@@ -346,6 +442,11 @@ void desktop_ui_chat_format__initialize(desktop_session_t *session, desktop_sett
     scene__register_handler("on_chat_format_toggle", _ui_chat_format_internal__toggle);
 }
 
+/**
+ * @brief validates saved chat formatting and refreshes its controls
+ *
+ * @return void
+ */
 void desktop_ui_chat_format__apply(void)
 {
     // check the settings
@@ -376,6 +477,11 @@ void desktop_ui_chat_format__apply(void)
     g_format_changed = TRUE;
 }
 
+/**
+ * @brief refreshes available fonts and opens the font selector
+ *
+ * @return void
+ */
 void desktop_ui_chat_format__open_fonts(void)
 {
     // show the format controls
@@ -387,6 +493,11 @@ void desktop_ui_chat_format__open_fonts(void)
     scene__select_open(scene__find_by_id("chat-font"), TRUE);
 }
 
+/**
+ * @brief refreshes changed fonts and saves pending format changes after the delay
+ *
+ * @return boole -> true when fonts or formatting changed since the previous tick
+ */
 boole desktop_ui_chat_format__tick(void)
 {
     boole changed = desktop_ui_fonts__scan(FALSE);

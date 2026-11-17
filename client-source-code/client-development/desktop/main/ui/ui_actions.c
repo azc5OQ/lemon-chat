@@ -34,7 +34,8 @@ static void _ui_actions_internal__close_forms(void);
 static void _ui_actions_internal__toolbar_hint(void);
 
 /**
- * @brief identifies icon-only toolbar controls in the status bar when hovered.
+ * @brief identifies icon only toolbar controls in the status bar when hovered
+ *
  * @return void
  */
 static void _ui_actions_internal__toolbar_hint(void)
@@ -65,9 +66,11 @@ static void _ui_actions_internal__toolbar_hint(void)
 }
 
 /**
- * @brief replaces control text as plain text, never as parsed markup.
+ * @brief replaces control text as plain text, never as parsed markup
+ *
  * @param const char* id -> scene control ID
  * @param const char* text -> bounded display text
+ *
  * @return void
  */
 static void _ui_actions_internal__text(const char *id, const char *text)
@@ -82,9 +85,11 @@ static void _ui_actions_internal__text(const char *id, const char *text)
 }
 
 /**
- * @brief changes one floating panel without intercepting input in the chat behind it.
+ * @brief changes one floating panel without intercepting input in the chat behind it
+ *
  * @param const char* id -> panel ID
  * @param boole visible -> nonzero to show the panel
+ *
  * @return void
  */
 static void _ui_actions_internal__panel(const char *id, boole visible)
@@ -107,9 +112,11 @@ static void _ui_actions_internal__panel(const char *id, boole visible)
 }
 
 /**
- * @brief retains action positions while making unavailable controls noninteractive.
+ * @brief retains action positions while making unavailable controls noninteractive
+ *
  * @param const char* id -> button ID
  * @param boole enabled -> nonzero when this action is currently available
+ *
  * @return void
  */
 static void _ui_actions_internal__enabled(const char *id, boole enabled)
@@ -131,7 +138,8 @@ static void _ui_actions_internal__enabled(const char *id, boole enabled)
 }
 
 /**
- * @brief resolves the member selection by connection lifetime and channel.
+ * @brief resolves the member selection by connection lifetime and channel
+ *
  * @return const desktop_client_t* -> GUI snapshot record, or NULL after a move/disconnect
  */
 static const desktop_client_t *_ui_actions_internal__member(void)
@@ -150,8 +158,10 @@ static const desktop_client_t *_ui_actions_internal__member(void)
 }
 
 /**
- * @brief captures a clicked member and requests current permission hints.
+ * @brief captures a clicked member and requests current permission hints
+ *
  * @param const desktop_client_t* member -> GUI snapshot record
+ *
  * @return void
  */
 void desktop_ui_actions__select(const desktop_client_t *member)
@@ -168,8 +178,10 @@ void desktop_ui_actions__select(const desktop_client_t *member)
 }
 
 /**
- * @brief opens a rename form using the current server-confirmed name.
+ * @brief opens a rename form using the current server confirmed name
+ *
  * @param gui_event_t* event -> unused toolbar event
+ *
  * @return void
  */
 static void _ui_actions_internal__profile(gui_event_t *event)
@@ -208,8 +220,10 @@ static void _ui_actions_internal__profile(gui_event_t *event)
 }
 
 /**
- * @brief requests idle or the server's normal return destination.
+ * @brief requests idle or the server's normal return destination
+ *
  * @param gui_event_t* event -> unused toolbar event
+ *
  * @return void
  */
 static void _ui_actions_internal__idle(gui_event_t *event)
@@ -229,7 +243,8 @@ static void _ui_actions_internal__idle(gui_event_t *event)
 }
 
 /**
- * @brief creates a channel picker whose button values remain stable while it is open.
+ * @brief creates a channel picker whose button values remain stable while it is open
+ *
  * @return void
  */
 static void _ui_actions_internal__destinations(void)
@@ -295,8 +310,10 @@ static void _ui_actions_internal__destinations(void)
 }
 
 /**
- * @brief opens bounded action forms or a kick confirmation against a captured identity.
+ * @brief opens bounded action forms or a kick confirmation against a captured identity
+ *
  * @param gui_event_t* event -> clicked member action button
+ *
  * @return void
  */
 static void _ui_actions_internal__member_action(gui_event_t *event)
@@ -305,8 +322,10 @@ static void _ui_actions_internal__member_action(gui_event_t *event)
 }
 
 /**
- * @brief opens the same captured action from a member panel or context menu.
+ * @brief opens the same captured action from a member panel or context menu
+ *
  * @param const char* id -> existing member action identifier
+ *
  * @return void
  */
 void desktop_ui_actions__activate(const char *id)
@@ -388,8 +407,10 @@ void desktop_ui_actions__activate(const char *id)
 }
 
 /**
- * @brief submits an explicitly saved form after checking its whole numeric or text value.
+ * @brief submits an explicitly saved form after checking its whole numeric or text value
+ *
  * @param gui_event_t* event -> unused form button event
+ *
  * @return void
  */
 static void _ui_actions_internal__submit(gui_event_t *event)
@@ -461,8 +482,10 @@ static void _ui_actions_internal__submit(gui_event_t *event)
 }
 
 /**
- * @brief confirms only the captured kick, never a newly selected member.
+ * @brief confirms only the captured kick, never a newly selected member
+ *
  * @param gui_event_t* event -> unused confirmation event
+ *
  * @return void
  */
 static void _ui_actions_internal__confirm(gui_event_t *event)
@@ -484,8 +507,10 @@ static void _ui_actions_internal__confirm(gui_event_t *event)
 }
 
 /**
- * @brief chooses a channel from the captured picker rather than a changing array index.
- * @param gui_event_t* event -> button with one-based destination slot
+ * @brief chooses a channel from the captured picker rather than a changing array index
+ *
+ * @param gui_event_t* event -> button with one based destination slot
+ *
  * @return void
  */
 static void _ui_actions_internal__move(gui_event_t *event)
@@ -511,8 +536,10 @@ static void _ui_actions_internal__move(gui_event_t *event)
 }
 
 /**
- * @brief closes just the invoking panel and discards unsubmitted action values.
+ * @brief closes just the invoking panel and discards unsubmitted action values
+ *
  * @param gui_event_t* event -> close/cancel button inside a panel
+ *
  * @return void
  */
 static void _ui_actions_internal__close(gui_event_t *event)
@@ -538,7 +565,8 @@ static void _ui_actions_internal__close(gui_event_t *event)
 }
 
 /**
- * @brief closes mutually exclusive action forms without touching member or notification panels.
+ * @brief closes mutually exclusive action forms without touching member or notification panels
+ *
  * @return void
  */
 static void _ui_actions_internal__close_forms(void)
@@ -555,6 +583,11 @@ static void _ui_actions_internal__close_forms(void)
     g_actions_pending.type = DESKTOP_ACTION_NONE;
 }
 
+/**
+ * @brief releases the cached action destinations
+ *
+ * @return void
+ */
 void desktop_ui_actions__shutdown(void)
 {
     // free the destinations
@@ -564,7 +597,8 @@ void desktop_ui_actions__shutdown(void)
 }
 
 /**
- * @brief refreshes action availability and displays a new poke without stealing the chat focus.
+ * @brief refreshes action availability and displays a new poke without stealing the chat focus
+ *
  * @return void
  */
 void desktop_ui_actions__update(void)
@@ -645,10 +679,12 @@ void desktop_ui_actions__update(void)
 }
 
 /**
- * @brief registers standalone action handlers before parsing the Meek UI layout.
- * @param desktop_session_t* session -> application-owned session
+ * @brief registers standalone action handlers before parsing the Meek UI layout
+ *
+ * @param desktop_session_t* session -> application owned session
  * @param const desktop_session_view_t* view -> stable GUI snapshot storage
- * @param desktop_settings_t* settings -> application-owned saved preferences
+ * @param desktop_settings_t* settings -> application owned saved preferences
+ *
  * @return void
  */
 void desktop_ui_actions__initialize(desktop_session_t *session, const desktop_session_view_t *view, desktop_settings_t *settings)

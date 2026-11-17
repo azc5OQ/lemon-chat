@@ -19,6 +19,8 @@
     --tabs-icon-shown: #ffffff;
     --tabs-title: #ffffff;
     --tabs-row: #f7f8f9;
+    --tabs-people-avatar-size: 44px;
+    --user-context-menus: 1;
     --tabs-label: #ffffff;
     --tabs-label-line: #3d444c99;
     --tabs-bar-background: transparent;
@@ -35,11 +37,7 @@
     --tabs-join-shadow: inset 0 1px 0 #ffffff59, 0 0 0 1px #7a8188, 0 6px 12px -6px #14171acc;
 }
 
-/* ---------------------------------------------------------------------------------------------
-   Pocket's look: a dark grey frame (the top bar and the bar of the four screens) around a panel
-   of white quilted leather with rounded corners. Chrome lines, stitched seams, raised and
-   pressed-in parts. The bars are straight; a curve is only where a part has that shape.
-   --------------------------------------------------------------------------------------------- */
+/* Frame the white quilted panel with dark bars, chrome edges and stitched seams. */
 :root
 {
     --pocket-thread: #9aa3ac;

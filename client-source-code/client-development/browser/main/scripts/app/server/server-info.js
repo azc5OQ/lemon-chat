@@ -1,5 +1,4 @@
-// This file shows the server banner, occupied slots and uptime in the root
-// channel description. It also shows public settings and lets admins set a banner.
+// shows public server information and the admin banner controls
 
 var g_server_info =
 {
@@ -48,8 +47,10 @@ var SERVER_INFO_FEATURES =
 ];
 
 /**
- * @brief Writes elapsed server time in days, hours, minutes and seconds.
+ * @brief writes elapsed server time in days, hours, minutes and seconds
+ *
  * @param number seconds -> elapsed seconds reported by the server
+ *
  * @return string -> readable uptime
  */
 function server_info__format_uptime(seconds)
@@ -73,7 +74,8 @@ function server_info__format_uptime(seconds)
 }
 
 /**
- * @brief Checks whether a server information panel is visible.
+ * @brief checks whether a server information panel is visible
+ *
  * @return boolean -> true while the root description or either settings view is open
  */
 function server_info__is_visible()
@@ -92,8 +94,10 @@ function server_info__is_visible()
 }
 
 /**
- * @brief Requests current server values, downloading the banner only when needed.
+ * @brief requests current server values, downloading the banner only when needed
+ *
  * @param boolean include_banner -> whether the reply should include the image
+ *
  * @return void
  */
 function server_info__request(include_banner = false)
@@ -108,8 +112,10 @@ function server_info__request(include_banner = false)
 }
 
 /**
- * @brief Requests admin settings and starts refreshing readings before the first reply arrives.
+ * @brief requests admin settings and starts refreshing readings before the first reply arrives
+ *
  * @param boolean memory_only -> true requests readings without replacing settings being edited
+ *
  * @return void
  */
 function server_info__request_admin_settings(memory_only = false)
@@ -127,7 +133,8 @@ function server_info__request_admin_settings(memory_only = false)
 }
 
 /**
- * @brief Refreshes the visible slot count on the next timer tick after clients join or leave.
+ * @brief refreshes the visible slot count on the next timer tick after clients join or leave
+ *
  * @return void
  */
 function server_info__clients_changed()
@@ -136,7 +143,8 @@ function server_info__clients_changed()
 }
 
 /**
- * @brief Updates visible counters without sending a request every second.
+ * @brief updates visible counters without sending a request every second
+ *
  * @return void
  */
 function server_info__tick()
@@ -146,27 +154,24 @@ function server_info__tick()
     server_info__render_counters(g_server_info, "[data-server-uptime]", "[data-server-slots]");
     server_info__render_counters(g_server_info.admin, "[data-admin-server-uptime]", "[data-admin-server-slots]");
 
-    if (!document.hidden && g_is_authenticated && g_is_local_client_admin
-        && g_server_info.admin.last_memory_request !== null && ram_element && ram_element.getClientRects().length > 0
-        && performance.now() - g_server_info.admin.last_memory_request >= 5000)
+    if (!document.hidden && g_is_authenticated && g_is_local_client_admin && g_server_info.admin.last_memory_request !== null && ram_element && ram_element.getClientRects().length > 0 && performance.now() - g_server_info.admin.last_memory_request >= 5000)
     {
         server_info__request_admin_settings(true);
     }
 
-    if (!document.hidden && server_info__is_visible()
-        && (g_server_info.visibility.uptime || g_server_info.visibility.slots || g_server_info.visibility.features)
-        && performance.now() - g_server_info.last_request >=
-            (g_server_info.visibility.slots && g_server_info.slots_changed ? 1000 : 15000))
+    if (!document.hidden && server_info__is_visible() && (g_server_info.visibility.uptime || g_server_info.visibility.slots || g_server_info.visibility.features) && performance.now() - g_server_info.last_request >= (g_server_info.visibility.slots && g_server_info.slots_changed ? 1000 : 15000))
     {
         server_info__request(false);
     }
 }
 
 /**
- * @brief Fills counters from either the public reply or the separate admin reply.
+ * @brief fills counters from either the public reply or the separate admin reply
+ *
  * @param object info -> received counters and their local arrival time
  * @param string uptime_selector -> uptime elements to update
  * @param string slots_selector -> slot elements to update
+ *
  * @return void
  */
 function server_info__render_counters(info, uptime_selector, slots_selector)
@@ -177,8 +182,7 @@ function server_info__render_counters(info, uptime_selector, slots_selector)
 
     if (info.uptime_seconds !== null)
     {
-        uptime = server_info__format_uptime(info.uptime_seconds
-            + Math.max(0, performance.now() - info.received_at) / 1000);
+        uptime = server_info__format_uptime(info.uptime_seconds + Math.max(0, performance.now() - info.received_at) / 1000);
     }
     if (info.used_slots !== null && info.max_slots !== null)
     {
@@ -195,8 +199,10 @@ function server_info__render_counters(info, uptime_selector, slots_selector)
 }
 
 /**
- * @brief Uses only the server's public fields to update the information views.
+ * @brief uses only the server's public fields to update the information views
+ *
  * @param object data -> public server_info message body
+ *
  * @return void
  */
 function server_info__apply(data)
@@ -269,7 +275,7 @@ function server_info__apply(data)
     {
         g_server_info.banner_loaded = false;
         g_server_info.banner = "";
-        // Spread image downloads out when many connected users receive a new banner.
+        // spread image downloads out when many connected users receive a new banner
         if (g_server_info.banner_timer === null)
         {
             g_server_info.banner_timer = setTimeout(function()
@@ -294,13 +300,11 @@ function server_info__apply(data)
             element.removeAttribute("src");
         }
     }
-    if (g_server_info.timer === null && (g_server_info.visibility.uptime || g_server_info.visibility.slots
-        || g_server_info.visibility.features || g_server_info.admin.last_memory_request !== null))
+    if (g_server_info.timer === null && (g_server_info.visibility.uptime || g_server_info.visibility.slots || g_server_info.visibility.features || g_server_info.admin.last_memory_request !== null))
     {
         g_server_info.timer = setInterval(server_info__tick, 1000);
     }
-    else if (!g_server_info.visibility.uptime && !g_server_info.visibility.slots
-        && !g_server_info.visibility.features && g_server_info.admin.last_memory_request === null)
+    else if (!g_server_info.visibility.uptime && !g_server_info.visibility.slots && !g_server_info.visibility.features && g_server_info.admin.last_memory_request === null)
     {
         clearInterval(g_server_info.timer);
         g_server_info.timer = null;
@@ -311,18 +315,20 @@ function server_info__apply(data)
 }
 
 /**
- * @brief Accepts small embedded banner images without allowing external image requests.
+ * @brief accepts small embedded banner images without allowing external image requests
+ *
  * @param string banner -> image data URL from the server
+ *
  * @return string -> safe image URL, or an empty string
  */
 function server_info__validated_banner(banner)
 {
-    return typeof banner === "string" && banner.length <= 44000
-        && /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(banner) ? banner : "";
+    return typeof banner === "string" && banner.length <= 44000 && /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(banner) ? banner : "";
 }
 
 /**
- * @brief Removes information from the page as soon as the server stops sharing it.
+ * @brief removes information from the page as soon as the server stops sharing it
+ *
  * @return void
  */
 function server_info__apply_visibility()
@@ -337,9 +343,7 @@ function server_info__apply_visibility()
     }
     for (element of document.querySelectorAll(".context-menu-item[data-action='server-info']"))
     {
-        moderation__set_menu_access(element, moderation__menu_action_allowed("server-info"),
-            groups__has_permission("view_server_info") ? "The server is not sharing this information."
-                : "Your permissions do not allow viewing server information.");
+        moderation__set_menu_access(element, moderation__menu_action_allowed("server-info"), groups__has_permission("view_server_info") ? "The server is not sharing this information." : "Your permissions do not allow viewing server information.");
     }
     if (root)
     {
@@ -352,8 +356,10 @@ function server_info__apply_visibility()
 }
 
 /**
- * @brief Fills the private admin preview without copying its values into the public view.
+ * @brief fills the private admin preview without copying its values into the public view
+ *
  * @param object data -> administrator's server_settings_values reply
+ *
  * @return void
  */
 function server_info__apply_admin_settings(data)
@@ -385,8 +391,10 @@ function server_info__apply_admin_settings(data)
 }
 
 /**
- * @brief Updates the admin's RAM, slots and uptime without changing settings inputs.
+ * @brief updates the admin's RAM, slots and uptime without changing settings inputs
+ *
  * @param object data -> server reply with the current readings
+ *
  * @return void
  */
 function server_info__apply_admin_memory(data)
@@ -417,8 +425,7 @@ function server_info__apply_admin_memory(data)
     {
         element.textContent = Number.isSafeInteger(data.ram_bytes) && data.ram_bytes >= 0
             ? (data.ram_bytes / (1024 * 1024)).toLocaleString(undefined, { maximumFractionDigits: 1 }) + " MiB"
-            : has_ram_reading ? "The server could not read its RAM usage."
-                : "The server did not send a RAM reading.";
+            : has_ram_reading ? "The server could not read its RAM usage." : "The server did not send a RAM reading.";
     }
     for (field of ["received", "sent"])
     {
@@ -448,8 +455,10 @@ function server_info__apply_admin_memory(data)
 }
 
 /**
- * @brief Shows the channel description, adding server details only for the root.
+ * @brief shows the channel description, adding server details only for the root
+ *
  * @param object channel -> selected channel from the current channel list
+ *
  * @return void
  */
 function server_info__show_channel_description(channel)
@@ -466,23 +475,21 @@ function server_info__show_channel_description(channel)
     container.dataset.descriptionChannelId = channel.channel_id;
     if (channel.is_root_channel === true)
     {
-        container.innerHTML = "<section id='root-server-info' class='server-info-summary'>"
-            + "<img data-server-banner class='server-info-banner' alt='Server banner' hidden>"
-            + "<dl><div data-server-info-field='slots'><dt>Used slots</dt><dd data-server-slots>Unavailable</dd></div>"
-            + "<div data-server-info-field='uptime'><dt>Uptime</dt><dd data-server-uptime>Unavailable</dd></div></dl></section>";
+        container.innerHTML = "<section id='root-server-info' class='server-info-summary'>" + "<img data-server-banner class='server-info-banner' alt='Server banner' hidden>" + "<dl><div data-server-info-field='slots'><dt>Used slots</dt><dd data-server-slots>Unavailable</dd></div>" + "<div data-server-info-field='uptime'><dt>Uptime</dt><dd data-server-uptime>Unavailable</dd></div></dl></section>";
         server_info__apply({});
         server_info__request(!g_server_info.banner_loaded);
     }
     description.className = "channel-description-text";
 
-    // the server sends no description to a client whose groups or channel view power do not allow reading it
+    // the server omits descriptions the user cannot view
     description.textContent = channel.is_description_hidden === true ? "You do not have permission to view this channel's description." : (channel.description || "");
     description.classList.toggle("channel-description-hidden", channel.is_description_hidden === true);
     container.appendChild(description);
 }
 
 /**
- * @brief Lists the settings that the server shares with connected users.
+ * @brief lists the settings that the server shares with connected users
+ *
  * @return void
  */
 function server_info__render_features()
@@ -529,7 +536,8 @@ function server_info__render_features()
 }
 
 /**
- * @brief Opens the public server settings window without joining another channel.
+ * @brief opens the public server settings window without joining another channel
+ *
  * @return void
  */
 function server_info__open()
@@ -556,8 +564,10 @@ function server_info__open()
 }
 
 /**
- * @brief Uploads a small banner after resizing the selected image to fit the panel.
+ * @brief uploads a small banner after resizing the selected image to fit the panel
+ *
  * @param Event event -> file input change event
+ *
  * @return Promise -> completes when the image has been prepared and sent
  */
 async function server_info__upload_banner(event)
@@ -627,7 +637,8 @@ async function server_info__upload_banner(event)
 }
 
 /**
- * @brief Removes the server banner using the same admin request as an upload.
+ * @brief removes the server banner using the same admin request as an upload
+ *
  * @return void
  */
 function server_info__remove_banner()
@@ -638,16 +649,15 @@ function server_info__remove_banner()
 }
 
 /**
- * @brief Reports whether the server saved the admin's banner change.
+ * @brief reports whether the server saved the admin's banner change
+ *
  * @param object data -> server_banner_result reply
+ *
  * @return void
  */
 function server_info__banner_result(data)
 {
-    document.getElementById("server-banner-status").textContent = data.success === true
-        ? "Banner saved." : data.error === "server_ram_budget_reached"
-            ? "The server has reached its RAM budget. Try uploading again later."
-            : "Could not save the banner. Check the image size and your admin access.";
+    document.getElementById("server-banner-status").textContent = data.success === true ? "Banner saved." : data.error === "server_ram_budget_reached" ? "The server has reached its RAM budget. Try uploading again later." : "Could not save the banner. Check the image size and your admin access.";
     if (data.success === true)
     {
         server_info__request_admin_settings();
@@ -659,7 +669,8 @@ function server_info__banner_result(data)
 }
 
 /**
- * @brief Clears values and timers when leaving a server so they cannot follow a new connection.
+ * @brief clears values and timers when leaving a server so they cannot follow a new connection
+ *
  * @return void
  */
 function server_info__reset()

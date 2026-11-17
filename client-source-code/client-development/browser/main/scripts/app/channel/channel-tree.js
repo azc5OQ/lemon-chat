@@ -1,14 +1,17 @@
-// channel-tree.js is embedded in template.html along with the other client files, and in the node bundle
-// it holds the lookups over g_channel_list, g_client_list, g_icons and g_groups, the html of a client row,
-// and the avatars on those rows (the cache, the lazy loading queue and the prefetch after joining)
-// messages.js and ui.js call it while rendering the tree
+// provides channel and client lookups, row markup and avatar loading
 
-// Keep the row the user is looking at in the same place when server updates add
-// or remove rows above it. If the current channel is outside the visible area,
-// keep the first visible row instead, so reading another channel still works.
+// keep the current or first visible row in place when other rows change
+/**
+ * @brief applies a server update and restores a visible channel row's scroll position
+ *
+ * @param function handler -> server message handler called with server_msg as this
+ * @param object message -> server frame passed to the handler
+ *
+ * @return * -> the handler's return value
+ */
 function channel_tree__apply_server_update(handler, message)
 {
-    let container = typeof document === "undefined" ? null : document.getElementById("channel-list-container");
+    let container = G_HAS_DOM ? document.getElementById("channel-list-container") : null;
     let anchors = [];
     if (container != null && container.clientHeight > 0)
     {
@@ -57,8 +60,15 @@ function channel_tree__apply_server_update(handler, message)
     }
 }
 
-// Remove every copy of a client row and its list entry. Repeated connection
-// notices must not leave an older copy behind when that client disconnects.
+// remove every copy of a client row and its list entry. repeated connection
+// notices must not leave an older copy behind when that client disconnects
+/**
+ * @brief removes a client from the rows and rebuilds the client ID index
+ *
+ * @param number|string client_id -> client ID to remove
+ *
+ * @return void
+ */
 function channel_tree__forget_client(client_id)
 {
     client_id = Number(client_id);
@@ -91,7 +101,7 @@ var AVATAR_PREFETCH_INTERVAL_MS = 300;
 // true once the two controls of the country flag setting have their change listeners
 var is_flag_preference_listener_added = false;
 
-// ---- lookups and the client row ----
+// client and channel lookups
 
 /**
  * @brief icon object from g_icons by id
@@ -132,9 +142,7 @@ function channel_tree__get_group_by_group_id(group_id)
 }
 
 /**
- * @brief the direct children of a parent channel
- *        pass g_ROOT_LEVEL_PARENT_MARKER (the marker value that stands for the root level) to get the root channels (those are matched by their
- *        is_root_channel flag, not by parent id)
+ * @brief returns direct child channels or the channels marked as roots
  *
  * @param array channels -> the channel list to search
  * @param number parent_channel_id -> the parent, or the marker value for the roots
@@ -148,8 +156,7 @@ function channel_tree__get_channels_by_channel_parent_id(channels, parent_channe
     {
         if (parent_channel_id == g_ROOT_LEVEL_PARENT_MARKER)
         {
-            // root channels no longer carry a usable parent id (uint64 has no -1),
-            // so match them by the explicit is_root_channel flag sent by the server
+            // match root channels by the explicit flag because their unsigned parent ID cannot represent minus one
             if (channels[i].is_root_channel == true)
             {
                 result.push(channels[i]);
@@ -212,12 +219,12 @@ function channel_tree__get_channel_index_in_array_by_channel_id(channel_list_a, 
 }
 
 /**
- * @brief depth of a channel in the tree, walked up the parent ids
+ * @brief finds a channel depth by following its parent chain
  *
  * @param number channel_id -> the channel to measure
  * @param array channels -> the channel list to walk
  *
- * @return number 0 for a root; the depth reached so far when the parent chain is broken or cyclic (logged as an error)
+ * @return number the root depth is zero. a broken or cyclic chain returns the depth reached
  */
 function channel_tree__get_indentation_level(channel_id, channels)
 {
@@ -229,8 +236,7 @@ function channel_tree__get_indentation_level(channel_id, channels)
 
     while (is_root_channel_found == false)
     {
-        // a valid parent chain reaches a root in at most channels.length steps. if it does not,
-        // the data is malformed (missing root or a cycle) - bail out instead of looping forever
+        // bound the parent walk so malformed or cyclic channel data cannot loop forever
         if (safety_counter > channels.length)
         {
             console.error("channel_tree__get_indentation_level: could not reach a root channel for channel_id " + channel_id + " - channel data looks invalid");
@@ -257,7 +263,7 @@ function channel_tree__get_indentation_level(channel_id, channels)
             }
         }
 
-        // the channel we are looking for is not in the list - the chain is broken, stop
+        // stop when a parent is missing from the channel list
         if (was_channel_found == false)
         {
             console.error("channel_tree__get_indentation_level: channel_id " + channel_id_currently_looking_for + " not found while walking parents - channel data looks invalid");
@@ -268,7 +274,7 @@ function channel_tree__get_indentation_level(channel_id, channels)
 }
 
 /**
- * @brief Checks the admin status sent by the server.
+ * @brief checks the admin status sent by the server
  *
  * @return boolean true for an admin
  */
@@ -305,9 +311,7 @@ function channel_tree__get_client_by_client_id(client_id)
 }
 
 /**
- * @brief index of a client in g_client_list via the id -> index map
- *        a map hands back undefined for a miss, which no -1 check catches, so the miss is
- *        turned into -1 here (and logged, since the map and the list then disagree)
+ * @brief reads a client's array index from the client ID map
  *
  * @param number client_id -> the client id, must be a number
  *
@@ -317,14 +321,11 @@ function channel_tree__get_client_index_in_array_by_client_id(client_id)
 {
     let index = g_map_client_id_to_array_index.get(client_id);
 
-    // callers all check for -1, and a map hands back undefined instead. undefined == -1
-    // is false, so the check passed and the array lookup threw one line later
+    // return the sentinel expected by callers when the map has no entry
     if (index === undefined)
     {
-        // the map and the client list disagree. the list length says which way:
-        // a non-empty list here means the two were cleared at different moments
-        console.warn("client lookup miss: no entry for client_id " + client_id
-            + ", client list holds " + g_client_list.length);
+        // a nonempty list with an empty map indicates inconsistent refresh state
+        console.warn("client lookup miss: no entry for client_id " + client_id + ", client list holds " + g_client_list.length);
 
         return -1;
     }
@@ -353,9 +354,12 @@ function channel_tree__get_username_by_client_id(client_id)
 }
 
 /**
- * @brief Returns the client's current name or the supplied name when the client is absent.
- * @param client_id Client to find.
- * @param fallback_username Name to use when the client is absent.
+ * @brief returns the client's current name or the supplied name when the client is absent
+ *
+ * @param client_id client to find
+ * @param fallback_username name to use when the client is absent
+ *
+ * @return string -> the current name, the supplied fallback, or an empty string
  */
 function channel_tree__get_display_name_by_client_id(client_id, fallback_username)
 {
@@ -384,8 +388,11 @@ function channel_tree__get_public_key_by_client_id(client_id)
 }
 
 /**
- * @brief Finds a user by saved identity, regardless of their current name.
- * @param identity_hash Identity to find.
+ * @brief finds a connected user by saved identity
+ *
+ * @param identity_hash identity to find
+ *
+ * @return object|null -> the connected client, or null when absent
  */
 function channel_tree__get_client_by_identity_hash(identity_hash)
 {
@@ -400,8 +407,11 @@ function channel_tree__get_client_by_identity_hash(identity_hash)
 }
 
 /**
- * @brief Finds a user by saved identity, regardless of their current name.
- * @param identity_hash Identity to find.
+ * @brief finds a stored user by saved identity
+ *
+ * @param identity_hash identity to find
+ *
+ * @return object|null -> the stored client, or null when absent
  */
 function channel_tree__get_stored_client_by_identity_hash(identity_hash)
 {
@@ -415,8 +425,7 @@ function channel_tree__get_stored_client_by_identity_hash(identity_hash)
     }) || null;
 }
 
-// tree ordering helpers: the channel list is a flat pre-order list (a channel header, its client rows,
-// then its subchannels' subtrees), so new items are inserted relative to these anchors
+// rows follow tree order: channel header, its clients, then its child subtrees
 
 /**
  * @brief whether a channel is another channel itself or is anywhere below it
@@ -445,8 +454,8 @@ function channel_tree__is_channel_in_subtree_of(child_channel_id, ancestor_chann
 }
 
 /**
- * @brief the last DOM element belonging to a channel's whole subtree (its clients, its subchannels and their content)
- *        insert a new subchannel after this
+ * @brief finds the final rendered row in a channel's subtree
+ * insert a new child channel after this row
  *
  * @param number channel_id -> the channel
  *
@@ -499,8 +508,8 @@ function channel_tree__get_channel_subtree_last_element(channel_id)
 }
 
 /**
- * @brief the last of a channel's own .connected-client rows (the contiguous run right after its header, before any subchannel)
- *        insert a joining client after this
+ * @brief finds the final client row directly under a channel
+ * insert a joining client after this row
  *
  * @param number channel_id -> the channel
  *
@@ -530,9 +539,9 @@ function channel_tree__get_channel_own_clients_last_element(channel_id)
 }
 
 /**
- * @brief the channel-tree row of one client: mic-state circle, name (an editable input for the local client), flag, song marquee and groups, indented by channel depth
+ * @brief builds a client row with its name, audio state, avatar and channel indentation
  *
- * @param object client -> the client from g_client_list
+ * @param object client -> raw server entry or stored client record
  * @param boolean is_local_client -> true for the local user, whose name is editable
  *
  * @return string the row html
@@ -546,9 +555,7 @@ function channel_tree__generate_html_for_single_client(client, is_local_client)
     let audio_state = client.audio_state;
     let country_iso_code = client.country_iso_code;
     let is_music_bot = client.is_music_bot;
-    // every theme hides this badge by default, so it needs the inline display to show at all.
-    // painting it from state means a re-rendered row (channel join, idle) keeps its count
-    // instead of silently resetting to 0, which is what the hardcoded markup used to do
+    // restore the unread badge from client state when rebuilding its row
     let unread_count = (typeof client.unread_count === "number") ? client.unread_count : 0;
 
     let client_audio_state_html_class = "client-audio-state-completely-disabled";
@@ -579,7 +586,7 @@ function channel_tree__generate_html_for_single_client(client, is_local_client)
 
     let indentation_level = 1;
 
-    if (channel_id_of_client != -2) // if channel is idle channel, (ID -2), do not run this function, program will enter infinite loop
+    if (channel_id_of_client != -2) // the idle channel is outside the ordinary channel tree
     {
         indentation_level = channel_tree__get_indentation_level(channel_id_of_client, g_channel_list) + 1;
     }
@@ -590,8 +597,7 @@ function channel_tree__generate_html_for_single_client(client, is_local_client)
         is_channel_collapsed = "collapsed";
     }
 
-    // the avatar is offered to the row as a css variable plus a marker, not painted: in most themes
-    // that circle is the mic-state icon; a theme that wants faces (termix) reads var(--client-avatar)
+    // expose the avatar through --client-avatar. themes choose whether to paint it
     let avatar_inline_style = "";
     if (g_server_policy.is_avatar_upload_allowed == true && typeof client.base64_avatar === "string" && client.base64_avatar.length > 0)
     {
@@ -605,7 +611,7 @@ function channel_tree__generate_html_for_single_client(client, is_local_client)
                     </div>\n\
                     <div class='client-audio-state "+ client_audio_state_html_class + "' id=\"client-audio-state-" + client_id + "\"" + avatar_inline_style + "><div class=\"client-audio-availability\"></div>\n\
                     </div>\n\
-                    <input maxlength=\"40\" id=\"connected-local-client-input\" value=\"" + username + "\">\n\
+                    <input maxlength=\"40\" id=\"connected-local-client-input\" value=\"" + username + "\" style=\"--own-name-length: " + username.length + ";\">\n\
                     <div class=\"connected-client-country-flag country-flag-"+(country_iso_code ? (""+country_iso_code).toLowerCase() : "")+"\"></div>\n\
                     <div class=\"marquee-music-playing-container\" data-marquee-music-playing-container-id='"+ client_id + "'\>\n\
                         <p class='p-marquee-song-icon'>[</p>\n\
@@ -759,12 +765,10 @@ function channel_tree__find_clients_in_channel(channel_ids)
     return result;
 }
 
-// ---- avatars ----
+// avatar loading and rendering
 
 /**
- * @brief puts a client's avatar on everything that shows it: the client object, the tree row, the member list and the profile pane
- *        a variable plus a marker on the row, never a painted background, so a new or cleared
- *        avatar shows without waiting for the next full render
+ * @brief updates a client's avatar in its cached state and visible controls
  *
  * @param number client_id -> the client
  * @param string|null base64 -> the avatar as a data url, empty or null to clear it
@@ -773,19 +777,23 @@ function channel_tree__find_clients_in_channel(channel_ids)
  */
 function channel_tree__apply_avatar_to_ui(client_id, base64)
 {
-    if (client_id === undefined || client_id === null) { return; }
+    if (client_id === undefined || client_id === null)
+    {
+        return;
+    }
 
     let has_avatar = (typeof base64 === "string" && base64.length > 0);
 
-    // keep the avatar ON the client object in g_client_list, so it travels with the client and is
-    // re-applied by avatar_inline_style_for_client on every tree render (channel switch etc.)
+    // cache the avatar on the client record so later row renders retain it
     let client_object = channel_tree__get_client_by_client_id(client_id);
-    if (client_object != null) { client_object.base64_avatar = has_avatar ? base64 : null; }
+    if (client_object != null)
+    {
+        client_object.base64_avatar = has_avatar ? base64 : null;
+    }
 
     android_host__refresh_message_avatars(client_id);
 
-    // offer it to the tree row the way the renderer does (a variable plus a marker, never a painted
-    // background), so a new or cleared avatar shows without waiting for the next full render
+    // update the row marker and CSS variable without waiting for a full render
     let tree_circle = document.getElementById("client-audio-state-" + client_id);
     if (tree_circle != null)
     {
@@ -805,9 +813,12 @@ function channel_tree__apply_avatar_to_ui(client_id, base64)
     channel_tree__refresh_people_counts();
 
     // the member list is a clone of the tree, so repaint it too
-    if (g_avatar.grid_visible == true) { UI.schedule_member_list_sync(); }
+    if (g_avatar.grid_visible == true)
+    {
+        UI.schedule_member_list_sync();
+    }
 
-    // the big avatar in the right-pane profile, only if this is the client shown there
+    // update the profile picture only for the selected client
     if (parseInt(g_profile_avatar_client_id) === parseInt(client_id))
     {
         let big = document.getElementById("current-client-avatar");
@@ -841,7 +852,10 @@ function channel_tree__set_profile_avatar_monogram(username)
 {
     let big = document.getElementById("current-client-avatar");
 
-    if (big == null) { return; }
+    if (big == null)
+    {
+        return;
+    }
 
     big.textContent = (typeof username === "string" && username.length > 0) ? username.charAt(0) : "?";
     big.classList.add("avatar-empty");
@@ -858,23 +872,44 @@ function channel_tree__describe_client_for_profile(client)
 {
     let parts = [];
 
-    if (client.client_id === g_local_client_id) { parts.push("you"); }
-    if (client.is_music_bot == true) { parts.push("music bot"); }
+    if (client.client_id === g_local_client_id)
+    {
+        parts.push("you");
+    }
+    if (client.is_music_bot == true)
+    {
+        parts.push("music bot");
+    }
 
     let channel = channel_tree__get_channel_by_id(g_channel_list, client.channel_id);
 
-    if (channel != null) { parts.push("in " + channel.name); }
+    if (channel != null)
+    {
+        parts.push("in " + channel.name);
+    }
 
-    if (client.is_idle == true) { parts.push("idle"); }
-    if (client.country_iso_code != null && client.country_iso_code.length > 0) { parts.push(client.country_iso_code.toUpperCase()); }
-    if (client.is_muted_by_local_client == true) { parts.push("muted by you"); }
-    if (client.is_ignored_by_local_client == true) { parts.push("ignored by you"); }
+    if (client.is_idle == true)
+    {
+        parts.push("idle");
+    }
+    if (client.country_iso_code != null && client.country_iso_code.length > 0)
+    {
+        parts.push(client.country_iso_code.toUpperCase());
+    }
+    if (client.is_muted_by_local_client == true)
+    {
+        parts.push("muted by you");
+    }
+    if (client.is_ignored_by_local_client == true)
+    {
+        parts.push("ignored by you");
+    }
 
     return parts.join(" · ");
 }
 
 /**
- * @brief asks the server for one client's avatar; no-op when avatars are disabled
+ * @brief requests one client's avatar when avatars are enabled
  *
  * @param number client_id -> the client
  *
@@ -882,61 +917,89 @@ function channel_tree__describe_client_for_profile(client)
  */
 function channel_tree__request_single_avatar(client_id)
 {
-    if (g_server_policy.is_avatar_upload_allowed == false || client_id === undefined || client_id === null) { return; }
+    if (g_server_policy.is_avatar_upload_allowed == false || client_id === undefined || client_id === null)
+    {
+        return;
+    }
     let message_object = { message: { type: "request_avatar_for_client", client_id: parseInt(client_id) } };
     connection__send_message_object(message_object);
 }
 
 /**
- * @brief chunked lazy load for the avatar grid: enqueues every connected client id and pulls avatars in growing chunks (50, then 100, then 150)
- *        only the grid member list shows everybody at once; other themes fetch the clicked client's avatar alone
+ * @brief queues connected clients for the avatar grid's chunked loading
  *
  * @return void
  */
 function channel_tree__enqueue_all_avatars_for_loading()
 {
-    // only bulk-load everyone's avatar for the avatar grid member list (shown all at once).
-    // other themes only ever fetch the clicked client's avatar for the big right-pane.
-    if (g_server_policy.is_avatar_upload_allowed == false || g_avatar.grid_visible == false) { return; }
+    // the avatar grid requests all visible client avatars in chunks
+    if (g_server_policy.is_avatar_upload_allowed == false || g_avatar.grid_visible == false)
+    {
+        return;
+    }
     for (let i = 0; i < g_client_list.length; i++)
     {
-        if (g_client_list[i] != null) { g_avatar.load_queue.push(g_client_list[i].client_id); }
+        if (g_client_list[i] != null)
+        {
+            g_avatar.load_queue.push(g_client_list[i].client_id);
+        }
     }
-    if (g_avatar.load_scheduled == false) { channel_tree__pump_avatar_load_queue(50); }
+    if (g_avatar.load_scheduled == false)
+    {
+        channel_tree__pump_avatar_load_queue(50);
+    }
 }
 
 /**
- * @brief queues every connected person whose avatar we do not have yet and drains the queue one request per tick
- *        safe to call repeatedly: already-queued and already-known ids are skipped, the timer is
- *        started once; the member list themes bulk-load through channel_tree__enqueue_all_avatars_for_loading instead
+ * @brief queues missing avatars and starts the background prefetch timer
  *
  * @return void
  */
 function channel_tree__start_avatar_prefetch()
 {
-    if (PREFETCH_AVATARS_AUTOMATICALLY == false || g_server_policy.is_avatar_upload_allowed == false) { return; }
+    if (PREFETCH_AVATARS_AUTOMATICALLY == false || g_server_policy.is_avatar_upload_allowed == false)
+    {
+        return;
+    }
 
-    // the member list theme (bluebell) shows everybody at once and already bulk-loads
-    // through channel_tree__enqueue_all_avatars_for_loading; prefetching on top would double the requests
-    if (g_avatar.grid_visible == true) { return; }
+    // the avatar grid already queues its clients. avoid duplicate prefetch requests
+    if (g_avatar.grid_visible == true)
+    {
+        return;
+    }
 
     for (let i = 0; i < g_client_list.length; i++)
     {
         let client_object = g_client_list[i];
 
-        if (client_object == null) { continue; }
+        if (client_object == null)
+        {
+            continue;
+        }
         if (client_object.client_id == g_local_client_id && g_show_message_avatars == false)
         {
             continue;
         }
-        if (client_object.is_music_bot == true) { continue; }
-        if (typeof client_object.base64_avatar === "string" && client_object.base64_avatar.length > 0) { continue; }
-        if (g_avatar.prefetch_queue.indexOf(client_object.client_id) != -1) { continue; }
+        if (client_object.is_music_bot == true)
+        {
+            continue;
+        }
+        if (typeof client_object.base64_avatar === "string" && client_object.base64_avatar.length > 0)
+        {
+            continue;
+        }
+        if (g_avatar.prefetch_queue.indexOf(client_object.client_id) != -1)
+        {
+            continue;
+        }
 
         g_avatar.prefetch_queue.push(client_object.client_id);
     }
 
-    if (g_avatar.prefetch_timer != null || g_avatar.prefetch_queue.length == 0) { return; }
+    if (g_avatar.prefetch_timer != null || g_avatar.prefetch_queue.length == 0)
+    {
+        return;
+    }
 
     // one request per tick, so a room full of people never arrives as a burst
     g_avatar.prefetch_timer = setInterval(function()
@@ -951,8 +1014,14 @@ function channel_tree__start_avatar_prefetch()
         let client_object = channel_tree__get_client_by_client_id(client_id);
 
         // they left, or their avatar arrived some other way while waiting in the queue
-        if (client_object == null) { return; }
-        if (typeof client_object.base64_avatar === "string" && client_object.base64_avatar.length > 0) { return; }
+        if (client_object == null)
+        {
+            return;
+        }
+        if (typeof client_object.base64_avatar === "string" && client_object.base64_avatar.length > 0)
+        {
+            return;
+        }
 
         channel_tree__request_single_avatar(client_id);
     }, AVATAR_PREFETCH_INTERVAL_MS);
@@ -975,7 +1044,8 @@ function channel_tree__stop_avatar_prefetch()
 }
 
 /**
- * @brief drains g_avatar.load_queue: requests one chunk of avatars now, then re-schedules itself every 400 ms with a growing chunk size (max 150) until the queue is empty
+ * @brief requests queued avatars in growing batches until the queue is empty
+ * wait 400 ms between batches and cap each batch at 150 clients
  *
  * @param number chunk_size -> how many avatars this round asks for
  *
@@ -997,7 +1067,10 @@ function channel_tree__pump_avatar_load_queue(chunk_size)
     {
         g_avatar.load_scheduled = true;
         let next_chunk = Math.min(chunk_size + 50, 150);
-        setTimeout(function() { channel_tree__pump_avatar_load_queue(next_chunk); }, 400);
+        setTimeout(function()
+        {
+            channel_tree__pump_avatar_load_queue(next_chunk);
+        }, 400);
     }
     else
     {
@@ -1006,11 +1079,7 @@ function channel_tree__pump_avatar_load_queue(chunk_size)
 }
 
 /**
- * @brief Writes the number of people, with up to three of their pictures in front of it, into the row of
- *        every channel that has people in it, and removes it from a row without people. Music bots and
- *        people in idle mode are not counted. A person whose channel is hidden from the local client has
- *        the channel id -1 and is counted nowhere. The result is displayed only with the local setting
- *        "show the number of people in the channel list", which sets a class on the body.
+ * @brief updates channel counts and avatar previews for visible people
  *
  * @return void
  */
@@ -1044,7 +1113,10 @@ function channel_tree__refresh_people_counts()
         let people = people_by_channel[row.getAttribute("data-channel-id")] || [];
         let element = row.querySelector(":scope > .single-channel-people");
         let shown = people.slice(0, 3);
-        let state = people.length + ":" + shown.map(function(client) { return client.client_id + "/" + (client.base64_avatar || "").length; }).join(",");
+        let state = people.length + ":" + shown.map(function(client)
+        {
+            return client.client_id + "/" + (client.base64_avatar || "").length;
+        }).join(",");
         let count = null;
 
         // nobody inside
@@ -1099,11 +1171,7 @@ function channel_tree__refresh_people_counts()
 }
 
 /**
- * @brief Restores the local choices about the channel list and connects their checkboxes: three that
- *        each hide one kind of icon (server group icons, channel group icons, channel icons) and one
- *        that shows the number of people in a channel. A choice is a word ("hide" or "show") and a
- *        name; both are used for the checkbox, the stored value and the class set on the body.
- *        main.js calls this once at start; the country flag choice is restored from here too.
+ * @brief restores and wires local channel icon and people count preferences
  *
  * @return void
  */
@@ -1139,8 +1207,7 @@ function channel_tree__setup_icon_preference()
 }
 
 /**
- * @brief Adds or removes the body class that hides every country flag, from g_show_hide_toggle (true = the flags are hidden).
- *        The class is on the body, so it also applies to the rows that are created later.
+ * @brief applies country flag visibility to existing and future rows
  *
  * @param boolean is_saved -> true also writes the choice to localStorage
  *
@@ -1156,9 +1223,7 @@ function channel_tree__apply_flag_preference(is_saved)
 }
 
 /**
- * @brief Restores the local choice to show or hide country flags and follows the two controls that change it.
- *        The checkbox in the local settings and the button in the head menu both call
- *        UI.hide_show_flags_button_onclick (ui.js), which changes g_show_hide_toggle.
+ * @brief restores the country flag preference and connects its controls
  *
  * @return void
  */
@@ -1166,10 +1231,18 @@ function channel_tree__setup_flag_preference()
 {
     let checkbox = document.getElementById("local-settings-country-flags");
     let button = document.getElementById("hide-show-flags-button");
+    /**
+     * @brief defers flag refresh until the visibility event handlers have finished
+     *
+     * @return void
+     */
     let follow_change = function()
     {
         // the timer runs after every handler of the event, so g_show_hide_toggle already has its new value
-        setTimeout(function() { channel_tree__apply_flag_preference(true); }, 0);
+        setTimeout(function()
+        {
+            channel_tree__apply_flag_preference(true);
+        }, 0);
     };
 
     // restore saved setting

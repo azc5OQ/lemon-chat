@@ -1,15 +1,13 @@
-// Entry point for the embedded node runtime in the android foreground service. Started by
-// NodeRuntime.java via node::Start(); stdout/stderr land in logcat under "lemonchat-node".
-// Java hands over server details through the bridge; node then owns the one server connection.
+// starts the embedded Node client in the Android foreground service
 
-// debug log: everything node prints also lands in node-log.txt next to the bundle (capped, one
-// .old generation), so a whole night survives logcat's buffer rotation
+// keep one rotated log when native settings enable file logging
+
 let fs = require("fs");
 let path = require("path");
 let log_file = path.join(__dirname, "node-log.txt");
 let LOG_CAP_BYTES = 1024 * 1024;
 
-// whether we write the log file at all. java tells us, so one setting covers the whole app
+// native settings control file logging
 let is_file_logging_enabled = false;
 
 global.lemonchat_set_file_logging = function(is_enabled)
@@ -18,6 +16,11 @@ global.lemonchat_set_file_logging = function(is_enabled)
     console.log("file logging " + (is_file_logging_enabled ? "enabled" : "disabled"));
 };
 
+/**
+ * @brief appends a log line and rotates the file at its size limit
+ *
+ * @param line formatted log line
+ */
 function tee_to_file(line)
 {
     if (is_file_logging_enabled === false)
@@ -34,15 +37,16 @@ function tee_to_file(line)
             try
             {
                 fs.unlinkSync(log_file + ".old");
-            } catch (no_old) 
-            { 
-                fs.renameSync(log_file, log_file + ".old");
             }
+            catch (no_old)
+            {
+            }
+            fs.renameSync(log_file, log_file + ".old");
         }
     }
     catch (tee_error)
     {
-        
+
     }
 }
 
@@ -53,22 +57,20 @@ function tee_to_file(line)
     console[name] = function()
     {
         original.apply(console, arguments);
-        tee_to_file(new Date().toISOString() + " [" + name + "] "
-            + Array.prototype.map.call(arguments, String).join(" "));
+        tee_to_file(new Date().toISOString() + " [" + name + "] " + Array.prototype.map.call(arguments, String).join(" "));
     };
 });
 
-// last-resort containment: node::Start works once per process, so an uncaught throw would leave a
-// permanently dead runtime. android_host__dispatch_safely contains per-message throws; this catches
-// the rest. log and keep the loop alive.
+// keep the embedded runtime alive after an uncaught callback failure
+
 process.on("uncaughtException", function(error)
 {
-    console.error("UNCAUGHT: " + (error && error.stack ? error.stack : error));
+    console.error("UNCAUGHT: background runtime callback failed");
 });
 
 process.on("unhandledRejection", function(reason)
 {
-    console.error("UNHANDLED REJECTION: " + (reason && reason.stack ? reason.stack : reason));
+    console.error("UNHANDLED REJECTION: background runtime operation failed");
 });
 
 console.log("android-main starting");
@@ -102,19 +104,17 @@ catch (error)
     process.exit(1);
 }
 
-// NO synthetic selftest here: feeding a fake channel_list sets g_is_channel_list_retrieved, and the
-// real server's channel list would then be rejected as a duplicate. real traffic is the test now.
-
-// loopback first, so the bridge can announce it to java in its hello
+// start native control before opening the page listener
+let native_bridge = require("./android-bridge-client.js").start(bundle);
 require("./loopback-ui-server.js").start(bundle, function(port, token)
 {
     console.log("loopback ui ready on port " + port);
-    require("./android-bridge-client.js").start(bundle, { loopback_port: port, loopback_token: token });
+    native_bridge.set_loopback_info({ loopback_port: port, loopback_token: token });
 });
 
 console.log("android-main alive, waiting for the bridge to hand over server details");
 
-// hold the event loop open so node does not exit and take the service's worker thread with it
+// keep the service's Node thread active
 setInterval(function()
 {
 }, 60000);

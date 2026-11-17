@@ -15,11 +15,13 @@
 #endif
 
 /**
- * @brief reads only a regular, bounded file selected by the user; called on the attachment worker.
- * @param const char* path -> terminated user-selected UTF-8 path
+ * @brief reads only a regular, bounded file selected by the user. Called on the attachment worker
+ *
+ * @param const char* path -> terminated user selected UTF-8 path
  * @param uint64 limit -> maximum accepted byte count
  * @param uint64* size -> receives the exact count on success
- * @return ubyte* -> owned bytes or NULL; release with free
+ *
+ * @return ubyte* -> owned bytes or NULL. Release with free
  */
 ubyte *desktop_attachment_file__read(const char *path, uint64 limit, uint64 *size)
 {
@@ -140,10 +142,12 @@ label_finished:
 }
 
 /**
- * @brief saves to a user-chosen new path; an existing file is never overwritten or opened automatically.
- * @param const char* path -> exact user-selected UTF-8 destination
+ * @brief saves to a user chosen new path. An existing file is never overwritten or opened automatically
+ *
+ * @param const char* path -> exact user selected UTF-8 destination
  * @param const ubyte* bytes -> borrowed completed attachment
  * @param uint64 size -> byte count
+ *
  * @return boole -> TRUE when every byte was written
  */
 boole desktop_attachment_file__save(const char *path, const ubyte *bytes, uint64 size)
@@ -236,10 +240,12 @@ boole desktop_attachment_file__save(const char *path, const ubyte *bytes, uint64
 }
 
 /**
- * @brief extracts a display basename, rejecting path separators and control characters from remote names.
+ * @brief extracts a display basename, rejecting path separators and control characters from remote names
+ *
  * @param char* name -> destination
  * @param uint64 capacity -> actual destination capacity
  * @param const char* source -> local path or untrusted remote name
+ *
  * @return void
  */
 void desktop_attachment_file__name(char *name, uint64 capacity, const char *source)
@@ -307,9 +313,11 @@ void desktop_attachment_file__name(char *name, uint64 capacity, const char *sour
 }
 
 /**
- * @brief supplies the initial file-picker directory without changing the process working directory.
+ * @brief supplies the initial file picker directory without changing the process working directory
+ *
  * @param char* path -> destination
  * @param uint64 capacity -> actual destination capacity
+ *
  * @return boole -> TRUE when copied
  */
 boole desktop_attachment_file__home(char *path, uint64 capacity)

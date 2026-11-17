@@ -1,4 +1,4 @@
-# lemon-chat selfhosting-tools/wireguard/status.ps1 - run on the Windows machine that hosts the server.
+# Reports tunnel status on the Windows server host.
 # shows the tunnel on this machine, then the router side (router/status.sh over ssh) and a tcp check of the
 # websocket port through the router. read-only.
 

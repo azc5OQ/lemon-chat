@@ -36,12 +36,14 @@ static gui_node_t *_ui_tree_internal__hover(gui_node_t *node);
 static void _ui_tree_internal__unread(gui_event_t *event);
 
 /**
- * @brief creates a plain-text scene-owned tree control.
+ * @brief creates a plain text scene owned tree control
+ *
  * @param gui_node_t* parent -> owning row or column
  * @param gui_node_type_e type -> node kind
  * @param const char* klass -> application stylesheet class
  * @param const char* text -> copied literal text
- * @return gui_node_t* -> scene-owned control, or NULL
+ *
+ * @return gui_node_t* -> scene owned control, or NULL
  */
 static gui_node_t *_ui_tree_internal__node(gui_node_t *parent, gui_node_type_e type, const char *klass, const char *text)
 {
@@ -67,9 +69,11 @@ static gui_node_t *_ui_tree_internal__node(gui_node_t *parent, gui_node_type_e t
 }
 
 /**
- * @brief releases GUI-thread textures before their renderer is destroyed.
- * @param desktop_tree_texture_t* cache -> application-owned cache
+ * @brief releases GUI thread textures before their renderer is destroyed
+ *
+ * @param desktop_tree_texture_t* cache -> application owned cache
  * @param int64 count -> number of entries
+ *
  * @return void
  */
 static void _ui_tree_internal__release(desktop_tree_texture_t *cache, int64 count)
@@ -90,10 +94,12 @@ static void _ui_tree_internal__release(desktop_tree_texture_t *cache, int64 coun
 }
 
 /**
- * @brief supplies a small non-text channel-role badge when a catalog has no custom pixels.
+ * @brief supplies a small non text channel role badge when a catalog has no custom pixels
+ *
  * @param gui_rect_t rect -> physical icon bounds
  * @param gui_color_t color -> theme foreground
- * @param boole channel -> TRUE for the built-in channel-admin star
+ * @param boole channel -> TRUE for the built in channel admin star
+ *
  * @return void
  */
 static void _ui_tree_internal__badge(gui_rect_t rect, gui_color_t color, boole channel)
@@ -120,9 +126,11 @@ static void _ui_tree_internal__badge(gui_rect_t rect, gui_color_t color, boole c
 }
 
 /**
- * @brief draws only prepared textures and clipped song text; painting never parses an image.
- * @param gui_node_t* node -> scene-owned tree decoration
+ * @brief draws only prepared textures and clipped song text. Painting never parses an image
+ *
+ * @param gui_node_t* node -> scene owned tree decoration
  * @param float scale -> physical pixels per UI unit
+ *
  * @return void
  */
 static void _ui_tree_internal__draw(gui_node_t *node, float scale)
@@ -224,13 +232,15 @@ static void _ui_tree_internal__draw(gui_node_t *node, float scale)
 }
 
 /**
- * @brief gives indentation an explicit width and clips tree text to its assigned flex width.
- * @param gui_node_t* node -> scene-owned label
+ * @brief gives indentation an explicit width and clips tree text to its assigned flex width
+ *
+ * @param gui_node_t* node -> scene owned label
  * @param float x -> assigned origin
  * @param float y -> assigned origin
  * @param float width -> available physical width
  * @param float height -> available physical height
  * @param float scale -> physical pixels per UI unit
+ *
  * @return void
  */
 static void _ui_tree_internal__layout(gui_node_t *node, float x, float y, float width, float height, float scale)
@@ -258,9 +268,11 @@ static void _ui_tree_internal__layout(gui_node_t *node, float x, float y, float 
 }
 
 /**
- * @brief extends the existing text hooks without replacing audio or picture drawing.
- * @param desktop_session_t* session -> borrowed lifetime-stable session
- * @param const desktop_session_view_t* view -> borrowed GUI-owned snapshot
+ * @brief extends the existing text hooks without replacing audio or picture drawing
+ *
+ * @param desktop_session_t* session -> borrowed lifetime stable session
+ * @param const desktop_session_view_t* view -> borrowed GUI owned snapshot
+ *
  * @return void
  */
 void desktop_ui_tree__initialize(desktop_session_t *session, const desktop_session_view_t *view)
@@ -286,8 +298,10 @@ void desktop_ui_tree__initialize(desktop_session_t *session, const desktop_sessi
 }
 
 /**
- * @brief invalidates cached server icons when the catalog changes or a connection is replaced.
- * @param const desktop_session_view_t* view -> GUI-owned published snapshot
+ * @brief invalidates cached server icons when the catalog changes or a connection is replaced
+ *
+ * @param const desktop_session_view_t* view -> GUI owned published snapshot
+ *
  * @return void
  */
 void desktop_ui_tree__begin(const desktop_session_view_t *view)
@@ -304,8 +318,10 @@ void desktop_ui_tree__begin(const desktop_session_view_t *view)
 }
 
 /**
- * @brief uploads a server icon once per catalog revision on the GUI thread.
- * @param int64 id -> icon ID, or negative built-in fallback
+ * @brief uploads a server icon once per catalog revision on the GUI thread
+ *
+ * @param int64 id -> icon ID, or negative built in fallback
+ *
  * @return void* -> borrowed cached texture, valid until the next catalog refresh
  */
 void *desktop_ui_tree__prepare_icon(int64 id)
@@ -328,10 +344,12 @@ void *desktop_ui_tree__prepare_icon(int64 id)
 }
 
 /**
- * @brief adds a scene-owned badge after preparing its shared texture on the GUI thread.
- * @param gui_node_t* parent -> scene-owned row
- * @param int64 id -> icon ID or built-in fallback
+ * @brief adds a scene owned badge after preparing its shared texture on the GUI thread
+ *
+ * @param gui_node_t* parent -> scene owned row
+ * @param int64 id -> icon ID or built in fallback
  * @param const char* name -> bounded group name
+ *
  * @return void
  */
 static void _ui_tree_internal__icon(gui_node_t *parent, int64 id, const char *name)
@@ -354,11 +372,13 @@ static void _ui_tree_internal__icon(gui_node_t *parent, int64 id, const char *na
 }
 
 /**
- * @brief builds one compact member row with fixed badges and a separate scrolling song line.
- * @param gui_node_t* row -> scene-owned clickable member row
- * @param const desktop_session_view_t* view -> GUI-owned snapshot
+ * @brief builds one compact member row with fixed badges and a separate scrolling song line
+ *
+ * @param gui_node_t* row -> scene owned clickable member row
+ * @param const desktop_session_view_t* view -> GUI owned snapshot
  * @param int64 member -> client index in this snapshot
  * @param int64 depth -> channel indentation level
+ *
  * @return void
  */
 void desktop_ui_tree__member(gui_node_t *row, const desktop_session_view_t *view, int64 member, int64 depth)
@@ -430,10 +450,10 @@ void desktop_ui_tree__member(gui_node_t *row, const desktop_session_view_t *view
     }
     else
     {
-        // keep the other right-aligned indicators still when unread messages arrive
+        // keep the other right aligned indicators still when unread messages arrive
         _ui_tree_internal__node(row, GUI_NODE_TYPE__TEXT, "tree-unread-space", "");
     }
-    // the lowest group ID (normally admin) stays at the same far-right coordinate
+    // the lowest group ID (normally admin) stays at the same far right coordinate
     for (id = 0; id < DESKTOP_TREE_GROUPS; id++)
     {
         if ((client->groups[id / 64] & (1ULL << (id % 64))) && view->groups[id].exists)
@@ -544,10 +564,12 @@ void desktop_ui_tree__member(gui_node_t *row, const desktop_session_view_t *view
 }
 
 /**
- * @brief adds channel indentation, a custom icon and a plain channel title.
+ * @brief adds channel indentation, a custom icon and a plain channel title
+ *
  * @param gui_node_t* row -> clickable channel row
  * @param const desktop_channel_t* channel -> GUI snapshot channel
  * @param int64 depth -> channel nesting level
+ *
  * @return void
  */
 void desktop_ui_tree__channel(gui_node_t *row, const desktop_channel_t *channel, int64 depth)
@@ -578,8 +600,10 @@ void desktop_ui_tree__channel(gui_node_t *row, const desktop_channel_t *channel,
 }
 
 /**
- * @brief finds a hovered member without modifying selection or creating a modal popup.
+ * @brief finds a hovered member without modifying selection or creating a modal popup
+ *
  * @param gui_node_t* node -> tree root
+ *
  * @return gui_node_t* -> hovered member row, or NULL
  */
 static gui_node_t *_ui_tree_internal__hover(gui_node_t *node)
@@ -620,8 +644,10 @@ static gui_node_t *_ui_tree_internal__hover(gui_node_t *node)
 }
 
 /**
- * @brief requests bounded animation ticks and shows badge names in the tree's existing caption.
+ * @brief requests bounded animation ticks and shows badge names in the tree's existing caption
+ *
  * @param boole visible -> FALSE while the simplified overlay preview replaces the tree
+ *
  * @return boole -> TRUE when the window needs another paint
  */
 boole desktop_ui_tree__tick(boole visible)
@@ -655,7 +681,8 @@ boole desktop_ui_tree__tick(boole visible)
 }
 
 /**
- * @brief releases every tree texture on the GUI thread before renderer shutdown.
+ * @brief releases every tree texture on the GUI thread before renderer shutdown
+ *
  * @return void
  */
 void desktop_ui_tree__shutdown(void)
@@ -670,8 +697,10 @@ void desktop_ui_tree__shutdown(void)
 }
 
 /**
- * @brief routes unread badges through the same selection and context actions as their client row.
- * @param gui_event_t* event -> scene-owned click event
+ * @brief routes unread badges through the same selection and context actions as their client row
+ *
+ * @param gui_event_t* event -> scene owned click event
+ *
  * @return void
  */
 static void _ui_tree_internal__unread(gui_event_t *event)

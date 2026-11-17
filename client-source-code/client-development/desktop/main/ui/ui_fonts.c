@@ -33,6 +33,14 @@ static int64 g_font_count;
 static uint64 g_font_scan_time;
 static boole g_fonts_changed;
 
+/**
+ * @brief compares font names without letter case
+ *
+ * @param const char* first -> first name
+ * @param const char* second -> second name
+ *
+ * @return int -> negative, zero or positive according to name order
+ */
 static int _ui_fonts_internal__compare_names(const char *first, const char *second)
 {
     // compare ignoring letter case
@@ -44,10 +52,17 @@ static int _ui_fonts_internal__compare_names(const char *first, const char *seco
     return clib__tolower((ubyte)*first) - clib__tolower((ubyte)*second);
 }
 
-// Browser class names for the bundled faces. Extra local fonts use an encoded
-// filename token, so punctuation cannot become CSS or a path in a remote client.
+// browser class names for the bundled faces. Extra local fonts use an encoded
+// filename token, so punctuation cannot become CSS or a path in a remote client
 static const char *g_browser_fonts[] = { "Yellowtail", "Bruno Ace SC", "Raleway", "Kavoon", "Codystar", "Hanalei", "Just Me Again Down Here", "Londrina Outline", "Mystery Quest", "Nosifer", "NovaMono", "Reenie Beanie", "Sacramento", "Sofia", "Simonetta", "Inter", "Manrope", "Plus Jakarta Sans" };
 
+/**
+ * @brief reads a file modification timestamp for change detection
+ *
+ * @param const char* path -> file path in UTF8
+ *
+ * @return uint64 -> platform timestamp, or zero when the file cannot be inspected
+ */
 static uint64 _ui_fonts_internal__modified(const char *path)
 {
 #ifdef _WIN32
@@ -76,6 +91,13 @@ static uint64 _ui_fonts_internal__modified(const char *path)
 #endif
 }
 
+/**
+ * @brief builds the browser compatible or local token for a font name
+ *
+ * @param desktop_font_file_t* font -> font entry whose token is updated
+ *
+ * @return void
+ */
 static void _ui_fonts_internal__token(desktop_font_file_t *font)
 {
     static const char hex[] = "0123456789abcdef";
@@ -117,12 +139,27 @@ static void _ui_fonts_internal__token(desktop_font_file_t *font)
     font->token[offset] = 0;
 }
 
+/**
+ * @brief reads four bytes with the most significant byte first
+ *
+ * @param const ubyte* bytes -> four input bytes
+ *
+ * @return uint -> unsigned 32 bit value
+ */
 static uint _ui_fonts_internal__be32(const ubyte *bytes)
 {
     return ((uint)bytes[0] << 24) | ((uint)bytes[1] << 16) | ((uint)bytes[2] << 8) | bytes[3];
 }
 
-// Reject truncated or unrelated files before the bounds-aware FreeType loader checks their contents.
+// reject truncated or unrelated files before the bounds aware FreeType loader checks their contents
+/**
+ * @brief checks the font header and bounds of each table
+ *
+ * @param const ubyte* bytes -> font file bytes
+ * @param uint64 size -> file byte count
+ *
+ * @return boole -> true for a supported header with all tables inside the file
+ */
 static boole _ui_fonts_internal__font(const ubyte *bytes, uint64 size)
 {
     uint64 tables = 0;
@@ -154,6 +191,16 @@ static boole _ui_fonts_internal__font(const ubyte *bytes, uint64 size)
     return TRUE;
 }
 
+/**
+ * @brief loads a supported font found in the fonts directory
+ *
+ * @param const char* name -> file name within the directory
+ * @param boole directory -> true for a directory entry to skip
+ * @param int64 size -> reported file byte count
+ * @param void* context -> unused directory visitor context
+ *
+ * @return void
+ */
 static void _ui_fonts_internal__entry(const char *name, boole directory, int64 size, void *context)
 {
     char path[128];
@@ -235,12 +282,26 @@ static void _ui_fonts_internal__entry(const char *name, boole directory, int64 s
     free(bytes);
 }
 
+/**
+ * @brief orders font entries by their names
+ *
+ * @param const void* first -> first font entry
+ * @param const void* second -> second font entry
+ *
+ * @return int -> negative, zero or positive according to name order
+ */
 static int _ui_fonts_internal__compare(const void *first, const void *second)
 {
     return _ui_fonts_internal__compare_names(((const desktop_font_file_t *)first)->name, ((const desktop_font_file_t *)second)->name);
 }
 
-/** @brief Discovers changed local fonts between frames; font files stay unlocked after reading. */
+/**
+ * @brief reloads changed fonts and removes missing fonts
+ *
+ * @param boole force -> TRUE to bypass the scan interval
+ *
+ * @return boole -> TRUE if the loaded fonts changed
+ */
 boole desktop_ui_fonts__scan(boole force)
 {
     uint64 now = desktop_system__milliseconds();
@@ -280,21 +341,47 @@ boole desktop_ui_fonts__scan(boole force)
     return g_fonts_changed;
 }
 
+/**
+ * @brief reads the number of available font entries
+ *
+ * @return int64 -> font entry count
+ */
 int64 desktop_ui_fonts__count(void)
 {
     return g_font_count;
 }
 
+/**
+ * @brief reads a font name by its list index
+ *
+ * @param int64 index -> font entry index
+ *
+ * @return const char* -> stored name, or an empty string for an invalid index
+ */
 const char *desktop_ui_fonts__name(int64 index)
 {
     return index >= 0 && index < g_font_count ? g_fonts[index].name : "";
 }
 
+/**
+ * @brief reads the token used to store a font selection
+ *
+ * @param int64 index -> font entry index
+ *
+ * @return const char* -> stored token, or the default font token for an invalid index
+ */
 const char *desktop_ui_fonts__token(int64 index)
 {
     return index >= 0 && index < g_font_count ? g_fonts[index].token : "custom-font-usage-default";
 }
 
+/**
+ * @brief finds the font family associated with a saved token
+ *
+ * @param const char* token -> saved font token
+ *
+ * @return const char* -> stored family name, or an empty string when not found
+ */
 const char *desktop_ui_fonts__family(const char *token)
 {
     int64 index = 0;

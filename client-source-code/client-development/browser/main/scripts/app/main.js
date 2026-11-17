@@ -1,5 +1,5 @@
 /**
- * @brief Uses the device's server default unless the user has saved an allowed theme.
+ * @brief uses the device's server default unless the user has saved an allowed theme
  */
 function main__apply_startup_theme()
 {
@@ -8,13 +8,13 @@ function main__apply_startup_theme()
     let server_theme = g_is_client_running_under_touch_device ? (config.mobile_theme || config.theme) : config.theme;
     let saved_theme = utils__storage_get("lemon_theme");
 
-    // Older server pages may supply only one default; mobile still requires a mobile theme.
+    // older pages may supply one default. mobile still requires a mobile theme
     if (server_theme && document.getElementById("style-theme-" + server_theme) && UI.is_theme_allowed_on_this_device(server_theme))
     {
         theme = server_theme;
     }
 
-    // A user's own choice takes priority over the server's suggestion.
+    // a user's own choice takes priority over the server's suggestion
     if (saved_theme && document.getElementById("style-theme-" + saved_theme) && UI.is_theme_allowed_on_this_device(saved_theme))
     {
         theme = saved_theme;
@@ -22,19 +22,16 @@ function main__apply_startup_theme()
     UI.apply_theme(theme, false);
 }
 
-// main.js is embedded in template.html along with the other client files, and in the node bundle
-// it is the startup: main__window_onload wires the page (buttons, keys, panels, local settings), and the
-// export seam at the end hands the node runtime what it needs
-// it also closes the closure that aes-js.js opens, so it stays the last include
+// starts the browser client and exports the Node API
+// keep this include last to close the aes-js.js factory
 
 // state private to this file
-// true once java has answered whether anyone is looking. java watches the activity while the
-// loopback socket only knows whether anyone is connected, so java outranks it
+// native visibility overrides loopback attachment once Java reports it
 var node_ui_visibility_from_host = false;
 var main_is_push_to_talk_key_down = false;
 
 /**
- * @brief Closes context menus when the pointer is pressed outside them.
+ * @brief closes context menus when the pointer is pressed outside them
  *
  * @param object event -> the mouse event
  *
@@ -53,11 +50,11 @@ function main__document_onmousedown(event)
 }
 
 /**
- * @brief Recognizes fields where typing must respect the user's push-to-talk typing preference.
+ * @brief checks whether the focused element accepts text input
  *
  * @param object element -> the focused DOM element
  *
- * @return boolean
+ * @return boolean true when the element accepts editable text
  */
 function main__is_editable_field(element)
 {
@@ -73,13 +70,14 @@ function main__is_editable_field(element)
     {
         return false;
     }
-    return element.tagName === "TEXTAREA" || (element.tagName === "INPUT"
-        && ["text", "search", "email", "url", "password", "tel", "number"].includes(element.type));
+    return element.tagName === "TEXTAREA" || (element.tagName === "INPUT" && ["text", "search", "email", "url", "password", "tel", "number"].includes(element.type));
 }
 
 /**
- * @brief The push-to-talk key starts speech while held; continuous mode uses the microphone button.
+ * @brief starts speech while the configured talk key is held
+ *
  * @param object event -> the keyboard event
+ *
  * @return void
  */
 function main__document_onkeydown(event)
@@ -102,7 +100,7 @@ function main__document_onkeydown(event)
 }
 
 /**
- * @brief releasing the push-to-talk key stops sending audio
+ * @brief stops keyboard speech when the talk key is released
  *
  * @param object event -> the keyboard event
  *
@@ -119,12 +117,13 @@ function main__document_onkeyup(event)
     {
         return;
     }
-    // Finish the last audio frame before stopping after a normal key release.
+    // finish the last audio frame before stopping after a normal key release
     voice__process_stop_sending_audio();
 }
 
 /**
- * @brief Stops keyboard-triggered speech when the user focuses an editable field.
+ * @brief stops keyboard speech when focus moves to a text field
+ *
  * @return void
  */
 function main__chat_input_onfocus()
@@ -137,23 +136,21 @@ function main__chat_input_onfocus()
 }
 
 /**
- * @brief the android wrapper's simple/advanced mode drives the theme, both ways
- *        simple locks the messenger look; advanced restores the user's saved theme (or the device
- *        default). called at startup
+ * @brief applies the theme required by the Android app mode
  *
  * @return void
  */
 function main__apply_theme_for_app_mode()
 {
-    // simple = the bluebell messenger look, locked
+    // simple mode starts with Bluebell; a theme the user chose in the theme list is kept
     if (g_android_app_mode == "simple")
     {
-        UI.apply_theme("bluebell", false);
+        let chosen_theme = utils__storage_get("lemon_theme");
+        UI.apply_theme(chosen_theme != null && UI.is_theme_allowed_on_this_device(chosen_theme) ? chosen_theme : "bluebell", false);
         return;
     }
 
-    // advanced = the full mobile interface. honor a theme the user picked manually (so
-    // their choice persists), otherwise fall back to default-mobile
+    // advanced mode keeps the saved theme or uses default-mobile
     if (g_android_app_mode == "advanced")
     {
         let saved_theme = null;
@@ -171,7 +168,7 @@ function main__apply_theme_for_app_mode()
 }
 
 /**
- * @brief stops event bubbling (the browser passing an event on to the parent elements); attached where a click must not reach parent handlers
+ * @brief stops an event from reaching parent handlers
  *
  * @param object event -> the event to stop
  *
@@ -183,9 +180,7 @@ function main__stop_propagation(event)
 }
 
 /**
- * @brief mirrors the three toggle states onto css classes of their toolbar buttons
- *        .sfx-on / .mic-on / .chat-hidden, which themes with state-specific icons (oldschool)
- *        style with !important
+ * @brief updates toolbar classes for sound, microphone and chat visibility
  *
  * @return void
  */
@@ -194,14 +189,22 @@ function main__sync_toolbar_state_classes()
     let sfx = document.getElementById("sound-effects-button");
     let mic = document.getElementById("microphone-always-broadcasting-audio-button");
     let hide = document.getElementById("hide-chat-button");
-    if (sfx != null) { sfx.classList.toggle("sfx-on", g_are_sound_effects_enabled == true); }
-    if (mic != null) { mic.classList.toggle("mic-on", g_is_microphone_always_on == true); }
-    if (hide != null) { hide.classList.toggle("chat-hidden", g_is_chat_hidden == true); }
+    if (sfx != null)
+    {
+        sfx.classList.toggle("sfx-on", g_are_sound_effects_enabled == true);
+    }
+    if (mic != null)
+    {
+        mic.classList.toggle("mic-on", g_is_microphone_always_on == true);
+    }
+    if (hide != null)
+    {
+        hide.classList.toggle("chat-hidden", g_is_chat_hidden == true);
+    }
 }
 
 /**
- * @brief Tells whether the theme in use is one of the themes for phones. Those are the themes whose entry in
- *        the list of themes has the attribute data-mobile="true".
+ * @brief checks whether the current theme is marked for mobile use
  *
  * @return boolean true while a theme for phones is in use
  */
@@ -213,9 +216,7 @@ function main__is_current_theme_for_phones()
 }
 
 /**
- * @brief The button that shows and hides the list of people. It switches the class "member-list-shown"
- *        on itself. A theme that draws the list as a panel over the page (Mobile 2) shows the panel
- *        while the button has this class.
+ * @brief toggles the member list panel
  *
  * @param object event -> the click event of the button
  *
@@ -227,10 +228,7 @@ function main__show_hide_member_list_button_onclick(event)
 }
 
 /**
- * @brief A press on the page under the top bar. While the list of people is shown as a panel, the theme
- *        (Mobile 2) blurs the rest of the page with a layer that the page element draws itself, so a
- *        press on that layer has the page element as its target. Such a press hides the list. A press
- *        on anything inside the page has another target and changes nothing here.
+ * @brief closes the member panel when its page overlay is pressed
  *
  * @param object event -> the click event of the page element (#communication-system-container)
  *
@@ -249,20 +247,17 @@ function main__member_list_blurred_page_onclick(event)
 }
 
 /**
- * @brief Fills the list of open conversations (#chat-context-select) from the conversation tabs: one entry for
- *        every tab, "# name" for a channel and "@ name" for a person. The chosen entry is the one of the
- *        conversation that is shown: the chat part (.chat-context) that is not hidden, whose id
- *        "chat-context-channel-3" or "chat-context-pm-7" gives the value "channel-3" or "user-7" of its tab.
- *        So the list follows a press on a person and a change of the channel too. A theme for phones shows this
- *        list in place of the row of tabs. Two MutationObservers call the function: after every change of the
- *        tabs and after every change of the chat parts.
+ * @brief updates the conversation dropdown from the open tabs and selected chat
  *
  * @return void
  */
 function main__refresh_chat_context_select()
 {
     let select = document.getElementById("chat-context-select");
-    let shown = Array.from(document.querySelectorAll("#chat-context-container > .chat-context")).find(function(context) { return getComputedStyle(context).display != "none"; });
+    let shown = Array.from(document.querySelectorAll("#chat-context-container > .chat-context")).find(function(context)
+    {
+        return getComputedStyle(context).display != "none";
+    });
     let shown_value = (shown == null) ? "" : shown.id.replace("chat-context-channel-", "channel-").replace("chat-context-pm-", "user-");
     let option = null;
 
@@ -279,11 +274,33 @@ function main__refresh_chat_context_select()
 
     // the own channel stays
     document.getElementById("chat-context-select-close").disabled = (shown_value == "" || shown_value == "channel-" + g_current_channel_id);
+
+    let strip = document.getElementById("chat-context-selectors-container");
+    if (strip.clientWidth > 0 && strip.dataset.revealedContext !== shown_value && getComputedStyle(strip).overflowX === "auto")
+    {
+        strip.dataset.revealedContext = shown_value;
+        let active = Array.from(strip.children).find(function(tab)
+        {
+            return tab.getAttribute("data-chat-context-selector-id") === shown_value;
+        });
+        if (active != null)
+        {
+            let bounds = strip.getBoundingClientRect();
+            let selected = active.getBoundingClientRect();
+            if (selected.left < bounds.left)
+            {
+                strip.scrollLeft -= bounds.left - selected.left;
+            }
+            else if (selected.right > bounds.right)
+            {
+                strip.scrollLeft += selected.right - bounds.right;
+            }
+        }
+    }
 }
 
 /**
- * @brief An entry of the list of open conversations was chosen. The tab of that conversation gets a click, so
- *        the conversation is shown the same way as after a press on the tab.
+ * @brief opens the conversation selected in the dropdown through its tab
  *
  * @param object event -> the change event of #chat-context-select
  *
@@ -301,10 +318,7 @@ function main__chat_context_select_onchange(event)
 }
 
 /**
- * @brief The close button next to the list of open conversations. The close mark of the tab of the shown
- *        conversation gets a click, so the conversation is closed the same way as from its tab: the chat of
- *        the user's own channel is shown afterwards. The button is disabled while the chat of the user's own
- *        channel is shown (main__refresh_chat_context_select), because that chat cannot be closed.
+ * @brief closes the selected conversation through its existing tab control
  *
  * @return void
  */
@@ -319,13 +333,11 @@ function main__chat_context_select_close_onclick()
     }
 }
 
-// The time of the last touch on the page, in milliseconds; 0 while there was none.
+// last page touch in milliseconds, or zero before the first touch
 let main__last_touch_time = 0;
 
 /**
- * @brief Stores the time of a touch. A device with a touch screen can have a mouse too, and the browser
- *        sends mouse events of its own after every touch. main__is_mouse_event_of_a_touch() uses this
- *        time to tell those from a press with a real mouse.
+ * @brief records touch timing to identify subsequent synthetic mouse events
  *
  * @return void
  */
@@ -335,8 +347,7 @@ function main__note_touch()
 }
 
 /**
- * @brief Tells whether a mouse event that arrives now was made by the browser from a touch: such an event
- *        comes less than a second after the touch.
+ * @brief identifies mouse events arriving within one second of a touch
  *
  * @return boolean true for a mouse event that belongs to a touch
  */
@@ -346,12 +357,7 @@ function main__is_mouse_event_of_a_touch()
 }
 
 /**
- * @brief A press, a click or a double click with a mouse in the channel tree on a device that counts as a
- *        touch screen. The rows of the tree get only touch handlers on such a device (messages.js), so a
- *        mouse did nothing there. This function passes the event to the handlers that the rows have on a
- *        device without a touch screen: a press on a person or a channel (left button: choose, right
- *        button: menu), a click on a channel name, and a double click on a channel name (join). The arrow
- *        of a channel row has its own mouse handler on every device and is left out.
+ * @brief routes mouse actions to channel tree handlers on touch capable devices
  *
  * @param object event -> the mousedown, click or dblclick event of #channel-list-container or #idle-clients-container
  *
@@ -362,8 +368,10 @@ function main__tree_mouse_on_touch_device(event)
     let client = event.target.closest(".connected-client");
     let channel = event.target.closest(".single-channel");
     let channel_name = event.target.closest("[data-channel-name-id]");
-    // the row handlers read the row from "currentTarget" or, when that is null, from their fifth parameter
-    let forwarded_event = { stopPropagation: function() {}, currentTarget: null, which: event.which, clientX: event.clientX, clientY: event.clientY };
+    // use the explicit row when currentTarget is absent
+    let forwarded_event = { stopPropagation: function()
+    {
+    }, currentTarget: null, which: event.which, clientX: event.clientX, clientY: event.clientY };
 
     // only a real mouse
     if (g_is_client_running_under_touch_device == false || main__is_mouse_event_of_a_touch() == true)
@@ -405,9 +413,7 @@ function main__tree_mouse_on_touch_device(event)
 }
 
 /**
- * @brief applies the local "theme cursor" setting: with the setting off, the root element carries the
- *        class custom-cursor-off, and a theme's cursor rules (ozone replaces the mouse cursor and draws
- *        a glow around it) are written so that this class switches them off
+ * @brief applies the local setting for a custom theme cursor
  *
  * @return void
  */
@@ -422,11 +428,9 @@ function main__apply_custom_cursor_setting()
 }
 
 /**
- * @brief the page entry point
- *        detects the android webview and touch devices, applies the predefined server
- *        autoconnect config, sets up ui visibility, gestures and every element's event handlers
+ * @brief initializes the client, theme, connection settings and page controls
  *
- * @return promise ignored by window.onload; resolves once the page's handlers are attached
+ * @return promise ignored by window.onload. resolves once the page's handlers are attached
  */
 async function main__window_onload()
 {
@@ -438,7 +442,7 @@ async function main__window_onload()
         g_are_server_details_predefined = false;
     }
 
-    // touch detection is in platform-detection.js; the android webview force above stays
+    // use platform detection with the Android WebView override
     if (utils__detect_touch_device() == true)
     {
         g_is_client_running_under_touch_device = true;
@@ -446,21 +450,19 @@ async function main__window_onload()
 
     if (g_is_running_in_android_webview == true)
     {
-        // in android, connection settings are stored in its own container..
-        // these ui elements are not needed
+        // Android provides its own connection settings screen
         document.getElementById("add-key-button").style.visibility = "hidden";
         document.getElementById("connect-form-grid").style.visibility = "hidden";
     }
 
-    // web: if the server wrote connection details into the page, enable autoconnect before the form-visibility logic below runs; hide only the connect form (ip/port), leaving the loading/connecting status visible so the page isn't blank while it connects
+    // apply served connection details before hiding the form. keep connection status visible
     if (typeof window.__SERVER_CONFIG__ !== "undefined" && window.__SERVER_CONFIG__ != null && window.__SERVER_CONFIG__.port && g_is_running_in_android_webview == false)
     {
         g_are_server_details_predefined = true;
         g_is_autoconnect_without_user_action_active = true;
         g_autoconnect_details = {
-            // a page from the server uses its own address; a page opened from a file uses the address written into it
-            host: (typeof window.__SERVER_CONFIG__.host === "string" && window.__SERVER_CONFIG__.host.length > 0)
-                ? window.__SERVER_CONFIG__.host : window.location.hostname,
+            // served pages use their origin. local files use the configured address
+            host: (typeof window.__SERVER_CONFIG__.host === "string" && window.__SERVER_CONFIG__.host.length > 0) ? window.__SERVER_CONFIG__.host : window.location.hostname,
             port: window.__SERVER_CONFIG__.port,
             keys: window.__SERVER_CONFIG__.keys,
             wss_port: window.__SERVER_CONFIG__.wss_port
@@ -468,7 +470,7 @@ async function main__window_onload()
         document.getElementById("connect-form-grid").style.display = "none";
     }
 
-    // the start page (start-page.js): when the page options ask for it, nothing connects until the user pressed its connect button
+    // the optional start page waits for its Connect button
     if (typeof start_page__init === "function")
     {
         start_page__init();
@@ -476,9 +478,7 @@ async function main__window_onload()
 
     if (g_is_running_in_android_webview == false)
     {
-        // the address is written into the page (injected config, or set by hand in the source), so the fields the
-        // bookmarks fill are never consulted: hidden in every theme, and it stays hidden on the
-        // connect screen after a disconnect
+        // predefined connection details bypass bookmarks and hide their controls
         if (g_are_server_details_predefined == true)
         {
             document.getElementById("server-bookmarks-container").style.display = "none";
@@ -506,28 +506,32 @@ async function main__window_onload()
 
     g_textarea_log = document.getElementById("textarea-log");
 
-    // member list gestures: in the themes that show the member list instead of the channel tree
-    // (bluebell), a tap is on the clones in the right-pane member list, which are
-    // rebuilt on every sync, so delegated listeners forward tap (open chat / show channel chat) and
-    // hold (row menu / channel switch list) to the real tree rows; touch and mouse both register
+    // delegate member gestures to live tree rows because the displayed clones are replaced on refresh
 
+    /**
+     * @brief opens the channel chooser at the pointer and keeps it inside the viewport
+     *
+     * @param number click_x -> horizontal pointer position
+     * @param number click_y -> vertical pointer position
+     *
+     * @return void
+     */
     function member_list_show_channel_switch_menu(click_x, click_y)
     {
         UI.delete_contextmenus();
 
-        // the first line says what the list is for: without it the list was taken for an unrelated menu
-        let menu_items_html = "<p class='context-menu-item context-menu-item-disabled'>switch to channel:</p>\n";
+        // label the channel switch list
+        let menu_items_html = "<p class='context-menu-item context-menu-item-disabled'>Switch to channel:</p>\n";
         for (let i = 0; i < g_channel_list.length; i++)
         {
             let channel = g_channel_list[i];
             let lock_html = (channel.is_using_password == true) ? "🔒 " : "";
             let current_html_class = (parseInt(channel.channel_id) == parseInt(g_current_channel_id)) ? " context-menu-item-disabled" : "";
-            // context-menu-item keeps main__document_onmousedown from closing the menu
-            // before the item's own click handler can run
+            // keep the menu open until the item's click handler runs
             menu_items_html += "<p role='menuitem' tabindex='0' class='context-menu-item channel-switch-menu-item" + current_html_class + "' data-switch-channel-id='" + channel.channel_id + "'>" + lock_html + chat__sanitize_string(channel.name) + "</p>\n";
         }
 
-        let menu_html = "<div class=\"channel-list-context-menu\" style=\"top: " + click_y + "px; left: " + click_x + "px;\">\n\
+        let menu_html = "<div class=\"channel-list-context-menu channel-switch-menu\" style=\"top: " + click_y + "px; left: " + click_x + "px;\">\n\
                             <div class='channel-list-context-menu-background'>\n\
                             </div>\n\
                             <div class='channel-list-context-menu-items'>\n\
@@ -543,8 +547,8 @@ async function main__window_onload()
             let menu_rect = menu.getBoundingClientRect();
             menu.setAttribute("role", "menu");
             menu.setAttribute("aria-label", "Choose channel");
-            menu.style.left = Math.max(8, Math.min(click_x, window.innerWidth - menu_rect.width - 8)) + "px";
-            menu.style.top = Math.max(8, Math.min(click_y, window.innerHeight - menu_rect.height - 8)) + "px";
+            menu.style.left = utils__position_px(Math.max(8, Math.min(click_x, utils__viewport_width() - menu_rect.width - 8)));
+            menu.style.top = utils__position_px(Math.max(8, Math.min(click_y, utils__viewport_height() - menu_rect.height - 8)));
         }
 
         let switch_items = document.getElementsByClassName("channel-switch-menu-item");
@@ -588,8 +592,39 @@ async function main__window_onload()
         }
     }
 
-    // true when the gesture was on a circle and was handled, so the caller stops the event and
-    // main__document_onmousedown does not close the menu the gesture just opened
+    /**
+     * @brief closes the channel chooser when pressed outside its items
+     *
+     * @param Event event -> pointer, mouse or touch press
+     *
+     * @return void
+     */
+    function member_list_dismiss_channel_switch_menu(event)
+    {
+        let items = document.querySelector(".channel-switch-menu .channel-list-context-menu-items");
+        if (items != null && !items.contains(event.target))
+        {
+            UI.delete_contextmenus(true);
+        }
+    }
+
+    // capture runs before the opening gesture creates the chooser
+    for (let event_name of ("PointerEvent" in window ? ["pointerdown"] : ["mousedown", "touchstart"]))
+    {
+        document.addEventListener(event_name, member_list_dismiss_channel_switch_menu, { capture: true, passive: true });
+    }
+
+    // return true when handled so page cleanup does not close the new menu
+    /**
+     * @brief routes a member tile tap or hold to its channel, live user or saved contact
+     *
+     * @param Element target_element -> element pressed inside the member list
+     * @param number click_x -> horizontal pointer position for menus
+     * @param number click_y -> vertical pointer position for menus
+     * @param boolean is_short_click -> true for a tap, false for a hold
+     *
+     * @return boolean -> true when a matching tile handled the press
+     */
     function member_list_forward(target_element, click_x, click_y, is_short_click)
     {
         let channel_circle = target_element.closest(".member-list-channel");
@@ -597,7 +632,7 @@ async function main__window_onload()
         {
             if (is_short_click == true && !target_element.closest(".member-conversations-channel-switch"))
             {
-                // bring the channel chat back on screen - same as tapping its conversation tab
+                // show the channel conversation through its tab
                 member_conversations__open_channel_chat(channel_circle.getAttribute("data-member-list-channel-id"));
             }
             // a hold opens the list of channels
@@ -614,23 +649,29 @@ async function main__window_onload()
         }
 
         let clone = target_element.closest(".member-list-client");
-        if (clone == null) { return false; }
+        if (clone == null)
+        {
+            return false;
+        }
+
+        if (!is_short_click && !UI.are_user_context_menus_enabled())
+        {
+            UI.delete_contextmenus(true);
+            return true;
+        }
 
         if (is_short_click && clone.classList.contains("music-bot-client"))
         {
             return true;
         }
 
-        // offline contacts have no live row to forward to. a HOLD shows what we know about
-        // them; a TAP opens their conversation when the server keeps messages for people
-        // who are away (we can tell: we were given their public key), else the info popup
+        // offline contacts have no live row. open their conversation or details directly
         if (clone.classList.contains("offline-contact") == true)
         {
             let offline_identity_hash = clone.dataset.identityHash;
             let offline_contact = channel_tree__get_stored_client_by_identity_hash(offline_identity_hash);
 
-            // a TAP opens the conversation like it does for anybody else - the chat itself
-            // says whether it can actually be delivered. a HOLD shows their details.
+            // tap opens the conversation. hold shows the saved details
             if (is_short_click == true && offline_contact != null)
             {
                 UI.open_offline_chat_context(offline_contact);
@@ -647,17 +688,23 @@ async function main__window_onload()
         }
 
         let strip_client_id = clone.getAttribute("data-connected-client-id");
-        if (strip_client_id == null) { return false; }
+        if (strip_client_id == null)
+        {
+            return false;
+        }
 
         let tree_row = document.querySelector('#channel-list-container .connected-client[data-connected-client-id="' + strip_client_id + '"], #idle-clients-container .connected-client[data-connected-client-id="' + strip_client_id + '"]');
-        if (tree_row == null) { return false; }
+        if (tree_row == null)
+        {
+            return false;
+        }
 
-        // the row handler accepts an explicit target + coordinates, so the member list can
-        // pass it the REAL tree row no matter which clone was tapped
-        let forwarded_event = { stopPropagation: function() {}, currentTarget: null, which: null };
+        // pass the live tree row instead of its member list clone
+        let forwarded_event = { stopPropagation: function()
+        {
+        }, currentTarget: null, which: null };
         UI.connected_user_onmousedown(forwarded_event, true, click_x, click_y, tree_row, is_short_click);
-        if (is_short_click && typeof member_conversations__show_selected_chat === "function"
-            && g_current_chat_context_id === "chat-context-pm-" + strip_client_id)
+        if (is_short_click && typeof member_conversations__show_selected_chat === "function" && g_current_chat_context_id === "chat-context-pm-" + strip_client_id)
         {
             member_conversations__show_selected_chat();
         }
@@ -675,6 +722,11 @@ async function main__window_onload()
         let member_list_press_generation = null;
         let member_list_press_channel = null;
 
+        /**
+         * @brief cancels the pending member tile hold and removes its touch listeners
+         *
+         * @return void
+         */
         function cancel_member_list_press()
         {
             if (member_list_press_element != null)
@@ -691,15 +743,14 @@ async function main__window_onload()
         }
 
         /**
-         * @brief Finds the pressed row again after a participant update replaces it.
-         * @return Element the current row or null when the connection or channel changed.
+         * @brief finds the pressed row again after a participant update replaces it
+         *
+         * @return Element the current row or null when the connection or channel changed
          */
         function current_member_list_press_target()
         {
-            // g_is_websocket_connected is no longer updated, so the connection is checked like in ui.js
-            if (member_list_press_target == null || !g_is_authenticated || g_worker_connection_ended
-                || member_list_press_generation != g_worker_connection_generation
-                || member_list_press_channel != g_current_channel_id)
+            // use the authenticated session or connection phase
+            if (member_list_press_target == null || !g_is_authenticated || g_worker_connection_ended || member_list_press_generation != g_worker_connection_generation || member_list_press_channel != g_current_channel_id)
             {
                 return null;
             }
@@ -707,15 +758,14 @@ async function main__window_onload()
             {
                 if (row.getAttribute(member_list_press_target.attribute) == member_list_press_target.value)
                 {
-                    return member_list_press_target.channel_switch
-                        ? row.querySelector(".member-conversations-channel-switch") || row : row;
+                    return member_list_press_target.channel_switch ? row.querySelector(".member-conversations-channel-switch") || row : row;
                 }
             }
             return null;
         }
 
         /**
-         * @brief Cancels the pending menu when the finger moves.
+         * @brief cancels the pending menu when the finger moves
          */
         function move_member_list_press()
         {
@@ -724,8 +774,9 @@ async function main__window_onload()
         }
 
         /**
-         * @brief Opens the selected conversation or completes a held menu.
-         * @param TouchEvent event The completed touch.
+         * @brief opens the selected conversation or completes a held menu
+         *
+         * @param TouchEvent event the completed touch
          */
         function end_member_list_press(event)
         {
@@ -764,7 +815,7 @@ async function main__window_onload()
 
         member_list_body.addEventListener("click", function(event)
         {
-            // Assistive technology can activate a button without preceding mouse or key events.
+            // assistive technology can activate a button without preceding mouse or key events
             if (event.detail === 0 && event.target.closest(".member-conversations-channel-switch, .member-list-channel-name[role='button']"))
             {
                 let rect = event.target.getBoundingClientRect();
@@ -775,7 +826,10 @@ async function main__window_onload()
 
         member_list_body.addEventListener("touchstart", function(event)
         {
-            if (g_is_client_running_under_touch_device == false) { return; }
+            if (g_is_client_running_under_touch_device == false)
+            {
+                return;
+            }
 
             cancel_member_list_press();
             if (event.touches.length != 1)
@@ -787,8 +841,7 @@ async function main__window_onload()
             {
                 return;
             }
-            let attribute = row.hasAttribute("data-member-list-channel-id") ? "data-member-list-channel-id"
-                : row.hasAttribute("data-identity-hash") ? "data-identity-hash" : "data-connected-client-id";
+            let attribute = row.hasAttribute("data-member-list-channel-id") ? "data-member-list-channel-id" : row.hasAttribute("data-identity-hash") ? "data-identity-hash" : "data-connected-client-id";
             member_list_press_target =
             {
                 attribute: attribute,
@@ -832,12 +885,12 @@ async function main__window_onload()
                 return;
             }
 
-            // left opens, right = actions / channel list - same split the tree rows use
+            // left click opens the chat. right click opens its menu
             if (event.which == 1 || event.which == 3)
             {
                 if (member_list_forward(event.target, event.clientX, event.clientY, event.which == 1) == true)
                 {
-                    // Keep the focus given to the opened menu instead of returning it to the row.
+                    // keep the focus given to the opened menu instead of returning it to the row
                     event.preventDefault();
                     event.stopPropagation();
                 }
@@ -845,17 +898,28 @@ async function main__window_onload()
         });
     }
 
-    // holding a channel tab offers the channel switch list too, but only while a
-    // theme hides the channel tree (the member list themes) - elsewhere the tree does that job
+    // offer channel switching on hold when the theme hides the tree
     let conversation_tab_container = document.getElementById("chat-context-selectors-container");
     if (conversation_tab_container != null)
     {
+        /**
+         * @brief checks whether the theme hides the channel tree pane
+         *
+         * @return boolean -> true when the pane exists and has no display
+         */
         function is_channel_tree_hidden()
         {
             let tree_pane = document.getElementById("space-devider1");
             return (tree_pane != null && getComputedStyle(tree_pane).display == "none");
         }
 
+        /**
+         * @brief finds the channel tab containing a pressed element
+         *
+         * @param Element event_target -> element receiving the press
+         *
+         * @return Element|null -> enclosing channel tab or null
+         */
         function tab_press_target(event_target)
         {
             let pill = event_target.closest('.chat-context-selector[data-chat-context-selector-type="channel"]');
@@ -866,8 +930,14 @@ async function main__window_onload()
         let tab_long_press = false;
 
         conversation_tab_container.addEventListener("touchstart", function(event) {
-            if (g_is_client_running_under_touch_device == false) { return; }
-            if (tab_press_target(event.target) == null || is_channel_tree_hidden() == false) { return; }
+            if (g_is_client_running_under_touch_device == false)
+            {
+                return;
+            }
+            if (tab_press_target(event.target) == null || is_channel_tree_hidden() == false)
+            {
+                return;
+            }
 
             tab_long_press = false;
             const click_x = event.touches[0].clientX;
@@ -884,7 +954,10 @@ async function main__window_onload()
         }, { passive: true });
 
         conversation_tab_container.addEventListener("touchend", function(event) {
-            if (g_is_client_running_under_touch_device == false) { return; }
+            if (g_is_client_running_under_touch_device == false)
+            {
+                return;
+            }
 
             clearTimeout(tab_press_timer);
 
@@ -896,7 +969,10 @@ async function main__window_onload()
         });
 
         conversation_tab_container.addEventListener("mousedown", function(event) {
-            if (g_is_client_running_under_touch_device == true) { return; }
+            if (g_is_client_running_under_touch_device == true)
+            {
+                return;
+            }
 
             if (event.which == 3 && tab_press_target(event.target) != null && is_channel_tree_hidden() == true)
             {
@@ -906,8 +982,7 @@ async function main__window_onload()
         });
     }
 
-    // long press on an own message opens the delete/edit menu: phones never send the right-click
-    // mousedown desktop uses, so a 600 ms hold synthesizes the same event on the same element
+    // a stationary message touch opens the same menu as a right click
     let chat_context_container_element = document.getElementById("chat-context-container");
     if (chat_context_container_element != null)
     {
@@ -915,19 +990,27 @@ async function main__window_onload()
         let message_press_moved = false;
 
         chat_context_container_element.addEventListener("touchstart", function(event) {
-            if (g_is_client_running_under_touch_device == false) { return; }
+            if (g_is_client_running_under_touch_device == false)
+            {
+                return;
+            }
 
             let message_p = event.target.closest(".local-single-chat-message-content-p, .local-client-chat-picture-img");
-            if (message_p == null) { return; }
+            if (message_p == null)
+            {
+                return;
+            }
 
             message_press_moved = false;
             const click_x = event.touches[0].clientX;
             const click_y = event.touches[0].clientY;
 
             message_press_timer = window.setTimeout(function() {
-                if (message_press_moved == true) { return; }
-                // bubbles:false is required: a bubbling mousedown would reach main__document_onmousedown,
-                // whose menu cleanup would delete the menu created by this very dispatch
+                if (message_press_moved == true)
+                {
+                    return;
+                }
+                // do not bubble to page cleanup, which would close the new menu
                 message_p.dispatchEvent(new MouseEvent("mousedown", {
                     bubbles: false,
                     cancelable: true,
@@ -949,8 +1032,7 @@ async function main__window_onload()
         });
     }
 
-    // member list preferences, persisted like the theme, as body classes and css variables:
-    // orientation (top row or side rail), neighbors only, the own-actions menu, the circle size
+    // restore saved member list layout, filtering, own actions and avatar size
     let saved_member_list_vertical = null;
     let saved_member_list_scale = null;
     let saved_member_list_neighbors = null;
@@ -958,16 +1040,31 @@ async function main__window_onload()
     saved_member_list_scale = utils__storage_get("lemon_strip_scale");
     saved_member_list_neighbors = utils__storage_get("lemon_strip_neighbors");
 
-    if (saved_member_list_vertical == "1") { document.body.classList.add("msgr-vertical"); }
-    if (saved_member_list_neighbors == "1") { document.body.classList.add("msgr-neighbors-only"); }
+    if (saved_member_list_vertical == "1")
+    {
+        document.body.classList.add("msgr-vertical");
+    }
+    if (saved_member_list_neighbors == "1")
+    {
+        document.body.classList.add("msgr-neighbors-only");
+    }
 
-    // on unless it was turned off. the badge only appears for people with audio
-    // off, so leaving it on costs nothing until there is something worth saying
+    // show audio status badges unless the user disabled them
     let saved_audio_availability = null;
     saved_audio_availability = utils__storage_get("lemon_audio_availability");
 
-    if (saved_audio_availability != "0") { document.body.classList.add("msgr-audio-availability"); }
+    if (saved_audio_availability != "0")
+    {
+        document.body.classList.add("msgr-audio-availability");
+    }
 
+    /**
+     * @brief sets member avatar, tile and label sizes from the chosen circle size
+     *
+     * @param number circle_px -> avatar circle diameter in pixels
+     *
+     * @return void
+     */
     function apply_member_list_scale(circle_px)
     {
         document.body.style.setProperty("--msgr-circle", circle_px + "px");
@@ -976,22 +1073,32 @@ async function main__window_onload()
         document.body.style.setProperty("--msgr-name", (circle_px <= 46 ? 10 : (circle_px <= 56 ? 11 : 12)) + "px");
     }
 
-    // legacy values were the steps "1"/"2"/"3"; anything bigger is pixels
+    // legacy values 1, 2 and 3 are preset sizes. larger values are pixels
     let restored_circle_px = 46;
     if (saved_member_list_scale != null)
     {
-        if (saved_member_list_scale == "2") { restored_circle_px = 54; }
-        else if (saved_member_list_scale == "3") { restored_circle_px = 62; }
-        else if (parseInt(saved_member_list_scale) >= 38) { restored_circle_px = parseInt(saved_member_list_scale); }
+        if (saved_member_list_scale == "2")
+        {
+            restored_circle_px = 54;
+        }
+        else if (saved_member_list_scale == "3")
+        {
+            restored_circle_px = 62;
+        }
+        else if (parseInt(saved_member_list_scale) >= 38)
+        {
+            restored_circle_px = parseInt(saved_member_list_scale);
+        }
     }
     apply_member_list_scale(restored_circle_px);
 
-    document.getElementById("communication-system-head-menu").insertAdjacentHTML("afterbegin",
-        "<input type='button' id='msgr-orientation-button' aria-label='Vertical user list' aria-controls='member-list-body'>" +
-        "<input type='button' id='msgr-neighbors-button' title='show only people in your channel'>" +
-        "<input type='button' id='msgr-me-button' title='you: avatar and account actions'>" +
-        "<input type='range' id='msgr-scale-slider' min='38' max='64' step='2' value='" + restored_circle_px + "' title='people size'>");
+    document.getElementById("communication-system-head-menu").insertAdjacentHTML("afterbegin", "<input type='button' id='msgr-orientation-button' aria-label='Vertical user list' aria-controls='member-list-body'>" + "<input type='button' id='msgr-neighbors-button' title='show only people in your channel'>" + "<input type='button' id='msgr-me-button' title='you: avatar and account actions'>" + "<input type='range' id='msgr-scale-slider' min='38' max='64' step='2' value='" + restored_circle_px + "' title='people size'>");
 
+    /**
+     * @brief matches the toolbar button and settings checkbox to the current member list direction
+     *
+     * @return void
+     */
     function sync_member_list_orientation_controls()
     {
         let vertical = document.body.classList.contains("msgr-vertical");
@@ -1037,8 +1144,7 @@ async function main__window_onload()
     window.addEventListener("resize", UI.refresh_member_list_controls);
     UI.refresh_member_list_controls();
 
-    // own actions (set avatar / delete avatar): the same menu a long press on
-    // the own row would open - the row itself is hidden in the member list themes
+    // open the local user's menu from the toolbar
     document.getElementById("msgr-me-button").onclick = function()
     {
         let local_row = document.querySelector("#channel-list-container .connected-local-client");
@@ -1046,7 +1152,10 @@ async function main__window_onload()
         let bar = document.getElementById("communication-system-head-menu").getBoundingClientRect();
         let menu_x = Math.max(8, Math.min(button.left, window.innerWidth - 200));
         let menu_y = button.bottom + 4;
-        if (local_row == null) { return; }
+        if (local_row == null)
+        {
+            return;
+        }
 
         // a button inside the top bar: the menu opens under the bar, not over it
         if (button.bottom <= bar.bottom && bar.height <= 120)
@@ -1055,7 +1164,9 @@ async function main__window_onload()
         }
 
         // open the menu
-        let forwarded_event = { stopPropagation: function() {}, currentTarget: null, which: null };
+        let forwarded_event = { stopPropagation: function()
+        {
+        }, currentTarget: null, which: null };
         UI.connected_user_onmousedown(forwarded_event, true, menu_x, menu_y, local_row, false);
     };
 
@@ -1066,28 +1177,36 @@ async function main__window_onload()
         utils__storage_set("lemon_strip_scale", "" + circle_px);
     };
 
-    // session info: its own icon in the bar, a small card with connection status,
-    // ping (heartbeat round trip), traffic counters and session length. values
-    // refresh once a second, but only while the card is open.
-    document.getElementById("communication-system-head-menu").insertAdjacentHTML("afterbegin",
-        "<input type='button' id='msgr-session-button' title='connection and session info'>");
+    // refresh connection status, latency, traffic and duration while the card is open
+    document.getElementById("communication-system-head-menu").insertAdjacentHTML("afterbegin", "<input type='button' id='msgr-session-button' title='connection and session info'>");
 
-    document.body.insertAdjacentHTML("beforeend",
-        "<div id='msgr-session-card'>" +
-            "<p class='msgr-session-row'><span class='msgr-session-label'>status</span><span id='msgr-session-status'></span></p>" +
-            "<p class='msgr-session-row'><span class='msgr-session-label'>ping</span><span id='msgr-session-ping'></span></p>" +
-            "<p class='msgr-session-row'><span class='msgr-session-label'>sent</span><span id='msgr-session-sent'></span></p>" +
-            "<p class='msgr-session-row'><span class='msgr-session-label'>received</span><span id='msgr-session-received'></span></p>" +
-            "<p class='msgr-session-row'><span class='msgr-session-label'>session</span><span id='msgr-session-uptime'></span></p>" +
-        "</div>");
+    document.body.insertAdjacentHTML("beforeend", "<div id='msgr-session-card'>" + "<p class='msgr-session-row'><span class='msgr-session-label'>status</span><span id='msgr-session-status'></span></p>" + "<p class='msgr-session-row'><span class='msgr-session-label'>ping</span><span id='msgr-session-ping'></span></p>" + "<p class='msgr-session-row'><span class='msgr-session-label'>sent</span><span id='msgr-session-sent'></span></p>" + "<p class='msgr-session-row'><span class='msgr-session-label'>received</span><span id='msgr-session-received'></span></p>" + "<p class='msgr-session-row'><span class='msgr-session-label'>session</span><span id='msgr-session-uptime'></span></p>" + "</div>");
 
+    /**
+     * @brief formats the session traffic count in bytes, kilobytes or megabytes
+     *
+     * @param number byte_count -> transferred byte count
+     *
+     * @return string -> size label with one decimal place for kilobytes and megabytes
+     */
     function format_byte_count(byte_count)
     {
-        if (byte_count >= 1048576) { return (byte_count / 1048576).toFixed(1) + " MB"; }
-        if (byte_count >= 1024) { return (byte_count / 1024).toFixed(1) + " KB"; }
+        if (byte_count >= 1048576)
+        {
+            return (byte_count / 1048576).toFixed(1) + " MB";
+        }
+        if (byte_count >= 1024)
+        {
+            return (byte_count / 1024).toFixed(1) + " KB";
+        }
         return byte_count + " B";
     }
 
+    /**
+     * @brief updates connection status, latency, traffic totals and uptime from the current session
+     *
+     * @return void
+     */
     function refresh_session_card()
     {
         let now = new Date().valueOf();
@@ -1124,18 +1243,23 @@ async function main__window_onload()
         }
     };
 
-    // tapping anywhere else closes the card - it is a glance, not a screen
+    // close the card when clicking outside it
     document.addEventListener("mousedown", function(event) {
         let session_card = document.getElementById("msgr-session-card");
-        if (session_card == null || session_card.classList.contains("msgr-session-card-open") == false) { return; }
-        if (event.target.closest("#msgr-session-card") != null || event.target.closest("#msgr-session-button") != null) { return; }
+        if (session_card == null || session_card.classList.contains("msgr-session-card-open") == false)
+        {
+            return;
+        }
+        if (event.target.closest("#msgr-session-card") != null || event.target.closest("#msgr-session-button") != null)
+        {
+            return;
+        }
 
         session_card.classList.remove("msgr-session-card-open");
         clearInterval(session_card_refresh_timer);
     });
 
-    // grid layout engine: desktop only. touch keeps the legacy inline-block layout,
-    // so there g_layout.grid_active stays false and every layout_* entry point no-ops
+    // enable the grid on desktop. touch devices keep the existing layout
     g_layout.panels = {
         channels: document.getElementById("space-devider1"),
         chat: document.getElementById("space-devider2"),
@@ -1157,7 +1281,7 @@ async function main__window_onload()
             layout__layout_column_drag_start(e, "channels");
         }, false);
 
-        // edit mode: capture-phase so a panel drag wins over every inner click handler
+        // capture edit gestures before inner click handlers
         document.getElementById("communication-system-container").addEventListener("mousedown", layout__layout_edit_mousedown, true);
         document.addEventListener("mousemove", layout__layout_edit_mousemove, false);
         document.addEventListener("mouseup", layout__layout_edit_mouseup, false);
@@ -1178,9 +1302,7 @@ async function main__window_onload()
 
     document.getElementById("chat-input-container-send-chat-input").onclick = UI.send_chat_input_on_click;
 
-    // the conversation tabs shipped in the html (the root channel's) have no handlers until a rebind loop
-    // happens to run; bind them now so they work on a new session too - opening an offline
-    // chat used to leave the channel tab (and the member list's channel circle) without a handler
+    // bind the initial conversation tabs before any chats are added
     for (let x = 0; x < document.getElementsByClassName("chat-context-selector").length; x++)
     {
         document.getElementsByClassName("chat-context-selector")[x].onclick = UI.chat_context_selector_onclick;
@@ -1191,7 +1313,7 @@ async function main__window_onload()
     }
     document.getElementById("connect-button").onclick = UI.connect_button_onclick;
     connection__wire_server_bookmarks();
-    // the connections and bookmarks menus at the left end of the head menu, and the close button of the connect window (head-menu.js)
+    // initialize the connection and bookmark menus
     if (typeof head_menu__init === "function")
     {
         head_menu__init();
@@ -1271,11 +1393,14 @@ async function main__window_onload()
     document.getElementById("identity-file-input").onchange = UI.identity_file_input_onchange;
     document.getElementById("identity-file-confirm-button").onclick = UI.identity_file_confirm_button_onclick;
     document.getElementById("identity-mode-toggle-link").onclick = UI.identity_mode_toggle_onclick;
-    // dropping a .lmn file on the identity dialog behaves like picking it; stopPropagation keeps
-    // the drop away from the chat-file handlers
+    // handle identity file drops without forwarding them to chat uploads
     {
         let identity_dialog = document.getElementById("identity-string-use-container-enter");
-        identity_dialog.addEventListener("dragover", function(drag_event) { drag_event.preventDefault(); drag_event.stopPropagation(); });
+        identity_dialog.addEventListener("dragover", function(drag_event)
+        {
+            drag_event.preventDefault();
+            drag_event.stopPropagation();
+        });
         identity_dialog.addEventListener("drop", function(drop_event)
         {
             drop_event.preventDefault();
@@ -1293,8 +1418,7 @@ async function main__window_onload()
         });
     }
     document.getElementById("import-identity-button").onclick = UI.import_identity_button_onclick;
-    // top bar: same passphrase dialog; entered while connected it disconnects, regenerates
-    // the keypair from the passphrase and reconnects as that identity (see the confirm handler)
+    // open identity import from the toolbar
     document.getElementById("identity-menu-export").onclick = head_menu__identity_item_onclick;
     document.getElementById("identity-menu-import").onclick = head_menu__identity_item_onclick;
     document.getElementById("identity-string-use-confirm-button").onclick = UI.identity_string_use_confirm_button;
@@ -1314,7 +1438,7 @@ async function main__window_onload()
     document.getElementById("close-button-server-settings").onclick = UI.close_button_server_settings_onclick;
     document.getElementById("poke-client-send-button").onclick = UI.poke_client_send_button_onclick;
 
-    // adjust-volume dialog: close button + live slider (updates the gain of that sender's playback buffer in the worklet as it moves)
+    // apply the volume slider to the selected sender's playback
     document.getElementById("close-button-adjust-volume").onclick = function()
     {
         document.getElementById("adjust-volume-container").style.display = "none";
@@ -1340,7 +1464,7 @@ async function main__window_onload()
     document.getElementById("microphone-always-broadcasting-audio-button").onclick = UI.activate_continous_audio_broadcast_onclick;
     document.getElementById("sound-effects-button").onclick = UI.sound_effects_button_onclick;
 
-    // These settings apply only on this device.
+    // these settings apply only on this device
     UI.setup_local_settings_tabs();
     UI.setup_chat_display_settings();
     document.getElementById("local-settings-show-mp3-button").checked = utils__storage_get("lemon_show_mp3_button") !== "0";
@@ -1386,20 +1510,18 @@ async function main__window_onload()
             panel.style.left = "";
             panel.style.top = "";
 
-            // clear it rather than force "block": an inline display beats the stylesheet,
-            // and the phone themes need the panel to stay the flex column that lets the
-            // row list scroll under a fixed title bar and save button
+            // clear the inline display value so the theme controls the panel layout
             panel.style.display = "";
 
-            // Phone themes fill the screen. Center the smaller desktop window after it opens.
+            // phone themes fill the screen. center the smaller desktop window after it opens
             if (window.getComputedStyle(panel).position !== "fixed")
             {
                 panel.style.position = "fixed";
                 panel.style.margin = "0";
                 panel.style.left = "0";
                 panel.style.top = "0";
-                panel.style.left = Math.max(0, Math.round((window.innerWidth - panel.offsetWidth) / 2)) + "px";
-                panel.style.top = Math.max(0, Math.round((window.innerHeight - panel.offsetHeight) / 2)) + "px";
+                panel.style.left = Math.max(0, Math.round((utils__viewport_css_width() - panel.offsetWidth) / 2)) + "px";
+                panel.style.top = Math.max(0, Math.round((utils__viewport_css_height() - panel.offsetHeight) / 2)) + "px";
             }
         }
         else
@@ -1408,9 +1530,12 @@ async function main__window_onload()
         }
     };
 
-    // fade OUT as well as in - display:none mid-animation just made it vanish.
-    // a declaration, not a let: it is referenced above this line too, and hoisting
-    // keeps that working if this block is ever reordered
+    // wait for the closing animation before hiding the panel
+    /**
+     * @brief hides local settings after its closing animation
+     *
+     * @return void
+     */
     function close_local_settings()
     {
         let panel = document.getElementById("local-settings-container");
@@ -1423,15 +1548,19 @@ async function main__window_onload()
         }, 200);
     }
 
-    // the select and the touch segments are two faces of g_is_continuous_mic_mode; a theme
-    // shows one of them, and this paints whichever is on screen from that one variable
+    // show the same voice mode in the dropdown and touch controls
+    /**
+     * @brief matches microphone controls to the saved mode and hides push-to-talk options in continuous mode
+     *
+     * @return void
+     */
     function render_mic_mode_controls()
     {
         document.getElementById("local-settings-mic-mode").value = g_is_continuous_mic_mode ? "continuous" : "push-to-talk";
         document.getElementById("local-settings-ptt-key").value = g_push_to_talk_key_label;
         document.getElementById("local-settings-ptt-disable-while-typing").checked = g_is_push_to_talk_disabled_while_typing;
 
-        // the key only means anything in push-to-talk mode
+        // the key applies only in push to talk mode
         document.getElementById("local-settings-ptt-key-row").style.display = g_is_continuous_mic_mode ? "none" : "";
         document.getElementById("local-settings-ptt-disable-while-typing-row").style.display = g_is_continuous_mic_mode ? "none" : "";
 
@@ -1444,9 +1573,12 @@ async function main__window_onload()
         }
     }
 
-    // fills the microphone picker with the audio inputs the browser reports. the row always
-    // shows; before the microphone has been used once the browser hides the real device list
-    // behind the permission, so a disabled hint entry explains why there is nothing to pick yet
+    // list available microphones. show a hint until permission exposes device names
+    /**
+     * @brief lists available audio inputs and selects the saved device when it is still present
+     *
+     * @return void
+     */
     function populate_microphone_device_list()
     {
         let row = document.getElementById("local-settings-mic-device-row");
@@ -1458,8 +1590,11 @@ async function main__window_onload()
 
         navigator.mediaDevices.enumerateDevices().then(function(devices)
         {
-            // a device with an empty id is the pre-permission placeholder, not a real choice
-            let inputs = devices.filter(function(device) { return device.kind === "audioinput" && device.deviceId !== ""; });
+            // an empty device ID is a placeholder until permission is granted
+            let inputs = devices.filter(function(device)
+            {
+                return device.kind === "audioinput" && device.deviceId !== "";
+            });
 
             let select = document.getElementById("local-settings-mic-device");
             let html = "<option value=\"\">system default</option>";
@@ -1485,17 +1620,23 @@ async function main__window_onload()
             }
 
             row.style.display = "";
-        }).catch(function() { row.style.display = "none"; });
+        }).catch(function()
+        {
+            row.style.display = "none";
+        });
     }
 
-    // switches the live capture to the chosen device without touching the capture graph: a new
-    // source joins the same gain node and the old track just stops. nothing is ever disconnected,
-    // because a capture-edge disconnect once stalled chromium's whole mic delivery
+    // replace the capture source without disconnecting the shared gain node
+    /**
+     * @brief replaces an active microphone stream while keeping its current transmit state
+     *
+     * @return void
+     */
     function apply_selected_microphone_device()
     {
         if (g_local_audio_stream == null || navigator.mediaDevices == null)
         {
-            return; // the mic is not built yet; the choice applies when it activates
+            return; // save the choice for the next capture if none is active
         }
 
         let switch_constraints = (g_selected_microphone_device_id != "")
@@ -1507,7 +1648,7 @@ async function main__window_onload()
             let old_track = g_local_audio_stream.getAudioTracks()[0];
             let new_track = new_stream.getAudioTracks()[0];
 
-            // the new track inherits the transmit state, so a switch mid-talk keeps talking
+            // keep the current transmit state on the replacement track
             new_track.enabled = (old_track != null) ? old_track.enabled : false;
 
             let new_source = g_audio_context.createMediaStreamSource(new_stream);
@@ -1528,12 +1669,19 @@ async function main__window_onload()
         });
     }
 
+    /**
+     * @brief saves the microphone mode and stops continuous transmission when switching to push-to-talk
+     *
+     * @param boolean is_continuous -> true for continuous mode, false for push-to-talk
+     *
+     * @return void
+     */
     function apply_mic_mode(is_continuous)
     {
         g_is_continuous_mic_mode = is_continuous;
         utils__storage_set("lemon_continuous_mic", g_is_continuous_mic_mode ? "1" : "0");
 
-        // switching modes mid-transmission: stop cleanly, the button state must not lie
+        // stop transmission before changing voice mode
         if (g_is_continuous_mic_mode == false && g_is_continuous_transmission_active == true)
         {
             g_is_continuous_transmission_active = false;
@@ -1544,12 +1692,11 @@ async function main__window_onload()
         render_mic_mode_controls();
     }
 
-    // every setting applies live, so this is a "save" only in the sense of "done"
+    // settings apply immediately. save closes the panel
     document.getElementById("local-settings-close-button").onclick = close_local_settings;
     document.getElementById("local-settings-x-button").onclick = close_local_settings;
 
-    // the member list preferences moved here from the toolbar; the toolbar buttons
-    // still exist for the member list themes, so both set the same body classes
+    // keep the settings and toolbar controls on the same member list preferences
     document.getElementById("local-settings-member-list-vertical").onchange = function()
     {
         document.body.classList.toggle("msgr-vertical", this.checked);
@@ -1570,7 +1717,7 @@ async function main__window_onload()
         utils__storage_set("lemon_audio_availability", this.checked ? "1" : "0");
     };
 
-    // avatar / account actions: opens the same menu the msgr "me" button opens
+    // open the local user's avatar and account menu
     document.getElementById("local-settings-avatar-button").onclick = function()
     {
         let local_row = document.querySelector("#channel-list-container .connected-local-client");
@@ -1583,7 +1730,9 @@ async function main__window_onload()
 
         close_local_settings();
 
-        let forwarded_event = { stopPropagation: function() {}, currentTarget: null, which: null };
+        let forwarded_event = { stopPropagation: function()
+        {
+        }, currentTarget: null, which: null };
         UI.connected_user_onmousedown(forwarded_event, true, window.innerWidth - 190, 48, local_row, false);
     };
 
@@ -1618,13 +1767,15 @@ async function main__window_onload()
         chat__apply_theme_formatting();
     };
 
-    // changing the key size changes the identity itself, so it only takes effect on the next
-    // keypair: the current connection keeps the key it already has
+    // apply key size changes to the next identity generation
     document.getElementById("local-settings-rsa-key-bits").onchange = function()
     {
         let chosen_bits = parseInt(this.value);
 
-        if (G_ALLOWED_RSA_KEY_BITS.indexOf(chosen_bits) < 0) { return; }
+        if (G_ALLOWED_RSA_KEY_BITS.indexOf(chosen_bits) < 0)
+        {
+            return;
+        }
 
         g_rsa_key_bits = chosen_bits;
         utils__storage_set("lemon_rsa_key_bits", String(chosen_bits));
@@ -1642,17 +1793,30 @@ async function main__window_onload()
     {
         let target_bits = parseInt(this.getAttribute("data-target-bits"));
 
-        if (G_ALLOWED_RSA_KEY_BITS.indexOf(target_bits) < 0) { return; }
-
-        g_rsa_key_bits = target_bits;
-        utils__storage_set("lemon_rsa_key_bits", String(target_bits));
+        if (G_ALLOWED_RSA_KEY_BITS.indexOf(target_bits) < 0)
+        {
+            return;
+        }
 
         keys__hide_rsa_key_too_weak_dialog();
         utils__custom_alert("creating a " + target_bits + "-bit identity key, this can take a while ...");
 
-        // keep the same passphrase where there is one: at the new size it derives a different
-        // keypair, but it stays reproducible from what the user already saved
-        connection__request_identity((typeof g_identity_string === "string" && g_identity_string.length >= 199) ? g_identity_string : null);
+        if (typeof Android !== "undefined" && Android != null)
+        {
+            // only native storage owns this seed. a page must not derive a different local identity
+            if (UI.identity_apply_passphrase(null, target_bits) === true)
+            {
+                connection__request_connect("button");
+            }
+            return;
+        }
+        if (typeof g_identity_string !== "string" || g_identity_string.length < 199)
+        {
+            utils__custom_alert("The current identity is not ready. Wait for it to finish or import your identity backup before changing its key size.");
+            return;
+        }
+        // retry with the selected identity without changing the next key preference
+        connection__request_identity(g_identity_string, target_bits);
         connection__request_connect("button");
     };
     document.getElementById("local-settings-seen-indicator").onchange = function()
@@ -1770,6 +1934,13 @@ async function main__window_onload()
         let key_button = this;
         key_button.value = "press a key…";
 
+        /**
+         * @brief records the next push-to-talk key or cancels key selection on Escape
+         *
+         * @param KeyboardEvent event -> captured key press
+         *
+         * @return void
+         */
         let capture_key = function(event)
         {
             event.preventDefault();
@@ -1786,7 +1957,9 @@ async function main__window_onload()
                     localStorage.setItem("lemon_ptt_key_code", g_push_to_talk_key_code);
                     localStorage.setItem("lemon_ptt_key_label", g_push_to_talk_key_label);
                 }
-                catch (e) { }
+                catch (e)
+                {
+                }
             }
 
             key_button.value = g_push_to_talk_key_label;
@@ -1795,26 +1968,26 @@ async function main__window_onload()
         window.addEventListener("keydown", capture_key, true);
     };
 
-    // these toggles are in local settings now; hiding the toolbar copies frees icon space
+    // hide toolbar copies of controls now available in local settings
     document.getElementById("sound-effects-button").style.display = "none";
     document.getElementById("hide-show-flags-button").style.display = "none";
     document.getElementById("microphone-always-broadcasting-audio-button").style.display = "none";
 
-    // restore the persisted sound preference; runs after the var initializers, so it wins
+    // restore the saved sound preference after state initialization
     let stored_sound = utils__storage_get("lemon_sound_effects");
     if (stored_sound != null)
     {
         g_are_sound_effects_enabled = (stored_sound === "1");
         sounds__apply_sound_effects_muted();
     }
-    // restore the cursor preference; off keeps the system cursor in every theme
+    // restore the saved cursor preference
     let stored_custom_cursor = utils__storage_get("lemon_custom_cursor");
     if (stored_custom_cursor != null)
     {
         g_is_custom_cursor_enabled = (stored_custom_cursor === "1");
     }
     main__apply_custom_cursor_setting();
-    main__sync_toolbar_state_classes(); // seed the state classes from the initial bools so oldschool shows the right icons on load
+    main__sync_toolbar_state_classes(); // initialize toolbar state classes for themed icons
     document.getElementById("musicbot-management-close-button").onclick = UI.musicbot_management_close_button_onclick;
     document.getElementById("musicbot-management-background-container-upload-button-confirm").onclick = UI.musicbot_management_confirm_upload_button_onclick;
 
@@ -1851,8 +2024,12 @@ async function main__window_onload()
     }
 
 
-    // Identity dialogs grow when the import method, file status or help text changes. Keep the
-    // window inside the viewport while preserving any position chosen by dragging its title bar.
+    // keep resized identity dialogs inside the viewport without losing their dragged position
+    /**
+     * @brief moves visible dragged identity dialogs back inside the viewport
+     *
+     * @return void
+     */
     let fit_identity_dialogs = function()
     {
         for (let dialog of document.querySelectorAll(".identity-dialog"))
@@ -1861,8 +2038,8 @@ async function main__window_onload()
             {
                 continue;
             }
-            let max_left = Math.max(12, window.innerWidth - dialog.offsetWidth - 12);
-            let max_top = Math.max(12, window.innerHeight - dialog.offsetHeight - 12);
+            let max_left = Math.max(12, utils__viewport_css_width() - dialog.offsetWidth - 12);
+            let max_top = Math.max(12, utils__viewport_css_height() - dialog.offsetHeight - 12);
             dialog.style.left = Math.min(Math.max(12, dialog.offsetLeft), max_left) + "px";
             dialog.style.top = Math.min(Math.max(12, dialog.offsetTop), max_top) + "px";
         }
@@ -1874,8 +2051,7 @@ async function main__window_onload()
     }
     window.addEventListener("resize", fit_identity_dialogs);
 
-    // every popup drags by its title bar; the drag keeps it at an inline fixed position, and that position
-    // is cleared on every re-open so popups start centered (a position taken while hidden was 0,0 forever)
+    // drag popups by their title bars. recenter them when reopened
     (function()
     {
         let dragging = null;
@@ -1885,6 +2061,13 @@ async function main__window_onload()
         let i = 0;
         let dialog = null;
 
+        /**
+         * @brief clears the dragged dialog position so its normal layout can place it again
+         *
+         * @param HTMLElement dialog -> identity dialog whose fixed position is cleared
+         *
+         * @return void
+         */
         let clear_drag_pin = function(dialog)
         {
             dialog.style.position = "";
@@ -1895,7 +2078,7 @@ async function main__window_onload()
             dialog.style.bottom = "";
         };
 
-        // recenter on every open: watch each dialog's container for its display flipping on
+        // recenter a popup when it becomes visible
         let recenter_observer = new MutationObserver(function(mutations)
         {
             let i = 0;
@@ -1914,18 +2097,15 @@ async function main__window_onload()
                 dialog = container.querySelector('[data-recenter-on-open="true"]');
                 if (dialog != null)
                 {
-                    // center by js instead of trusting theme css: some themes (oldschool)
-                    // give the overlay container zero size, which left dialogs at the top-left
+                    // center the dialog even when its overlay has no size
                     clear_drag_pin(dialog);
                     dialog.style.position = "fixed";
                     dialog.style.margin = "0";
-                    // measure with offsetWidth/Height (layout size) not getBoundingClientRect:
-                    // a theme's pop-in scale animation (e.g. termix) makes the client rect
-                    // smaller than the real box and pushed the centering off. center on both axes.
+                    // measure layout size so opening animations do not shift the center
                     dw = dialog.offsetWidth;
                     dh = dialog.offsetHeight;
-                    dialog.style.left = Math.max(0, Math.round((window.innerWidth - dw) / 2)) + "px";
-                    dialog.style.top = Math.max(0, Math.round((window.innerHeight - dh) / 2)) + "px";
+                    dialog.style.left = Math.max(0, Math.round((utils__viewport_css_width() - dw) / 2)) + "px";
+                    dialog.style.top = Math.max(0, Math.round((utils__viewport_css_height() - dh) / 2)) + "px";
                 }
             }
         });
@@ -1950,7 +2130,7 @@ async function main__window_onload()
                 });
             }
 
-            // pointer events work for mouse, finger and pen; touch-action none stops the page from scrolling during a drag
+            // pointer events support mouse, touch and pen. prevent scrolling during a drag
             bars[i].style.touchAction = "none";
             bars[i].addEventListener("pointerdown", function(e)
             {
@@ -1982,8 +2162,8 @@ async function main__window_onload()
                     dialog.style.right = "auto";
                     dialog.style.bottom = "auto";
                 }
-                dialog.style.left = rect.left + "px";
-                dialog.style.top = rect.top + "px";
+                dialog.style.left = utils__position_px(rect.left);
+                dialog.style.top = utils__position_px(rect.top);
                 e.preventDefault();
             });
         }
@@ -2005,11 +2185,11 @@ async function main__window_onload()
                     dragging = null;
                     return;
                 }
-                left = Math.max(0, Math.min(left, window.innerWidth - dragging.offsetWidth));
-                top = Math.max(0, Math.min(top, window.innerHeight - dragging.offsetHeight));
+                left = Math.max(0, Math.min(left, utils__viewport_width() - dragging.offsetWidth * g_position_scale));
+                top = Math.max(0, Math.min(top, utils__viewport_height() - dragging.offsetHeight * g_position_scale));
             }
-            dragging.style.left = left + "px";
-            dragging.style.top = top + "px";
+            dragging.style.left = utils__position_px(left);
+            dragging.style.top = utils__position_px(top);
         });
         document.addEventListener("pointerup", function()
         {
@@ -2031,13 +2211,13 @@ async function main__window_onload()
                 let rect = dialog.getBoundingClientRect();
                 if (dialog.tagName === "DIALOG" && dialog.open && dialog.style.left !== "")
                 {
-                    dialog.style.left = Math.max(0, Math.min(rect.left, window.innerWidth - dialog.offsetWidth)) + "px";
-                    dialog.style.top = Math.max(0, Math.min(rect.top, window.innerHeight - dialog.offsetHeight)) + "px";
+                    dialog.style.left = utils__position_px(Math.max(0, Math.min(rect.left, utils__viewport_width() - dialog.offsetWidth * g_position_scale)));
+                    dialog.style.top = utils__position_px(Math.max(0, Math.min(rect.top, utils__viewport_height() - dialog.offsetHeight * g_position_scale)));
                 }
             }
         });
 
-        // Keep the upper left corner in place when resizing Server groups.
+        // keep the upper left corner in place when resizing Server groups
         document.getElementById("groups-dialog").addEventListener("mousedown", function(event)
         {
             let rect = this.getBoundingClientRect();
@@ -2047,8 +2227,8 @@ async function main__window_onload()
                 this.style.margin = "0";
                 this.style.right = "auto";
                 this.style.bottom = "auto";
-                this.style.left = rect.left + "px";
-                this.style.top = rect.top + "px";
+                this.style.left = utils__position_px(rect.left);
+                this.style.top = utils__position_px(rect.top);
             }
         });
     })();
@@ -2059,7 +2239,7 @@ async function main__window_onload()
         document.getElementsByClassName("choose-theme-item")[i].onclick = UI.choose_theme_item_onclick;
     }
 
-    // Touch devices only show themes marked for mobile use.
+    // touch devices only show themes marked for mobile use
     if (g_is_client_running_under_touch_device)
     {
         let theme_items = document.getElementsByClassName("choose-theme-item");
@@ -2072,9 +2252,12 @@ async function main__window_onload()
         }
     }
 
-    // browsers create an AudioContext suspended unless it is made during a user gesture; resume it on the first click/tap so audio works after an autoconnect, with no dedicated connect click.
-    // the context that matters is audio_context (created at authentication time, all voice/music playback runs through it).
-    // the listeners must stay attached until audio_context exists and is running: a gesture can happen before authentication creates it
+    // resume playback on a user gesture. keep listening until audio_context exists and runs
+    /**
+     * @brief resumes suspended audio and removes gesture listeners once playback is allowed
+     *
+     * @return void
+     */
     let unlock_audio_on_first_user_gesture = function()
     {
         if (typeof g_audio_context !== "undefined" && g_audio_context != null && g_audio_context.state === "suspended")
@@ -2100,43 +2283,46 @@ async function main__window_onload()
     g_minimp3_worker = audio_opus_glue__create_new_webworker_in_same_file("minimp3_worker");
     g_video_worker = audio_opus_glue__create_new_webworker_in_same_file("video_worker");
 
-    // the video streaming buttons and popup; needs the video worker above (the viewer's canvas is handed to it)
+    // initialize video controls after the video worker
     video__init_ui();
 
-    // restore a persisted identity: the 200-char passphrase deterministically recreates the keypair,
-    // so the same identity survives relaunches. it is private-key-equivalent in localStorage, hence
-    // server opt-in only (persist_identity in the served config); off keeps every window a fresh identity
+    // restore the saved identity only when served configuration enables persistence
     let persist_identity_enabled = (typeof window.__SERVER_CONFIG__ !== "undefined" && window.__SERVER_CONFIG__ != null && window.__SERVER_CONFIG__.persist_identity === true);
 
-    // avatars: server opt-in (default off) + the accepted max upload size (default 50 KB)
+    // apply the server's avatar policy and upload limit
     g_server_policy.is_avatar_upload_allowed = (typeof window.__SERVER_CONFIG__ !== "undefined" && window.__SERVER_CONFIG__ != null && window.__SERVER_CONFIG__.is_avatar_upload_allowed === true);
     if (g_server_policy.is_avatar_upload_allowed == true && typeof window.__SERVER_CONFIG__.avatar_max_size === "number" && window.__SERVER_CONFIG__.avatar_max_size > 0)
     {
         g_server_policy.avatar_max_size = window.__SERVER_CONFIG__.avatar_max_size;
     }
 
-    let persisted_identity = null;
-    if (persist_identity_enabled == true)
-    {
-        persisted_identity = utils__storage_get("lemon_identity_string");
-    }
+    const saved_identity = persist_identity_enabled
+        ? identity_file__read_saved(utils__storage_get("lemon_identity_record_v1"), utils__storage_get("lemon_identity_string"))
+        : {kind: "missing", passphrase: null};
 
-    // only trust a stored value of the expected length; a short/corrupt one would silently seed
-    // a DIFFERENT keypair, so fall back to a fresh random identity in that case
-    let use_persisted_identity = (persisted_identity != null && persisted_identity.length >= 199);
-
-    // the android webview talks to node, which owns the identity - no keypair needed there
+    // complete normal page initialization even when the saved identity needs recovery
+    // no old seed or corrupt record is silently replaced with a newly generated identity
     if (typeof Android === "undefined")
     {
-        connection__request_identity(use_persisted_identity ? persisted_identity : null);
+        if (saved_identity.kind === "recovery")
+        {
+            setTimeout(function()
+            {
+                connection__report_connection_status("idle", saved_identity.reason);
+                UI.identity_show_saved_recovery(saved_identity);
+            }, 0);
+        }
+        else
+        {
+            connection__request_identity(saved_identity.passphrase, saved_identity.kind === "ready" ? saved_identity.rsa_key_bits : g_rsa_key_bits);
+        }
     }
 
     g_minimp3_worker.postMessage({
         type: "init"
     });
 
-    // set css settings, set default theme
-    // chat will support few themes at most, its up to people to modify their client.html to use own theme
+    // apply configured styles and the default theme
 
     for (let i = 0; i < document.getElementsByClassName("style-theme-html-element").length; i++)
     {
@@ -2154,13 +2340,10 @@ async function main__window_onload()
 
     main__apply_startup_theme();
 
-    // the wrapper app's mode drives the theme (both directions). runs after the restore
-    // above so it wins, and is re-run whenever android pushes a mode change
+    // apply Android mode after restoring the theme
     main__apply_theme_for_app_mode();
 
-    // restore the flat-channel-list preference (it only has a visible effect under a theme that
-    // styles the .channels-flattened class, i.e. termix, but the class is applied regardless so
-    // switching back to termix keeps the choice)
+    // restore the flat channel preference before theme changes can expose it
     g_is_channel_list_flattened = (utils__storage_get("lemon_channels_flat") == "1");
     UI.apply_channel_flatten_state();
 
@@ -2174,7 +2357,7 @@ async function main__window_onload()
         g_request_loopback_reattach = android_js_bridge.request_loopback_reattach_android;
         g_show_connection_phase = android_js_bridge.show_connection_phase_android;
 
-        // a settings push that arrived before these handlers were attached was held by the stand-in window object - use it now
+        // apply native settings received before page initialization
         if (typeof g_pending_android_settings === "string" && g_pending_android_settings != null)
         {
             console.log("connect-path: applying settings that arrived before onload");
@@ -2182,19 +2365,15 @@ async function main__window_onload()
             g_pending_android_settings = null;
         }
 
-        // lets a theme style itself for the wrapper app (the member list themes give the settings gear a
-        // real place in their top bar; css alone cannot tell app from browser)
+        // expose Android mode to the theme styles
         document.body.classList.add("android-app");
 
-        // the app loads client.html from its assets, so the served config (and is_avatar_upload_allowed) never
-        // arrives; assume avatars here, a server that has them off just ignores the upload
+        // Android assets have no served config. allow avatar controls until server policy arrives
         g_server_policy.is_avatar_upload_allowed = true;
 
         document.getElementById("import-identity-button").style.display = "none";
 
-        // the bar gear stays hidden on the connect screen (the in-flow button below
-        // owns that state) and appears once connected. tapped while connected it warns
-        // first: the user is about to edit the details of the connection he is on
+        // show the toolbar settings button while connected. confirm before changing connection details
         document.getElementById("android-settings-button").onclick = function() {
             if (g_is_authenticated)
             {
@@ -2209,14 +2388,18 @@ async function main__window_onload()
             Android.JavaExportGoToSettings();
         }
 
+        /**
+         * @brief hides the warning shown before opening Android settings
+         *
+         * @return void
+         */
         let close_settings_warning = function() {
             document.getElementById("android-settings-warning-container").style.display = "none";
         }
         document.getElementById("android-settings-warning-cancel-button").onclick = close_settings_warning;
         document.getElementById("close-button-android-settings-warning").onclick = close_settings_warning;
 
-        // in-flow twin of the top-bar gear: on the not-connected screen the user
-        // should not have to hunt a corner icon to find where the address lives
+        // show connection settings on the disconnected page
         document.getElementById("android-server-settings-container").style.display = "";
         document.getElementById("android-server-settings-button").onclick = function() {
             Android.JavaExportGoToSettings();
@@ -2224,23 +2407,21 @@ async function main__window_onload()
 
         Android.JavaExportRequestCurrentSettingsFromAndroid();
 
-        // the settings callback sets the connection target; the connect loop takes it from there
+        // native settings provide the connection target
     }
     else if (g_are_server_details_predefined == true)
     {
-        // website with the config written into the page: connection__request_connect connects under autoconnect
+        // start autoconnect using the page's configured target
         connection__request_connect("settings");
     }
 
-    // the page loads with the spinner up (see the template); start its reveal deadline so a
-    // client that connects to nothing still shows the connect page after a moment.
-    // the setter call paints the theme's background onto it (opaque page one)
+    // start the connect screen reveal deadline and apply its themed background
     connection__set_connect_holdback_loader_visible(true);
     g_connect_holdback_started = new Date().valueOf();
     g_connect_holdback_deadline = g_connect_holdback_started + 2500;
     setTimeout(connection__connect_holdback_check, 250);
 
-    // a browser client in manual mode knows at load that nothing will connect: no spinner
+    // manual browser connections need no startup spinner
     if (g_is_running_in_android_webview == false && g_is_autoconnect_without_user_action_active == false)
     {
         connection__reveal_connect_page();
@@ -2250,31 +2431,189 @@ async function main__window_onload()
     connection__connect_loop();
 }
 
-// needs to be checked so webworkers that this code is shared with do not try to use window object
+// workers and Node do not run page initialization
 
 if (typeof window !== 'undefined')
 {
     window.onload = main__window_onload;
 }
 
-// the export seam for the headless node build: every g_* and both message tables are locals of
-// moduleFactory, and this object is what a node host gets from module.exports = factory();
-// a page takes root.what = factory() and simply discards it
+// the export seam for the headless node build:
 return {
     server_msg: server_msg,
     client_msg: client_msg,
-    // the java -> js entry points (messages.js:3183). the service runtime needs these:
-    // accept_current_settings_from_android is how the android settings screen reaches the client
+    // native entry points for the shared client
     android_js_bridge: android_js_bridge,
 
-    // call once before connecting: stands up the transport and the log sink
+    // initialize transport and logging before connecting
     init_node_runtime: android_host__init_node_runtime,
 
-    // the webview handover: false closes the socket and stops reconnecting, true allows it again
+    // allow connections or close the socket and pause retries
     node_set_connection_wanted: android_host__node_set_connection_wanted,
+    /**
+     * @brief starts the shared connection flow for a manual Node connect request
+     *
+     * @return boolean -> true after submitting the request
+     */
+    node_request_connect: function()
+    {
+        connection__request_connect("button");
+        return true;
+    },
+    /**
+     * @brief disconnects the shared client and stops automatic retries
+     *
+     * @return boolean -> true after applying the disconnect request
+     */
+    node_disconnect_by_user: function()
+    {
+        connection__disconnect_by_user();
+        return true;
+    },
+    /**
+     * @brief sends an upload through the active authenticated Node connection
+     *
+     * @param object request -> upload request for the connection worker
+     *
+     * @return Promise<boolean> -> false when disconnected or the send fails, true when accepted
+     */
+    node_forward_upload_request: function(request)
+    {
+        if (!g_is_authenticated || g_worker_connection_ended)
+        {
+            return Promise.resolve(false);
+        }
+        return connection__send_upload_message(request);
+    },
+    node_handle_call_action: android_host__handle_call_action,
+    node_cancel_upload_request: connection__cancel_upload_send,
+    node_delivery_context: chat__delivery_context,
+    /**
+     * @brief updates saved local ignore state only for the matching live identity
+     *
+     * @param object arguments_value -> public key, identity hash and boolean ignored value
+     *
+     * @return boolean -> true when the matched client state was saved
+     */
+    node_set_local_ignore: function(arguments_value)
+    {
+        if (!arguments_value || typeof arguments_value.ignored !== "boolean")
+        {
+            return false;
+        }
+        const client = g_client_list.find(function(candidate)
+        {
+            return candidate.public_key && candidate.public_key === arguments_value.public_key && candidate.identity_hash === arguments_value.identity_hash;
+        });
+        if (!client)
+        {
+            return false;
+        }
+        client.is_ignored_by_local_client = arguments_value.ignored;
+        chat__remember_peer_state();
+        return true;
+    },
+    /**
+     * @brief marks a validated current conversation as read
+     *
+     * @param object arguments_value -> conversation identity and receipt preference from the page
+     *
+     * @return boolean true when the conversation was found and marked read
+     */
+    node_read_conversation: function(arguments_value)
+    {
+        if (!arguments_value || !g_node_has_attached_ui)
+        {
+            return false;
+        }
+        // match a channel read to its declared conversation
+        if (Number.isSafeInteger(arguments_value.channel_id) && arguments_value.channel_id >= 0)
+        {
+            if (arguments_value.context_id !== "chat-context-channel-" + arguments_value.channel_id)
+            {
+                return false;
+            }
+            chat__clear_channel_unread_count(arguments_value.channel_id);
+            return true;
+        }
+        // resolve a live person by both key and identity
+        const client = g_client_list.find(function(candidate)
+        {
+            return candidate.public_key && candidate.public_key === arguments_value.public_key && candidate.identity_hash === arguments_value.identity_hash;
+        });
+        if (client)
+        {
+            if (arguments_value.context_id !== chat__peer_state_key(client))
+            {
+                return false;
+            }
+            chat__clear_unread_count(client.client_id, true, arguments_value.send_seen_receipts === true);
+            return true;
+        }
+        // find retained unread state when the person is no longer connected
+        const peer_context = arguments_value.identity_hash ? "identity:" + arguments_value.identity_hash : (typeof arguments_value.public_key === "string" && arguments_value.public_key ? "key:" + arguments_value.public_key : "");
+        const state = chat_peer_local_state.get(peer_context);
+        if (state && peer_context && arguments_value.context_id === peer_context)
+        {
+            state.unread_count = 0;
+            chat__update_app_unread_badge();
+            return true;
+        }
+        return false;
+    },
+    /**
+     * @brief stops connection retries and exposes a bounded delivery failure message
+     *
+     * @param string reason -> failure text or an empty value to use the capacity warning
+     *
+     * @return void
+     */
+    node_fail_delivery: function(reason)
+    {
+        android_host__node_set_connection_wanted(false);
+        connection__report_connection_status("error", String(reason || "Pending message capacity exceeded. Reopen the chat.").slice(0, 240));
+    },
+    /**
+     * @brief sets the Node notification callback or clears it for a nonfunction value
+     *
+     * @param function|null callback -> listener for notification requests
+     *
+     * @return void
+     */
+    set_notification_listener: function(callback)
+    {
+        node_notification_listener = typeof callback === "function" ? callback : null;
+    },
+    /**
+     * @brief copies current session, identity, peers and unread counts for an attached page
+     *
+     * @return object -> detached JSON snapshot with authenticated false during recovery
+     */
+    get_ui_session_snapshot: function()
+    {
+        return JSON.parse(JSON.stringify(
+        {
+            session_id: node_session_id,
+            public_key_string: g_rsa_public_key_string,
+            identity_revision: g_identity_revision,
+            local_client_id: g_local_client_id,
+            current_channel_id: g_current_channel_id,
+            authenticated: g_is_authenticated && !g_fast_reconnect.in_progress && g_connection_status.state === "connected",
+            phase: g_connection_status.state,
+            server_policy: g_server_policy,
+            current_call: node_current_call,
+            peer_states: chat__snapshot_peer_states(),
+            channel_counts: Object.keys(g_channel_unread_counts).map(function(key)
+            {
+                return {channel_id: Number(key), unread_count: g_channel_unread_counts[key]};
+            }),
+            clients: g_client_list,
+            channels: g_channel_list
+        }));
+    },
 
     /**
-     * @brief sets the username this client asks for while connecting, because a headless host has no page variable to edit
+     * @brief sets the username requested at login
      *
      * @param string username -> the name, "" goes back to the assigned one
      *
@@ -2286,7 +2625,7 @@ return {
     },
 
     /**
-     * @brief a plaintext request from the loopback ui: encrypts it and sends it to the real server
+     * @brief encrypts and sends a request from the local page
      *
      * @param string json_string -> the request as json text
      *
@@ -2298,7 +2637,7 @@ return {
     },
 
     /**
-     * @brief registers the callback that gets every decrypted server frame raw; feeds the ui replay
+     * @brief registers the decrypted frame listener used for page replay
      *
      * @param function callback -> callback(json_string), null clears it
      *
@@ -2310,7 +2649,7 @@ return {
     },
 
     /**
-     * @brief registers a callback for every connection status change; additive, every caller gets called
+     * @brief adds a listener for connection status changes
      *
      * @param function callback -> callback(status)
      *
@@ -2318,11 +2657,14 @@ return {
      */
     set_connection_status_listener: function(callback)
     {
-        if (typeof callback === "function") { g_connection_status_listeners.push(callback); }
+        if (typeof callback === "function")
+        {
+            g_connection_status_listeners.push(callback);
+        }
     },
 
     /**
-     * @brief registers the callback that gets the unread total whenever it changes; drives the app icon badge
+     * @brief registers the listener that publishes total unread count changes
      *
      * @param function callback -> callback(total), null clears it
      *
@@ -2330,11 +2672,35 @@ return {
      */
     set_unread_listener: function(callback)
     {
-        g_node_unread_listener = (typeof callback === "function") ? callback : null;
+        if (typeof callback === "function")
+        {
+            node_unread_listeners.push(callback);
+        }
+        /**
+         * @brief notifies registered Node unread listeners without letting one failure stop the others
+         *
+         * @param number total -> current unread message total
+         *
+         * @return void
+         */
+        g_node_unread_listener = function(total)
+        {
+            for (const listener of node_unread_listeners)
+            {
+                try
+                {
+                    listener(total);
+                }
+                catch (error)
+                {
+                    console.warn("unread listener failed");
+                }
+            }
+        };
     },
 
     /**
-     * @brief registers the callback for an incoming call: headless node's only route to the native accept/decline screen
+     * @brief registers the native incoming call handler
      *
      * @param function callback -> callback(caller_username, channel_id), null clears it
      *
@@ -2346,16 +2712,16 @@ return {
     },
 
     /**
-     * @brief a ui attached to or left the loopback
-     *        while one is attached the user is looking, so node stops counting unread messages and
-     *        clears what it accumulated; the ui owns the badge then
+     * @brief applies page visibility and native idle policy without marking messages read
      *
-     * @param boolean is_attached -> true when a ui is attached
-     * @param boolean is_from_host -> true when java said so; the webview reconnecting in the background is not the user coming back
+     * @param boolean is_attached -> true when the page is visible
+     * @param boolean is_from_host -> true when native lifecycle state owns the update
+     * @param preserve_idle true to keep the current idle state
+     * @param force_idle true to idle even after a previous background transition
      *
      * @return void
      */
-    node_set_ui_attached: function(is_attached, is_from_host)
+    node_set_ui_attached: function(is_attached, is_from_host, preserve_idle, force_idle)
     {
         if (is_from_host === true)
         {
@@ -2363,37 +2729,33 @@ return {
         }
         else if (node_ui_visibility_from_host == true)
         {
-            // the webview reconnecting to the loopback in the background is not the user
-            // coming back, and java has already said so
+            // a background loopback reconnect cannot override native visibility
             return;
         }
 
         let was_attached = g_node_has_attached_ui;
         g_node_has_attached_ui = (is_attached === true);
-
-        if (g_node_has_attached_ui == true)
+        if (is_from_host === true)
         {
-            g_channel_unread_counts = {};
-
-            for (let i = 0; i < g_client_list.length; i++)
-            {
-                g_client_list[i].unread_count = 0;
-            }
-
-            chat__update_app_unread_badge();
+            node_ui_forced_idle = !g_node_has_attached_ui && (node_ui_forced_idle || force_idle === true);
         }
 
-        // headless node is a client nobody is sitting at, so it belongs in idle -
-        // that is what lets other people CALL this phone. without this it just stood
-        // in the root channel looking present
-        if (g_is_authenticated == true && was_attached != g_node_has_attached_ui)
+        // retain forced idle after a task swipe, including before authentication
+        if (node_ui_forced_idle && !g_node_has_attached_ui)
+        {
+            android_host__enter_deep_idle(true);
+            return;
+        }
+
+        // move an unattended authenticated session to idle so it can receive calls
+        if (preserve_idle !== true && g_is_authenticated == true && was_attached != g_node_has_attached_ui)
         {
             android_host__node_apply_idle_for_ui_state();
         }
     },
 
     /**
-     * @brief java's connectivity watch, the only trustworthy "is there a network" on android
+     * @brief applies network availability reported by Android
      *
      * @param boolean is_available -> true while wifi or mobile data is on
      *
@@ -2403,7 +2765,7 @@ return {
     {
         g_device_has_network = (is_available === true);
 
-        // say it immediately - the retry text would otherwise keep the stale guess
+        // update disconnected status immediately when network access is lost
         if (g_device_has_network === false && g_is_authenticated == false)
         {
             g_last_disconnect_reason = "no network connection (wifi and mobile data are off)";
@@ -2414,15 +2776,15 @@ return {
     /**
      * @brief the current connection status
      *
-     * @return object g_connection_status, the state and its reason
+     * @return object a copy of the current connection status
      */
     get_connection_status: function()
     {
-        return g_connection_status;
+        return Object.assign({}, g_connection_status);
     },
 
     /**
-     * @brief a ui attached to the loopback wants to be online; an attach always follows an authorized decision, so the connect loop connects for it
+     * @brief applies an explicit Connect request after native settings are available
      *
      * @return void
      */
@@ -2435,7 +2797,7 @@ return {
     },
 
     /**
-     * @brief the cached authentication frame, whenever it arrived; a replay leads with it regardless of start order
+     * @brief reads the cached authentication frame for the current session
      *
      * @return string|null the frame, null before authentication
      */
@@ -2445,7 +2807,7 @@ return {
     },
 
     /**
-     * @brief registers a callback fired after every dispatched message, the host's "state may have changed" signal; additive, every caller gets called
+     * @brief adds a callback invoked after shared message processing
      *
      * @param function callback -> callback(message_type, had_error)
      *
@@ -2453,29 +2815,33 @@ return {
      */
     set_on_message_processed: function(callback)
     {
-        if (typeof callback === "function") { g_node_message_listeners.push(callback); }
+        if (typeof callback === "function")
+        {
+            g_node_message_listeners.push(callback);
+        }
     },
 
     /**
-     * @brief a snapshot of the shared state for the host, built fresh per call since several entries are reassigned rather than mutated
-     *        read-only: the arrays come back live, and writing through them bypasses the handlers' invariants
+     * @brief copies the shared state so the host cannot mutate the live session
      *
      * @return object the client and channel lists, chat contexts, groups, icons, the current channel and its keys, the local ids and the connection flags
      */
     read_state: function()
     {
         return {
-            g_client_list: g_client_list,
-            g_channel_list: g_channel_list,
-            g_chat_context_array: g_chat_context_array,
-            g_map_client_id_to_array_index: g_map_client_id_to_array_index,
-            g_offline_client_list: g_offline_client_list,
-            g_chat_message_author_public_keys: g_chat_message_author_public_keys,
-            g_groups: g_groups,
-            g_icons: g_icons,
+            g_client_list: JSON.parse(JSON.stringify(g_client_list)),
+            g_channel_list: JSON.parse(JSON.stringify(g_channel_list)),
+            g_chat_context_array: JSON.parse(JSON.stringify(g_chat_context_array)),
+            g_map_client_id_to_array_index: new Map(g_map_client_id_to_array_index),
+            g_offline_client_list: JSON.parse(JSON.stringify(g_offline_client_list)),
+            g_chat_message_author_public_keys: JSON.parse(JSON.stringify(g_chat_message_author_public_keys)),
+            g_groups: JSON.parse(JSON.stringify(g_groups)),
+            group_access: JSON.parse(JSON.stringify(groups_window.access)),
+            channel_groups: JSON.parse(JSON.stringify(channel_groups.catalog)),
+            g_icons: JSON.parse(JSON.stringify(g_icons)),
             current_channel_id: g_current_channel_id,
-            current_channel_keys: g_current_channel_keys,
-            // the keys of this client's media frames, for the test harness (keys.js)
+            current_channel_keys: g_current_channel_keys == null ? null : JSON.parse(JSON.stringify(g_current_channel_keys)),
+            // expose media key operations to the test harness
             media_session_layer: keys__media_session_layer(),
             media_server_key_layers: keys__media_server_key_layers(),
             local_client_id: g_local_client_id,
@@ -2484,7 +2850,7 @@ return {
             g_chat_message_receiver_type: g_chat_message_receiver_type,
             g_is_client_list_retrieved: g_is_client_list_retrieved,
             g_is_channel_list_retrieved: g_is_channel_list_retrieved,
-            // the live connection signal (g_is_websocket_connected is no longer updated, see ui.js)
+            // current authenticated session state
             g_is_authenticated: g_is_authenticated,
             g_is_microphone_always_on: g_is_microphone_always_on,
             g_have_received_android_settings: g_have_received_android_settings

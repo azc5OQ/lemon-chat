@@ -1,6 +1,6 @@
 # why this directory exists
 
-The embedded Node runtime (`jniLibs/<abi>/libnode.so`, from nodejs-mobile) is a native library -
+The embedded Node runtime (`libnode.so`, from nodejs-mobile) is a native library.
 Java cannot call it directly. This directory builds `liblemonchatnode.so`, the small JNI glue
 between the two:
 
@@ -11,10 +11,7 @@ between the two:
 - `CMakeLists.txt` - builds the glue and links it against the prebuilt `libnode.so`. Built with
   `-DANDROID_STL=c++_shared`, because libnode links the shared libc++ and the apk must ship
   `libc++_shared.so` next to it or `System.loadLibrary("node")` fails at runtime.
-- `nodejs-mobile-include/` - the Node headers the glue compiles against. NOT committed (~600
-  files); `nodejs-client/fetch-nodejs-mobile.py` downloads them together with `libnode.so`.
-  Headers and .so must come from the SAME nodejs-mobile release - `node.h`'s `Start()` signature
-  is the entire contract between them.
+- The headers and libraries come from one verified version directory under `app/build/generated/node-runtime/`. Gradle passes its path as `NODEJS_MOBILE_ROOT`. The old adjacent `nodejs-mobile-include/` and `src/main/jniLibs` directories are not used.
+- Node 24 headers require C++20. The JNI adapter uses 16 KiB ELF alignment and the same NDK revision as the runtime release. The packaged C++ library must remain available beside Node.
 
-If Node ever needs to be removed from the app, delete this directory, the `jniLibs` libraries,
-and the `externalNativeBuild` block in `app/build.gradle`.
+`prepareNodeRuntime` runs before native configuration and checks every cached file against the pinned release. It prepares matching headers and libraries together, so an interrupted download cannot leave a mixed runtime. Standard Android packaging strips non-runtime symbols while keeping exported functions and allocated runtime sections. The APK verification tool checks those sections against the verified SDK.

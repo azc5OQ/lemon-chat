@@ -1,4 +1,4 @@
-// Existing version 2 media framing; channel ciphertext stays inside session protection.
+// existing version 2 media framing. Channel ciphertext stays inside session protection
 #include "crypto/crypto_media.h"
 #include "clib.h"
 #include "../../third-party/kokke-tiny-aes-c/aes.h"
@@ -13,9 +13,11 @@ static void _crypto_media_internal__crypt(const ubyte *key, const ubyte *block, 
 static boole _crypto_media_internal__mac(const ubyte *key, const ubyte *bytes, uint64 size, ubyte *output);
 
 /**
- * @brief writes the media protocol's eight-byte big-endian counter.
+ * @brief writes the media protocol's eight byte big endian counter
+ *
  * @param ubyte* bytes -> destination with eight bytes
  * @param uint64 value -> counter to serialize
+ *
  * @return void
  */
 static void _crypto_media_internal__u64(ubyte *bytes, uint64 value)
@@ -30,8 +32,10 @@ static void _crypto_media_internal__u64(ubyte *bytes, uint64 value)
 }
 
 /**
- * @brief reads an existing frame counter without alignment assumptions.
+ * @brief reads an existing frame counter without alignment assumptions
+ *
  * @param const ubyte* bytes -> eight readable bytes
+ *
  * @return uint64 -> decoded counter
  */
 static uint64 _crypto_media_internal__read_u64(const ubyte *bytes)
@@ -48,11 +52,13 @@ static uint64 _crypto_media_internal__read_u64(const ubyte *bytes)
 }
 
 /**
- * @brief applies AES-256 CTR in place using an explicit initial block.
- * @param const ubyte* key -> 32-byte key
- * @param const ubyte* block -> 16-byte initial counter
+ * @brief applies AES-256 CTR in place using an explicit initial block
+ *
+ * @param const ubyte* key -> 32 byte key
+ * @param const ubyte* block -> 16 byte initial counter
  * @param ubyte* bytes -> writable payload
  * @param uint64 size -> payload length
+ *
  * @return void
  */
 static void _crypto_media_internal__crypt(const ubyte *key, const ubyte *block, ubyte *bytes, uint64 size)
@@ -68,11 +74,13 @@ static void _crypto_media_internal__crypt(const ubyte *key, const ubyte *block, 
 }
 
 /**
- * @brief calculates the existing HMAC-SHA256 authentication code.
- * @param const ubyte* key -> 32-byte authentication key
+ * @brief calculates the existing HMAC-SHA256 authentication code
+ *
+ * @param const ubyte* key -> 32 byte authentication key
  * @param const ubyte* bytes -> readable authenticated bytes
  * @param uint64 size -> byte count
- * @param ubyte* output -> 32-byte destination
+ * @param ubyte* output -> 32 byte destination
+ *
  * @return boole -> 1 when calculated
  */
 static boole _crypto_media_internal__mac(const ubyte *key, const ubyte *bytes, uint64 size, ubyte *output)
@@ -81,10 +89,12 @@ static boole _crypto_media_internal__mac(const ubyte *key, const ubyte *bytes, u
 }
 
 /**
- * @brief parses an exact-size hex key or ticket, rejecting partial and oversized input.
- * @param const char* text -> NUL-terminated hex text
+ * @brief parses an exact size hex key or ticket, rejecting partial and oversized input
+ *
+ * @param const char* text -> NUL terminated hex text
  * @param ubyte* output -> destination with size bytes
  * @param uint64 size -> expected decoded length
+ *
  * @return boole -> 1 on success, otherwise output is cleared
  */
 boole crypto_media__hex(const char *text, ubyte *output, uint64 size)
@@ -138,11 +148,13 @@ boole crypto_media__hex(const char *text, ubyte *output, uint64 size)
 }
 
 /**
- * @brief constructs the existing one-use audio WebSocket authentication frame.
- * @param const ubyte key -> 32-byte ticket authentication key
- * @param const ubyte ticket -> 16-byte session ticket
+ * @brief constructs the existing one use audio WebSocket authentication frame
+ *
+ * @param const ubyte key -> 32 byte ticket authentication key
+ * @param const ubyte ticket -> 16 byte session ticket
  * @param uint id -> authenticated server client ID
- * @param ubyte output -> 53-byte frame destination
+ * @param ubyte output -> 53 byte frame destination
+ *
  * @return boole -> 1 when complete
  */
 boole crypto_media__proof(const ubyte key[32], const ubyte ticket[16], uint id, ubyte output[53])
@@ -161,11 +173,13 @@ boole crypto_media__proof(const ubyte key[32], const ubyte ticket[16], uint id, 
 }
 
 /**
- * @brief verifies the server's audio attachment acknowledgement in constant time.
- * @param const ubyte key -> 32-byte ticket authentication key
- * @param const ubyte ticket -> expected 16-byte ticket
+ * @brief verifies the server's audio attachment acknowledgement in constant time
+ *
+ * @param const ubyte key -> 32 byte ticket authentication key
+ * @param const ubyte ticket -> expected 16 byte ticket
  * @param const ubyte* bytes -> received frame
  * @param uint64 size -> received byte count
+ *
  * @return boole -> 1 only for an authentic acknowledgement of this ticket
  */
 boole crypto_media__acknowledgement(const ubyte key[32], const ubyte ticket[16], const ubyte *bytes, uint64 size)
@@ -185,13 +199,15 @@ boole crypto_media__acknowledgement(const ubyte key[32], const ubyte ticket[16],
 }
 
 /**
- * @brief applies one inner AES layer using the sender ID, sender counter and optional channel IV.
- * @param const ubyte key -> 32-byte key
- * @param const ubyte* iv -> 16-byte channel IV, or NULL for server/bot keys
+ * @brief applies one inner AES layer using the sender ID, sender counter and optional channel IV
+ *
+ * @param const ubyte key -> 32 byte key
+ * @param const ubyte* iv -> 16 byte channel IV, or NULL for server/bot keys
  * @param uint sender -> server sender ID
  * @param uint64 counter -> sender's frame counter
  * @param ubyte* data -> writable payload
  * @param uint64 size -> payload byte count
+ *
  * @return void
  */
 void crypto_media__layer(const ubyte key[32], const ubyte *iv, uint sender, uint64 counter, ubyte *data, uint64 size)
@@ -220,14 +236,16 @@ void crypto_media__layer(const ubyte key[32], const ubyte *iv, uint sender, uint
 }
 
 /**
- * @brief wraps channel ciphertext in the existing server-key and per-session media layers.
+ * @brief wraps channel ciphertext in the existing server key and per session media layers
+ *
  * @param const desktop_media_keys_t* keys -> worker-owned session keys
  * @param uint sender -> local authenticated client ID
- * @param uint64 counter -> unique counter for this packet; never reuse under these keys
- * @param const ubyte* content -> channel-encrypted sequence and Opus packet
+ * @param uint64 counter -> unique counter for this packet. Never reuse under these keys
+ * @param const ubyte* content -> channel encrypted sequence and Opus packet
  * @param uint64 size -> content byte count
  * @param ubyte* output -> frame destination
  * @param uint64 capacity -> actual destination capacity
+ *
  * @return uint64 -> frame length, or zero on failure
  */
 uint64 crypto_media__seal(const desktop_media_keys_t *keys, uint sender, uint64 counter, const ubyte *content, uint64 size, ubyte *output, uint64 capacity)
@@ -300,7 +318,8 @@ uint64 crypto_media__seal(const desktop_media_keys_t *keys, uint sender, uint64 
 }
 
 /**
- * @brief authenticates an incoming media frame before removing session and server layers.
+ * @brief authenticates an incoming media frame before removing session and server layers
+ *
  * @param const desktop_media_keys_t* keys -> worker-owned session keys
  * @param const ubyte* frame -> received version 2 frame
  * @param uint64 size -> complete frame length
@@ -309,6 +328,7 @@ uint64 crypto_media__seal(const desktop_media_keys_t *keys, uint sender, uint64 
  * @param uint64* frame_counter -> receives server counter for replay checks
  * @param ubyte* content -> receives channel ciphertext
  * @param uint64 capacity -> destination capacity
+ *
  * @return uint64 -> content length, or zero for invalid input
  */
 uint64 crypto_media__open(const desktop_media_keys_t *keys, const ubyte *frame, uint64 size, uint *sender, uint64 *sender_counter, uint64 *frame_counter, ubyte *content, uint64 capacity)

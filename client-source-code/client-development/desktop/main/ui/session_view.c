@@ -1,4 +1,4 @@
-// Standalone channel tree and chat history. The game uses its own compact scene.
+// standalone channel tree and chat history. The game uses its own compact scene
 #include "ui/session_view.h"
 #include "ui/ui_voice.h"
 #include "ui/ui_attachments.h"
@@ -51,7 +51,8 @@ static int64 _session_view_internal__conversation(int64 peer, uint64 serial, con
 static void _session_view_internal__text(gui_node_t *parent, const char *text, const desktop_chat_format_t *format);
 
 /**
- * @brief clears retained GUI message snapshots, drafts and read counts after their controls close.
+ * @brief clears retained GUI message snapshots, drafts and read counts after their controls close
+ *
  * @return void
  */
 void desktop_session_view__shutdown(void)
@@ -78,8 +79,10 @@ void desktop_session_view__shutdown(void)
 }
 
 /**
- * @brief marks a client row without opening a conversation or information window.
+ * @brief marks a client row without opening a conversation or information window
+ *
  * @param const desktop_client_t* client -> displayed client with its connection lifetime
+ *
  * @return void
  */
 void desktop_session_view__select_member(const desktop_client_t *client)
@@ -95,8 +98,10 @@ void desktop_session_view__select_member(const desktop_client_t *client)
 }
 
 /**
- * @brief marks a channel row without joining it or opening its editor.
+ * @brief marks a channel row without joining it or opening its editor
+ *
  * @param const desktop_channel_t* channel -> displayed channel
+ *
  * @return void
  */
 void desktop_session_view__select_channel(const desktop_channel_t *channel)
@@ -112,11 +117,13 @@ void desktop_session_view__select_channel(const desktop_channel_t *channel)
 }
 
 /**
- * @brief finds or adds a bounded private conversation using a connected peer's lifetime.
+ * @brief finds or adds a bounded private conversation using a connected peer's lifetime
+ *
  * @param int64 peer -> server client ID
- * @param uint64 serial -> connection lifetime; numeric ID reuse creates a separate conversation
+ * @param uint64 serial -> connection lifetime. Numeric ID reuse creates a separate conversation
  * @param const char* name -> display name copied into the tab
- * @return int64 -> one-based tab index; zero when capacity is exhausted
+ *
+ * @return int64 -> one based tab index. Zero when capacity is exhausted
  */
 static int64 _session_view_internal__conversation(int64 peer, uint64 serial, const char *name)
 {
@@ -157,8 +164,10 @@ static int64 _session_view_internal__conversation(int64 peer, uint64 serial, con
 }
 
 /**
- * @brief selects an online member's private conversation without changing the voice channel.
- * @param const desktop_client_t* client -> GUI-owned member snapshot
+ * @brief selects an online member's private conversation without changing the voice channel
+ *
+ * @param const desktop_client_t* client -> GUI owned member snapshot
+ *
  * @return boole -> 1 when selected, zero when all sixteen conversation slots are open
  */
 boole desktop_session_view__open(const desktop_client_t *client)
@@ -174,8 +183,10 @@ boole desktop_session_view__open(const desktop_client_t *client)
 }
 
 /**
- * @brief changes the visible text conversation; tab zero is the current voice channel.
- * @param int64 tab -> zero-based channel/private tab index
+ * @brief changes the visible text conversation. Tab zero is the current voice channel
+ *
+ * @param int64 tab -> zero based channel/private tab index
+ *
  * @return void
  */
 void desktop_session_view__select(int64 tab)
@@ -201,7 +212,7 @@ void desktop_session_view__select(int64 tab)
 }
 
 /**
- * @brief closes the current private tab, preserving bounded history until it ages out.
+ * @brief closes the current private tab, preserving bounded history until it ages out
  *
  * @param int64* peer -> receives the client ID of the closed conversation
  * @param uint64* serial -> receives that client's connection lifetime
@@ -214,9 +225,9 @@ boole desktop_session_view__close(int64 *peer, uint64 *serial)
 }
 
 /**
- * @brief closes one private tab without changing the conversation being read in another tab.
+ * @brief closes one private tab without changing the conversation being read in another tab
  *
- * @param int64 tab -> one-based private tab index; the channel tab cannot be closed
+ * @param int64 tab -> one based private tab index. The channel tab cannot be closed
  * @param int64* peer -> receives the client ID of the closed conversation
  * @param uint64* serial -> receives that client's connection lifetime
  *
@@ -248,8 +259,10 @@ boole desktop_session_view__close_tab(int64 tab, int64 *peer, uint64 *serial)
 }
 
 /**
- * @brief returns the selected private destination and its lifetime to the composer.
+ * @brief returns the selected private destination and its lifetime to the composer
+ *
  * @param uint64* serial -> receives peer lifetime, or zero for channel chat
+ *
  * @return int64 -> private client ID, or -1 for current channel
  */
 int64 desktop_session_view__peer(uint64 *serial)
@@ -259,8 +272,10 @@ int64 desktop_session_view__peer(uint64 *serial)
 }
 
 /**
- * @brief counts received private messages for this peer lifetime, excluding sent messages.
- * @param const desktop_client_t* client -> GUI-owned client snapshot
+ * @brief counts received private messages for this peer lifetime, excluding sent messages
+ *
+ * @param const desktop_client_t* client -> GUI owned client snapshot
+ *
  * @return uint64 -> messages received since the conversation was last viewed
  */
 uint64 desktop_session_view__unread(const desktop_client_t *client)
@@ -281,9 +296,12 @@ uint64 desktop_session_view__unread(const desktop_client_t *client)
 }
 
 /**
- * @brief renders a complete bounded message, leaving line wrapping to the text widget.
+ * @brief renders a complete bounded message, leaving line wrapping to the text widget
+ *
  * @param gui_node_t* parent -> message row
  * @param const char* text -> bounded decoded message text
+ * @param const desktop_chat_format_t* format -> message font, color and size
+ *
  * @return void
  */
 static void _session_view_internal__text(gui_node_t *parent, const char *text, const desktop_chat_format_t *format)
@@ -293,8 +311,10 @@ static void _session_view_internal__text(gui_node_t *parent, const char *text, c
 }
 
 /**
- * @brief renders channel/private tabs; incoming private messages add a tab without taking focus.
+ * @brief renders channel/private tabs. Incoming private messages add a tab without taking focus
+ *
  * @param const desktop_session_view_t* view -> current GUI snapshot
+ *
  * @return void
  */
 static void _session_view_internal__tabs(const desktop_session_view_t *view)
@@ -392,8 +412,10 @@ static void _session_view_internal__tabs(const desktop_session_view_t *view)
 }
 
 /**
- * @brief releases only scene-owned child rows, leaving the container and composer alive.
- * @param gui_node_t* parent -> scene-owned container, or NULL
+ * @brief releases only scene owned child rows, leaving the container and composer alive
+ *
+ * @param gui_node_t* parent -> scene owned container, or NULL
+ *
  * @return void
  */
 static void _session_view_internal__clear(gui_node_t *parent)
@@ -425,12 +447,14 @@ static void _session_view_internal__clear(gui_node_t *parent)
 }
 
 /**
- * @brief appends a bounded plain-text control without parsing user text as markup.
- * @param gui_node_t* parent -> scene-owned container, or NULL
+ * @brief appends a bounded plain text control without parsing user text as markup
+ *
+ * @param gui_node_t* parent -> scene owned container, or NULL
  * @param gui_node_type_e type -> new control or protocol message type
  * @param const char* klass -> style classes copied into the control
- * @param const char* text -> borrowed NUL-terminated text; copied before returning when retained
- * @return gui_node_t* -> scene-owned control, or NULL on allocation failure
+ * @param const char* text -> borrowed NUL terminated text. Copied before returning when retained
+ *
+ * @return gui_node_t* -> scene owned control, or NULL on allocation failure
  */
 static gui_node_t *_session_view_internal__node(gui_node_t *parent, gui_node_type_e type, const char *klass, const char *text)
 {
@@ -460,8 +484,10 @@ static gui_node_t *_session_view_internal__node(gui_node_t *parent, gui_node_typ
 }
 
 /**
- * @brief renders all visible channels and their members independently of the overlay row limit.
- * @param const desktop_session_view_t* view -> GUI-owned session snapshot
+ * @brief renders all visible channels and their members independently of the overlay row limit
+ *
+ * @param const desktop_session_view_t* view -> GUI owned session snapshot
+ *
  * @return void
  */
 static void _session_view_internal__tree(const desktop_session_view_t *view)
@@ -498,7 +524,7 @@ static void _session_view_internal__tree(const desktop_session_view_t *view)
         _session_view_internal__node(container, GUI_NODE_TYPE__TEXT, "muted", "Not enough memory to display the channels.");
         return;
     }
-    // parent-first passes also handle out-of-order server lists without recursive traversal
+    // parent first passes also handle out of order server lists without recursive traversal
     for (pass = 0; pass < view->channel_count; pass++)
     {
         for (index = 0; index < view->channel_count; index++)
@@ -634,8 +660,10 @@ static void _session_view_internal__tree(const desktop_session_view_t *view)
 }
 
 /**
- * @brief updates the selected channel's bounded text history without touching the composer.
- * @param const desktop_session_view_t* view -> GUI-owned session snapshot
+ * @brief updates the selected channel's bounded text history without touching the composer
+ *
+ * @param const desktop_session_view_t* view -> GUI owned session snapshot
+ *
  * @return void
  */
 static void _session_view_internal__messages(const desktop_session_view_t *view)
@@ -702,9 +730,11 @@ static void _session_view_internal__messages(const desktop_session_view_t *view)
 }
 
 /**
- * @brief rebuilds only the standalone portions whose data changed, on the GUI thread.
- * @param const desktop_session_view_t* view -> GUI-owned session snapshot
+ * @brief rebuilds only the standalone portions whose data changed, on the GUI thread
+ *
+ * @param const desktop_session_view_t* view -> GUI owned session snapshot
  * @param boole force -> nonzero to rebuild after switching out of preview
+ *
  * @return void
  */
 void desktop_session_view__update(const desktop_session_view_t *view, boole force)

@@ -1,0 +1,39 @@
+:root
+{
+    --mono-glass-fill: linear-gradient(145deg, #f9fafc, #e5e8ee 60%, #f2f3f7);
+    --mono-glass-rim: rgba(126, 140, 164, 0.3);
+    --mono-glass-sheen: linear-gradient(145deg, rgba(255, 255, 255, 0.75), rgba(255, 255, 255, 0.14) 44%, transparent 64%);
+    --mono-glass-shadow: 0 3px 9px rgba(34, 45, 66, 0.1), inset 0 1px 1px rgba(255, 255, 255, 0.95), inset 0 -1px 2px rgba(111, 126, 152, 0.24);
+}
+
+:root #member-list-body .member-list-client > .client-audio-state,
+:root #member-conversations-profile > .client-audio-state
+{
+    border-color: var(--mono-glass-rim);
+    background-image: var(--mono-glass-fill);
+    box-shadow: var(--mono-glass-shadow);
+}
+
+:root #member-list-body .member-list-client > .client-audio-state::before,
+:root #member-conversations-profile > .client-audio-state::before,
+:root #member-conversations-profile > .client-audio-state[data-initials]::before
+{
+    content: attr(data-initials);
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: inherit;
+    background: var(--mono-glass-sheen);
+    color: var(--mono-text);
+    font: 550 15px/1 var(--set-font);
+    pointer-events: none;
+}
+
+:root #member-conversations-profile > .client-audio-state::before,
+:root #member-conversations-profile > .client-audio-state[data-initials]::before
+{
+    font-size: 13px;
+    font-weight: 600;
+}

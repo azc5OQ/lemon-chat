@@ -1,5 +1,5 @@
 #!/bin/sh
-# lemon-chat selfhosting-tools/wireguard/common.sh - shared by setup.sh, status.sh and teardown.sh on a LINUX host (sourced, not run).
+# Shared host helpers. Source this file from setup, status or teardown.
 # paths, the saved answers, the ssh helpers and the server_settings.json access.
 
 WG_HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -17,7 +17,7 @@ warn() { printf '\033[33m[lemon-wg] %s\033[0m\n' "$*"; }
 fail() { printf '\033[31m[lemon-wg] %s\033[0m\n' "$*"; }
 
 ask() {
-    # ask "prompt" "default" -> prints the answer; Enter takes the default, an empty default repeats
+    # ask "prompt" "default" -> prints the answer. Enter takes the default, an empty default repeats
     prompt="$1"
     default="$2"
     answer=""
@@ -213,7 +213,7 @@ remote_script() (
     if [ "$ROUTER_SSH_USER" = root ] || [ "$name" = check.sh ]; then
         remote_run "$command"
     else
-        # A remote terminal lets sudo ask its own password; never save or pipe the password.
+        # A remote terminal lets sudo ask its own password. Never save or pipe the password.
         status_file=$(mktemp) || exit 1
         # tee displays the prompt while the caller captures output. Save SSH's
         # own exit code because a POSIX pipeline otherwise reports tee's status.

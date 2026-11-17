@@ -1,14 +1,16 @@
-// Validates received JSON envelopes before exposing their message type to the UI.
+// validates received JSON envelopes before exposing their message type to the UI
 #include "network/protocol.h"
 #include "clib.h"
 #include "cJSON.h"
 
 /**
- * @brief parses one bounded JSON value without accepting hidden string suffixes or trailing data.
- * @param const char* bytes -> exactly size readable bytes; no terminator is required
+ * @brief parses one bounded JSON value without accepting hidden string suffixes or trailing data
+ *
+ * @param const char* bytes -> exactly size readable bytes. No terminator is required
  * @param uint64 size -> JSON byte count, excluding any terminator
- * @param uint64 limit -> caller's existing message-size limit
+ * @param uint64 limit -> caller's existing message size limit
  * @param uint64 maximum_depth -> caller's existing nesting limit
+ *
  * @return struct cJSON* -> owned tree, or NULL for invalid or excessive input
  */
 struct cJSON *desktop_protocol__parse_json(const char *bytes, uint64 size, uint64 limit, uint64 maximum_depth)
@@ -107,16 +109,26 @@ struct cJSON *desktop_protocol__parse_json(const char *bytes, uint64 size, uint6
 }
 
 /**
- * @brief extracts a bounded message type from a complete JSON envelope.
+ * @brief extracts a bounded message type from a complete JSON envelope
  *
  * @param const char* bytes -> message bytes
  * @param uint64 size -> message length in bytes
  * @param char* type -> destination for the parsed message type
  * @param uint64 capacity -> destination capacity including its terminator
  *
- * @return boole -> 1 when the type was copied; 0 for invalid data or an insufficient destination
+ * @return boole -> 1 when the type was copied. 0 for invalid data or an insufficient destination
  */
 /* Validates a complete, unencrypted Lemon Chat JSON envelope. */
+/**
+ * @brief reads the message type from a bounded JSON envelope
+ *
+ * @param const char* bytes -> complete JSON bytes
+ * @param uint64 size -> JSON byte count
+ * @param char* type -> destination for the message type
+ * @param uint64 capacity -> destination byte capacity
+ *
+ * @return boole -> true when a nonempty type fits in the output buffer
+ */
 boole desktop_protocol__message_type(const char *bytes, uint64 size, char *type, uint64 capacity)
 {
     boole valid = 0;

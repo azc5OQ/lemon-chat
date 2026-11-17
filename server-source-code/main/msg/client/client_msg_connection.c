@@ -1,4 +1,4 @@
-// This file checks login messages, establishes the encrypted connection and answers keepalive requests.
+// this file checks login messages, establishes the encrypted connection and answers keepalive requests
 #include "client_msg.h"
 #include "../../crypto/keys_session.h"
 #include "../../crypto/ciphers.h"
@@ -44,7 +44,7 @@ static void _client_msg_connection_internal__write_username_letters(uint64 numbe
 static boole _client_msg_connection_internal__try_apply_saved_username(uint64 client_index);
 
 /**
- * @brief This function processes connection check message from client
+ * @brief this function processes connection check message from client
  *
  * @param cJSON* json_root -> the parsed client request
  * @param uint64 sender_client_id -> id of the client that sent the request
@@ -78,9 +78,10 @@ void client_msg__connection__process_connection_check(cJSON *json_root, uint64 s
  * @param char** out_verification_string -> receives a pointer to the verification string
  * @param char** out_dh_mix -> receives a pointer to the client's dh public mix string
  *
- * @return void
  *
  * @attention this function assumes json_root is already verified , has correct data, if not this function will cause crash of entire server
+ *
+ * @return void
  */
 static void _client_msg_connection_internal__get_public_key_and_verification_string_and_dh_public_mix(cJSON *json_root, char **out_public_key, char **out_verification_string, char **out_dh_mix)
 {
@@ -187,10 +188,8 @@ static boole _client_msg_connection_internal__is_public_key_info_message_valid(c
         return FALSE;
     }
 
-    // the public key is base64 of the modulus: 344 chars at 2048 bits, up to 1368 at 8192.
-    // this used to demand exactly 344, which made every size except 2048 unusable - including
-    // the larger sizes minimum_rsa_key_bits exists to let an admin require. only lengths no rsa
-    // key could have are rejected here; the exact bit length is measured further down
+    // check the base64 modulus length for supported RSA sizes
+    // the exact bit length is checked after admission
     {
         public_key_string_length = clib__utf8_string_length(json_message_value->valuestring);
 
@@ -238,7 +237,7 @@ static boole _client_msg_connection_internal__is_public_key_info_message_valid(c
         return FALSE;
     }
 
-    // a DH public value is a decimal number smaller than the known prime.
+    // a DH public value is a decimal number smaller than the known prime
     // check its size and digits before parsing it as a large integer
     {
         length = clib__strlen(verification_string->valuestring);
@@ -262,12 +261,12 @@ static boole _client_msg_connection_internal__is_public_key_info_message_valid(c
 }
 
 /**
- * @brief Checks that the original connection still occupies its client slot and is still waiting to
- *        begin the key exchange.
+ * @brief checks that the original connection still occupies its client slot and is still waiting to
+ *        begin the key exchange
  *
  * @param void* argument -> pending_login_t containing the client id and original socket
  *
- * @attention This function takes the clients read lock. The login waiting code must release its own mutex before calling it.
+ * @attention this function takes the clients read lock. The login waiting code must release its own mutex before calling it
  *
  * @return boole -> TRUE when this connection may begin its login; FALSE otherwise
  */
@@ -284,15 +283,14 @@ static boole _client_msg_connection_internal__login_connection_is_valid(void *ar
 }
 
 /**
- * @brief Handles the client's first login message. After checking its format, waits for a free
- *        login slot, checks the RSA key, calculates the shared secret and encrypts a random
- *        challenge for the client to answer.
+ * @brief checks login input and admission, then validates the RSA key and exchanges keys
+ *        sends an encrypted challenge to prove ownership of the private key
  *
  * @param cJSON* json_root -> parsed login message; the caller keeps it alive until this function returns
  * @param uint64 sender_client_id -> the client slot assigned to this connection
  * @param ws_cli_conn_t* socket -> the original socket that received this login message
  *
- * @attention The expensive key calculations run without holding the clients lock. Before storing their results or closing a failed login, this function checks that the original socket still belongs to the same client slot. The later challenge response proves that the client owns its private key, including when it resumes an earlier session.
+ * @attention the expensive key calculations run without holding the clients lock. Before storing their results or closing a failed login, this function checks that the original socket still belongs to the same client slot. The later challenge response proves that the client owns its private key, including when it resumes an earlier session
  *
  * @return void
  */
@@ -366,7 +364,7 @@ void client_msg__connection__process_public_key_info(cJSON *json_root, uint64 se
         goto _label_client_msg__process_public_key_info_end;
     }
 
-    // remember that this connection is waiting before releasing the client lock.
+    // remember that this connection is waiting before releasing the client lock
     // its queue wait has a separate deadline from the time allowed for login
     clib__write_lock(&g_clients_global_rwlock_guard);
 
@@ -397,7 +395,7 @@ void client_msg__connection__process_public_key_info(cJSON *json_root, uint64 se
     if (crypto_version == 1)
     {
         crypto_policy = g_clients_array[sender_client_id].crypto_policy;
-        memcpy(crypto_nonce, g_clients_array[sender_client_id].crypto_policy_nonce, sizeof(crypto_nonce));
+        clib__copy_memory(g_clients_array[sender_client_id].crypto_policy_nonce, crypto_nonce, sizeof(crypto_nonce), sizeof(crypto_nonce));
         exchange_count = crypto_policy.exchanges;
     }
 
@@ -445,9 +443,8 @@ void client_msg__connection__process_public_key_info(cJSON *json_root, uint64 se
     // store the start time
     crypto_started_ms = util__get_timestamp_ms();
 
-    // parsing and checking the RSA key can be expensive too. do that after
-    // admission, without stopping other clients from using the client lock.
-    // a modulus one bit below the requested size is still accepted
+    // validate the RSA key after admission and outside the clients lock
+    // accept a modulus one bit below the requested size
     {
         // read the key size
         client_key_bits = auth_rsa__get_public_key_bit_length(public_key);
@@ -459,9 +456,7 @@ void client_msg__connection__process_public_key_info(cJSON *json_root, uint64 se
         {
             DBG_AUTHENTICATION log_info("[auth] client %llu: public key is %llu bits, minimum is %llu, dropping", sender_client_id, client_key_bits, minimum_rsa_key_bits);
 
-            // only a genuinely too-weak key earns the notice, and only if the admin opted in.
-            // a malformed or oversized key is never answered: nothing legitimate produces one,
-            // so there is nobody to help, only a prober to inform
+            // announce a weak key only when configured. Malformed or oversized keys get no reply
             if (is_too_weak == TRUE && is_unusable == FALSE && is_minimum_rsa_key_bits_announced == TRUE)
             {
                 clib__read_lock(&g_clients_global_rwlock_guard);
@@ -478,21 +473,7 @@ void client_msg__connection__process_public_key_info(cJSON *json_root, uint64 se
         }
     }
 
-    // ──────────────────────────────────────────────────────────────────
-    // STEP 3: Diffie-Hellman key exchange, without a lock
-    //
-    // both client and server know:
-    // p = dh_known_modulus_str  (shared prime, defined at top of file)
-    // g = 2                    (generator)
-    //
-    // client sent:   A = g^a mod p   (dh_received_public_mix_from_client)
-    // server picks:  b              (random secret exponent)
-    // server computes:
-    // shared_secret = A^b mod p   (same value as g^(a*b) mod p)
-    // B = g^b mod p               (sent back to client)
-    // client will compute:
-    // shared_secret = B^a mod p   (same value as g^(a*b) mod p)
-    // ──────────────────────────────────────────────────────────────────
+    // compute the shared secret and server public mix outside the clients lock
     mp_status = mp_init_multi(&bignum_modulus, &bignum_server_exponent, &bignum_client_public_mix, &bignum_shared_secret, &bignum_generator, &bignum_server_public_mix, &bignum_modulus_minus_one, (mp_int *)NULL_POINTER);
     if (mp_status != MP_OKAY)
     {
@@ -537,10 +518,7 @@ void client_msg__connection__process_public_key_info(cJSON *json_root, uint64 se
             dh_received_public_mix_from_client = cJSON_GetArrayItem(cJSON_GetObjectItemCaseSensitive(message, "dh_public_mixes"), (int)exchange)->valuestring;
         }
 
-        // 3b. generate the server's secret exponent (DH_EXPONENT_BITS random bits, sized to the modulus)
-        // first bit forced to 1 to guarantee the full length, the rest from a cryptographically secure
-        // RNG. rand() must never be used here: it is a predictable PRNG seeded from the clock, so an
-        // exponent built from it could be reconstructed by an attacker, breaking the key exchange
+        // generate the exponent with a secure RNG and set its top bit for the full length
         if (util__fill_secure_random_bytes(exponent_random_bytes, sizeof(exponent_random_bytes)) == FALSE)
         {
             DBG_AUTHENTICATION log_info("[auth] client %llu: failed to generate DH exponent randomness", sender_client_id);
@@ -573,9 +551,8 @@ void client_msg__connection__process_public_key_info(cJSON *json_root, uint64 se
             goto _label_client_msg__process_public_key_info_end;
         }
 
-        // 3c-validate: reject a degenerate client public mix before exponentiating. a in {0, 1, p-1} (or outside
-        // [2, p-2]) forces a known / tiny shared secret; for a safe prime the only dangerous small-order elements
-        // are 1 and p-1, so requiring 2 <= A <= p-2 is sufficient
+        // require the client public mix to lie between 2 and p minus 2
+        // this excludes values that force a predictable shared secret
         mp_status = mp_sub_d(&bignum_modulus, 1uL, &bignum_modulus_minus_one);
         if (mp_status != MP_OKAY)
         {
@@ -649,10 +626,7 @@ void client_msg__connection__process_public_key_info(cJSON *json_root, uint64 se
         goto _label_client_msg__process_public_key_info_end;
     }
 
-    // ──────────────────────────────────────────────────────────────────
-    // STEP 4: the RSA challenge, without a lock: a random string, encrypted with the client's public
-    // key. only the real owner of the private key can decrypt it
-    // ──────────────────────────────────────────────────────────────────
+    // encrypt a random challenge with the client public key outside the clients lock
     challenge_string = (char *)memorymanager__allocate(128, MEMALLOC_TYPE_CHALLENGE);
     if (challenge_string == NULL_POINTER || util__fill_block_of_data_with_ascii_characters(challenge_string, CHALLENGE_STRING_SIZE) == FALSE)
     {
@@ -669,10 +643,7 @@ void client_msg__connection__process_public_key_info(cJSON *json_root, uint64 se
         goto _label_client_msg__process_public_key_info_end;
     }
 
-    // ──────────────────────────────────────────────────────────────────
-    // STEP 5: the second, short write lock: the slot must still belong to the same connection, then
-    // the shared secret and the challenge are stored and the challenge is sent
-    // ──────────────────────────────────────────────────────────────────
+    // recheck connection ownership under the write lock before storing keys and challenge
     crypto_finished_ms = util__get_timestamp_ms();
     clib__write_lock(&g_clients_global_rwlock_guard);
     if (base__is_current_client_request(sender_client_id) == FALSE ||
@@ -701,10 +672,8 @@ void client_msg__connection__process_public_key_info(cJSON *json_root, uint64 se
     }
     g_clients_array[sender_client_id].is_dh_shared_secret_agreed_upon = TRUE;
 
-    // make the keys that this connection will use for metadata, audio and video.
-    // also choose a random starting packet number for media sent to this client.
-    // if this connection later takes over the client's earlier session, those
-    // keys and the packet number must move into that session together
+    // create metadata and media keys with a random starting media packet number
+    // session takeover must move these keys and the packet number together
     if ((crypto_version == 0 && !crypto_metadata__derive_session_keys(shared_secret_string, &g_clients_array[sender_client_id].session_keys)) || !util__fill_secure_random_bytes((ubyte *)&media_send_counter, sizeof(media_send_counter)))
     {
         crypto_metadata__clear_session_keys(&g_clients_array[sender_client_id].session_keys);
@@ -835,7 +804,7 @@ static boole _client_msg_connection_internal__is_public_key_challenge_response_v
 }
 
 /**
- * @brief Helper function. gets challenge string from json.
+ * @brief helper function. gets challenge string from json
  *
  * @param cJSON* json_root -> the parsed client request
  *
@@ -907,13 +876,15 @@ static boole _client_msg_connection_internal__is_username_free_at_login(cstring 
 }
 
 /**
- * @brief Tries the requested login name and numbered variants without taking another client's or
- *        identity's name.
+ * @brief tries the requested login name and numbered variants without taking another client's or
+ *        identity's name
+ *
  * @param cJSON* json_root -> challenge response, optionally containing message.chosen_username
  * @param uint64 client_index -> client being authenticated
+ *
  * @return boole -> TRUE when a name was applied; FALSE to fall back to the normal default_nameN assignment
- * @note Names must fit within 50 bytes; an unavailable name does not reject the login.
- * @attention The caller holds the clients write lock.
+ * @note names must fit within 50 bytes; an unavailable name does not reject the login
+ * @attention the caller holds the clients write lock
  */
 static boole _client_msg_connection_internal__try_apply_chosen_username(cJSON *json_root, uint64 client_index)
 {
@@ -987,8 +958,8 @@ static boole _client_msg_connection_internal__try_apply_chosen_username(cJSON *j
 }
 
 /**
- * @brief Writes the letters that are added to a saved username while another client uses it:
- *        "a" for 0, "b" for 1, up to "z" for 25, then "aa", "ab" and so on.
+ * @brief writes the letters that are added to a saved username while another client uses it:
+ *        "a" for 0, "b" for 1, up to "z" for 25, then "aa", "ab" and so on
  *
  * @param uint64 number -> which variant to write, counted from 0
  * @param char* out_letters -> receives the letters and an ending zero byte
@@ -1021,17 +992,15 @@ static void _client_msg_connection_internal__write_username_letters(uint64 numbe
 }
 
 /**
- * @brief Gives a known identity the username it had when it was last connected. When another
- *        connected client uses that name, a letter is added, so an admin whose name is taken
- *        joins as "name" + "a" and not under the server's default name.
+ * @brief restores a saved username, adding letters when another connected client uses it
  *
  * @param uint64 client_index -> client being authenticated
  *
  * @return boole -> TRUE when a name was applied; FALSE when the identity is not saved or has no saved name
  *
- * @note The saved name stays saved without the letter: it is kept in preferred_username.
+ * @note the saved name stays saved without the letter: it is kept in preferred_username
  *
- * @attention The caller holds the clients write lock.
+ * @attention the caller holds the clients write lock
  */
 static boole _client_msg_connection_internal__try_apply_saved_username(uint64 client_index)
 {
@@ -1127,11 +1096,7 @@ void client_msg__connection__process_public_key_challenge_response(cJSON *json_r
         return;
     }
 
-    // client sends public key to server at the time of authentication
-    // server generates random string, encrypts that string with the client's public key
-    // server then verifies if the client really is the owner of public key by sending client a little challenge
-    // "if the public key is really yours, client, please, decrypt and then send back this randomly generated string that I will send you. you will have no problem telling me what I sent you, if it's really your key"
-    // something like that
+    // verify the returned random challenge to prove ownership of the private key
     current_client = &g_clients_array[sender_client_id];
     if (current_client->is_public_key_challenge_sent == FALSE)
     {
@@ -1172,9 +1137,8 @@ void client_msg__connection__process_public_key_challenge_response(cJSON *json_r
             ip_tools_load_iso_country_code(current_client->ip_address, current_client->country_iso_code);
         }
 
-        // country blocking: the join is refused here, before the client gets a username or any
-        // lists. evaluated per connection, so the same person from an allowed country gets in.
-        // resolves the country itself when the flags feature (above) has not already done it
+        // apply country blocking before assigning a name or sending client lists
+        // resolve the country if the flag lookup has not already done so
         if (g_server_settings.is_country_blocking_active == TRUE)
         {
             // load a missing code
@@ -1215,10 +1179,8 @@ void client_msg__connection__process_public_key_challenge_response(cJSON *json_r
             current_client = &g_clients_array[sender_client_id];
         }
 
-        // identity takeover (settings tab): any other session still holding the same key is torn down now
-        // and this login goes on as an ordinary fresh one, which is what keeps the channel key handover
-        // honest - a client only gets channel keys by joining for real. with takeover off, an identity
-        // that is already online is refused instead, until that session ends or times out
+        // when takeover is allowed, replace the old session and perform a fresh channel join
+        // otherwise refuse an identity that is already online
         if (g_server_settings.is_identity_takeover_allowed == TRUE)
         {
             client_session__disconnect_other_clients_with_same_public_key(sender_client_id, current_client->public_key);
@@ -1234,8 +1196,7 @@ void client_msg__connection__process_public_key_challenge_response(cJSON *json_r
         // a resumed session was admitted and named when it first joined; both are checked for new joins only
         if (is_resumed_session == FALSE)
         {
-            // the same-ip rule is checked here and not at socket open, because only now is it known whether
-            // the session already on this ip was this very identity (its earlier session, dropped just above)
+            // check the shared IP limit after removing this identity's previous session
             if (g_server_settings.is_same_ip_address_allowed == FALSE)
             {
                 if (client_session__is_there_another_authenticated_client_with_same_ip_address(sender_client_id, current_client->ip_address, current_client->public_key) == TRUE)
@@ -1270,9 +1231,8 @@ void client_msg__connection__process_public_key_challenge_response(cJSON *json_r
             // a resumed session already carries its groups, avatar and stored key: nothing to restore
             if (is_resumed_session == FALSE)
             {
-                // restore this client's saved groups from the identity store (matched by public-key hash); the
-                // admin group re-grants admin. runs before the connect broadcast so every client sees the groups.
-                // the groups read lock (held above) and clients write lock (held for this handler) cover it
+                // restore saved groups before announcing the client
+                // the groups read lock and clients write lock protect this update
                 if (g_server_settings.is_identity_storage_enabled == TRUE)
                 {
                     DBG_IDENTITIES log_info("%s %llu %s", "identities: enabled -> restoring groups for authenticated client_id", current_client->client_id, "\n");
@@ -1371,7 +1331,7 @@ void client_msg__connection__process_public_key_challenge_response(cJSON *json_r
                 video_channel__process_client_joined_channel(current_client);
             }
 
-            // hand over anything that was said to this identity while it was away, then forget it.
+            // hand over anything that was said to this identity while it was away, then forget it
             // after the client list, so the receiving client already knows who everybody is
             if (g_server_settings.is_offline_messaging_allowed == TRUE &&
                 permissions__is_allowed_in_groups(current_client, PERMISSION_RECEIVE_OFFLINE_MESSAGES) == TRUE &&

@@ -1,9 +1,9 @@
 #!/bin/sh
-# tunnel router setup - runs on the VPS. POSIX sh, started by the host's setup script over ssh.
+# Sets up the VPS router through the host script's SSH session.
 #
 # makes this machine a router for a host behind NAT: installs WireGuard, creates the wg0 tunnel and
 # forwards a set of ports from the public address through the tunnel to the host. application connections
-# end on the host; this router does not terminate their tls. safe to run again: keys are
+# end on the host. This router does not terminate their tls. safe to run again: keys are
 # kept, the rules and the peer entry are replaced. Upload cleanup belongs to the caller.
 #
 # usage (as root, or the script re-runs itself with sudo):
@@ -32,11 +32,11 @@ MODE="ports"
 
 # The chat host's WireGuard public key. The host setup script generates a key
 # pair if needed and supplies the public key here. The private key stays on the
-# host; it is not sent to the VPS. Empty means it has not been supplied yet.
+# host. It is not sent to the VPS. Empty means it has not been supplied yet.
 HOST_PUBKEY=""
 
 # The UDP port on which the VPS listens for WireGuard connections.
-# 51820 is the conventional WireGuard port, not a requirement; it can be changed.
+# 51820 is the conventional WireGuard port, not a requirement. It can be changed.
 WG_PORT="51820"
 
 # The VPS's SSH port, used to protect administrative access from port forwarding.
@@ -45,9 +45,9 @@ WG_PORT="51820"
 SSH_PORT="22"
 
 # The private network used inside the WireGuard tunnel. 10.66.0.0/24 is an
-# arbitrary private range; choose a range that does not overlap your LAN, other
+# arbitrary private range. Choose a range that does not overlap your LAN, other
 # VPNs, or VPS networks. /24 contains 256 addresses, including the network and
-# broadcast addresses; this setup uses two addresses for the tunnel endpoints.
+# broadcast addresses. This setup uses two addresses for the tunnel endpoints.
 # Chat users do not each receive a tunnel IP, so this does not limit server slots.
 SUBNET="10.66.0.0/24"
 
@@ -61,7 +61,7 @@ HOST_IP="10.66.0.2"
 
 # TCP ports to forward from the VPS's public address to the chat host.
 # Empty here because the host setup script supplies the selected ports.
-# Example: "1111,80,443". Commas separate ports; a colon specifies a range.
+# Example: "1111,80,443". Commas separate ports. A colon specifies a range.
 TCP_PORTS=""
 
 # UDP ports to forward from the VPS's public address to the chat host.

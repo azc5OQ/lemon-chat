@@ -1,9 +1,9 @@
-// Initializes and validates the bounded display format used across process boundaries.
+// initializes and validates the bounded display format used across process boundaries
 #include "overlay_data.h"
 #include "clib.h"
 
 /**
- * @brief clears a snapshot and initializes its versioned, disabled envelope.
+ * @brief clears a snapshot and initializes its versioned, disabled envelope
  *
  * @param desktop_overlay_snapshot_t* snapshot -> bounded channel display snapshot
  *
@@ -20,11 +20,11 @@ void desktop_overlay_data__clear(desktop_overlay_snapshot_t *snapshot)
 }
 
 /**
- * @brief checks the snapshot version, bounds and string terminators before it is used.
+ * @brief checks the snapshot version, bounds and string terminators before it is used
  *
  * @param const desktop_overlay_snapshot_t* snapshot -> bounded channel display snapshot
  *
- * @return boole -> 1 for a valid snapshot; 0 otherwise
+ * @return boole -> 1 for a valid snapshot. 0 otherwise
  */
 boole desktop_overlay_data__valid(const desktop_overlay_snapshot_t *snapshot)
 {
@@ -48,12 +48,12 @@ boole desktop_overlay_data__valid(const desktop_overlay_snapshot_t *snapshot)
 }
 
 /**
- * @brief rejects disabled, invalid, stale or future-dated display snapshots.
+ * @brief rejects disabled, invalid, stale or future dated display snapshots
  *
  * @param const desktop_overlay_snapshot_t* snapshot -> bounded channel display snapshot
  * @param uint64 now_ms -> monotonic time in milliseconds
  *
- * @return boole -> 1 when the snapshot may be drawn; 0 otherwise
+ * @return boole -> 1 when the snapshot may be drawn. 0 otherwise
  */
 boole desktop_overlay_data__visible(const desktop_overlay_snapshot_t *snapshot, uint64 now_ms)
 {
@@ -61,7 +61,7 @@ boole desktop_overlay_data__visible(const desktop_overlay_snapshot_t *snapshot, 
 }
 
 /**
- * @brief builds a marked sample channel with a rotating speaking indicator.
+ * @brief builds a marked sample channel with a rotating speaking indicator
  *
  * @param desktop_overlay_snapshot_t* snapshot -> bounded channel display snapshot
  * @param uint64 now_ms -> monotonic time in milliseconds

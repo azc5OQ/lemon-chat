@@ -1,6 +1,6 @@
 #include "../clib/clib_vector.h"
 #include "../clib/clib.h"
-// This file checks what a client's groups let them do and reads and saves group permissions.
+// this file checks what a client's groups let them do and reads and saves group permissions
 #include "permissions.h"
 #include "identity_store.h"
 #include "channel_groups.h"
@@ -14,7 +14,7 @@ uint64 g_guest_group_id = MAX_GROUPS;
 static const char *g_permission_names[PERMISSION_COUNT] = { "create_channel", "create_temp_channel", "kick", "ban", "view_stored_users", "view_group_permissions", "view_group_members", "create_groups", "edit_groups", "delete_groups", "assign_groups", "remove_groups", "edit_group_permissions", "upload_icons", "view_client_details", "view_server_logs", "view_server_info", "send_offline_messages", "receive_offline_messages", "message_idle_clients", "call_idle_clients", "delete_icons", "upload_emojis", "delete_emojis", "view_ip_addresses", "view_bans", "remove_bans", "move_clients", "kick_from_channel", "mute_clients", "stop_client_streams", "edit_channel_name", "edit_channel_description", "edit_channel_password", "edit_channel_powers", "edit_channel_options", "delete_channel", "assign_channel_groups", "send_direct_pictures", "send_direct_files", "send_channel_pictures", "send_channel_files", "create_music_bots", "delete_music_bots", "upload_music_tracks", "delete_music_tracks", "control_music_playback", "use_reserved_slots", "create_channel_groups", "edit_channel_groups", "delete_channel_groups", "view_client_connection_time", "bypass_channel_password", "send_direct_messages", "send_channel_messages", "send_pokes", "view_channel_members", "view_channel_descriptions" };
 static const char *g_permission_power_names[PERMISSION_POWER_COUNT] = { "kick_power", "kick_protection", "ban_power", "ban_protection", "group_management_power", "group_protection", "talk_power", "channel_message_power", "channel_picture_power", "stream_power", "move_power", "move_protection", "moderation_power", "moderation_protection", "permission_edit_power", "direct_message_power", "direct_message_protection", "direct_picture_power", "direct_picture_protection", "direct_file_power", "direct_file_protection", "poke_power", "poke_protection", "channel_file_power", "channel_view_power", "channel_create_power" };
 
-// Powers for using a feature; a group that does not set one gets 25, like the Guest and Normal presets.
+// usage powers default to 25 when a group does not set them
 static const permission_power_t g_permission_usage_powers[] = { PERMISSION_TALK_POWER, PERMISSION_CHANNEL_MESSAGE_POWER, PERMISSION_CHANNEL_PICTURE_POWER, PERMISSION_STREAM_POWER, PERMISSION_DIRECT_MESSAGE_POWER, PERMISSION_DIRECT_PICTURE_POWER, PERMISSION_DIRECT_FILE_POWER, PERMISSION_POKE_POWER, PERMISSION_CHANNEL_FILE_POWER, PERMISSION_CHANNEL_VIEW_POWER, PERMISSION_CHANNEL_CREATE_POWER };
 
 static void _permissions_internal__resolve(const client_t *client, group_permissions_t *result);
@@ -26,9 +26,10 @@ static boole _permissions_internal__is_allowed(const client_t *client, const gro
 static void _permissions_internal__combine(group_permissions_t *result, const group_permissions_t *group);
 
 /**
- * @brief Fills a new group's permissions from the selected preset.
- * @param type Preset selected when creating the group.
- * @param permissions Receives the initial permissions and powers.
+ * @brief fills a new group's permissions from the selected preset
+ *
+ * @param type Preset selected when creating the group
+ * @param permissions Receives the initial permissions and powers
  */
 void permissions__set_preset(group_type_t type, group_permissions_t *permissions)
 {
@@ -67,7 +68,7 @@ void permissions__set_preset(group_type_t type, group_permissions_t *permissions
         permissions->powers[g_permission_usage_powers[i]] = type == GROUP_TYPE_MODERATOR ? 50 : 25;
     }
 
-    // add non-guest actions
+    // add actions for other presets
     if (type != GROUP_TYPE_GUEST)
     {
         permissions->values[PERMISSION_MESSAGE_IDLE_CLIENTS] = PERMISSION_GRANT;
@@ -117,7 +118,7 @@ void permissions__set_preset(group_type_t type, group_permissions_t *permissions
             permissions->powers[i] = PERMISSION_POWER_MAX;
         }
 
-        // a member of this group stays reachable by messages and pokes until an admin raises these values
+        // allow messages and pokes by default
         permissions->powers[PERMISSION_DIRECT_MESSAGE_PROTECTION] = 0;
         permissions->powers[PERMISSION_DIRECT_PICTURE_PROTECTION] = 0;
         permissions->powers[PERMISSION_DIRECT_FILE_PROTECTION] = 0;
@@ -126,9 +127,12 @@ void permissions__set_preset(group_type_t type, group_permissions_t *permissions
 }
 
 /**
- * @brief Reads the preset name used in saved groups and creation requests.
- * @param name Preset name to check.
- * @param type Receives the preset when the name is valid.
+ * @brief reads the preset name used in saved groups and creation requests
+ *
+ * @param name Preset name to check
+ * @param type Receives the preset when the name is valid
+ *
+ * @return boole -> TRUE if the name was recognized and type was set
  */
 boole permissions__parse_group_type(cstring name, group_type_t *type)
 {
@@ -153,8 +157,11 @@ boole permissions__parse_group_type(cstring name, group_type_t *type)
 }
 
 /**
- * @brief Returns the saved name of a group preset.
- * @param type Preset whose name is needed.
+ * @brief returns the saved name of a group preset
+ *
+ * @param type Preset whose name is needed
+ *
+ * @return cstring -> the preset name, or "normal" for an unknown type
  */
 cstring permissions__group_type_name(group_type_t type)
 {
@@ -173,9 +180,11 @@ cstring permissions__group_type_name(group_type_t type)
 }
 
 /**
- * @brief Adds Guest when no other group remains and removes Guest otherwise.
- * @param client Client to update with the clients and groups locks held.
- * @return TRUE when the membership list changed.
+ * @brief adds Guest when no other group remains and removes Guest otherwise
+ *
+ * @param client Client to update with the clients and groups locks held
+ *
+ * @return TRUE when the membership list changed
  */
 boole permissions__refresh_guest_membership(client_t *client)
 {
@@ -231,7 +240,12 @@ boole permissions__refresh_guest_membership(client_t *client)
 }
 
 /**
- * @brief Combines ordinary values by maximum, or uses the lowest negated value.
+ * @brief combines ordinary values by maximum, or uses the lowest negated value
+ *
+ * @param uint64* result -> value collected so far. Receives the combined value
+ * @param uint64* result_flags -> flags collected so far. Receives the combined flags
+ * @param uint64 value -> value to include
+ * @param uint64 flags -> flags belonging to value
  */
 static void _permissions_internal__combine_value(uint64 *result, uint64 *result_flags, uint64 value, uint64 flags)
 {
@@ -253,7 +267,12 @@ static void _permissions_internal__combine_value(uint64 *result, uint64 *result_
 }
 
 /**
- * @brief Returns the legacy fallback when an action has no explicit value.
+ * @brief uses the action's default when value is PERMISSION_DEFAULT
+ *
+ * @param permission_t permission -> action to resolve
+ * @param uint64 value -> configured permission value
+ *
+ * @return uint64 -> the value unchanged if set, otherwise PERMISSION_GRANT or PERMISSION_DENY
  */
 static uint64 _permissions_internal__action_value(permission_t permission, uint64 value)
 {
@@ -269,7 +288,7 @@ static uint64 _permissions_internal__action_value(permission_t permission, uint6
         return PERMISSION_GRANT;
     }
 
-    // these actions needed no permission before they were added, so a group saved without them allows them
+    // preserve access for groups saved before these permissions existed
     if (permission == PERMISSION_SEND_DIRECT_MESSAGES || permission == PERMISSION_SEND_CHANNEL_MESSAGES || permission == PERMISSION_SEND_POKES || permission == PERMISSION_VIEW_CHANNEL_MEMBERS || permission == PERMISSION_VIEW_CHANNEL_DESCRIPTIONS)
     {
         return PERMISSION_GRANT;
@@ -280,9 +299,10 @@ static uint64 _permissions_internal__action_value(permission_t permission, uint6
 }
 
 /**
- * @brief Combines server group values and their optional conflict flags.
- * @param result Permissions collected so far.
- * @param group Permissions to include.
+ * @brief combines server group values and their optional conflict flags
+ *
+ * @param result Permissions collected so far
+ * @param group Permissions to include
  */
 static void _permissions_internal__combine(group_permissions_t *result, const group_permissions_t *group)
 {
@@ -308,7 +328,8 @@ static void _permissions_internal__combine(group_permissions_t *result, const gr
 }
 
 /**
- * @brief Combines group permissions, optionally replacing one group to check a proposed change.
+ * @brief combines group permissions, optionally replacing one group to check a proposed change
+ *
  * @param client -> client whose groups are read with the clients and groups locks held
  * @param group_id -> group to replace, or MAX_GROUPS to leave all groups unchanged
  * @param replacement -> proposed permissions, or NULL to remove the group
@@ -368,7 +389,8 @@ static void _permissions_internal__resolve_change(const client_t *client, uint64
 }
 
 /**
- * @brief Combines the client's current groups while the clients and groups locks are held.
+ * @brief combines the client's current groups while the clients and groups locks are held
+ *
  * @param client -> client whose permissions are read
  * @param result -> combined permissions
  */
@@ -378,8 +400,11 @@ static void _permissions_internal__resolve(const client_t *client, group_permiss
 }
 
 /**
- * @brief Adds the active channel group unless a server permission has Skip enabled.
- * @attention Caller holds the clients and groups locks.
+ * @brief adds the active channel group unless a server permission has Skip enabled
+ * @attention caller holds the clients and groups locks
+ *
+ * @param group_permissions_t* result -> server permissions to combine with the channel group
+ * @param uint64 role -> channel group to include
  */
 static void _permissions_internal__combine_channel(group_permissions_t *result, uint64 role)
 {
@@ -414,8 +439,9 @@ static void _permissions_internal__combine_channel(group_permissions_t *result, 
 }
 
 /**
- * @brief Saves current group powers so audio and video packets need no group lookup.
- * @param client Client to update with the clients write lock and groups lock held.
+ * @brief saves current group powers so audio and video packets need no group lookup
+ *
+ * @param client Client to update with the clients write lock and groups lock held
  */
 void permissions__refresh_client_powers(client_t *client)
 {
@@ -440,7 +466,7 @@ void permissions__refresh_client_powers(client_t *client)
     client->channel_picture_power = client->is_admin ? PERMISSION_POWER_MAX : effective.powers[PERMISSION_CHANNEL_PICTURE_POWER];
     client->stream_power = client->is_admin ? PERMISSION_POWER_MAX : effective.powers[PERMISSION_STREAM_POWER];
 
-    // channel groups take no part in these three values: they describe channels the client is not in
+    // use server groups for access to other channels
     _permissions_internal__resolve(client, &effective);
     client->channel_view_rights.is_admin = client->is_admin;
     client->channel_view_rights.is_viewing_members_allowed = (boole)(_permissions_internal__action_value(PERMISSION_VIEW_CHANNEL_MEMBERS, effective.values[PERMISSION_VIEW_CHANNEL_MEMBERS]) == PERMISSION_GRANT);
@@ -450,8 +476,8 @@ void permissions__refresh_client_powers(client_t *client)
 }
 
 /**
- * @brief Updates connected clients after group permissions change.
- * @attention The caller holds the clients write lock and groups lock.
+ * @brief updates connected clients after group permissions change
+ * @attention the caller holds the clients write lock and groups lock
  */
 void permissions__refresh_all_client_powers(void)
 {
@@ -468,10 +494,13 @@ void permissions__refresh_all_client_powers(void)
 }
 
 /**
- * @brief Compares a client's saved power with the channel's current requirement.
- * @param client Client sending audio, video, text or a picture.
- * @param channel Channel receiving the content.
- * @param power Action to check while the clients and channels locks are held.
+ * @brief compares a client's saved power with the channel's current requirement
+ *
+ * @param client Client sending audio, video, text or a picture
+ * @param channel Channel receiving the content
+ * @param power Action to check while the clients and channels locks are held
+ *
+ * @return boole -> TRUE if the client is present, unmuted for audio and has enough power
  */
 boole permissions__can_use_channel(const client_t *client, const channel_t *channel, permission_power_t power)
 {
@@ -527,7 +556,7 @@ boole permissions__can_use_channel(const client_t *client, const channel_t *chan
         required = channel->required_stream_power;
         break;
     case PERMISSION_CHANNEL_FILE_POWER:
-        // files are sent rarely, so this power is calculated here instead of being saved in the client
+        // file power is not cached in the client
         available = permissions__power_in_channel(client, channel, PERMISSION_CHANNEL_FILE_POWER);
         required = channel->required_file_power;
         break;
@@ -546,18 +575,14 @@ boole permissions__can_use_channel(const client_t *client, const channel_t *chan
 }
 
 /**
- * @brief Checks whether one client may send a direct message, picture, file or poke to another.
+ * @brief checks the sender's action and power against the receiver's protection
  *
- *        Two things are checked. The sender's groups must enable the action. The sender's power
- *        for this kind of content must also be at least as high as the protection that the
- *        receiver's groups give against it. A receiver with protection 0 can be reached by
- *        everybody whose action is enabled.
+ * @param sender Client making the request, with the clients lock held
+ * @param target Client that would receive the content
+ * @param permission Direct message, picture, file or poke permission
  *
- * @param sender Client making the request, with the clients lock held.
- * @param target Client that would receive the content.
- * @param permission PERMISSION_SEND_DIRECT_MESSAGES, PERMISSION_SEND_DIRECT_PICTURES, PERMISSION_SEND_DIRECT_FILES or PERMISSION_SEND_POKES.
- *
- * @return NULL when the request is allowed; otherwise the name of the permission or power that refused it.
+ * @return NULL if allowed, or the refusing permission or power name
+ *         an unsupported action returns an empty string
  */
 cstring permissions__contact_refusal(const client_t *sender, const client_t *target, permission_t permission)
 {
@@ -614,12 +639,12 @@ cstring permissions__contact_refusal(const client_t *sender, const client_t *tar
 }
 
 /**
- * @brief Checks whether a client may create a channel directly inside another channel.
+ * @brief checks the parent channel's required creation power
  *
- * @param client Client making the request, with the clients and channels locks held.
- * @param parent Channel that would contain the new channel.
+ * @param client Client making the request, with the clients and channels locks held
+ * @param parent Channel that would contain the new channel
  *
- * @return TRUE when the client's channel create power reaches the parent's requirement.
+ * @return TRUE if the power requirement is met or the client bypasses power checks
  */
 boole permissions__can_create_channel_in(const client_t *client, const channel_t *parent)
 {
@@ -640,10 +665,13 @@ boole permissions__can_create_channel_in(const client_t *client, const channel_t
 }
 
 /**
- * @brief Applies group choices or the existing guest rules when no group makes a choice.
+ * @brief checks an action using combined group values and the action's default
+ *
  * @param client -> client making the request
  * @param result -> combined group permissions
  * @param permission -> action to check
+ *
+ * @return boole -> TRUE if the client is allowed to use the action
  */
 static boole _permissions_internal__is_allowed(const client_t *client, const group_permissions_t *result, permission_t permission)
 {
@@ -664,9 +692,12 @@ static boole _permissions_internal__is_allowed(const client_t *client, const gro
 }
 
 /**
- * @brief Checks a permission using current groups. The caller holds the clients lock.
+ * @brief checks a permission using current groups. The caller holds the clients lock
+ *
  * @param client -> client making the request
  * @param permission -> action to check
+ *
+ * @return boole -> TRUE if the client is allowed to use the action
  */
 boole permissions__is_allowed(const client_t *client, permission_t permission)
 {
@@ -688,7 +719,14 @@ boole permissions__is_allowed(const client_t *client, permission_t permission)
 }
 
 /**
- * @brief Resolves an action for one channel without changing server-wide rights.
+ * @brief checks an action using the client's server and channel groups
+ * @attention caller holds the clients and channels locks
+ *
+ * @param const client_t* client -> client making the request
+ * @param const channel_t* channel -> channel affected by the request
+ * @param permission_t permission -> action to check
+ *
+ * @return boole -> TRUE if the action is allowed in this channel
  */
 boole permissions__is_allowed_in_channel(const client_t *client, const channel_t *channel, permission_t permission)
 {
@@ -711,8 +749,13 @@ boole permissions__is_allowed_in_channel(const client_t *client, const channel_t
 }
 
 /**
- * @brief Checks entry using the identity's assignment in the destination channel only.
- * @attention Caller holds the clients and channels locks. Other channel rights still require presence.
+ * @brief checks entry using the identity's assignment in the destination channel only
+ * @attention caller holds the clients and channels locks. Other channel rights still require presence
+ *
+ * @param const client_t* client -> client requesting entry
+ * @param const channel_t* channel -> destination channel
+ *
+ * @return boole -> TRUE if the client may enter without the channel password
  */
 boole permissions__can_bypass_channel_password(const client_t *client, const channel_t *channel)
 {
@@ -735,7 +778,14 @@ boole permissions__can_bypass_channel_password(const client_t *client, const cha
 }
 
 /**
- * @brief Resolves a power for one channel, including restrictions and Skip.
+ * @brief resolves a power for one channel, including restrictions and Skip
+ * @attention caller holds the clients and channels locks
+ *
+ * @param const client_t* client -> client whose power is needed
+ * @param const channel_t* channel -> channel affected by the request
+ * @param permission_power_t power -> power to resolve
+ *
+ * @return uint64 -> the combined power, PERMISSION_POWER_MAX for admins, or zero for invalid input
  */
 uint64 permissions__power_in_channel(const client_t *client, const channel_t *channel, permission_power_t power)
 {
@@ -762,7 +812,13 @@ uint64 permissions__power_in_channel(const client_t *client, const channel_t *ch
 }
 
 /**
- * @brief Reads optional flags, rejecting unsupported scopes, names and malformed values.
+ * @brief reads permission flags and rejects invalid entries
+ *
+ * @param cJSON* object -> JSON flags object
+ * @param group_permissions_t* permissions -> receives the flags. Earlier entries remain if a later entry fails
+ * @param boole channel -> TRUE for channel groups, FALSE for server groups
+ *
+ * @return boole -> TRUE if every entry was valid
  */
 boole permissions__read_flags(cJSON *object, group_permissions_t *permissions, boole channel)
 {
@@ -839,7 +895,13 @@ boole permissions__read_flags(cJSON *object, group_permissions_t *permissions, b
 }
 
 /**
- * @brief Writes only active flags, keeping older unflagged settings unchanged.
+ * @brief adds a flags object when any supported flags are active
+ *
+ * @param cJSON* object -> JSON object to receive the flags
+ * @param const group_permissions_t* permissions -> group permissions to write
+ * @param boole channel -> TRUE for channel groups, FALSE for server groups
+ *
+ * @return boole -> TRUE if writing succeeded or no flags were needed
  */
 boole permissions__write_flags(cJSON *object, const group_permissions_t *permissions, boole channel)
 {
@@ -920,7 +982,11 @@ json_failure:
 }
 
 /**
- * @brief Identifies groups whose restrictions may only be managed by a server admin.
+ * @brief checks whether any action or power has flags
+ *
+ * @param const group_permissions_t* permissions -> group permissions to check, or NULL
+ *
+ * @return boole -> TRUE if at least one flag is set
  */
 boole permissions__has_flags(const group_permissions_t *permissions)
 {
@@ -953,10 +1019,14 @@ boole permissions__has_flags(const group_permissions_t *permissions)
 }
 
 /**
- * @brief Checks kick or ban rights and target protection. The caller holds the clients lock.
- * @param sender -> client requesting the kick or ban
+ * @brief checks moderation rights and target protection using server groups
+ * @attention caller holds the clients lock
+ *
+ * @param sender -> client requesting moderation
  * @param target -> client affected by the request
- * @param permission -> kick or ban permission
+ * @param permission -> moderation action to check
+ *
+ * @return boole -> TRUE if the sender may perform the action on the target
  */
 boole permissions__can_moderate(const client_t *sender, const client_t *target, permission_t permission)
 {
@@ -964,11 +1034,14 @@ boole permissions__can_moderate(const client_t *sender, const client_t *target, 
 }
 
 /**
- * @brief Compares moderation powers including rights limited to the affected channel.
- * @param sender Authenticated actor with the clients lock held.
- * @param target Authenticated client affected by the request.
- * @param permission Requested moderation action.
- * @param channel Affected channel, or null for server moderation.
+ * @brief compares moderation powers including rights limited to the affected channel
+ *
+ * @param sender Authenticated actor with the clients lock held
+ * @param target Authenticated client affected by the request
+ * @param channel Affected channel, or NULL for server moderation
+ * @param permission Requested moderation action
+ *
+ * @return boole -> TRUE if the sender may perform the action on the target
  */
 boole permissions__can_moderate_in_channel(const client_t *sender, const client_t *target, const channel_t *channel, permission_t permission)
 {
@@ -1038,7 +1111,9 @@ boole permissions__can_moderate_in_channel(const client_t *sender, const client_
 }
 
 /**
- * @brief Initializes per-setting edit thresholds for new and legacy definitions.
+ * @brief sets every permission edit threshold to PERMISSION_POWER_MAX
+ *
+ * @param group_permissions_t* permissions -> group permissions to initialize
  */
 void permissions__init_grants(group_permissions_t *permissions)
 {
@@ -1058,7 +1133,13 @@ void permissions__init_grants(group_permissions_t *permissions)
 }
 
 /**
- * @brief Reads per-setting edit thresholds. Missing entries retain the safe default of 1000.
+ * @brief reads permission edit thresholds. Missing entries keep their current values
+ *
+ * @param cJSON* object -> JSON grants object
+ * @param group_permissions_t* permissions -> receives the thresholds. Earlier entries remain if a later entry fails
+ * @param boole channel -> TRUE for channel groups, FALSE for server groups
+ *
+ * @return boole -> TRUE if every entry was valid
  */
 boole permissions__read_grants(cJSON *object, group_permissions_t *permissions, boole channel)
 {
@@ -1118,7 +1199,13 @@ boole permissions__read_grants(cJSON *object, group_permissions_t *permissions, 
 }
 
 /**
- * @brief Saves Grant thresholds with the group definition, including channel-specific names.
+ * @brief adds permission edit thresholds to the group definition
+ *
+ * @param cJSON* object -> JSON object to receive the grants
+ * @param const group_permissions_t* permissions -> group permissions to write
+ * @param boole channel -> TRUE for channel groups, FALSE for server groups
+ *
+ * @return boole -> TRUE if the grants object was written successfully
  */
 boole permissions__write_grants(cJSON *object, const group_permissions_t *permissions, boole channel)
 {
@@ -1167,9 +1254,14 @@ json_failure:
 }
 
 /**
- * @brief Checks changed rows against their SAVED thresholds, never a proposed lower threshold.
- *        Grant changes must also stay within the editor's power. Creation keeps default locks
- *        unless the creator has power 1000. Group and privilege checks remain separate.
+ * @brief checks changes against saved edit thresholds and proposed grant values
+ *
+ * @param uint64 edit_power -> editor's permission edit power
+ * @param const group_permissions_t* previous -> saved permissions, or NULL for a new group
+ * @param const group_permissions_t* proposed -> proposed permissions and thresholds
+ * @param boole channel -> TRUE for channel groups, FALSE for server groups
+ *
+ * @return boole -> TRUE if the edit power permits every threshold change and protected edit
  */
 boole permissions__can_edit_values(uint64 edit_power, const group_permissions_t *previous, const group_permissions_t *proposed, boole channel)
 {
@@ -1254,7 +1346,12 @@ boole permissions__can_edit_values(uint64 edit_power, const group_permissions_t 
 }
 
 /**
- * @brief Reads saved or proposed permissions without changing the output on invalid input.
+ * @brief reads saved or proposed permissions without changing the output on invalid input
+ *
+ * @param cJSON* object -> JSON permission definition
+ * @param group_permissions_t* permissions -> receives the parsed permissions only on success
+ *
+ * @return boole -> TRUE if the complete definition was valid
  */
 boole permissions__read(cJSON *object, group_permissions_t *permissions)
 {
@@ -1401,11 +1498,11 @@ boole permissions__read(cJSON *object, group_permissions_t *permissions)
 }
 
 /**
- * @brief Returns the permission that an upload of the declared attachment type needs.
+ * @brief returns the permission that an upload of the declared attachment type needs
  *
- * @param intent Attachment type announced before the first upload part.
+ * @param intent Attachment type announced before the first upload part
  *
- * @return The permission, or PERMISSION_COUNT for an unknown type.
+ * @return The permission, or PERMISSION_COUNT for an unknown type
  */
 permission_t permissions__upload_permission(cstring intent)
 {
@@ -1440,12 +1537,12 @@ permission_t permissions__upload_permission(cstring intent)
 }
 
 /**
- * @brief Checks the permission for the declared attachment type.
+ * @brief checks the permission for the declared attachment type
  *
- * @param sender Client uploading data with the clients lock held.
- * @param intent Attachment type announced before the first upload part.
+ * @param sender Client uploading data with the clients lock held
+ * @param intent Attachment type announced before the first upload part
  *
- * @return boole -> TRUE when the client may upload this kind of content
+ * @return boole -> TRUE if the client may upload this kind of content
  */
 boole permissions__can_upload(const client_t *sender, cstring intent)
 {
@@ -1453,8 +1550,11 @@ boole permissions__can_upload(const client_t *sender, cstring intent)
 }
 
 /**
- * @brief Writes the same permission fields for saved settings and client messages.
+ * @brief writes the same permission fields for saved settings and client messages
+ *
  * @param permissions -> group permissions to write
+ *
+ * @return cJSON* -> A new JSON object, or NULL if writing failed. The caller owns the object
  */
 cJSON *permissions__write(const group_permissions_t *permissions)
 {
@@ -1501,9 +1601,11 @@ json_failure:
 }
 
 /**
- * @brief Returns the wire name of a known permission.
+ * @brief returns the wire name of a known permission
  *
- * @param permission Action to name.
+ * @param permission Action to name
+ *
+ * @return cstring -> the permission name, or an empty string for an unknown action
  */
 cstring permissions__name(permission_t permission)
 {
@@ -1511,11 +1613,11 @@ cstring permissions__name(permission_t permission)
 }
 
 /**
- * @brief Returns the wire name of a known power or protection.
+ * @brief returns the wire name of a known power or protection
  *
- * @param power Power to name.
+ * @param power Power to name
  *
- * @return cstring -> the name, or an empty text for an unknown power
+ * @return cstring -> the power name, or an empty string for an unknown power
  */
 cstring permissions__power_name(permission_power_t power)
 {
@@ -1523,9 +1625,13 @@ cstring permissions__power_name(permission_power_t power)
 }
 
 /**
- * @brief Reads the highest server group power with the clients lock held.
- * @param client Authenticated client.
- * @param power Numerical permission being checked.
+ * @brief combines server group powers, including Negate flags
+ * @attention caller holds the clients lock
+ *
+ * @param client Authenticated client
+ * @param power Numerical permission being checked
+ *
+ * @return uint64 -> the combined power, PERMISSION_POWER_MAX for admins, or zero for invalid input
  */
 uint64 permissions__power(const client_t *client, permission_power_t power)
 {
@@ -1551,9 +1657,12 @@ uint64 permissions__power(const client_t *client, permission_power_t power)
 }
 
 /**
- * @brief Checks a permission when the caller already holds the clients and groups locks.
+ * @brief checks a permission when the caller already holds the clients and groups locks
+ *
  * @param client -> client making the request
  * @param permission -> action to check
+ *
+ * @return boole -> TRUE if the client is allowed to use the action
  */
 boole permissions__is_allowed_in_groups(const client_t *client, permission_t permission)
 {
@@ -1571,9 +1680,12 @@ boole permissions__is_allowed_in_groups(const client_t *client, permission_t per
 }
 
 /**
- * @brief Finds a group in the client's current memberships.
+ * @brief checks membership, including automatic Guest membership
+ *
  * @param client -> client whose memberships are read under the clients lock
  * @param group_id -> group to find
+ *
+ * @return boole -> TRUE if the client belongs to the group
  */
 static boole _permissions_internal__has_group(const client_t *client, uint64 group_id)
 {
@@ -1606,10 +1718,13 @@ static boole _permissions_internal__has_group(const client_t *client, uint64 gro
 }
 
 /**
- * @brief Checks an action against the group's protection with the clients and groups locks held.
+ * @brief checks an action against the group's protection with the clients and groups locks held
+ *
  * @param sender -> client making the change
  * @param group_id -> existing group affected by the change
  * @param permission -> required management permission
+ *
+ * @return boole -> TRUE if the sender may perform the action on the group
  */
 boole permissions__can_manage_group(const client_t *sender, uint64 group_id, permission_t permission)
 {
@@ -1661,7 +1776,7 @@ boole permissions__can_manage_group(const client_t *sender, uint64 group_id, per
         return FALSE;
     }
 
-    // prevent non-admin users from editing permissions or deleting their own groups
+    // only admins may edit permissions or delete their own groups
     if ((permission == PERMISSION_EDIT_GROUP_PERMISSIONS || permission == PERMISSION_DELETE_GROUPS) && _permissions_internal__has_group(sender, group_id) == TRUE)
     {
         return FALSE;
@@ -1670,11 +1785,14 @@ boole permissions__can_manage_group(const client_t *sender, uint64 group_id, per
 }
 
 /**
- * @brief Rejects changes that give a user rights or powers the sender does not have.
+ * @brief rejects changes that give a user rights or powers the sender does not have
+ *
  * @param sender -> client requesting the change
  * @param target -> affected user with the clients and groups locks held
  * @param group_id -> group being added, removed or edited
  * @param replacement -> new permissions, or NULL when removing the group
+ *
+ * @return boole -> TRUE if the sender may change this user's permissions
  */
 static boole _permissions_internal__allows_change(const client_t *sender, const client_t *target, uint64 group_id, const group_permissions_t *replacement)
 {
@@ -1741,11 +1859,14 @@ static boole _permissions_internal__allows_change(const client_t *sender, const 
 }
 
 /**
- * @brief Checks an assignment or removal without changing memberships.
+ * @brief checks an assignment or removal without changing memberships
+ *
  * @param sender -> client making the request
  * @param target -> affected user with the clients and groups locks held
  * @param group_id -> group being assigned or removed
- * @param add -> TRUE for assignment
+ * @param add -> TRUE for assignment, FALSE for removal
+ *
+ * @return boole -> TRUE if the membership change is allowed
  */
 boole permissions__can_change_member(const client_t *sender, const client_t *target, uint64 group_id, boole add)
 {
@@ -1804,10 +1925,13 @@ boole permissions__can_change_member(const client_t *sender, const client_t *tar
 }
 
 /**
- * @brief Checks every value before a group edit, including users who already hold the group.
+ * @brief checks every value before a group edit, including users who already hold the group
+ *
  * @param sender -> client making the edit
  * @param group_id -> group being edited with the clients and groups locks held
  * @param proposed -> complete proposed permissions
+ *
+ * @return boole -> TRUE if the edit and its effects on members are allowed
  */
 boole permissions__can_edit_group_permissions(const client_t *sender, uint64 group_id, const group_permissions_t *proposed)
 {
@@ -1885,9 +2009,12 @@ boole permissions__can_edit_group_permissions(const client_t *sender, uint64 gro
 }
 
 /**
- * @brief Checks deletion and any Guest permissions that members would receive afterwards.
+ * @brief checks deletion and any Guest permissions that members would receive afterwards
+ *
  * @param sender -> client requesting deletion
  * @param group_id -> group to delete with the clients and groups locks held
+ *
+ * @return boole -> TRUE if deletion and its effects on members are allowed
  */
 boole permissions__can_delete_group(const client_t *sender, uint64 group_id)
 {
@@ -1914,9 +2041,12 @@ boole permissions__can_delete_group(const client_t *sender, uint64 group_id)
 }
 
 /**
- * @brief Rejects group presets that grant permissions or powers the creator does not have.
- * @param sender Client creating the group with the clients and groups locks held.
- * @param proposed Initial permissions of the new group.
+ * @brief rejects group presets that grant permissions or powers the creator does not have
+ *
+ * @param sender Client creating the group with the clients and groups locks held
+ * @param proposed Initial permissions of the new group
+ *
+ * @return boole -> TRUE if the sender may create a group with these permissions
  */
 boole permissions__can_create_group(const client_t *sender, const group_permissions_t *proposed)
 {
@@ -1971,10 +2101,13 @@ boole permissions__can_create_group(const client_t *sender, const group_permissi
 }
 
 /**
- * @brief Checks group edits against connected users and saved memberships.
+ * @brief checks group edits against connected users and saved memberships
+ *
  * @param sender -> client making the change with the clients and groups locks held
  * @param group_id -> group being edited or deleted
  * @param proposed -> new permissions, or NULL for deletion
+ *
+ * @return boole -> TRUE if the change is allowed for every affected member
  */
 static boole _permissions_internal__allows_group_members_change(const client_t *sender, uint64 group_id, const group_permissions_t *proposed)
 {
@@ -2040,8 +2173,11 @@ static boole _permissions_internal__allows_group_members_change(const client_t *
 }
 
 /**
- * @brief Writes the current user's rights without revealing other groups' permission values.
+ * @brief writes the current user's rights without revealing other groups' permission values
+ *
  * @param client -> user receiving the result with the clients and groups locks held
+ *
+ * @return cJSON* -> A new access JSON object, or NULL if initial allocation fails. The caller owns it
  */
 cJSON *permissions__write_access(const client_t *client)
 {
@@ -2094,9 +2230,12 @@ cJSON *permissions__write_access(const client_t *client)
 }
 
 /**
- * @brief Writes which group controls this user may use. Requests are checked again when received.
+ * @brief writes which group controls this user may use
+ *
  * @param client -> user receiving the controls with the clients and groups locks held
  * @param group_id -> group displayed in the window
+ *
+ * @return cJSON* -> A new access JSON object, or NULL if allocation fails. The caller owns it
  */
 cJSON *permissions__write_group_access(const client_t *client, uint64 group_id)
 {
@@ -2119,9 +2258,12 @@ cJSON *permissions__write_group_access(const client_t *client, uint64 group_id)
 }
 
 /**
- * @brief Checks a saved user's groups while the clients, groups and identity store locks are held.
- * @param stored Saved identity whose permission is checked.
- * @param permission Action to check.
+ * @brief checks a saved user's groups while the clients, groups and identity store locks are held
+ *
+ * @param stored Saved identity whose permission is checked
+ * @param permission Action to check
+ *
+ * @return boole -> TRUE if the saved user's groups allow the action
  */
 boole permissions__is_stored_client_allowed(const client_stored_data_t *stored, permission_t permission)
 {
@@ -2165,9 +2307,12 @@ boole permissions__is_stored_client_allowed(const client_stored_data_t *stored, 
 }
 
 /**
- * @brief Checks a saved identity's permission while the caller holds the clients lock.
- * @param identity_hash Saved identity to find.
- * @param permission Action to check.
+ * @brief checks a saved identity's permission while the caller holds the clients lock
+ *
+ * @param identity_hash Saved identity to find
+ * @param permission Action to check
+ *
+ * @return boole -> TRUE if the saved identity exists and its groups allow the action
  */
 boole permissions__is_identity_allowed(const char *identity_hash, permission_t permission)
 {

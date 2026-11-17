@@ -1,5 +1,5 @@
 #include "../../clib/clib_vector.h"
-// This file checks requests to create, edit, join or leave channels and to choose a new channel maintainer.
+// this file checks requests to create, edit, join or leave channels and to choose a new channel maintainer
 #include "client_msg.h"
 #include "../../core/permissions.h"
 #include "../../core/channel.h"
@@ -25,7 +25,11 @@ static boole _client_msg_channel_internal__is_process_come_back_from_idle_mode_r
 static boole _client_msg_channel_internal__can_edit(client_t *sender, channel_t *channel, cJSON *message);
 
 /**
- * @brief Rejects fractional and out-of-range channel identifiers before array indexing.
+ * @brief checks that a channel identifier is a whole number within the channel limit
+ *
+ * @param cJSON* value -> channel identifier to check
+ *
+ * @return boole -> TRUE if the identifier is valid
  */
 static boole _client_msg_channel_internal__is_channel_id_valid(cJSON *value)
 {
@@ -35,8 +39,12 @@ static boole _client_msg_channel_internal__is_channel_id_valid(cJSON *value)
 }
 
 /**
- * @brief Validates optional channel settings and preserves omitted capacity fields.
- * @param channel NULL for validation only, otherwise the channel or permission-check candidate to update.
+ * @brief validates optional channel settings and preserves omitted capacity fields
+ *
+ * @param message Channel settings from the request
+ * @param channel Receives the capacity settings, or NULL to validate only
+ *
+ * @return TRUE if every supplied option has a valid type and range
  */
 static boole _client_msg_channel_internal__read_optional_options(cJSON *message, channel_t *channel)
 {
@@ -83,10 +91,13 @@ static boole _client_msg_channel_internal__read_optional_options(cJSON *message,
 }
 
 /**
- * @brief Checks every changed field before applying a channel edit.
- * @param sender Authenticated sender with the clients lock held.
- * @param channel Existing channel with the channels lock held.
- * @param message Validated edit request.
+ * @brief checks every changed field before applying a channel edit
+ *
+ * @param sender Authenticated sender with the clients lock held
+ * @param channel Existing channel with the channels lock held
+ * @param message Validated edit request
+ *
+ * @return TRUE if the sender may change every supplied field
  */
 static boole _client_msg_channel_internal__can_edit(client_t *sender, channel_t *channel, cJSON *message)
 {
@@ -147,10 +158,8 @@ static boole _client_msg_channel_internal__can_edit(client_t *sender, channel_t 
 }
 
 /**
- * @brief processes an admin request to set (or clear) a channel's icon. an icon_id in the request
- *        assigns that icon (which must exist); a request without icon_id clears the channel's icon.
- *        broadcasts the change so every client updates its channel row live. only an authenticated
- *        admin may do this.
+ * @brief sets an existing channel icon or clears it when icon_id is omitted
+ *        requires channel options permission. The change is broadcast to all clients
  *
  * @param cJSON* json_root -> the parsed client request
  * @param uint64 sender_client_id -> id of the client that sent the request
@@ -382,7 +391,7 @@ static boole _client_msg_channel_internal__is_json_create_channel_request_valid(
 }
 
 /**
- * @brief This function processes create channel request message
+ * @brief this function processes create channel request message
  *
  * @param cJSON* json_root -> the parsed client request
  * @param uint64 sender_client_id -> id of the client that sent the request
@@ -464,7 +473,7 @@ void client_msg__channel__process_create_request(cJSON *json_root, uint64 sender
         // both need to be wrapper within same write lock because they are tied to one another,
         clib__write_lock(&g_channels_global_rwlock_guard);
 
-        // count occupied channels, not their IDs: deleting a channel leaves a reusable hole.
+        // count occupied channels, not their IDs: deleting a channel leaves a reusable hole
         // the clients and channels locks also serialize this check with creates and admin saves
         for (i = 0; i < g_server_settings.max_channel_count; i++)
         {
@@ -530,9 +539,7 @@ void client_msg__channel__process_create_request(cJSON *json_root, uint64 sender
 
                 if (channel->is_existing == FALSE)
                 {
-                    // everything is in order, now create the channel
-                    // set is_channel_created_successfully to TRUE so message about channel creation will be sent to all clients
-                    // will be initiated later in code
+                    // create the channel and mark it for the later broadcast
                     channel->is_existing = TRUE;
                     channel->channel_id = i; // a channel's id is its index in the channel array
                     channel->parent_channel_id = (int64)json_parent_channel_id->valuedouble;
@@ -609,9 +616,8 @@ void client_msg__channel__process_create_request(cJSON *json_root, uint64 sender
 
             clib__unlock(&g_channels_global_rwlock_guard);
 
-            // a temp channel: mark the creator as its admin/owner (so a second temp channel is refused, and
-            // so the join / disconnect / delete paths know whose departure destroys it) and move them into
-            // it right away, the same server-side way the delete path moves clients to root
+            // record the temporary channel owner and move them into it
+            // their departure will delete the channel
             if (creating_temp_channel == TRUE)
             {
                 clib__write_lock(&g_channels_global_rwlock_guard);
@@ -781,7 +787,7 @@ static boole _client_msg_channel_internal__is_json_edit_channel_request_valid(cJ
 }
 
 /**
- * @brief This function processes edit channel request message
+ * @brief this function processes edit channel request message
  *
  * @param cJSON* json_root -> the parsed client request
  * @param uint64 sender_client_id -> id of the client that sent the request
@@ -1052,7 +1058,7 @@ static boole _client_msg_channel_internal__is_json_join_channel_request_format_v
 }
 
 /**
- * @brief This function processes join channel request
+ * @brief this function processes join channel request
  *
  * @param cJSON* json_root -> the parsed client request
  * @param uint64 sender_client_id -> id of the client that sent the request
@@ -1155,9 +1161,8 @@ void client_msg__channel__process_join_request(cJSON *json_root, uint64 sender_c
     client_that_is_joining_channel->channel_id = json_channel_id->valueint;
     client_that_is_joining_channel->has_pending_maintainer_reset_vote = FALSE; // channel changed - a pending reset vote belongs to the old channel
 
-    // if the client owns this temp channel and is now leaving it, destroy it: any remaining members move
-    // to root and the channel is freed. old_channel is then zeroed, so the maintainer transfer code below
-    // naturally takes the no-old-maintainer path
+    // delete the owner's temporary channel and move remaining members to root
+    // clear old_channel so the maintainer code does not reuse the deleted channel
     if (old_channel->is_temp_channel == TRUE && client_that_is_joining_channel->is_temp_admin_channel == TRUE && client_that_is_joining_channel->temp_channel_id == old_channel->channel_id)
     {
         client_that_is_joining_channel->is_temp_admin_channel = FALSE;
@@ -1254,7 +1259,7 @@ static boole _client_msg_channel_internal__is_json_delete_request_format_valid(c
 }
 
 /**
- * @brief This function processes delete channel request
+ * @brief this function processes delete channel request
  *
  * @param cJSON* json_root -> the parsed client request
  * @param uint64 sender_client_id -> id of the client that sent the request
@@ -1349,9 +1354,7 @@ void client_msg__channel__process_delete_request(cJSON *json_root, uint64 sender
         channel_ids_to_delete[channels_to_delete_count] = json_channel_id->valueint;
         channels_to_delete_count += 1;
 
-        // json_channel_id->valueint channel id to start marking other child channels from
-        // channels_to_delete_count count of marked channels to delete
-        // array that stores ids of channels that should be deleted
+        // collect this channel and its descendants for deletion
         channel__mark_channels_for_deletion(json_channel_id->valueint, &channels_to_delete_count, channel_ids_to_delete);
 
         // check every marked channel
@@ -1495,23 +1498,9 @@ label_client_msg__process_delete_channel_request_end:
 }
 
 /**
- * @brief processes one reset_channel_maintainer vote, the last-resort recovery path for a channel
- *        whose announced maintainer never delivered usable channel keys
- *
- *        that happens with a faulty or modified client, or a connection that half-works. every
- *        keyless client keeps re-sending this vote every few seconds, and once MORE THAN HALF of
- *        the channel's clients have voted against the CURRENT maintainer generation, the server
- *        deposes the maintainer, picks a new one (excluding the deposed client), bumps the
- *        generation and broadcasts the new maintainer id - upon which the new maintainer's client
- *        distributes fresh channel keys exactly like after any other maintainer change.
- *
- *        the request carries NO payload - the client only says "i want the current maintainer of my
- *        channel replaced". all bookkeeping is server-internal: the vote is stamped with the
- *        channel's CURRENT maintainer_generation when it is recorded, so a vote recorded against a
- *        previous maintainer can never count against the newly appointed one, and votes expire by
- *        themselves when the voter switches channel or the generation moves on - no vote cleanup
- *        anywhere else. music bots are skipped on both sides of the count, they never hold channel
- *        keys and never vote, so counting them would only inflate the quorum denominator.
+ * @brief records a vote to replace the current channel key maintainer
+ *        replacement requires more than half the eligible members. Votes belong to the
+ *        current channel and maintainer generation. Music bots neither vote nor count
  *
  * @param cJSON* json_root -> the parsed client request (unused beyond the already-checked type)
  * @param uint64 sender_client_id -> id of the client that sent the request
@@ -1598,9 +1587,7 @@ void client_msg__channel__process_reset_maintainer_request(cJSON *json_root, uin
     sender->maintainer_reset_vote_channel_id = channel_id;
     sender->maintainer_reset_vote_generation = channel->maintainer_generation;
 
-    // count channel members and valid votes in one pass. music bots are skipped on both sides:
-    // they never hold channel keys (bot audio is not channel-key encrypted) and never vote,
-    // so counting them would only inflate the quorum denominator
+    // count members and votes without music bots, which hold no channel keys
     for (i = 0; i < g_server_settings.max_client_count; i++)
     {
         // skip unused slots
@@ -1701,7 +1688,7 @@ static boole _client_msg_channel_internal__is_go_to_idle_mode_request_valid(cJSO
 }
 
 /**
- * @brief This function processes go to idle more request, its modified version of join channel
+ * @brief this function processes go to idle more request, its modified version of join channel
  *        request
  *
  * @param cJSON* json_root -> the parsed client request
@@ -1790,9 +1777,7 @@ void client_msg__channel__process_go_to_idle_mode_request(cJSON *json_root, uint
         server_msg__channel__send_maintainer_id_to_clients_in_same_channel(old_channel, old_channel->maintainer_id);
     }
 
-    // the client closes its end of the datachannel right after sending this request; drop the server
-    // side too - a slot left "connected" on a transport that no longer worked made the re-create request on resume be
-    // refused until the ICE consent timeout noticed, tens of seconds without working audio
+    // close the server datachannel too so resuming can create a new audio connection
     audio_channel__process_client_disconnect(client);
     video_websocket__disconnect(client);
 
@@ -1807,8 +1792,8 @@ label_go_to_idle_mode_request_end:
 }
 
 /**
- * @brief Validates a remembered channel ID; a removed destination is resolved to root under the
- *        locks.
+ * @brief validates a remembered channel ID; a removed destination is resolved to root under the
+ *        locks
  *
  * @param cJSON* json_root -> the parsed client request
  *
@@ -1873,7 +1858,7 @@ void client_msg__channel__process_come_back_from_idle_mode_request(cJSON *json_r
     // lock the channels
     clib__write_lock(&g_channels_global_rwlock_guard);
 
-    // check if the client that sent the message is valid: connected and existing.
+    // check if the client that sent the message is valid: connected and existing
     // this was checked before but not within write lock like here
     client = &g_clients_array[sender_client_id];
 

@@ -1,0 +1,187 @@
+/* android uses the native wizard for connection details */
+body.android-app #verification-system .connect-section,
+body.android-app #verification-system .connect-sections-row,
+body.android-app #verification-system #server-bookmarks-container,
+body.android-app #verification-system > div[style*="calc(25vmin / var(--ui-display-scale, 1))"]
+{
+    display: none;
+}
+
+body.android-app.is-connected-ui-hidden #verification-system
+{
+    display: flex !important;
+    position: fixed;
+    inset: var(--mono-top, var(--mobile2-top, 56px)) 0 0;
+    box-sizing: border-box;
+    width: auto;
+    min-width: 0;
+    height: auto;
+    min-height: 0;
+    padding: clamp(24px, calc(9vh / var(--ui-display-scale, 1)), 80px) 16px 24px;
+    align-items: center;
+    justify-content: flex-start;
+    flex-direction: column;
+    overflow: auto;
+}
+
+body.android-app.is-connected-ui-hidden[data-conversation-tab]:not([data-conversation-tab="me"]) #communication-system-head-menu
+{
+    height: 0;
+    min-height: 0;
+    border: 0;
+    background: none;
+}
+
+body.android-app.is-connected-ui-hidden[data-conversation-tab]:not([data-conversation-tab="me"]) #verification-system
+{
+    top: 0;
+}
+
+body.android-app #verification-system::before,
+body.android-app #verification-system::after,
+body.android-app #verification-system #another-buttons-container > div::before,
+body.android-app #verification-system #another-buttons-container > div::after
+{
+    content: none;
+}
+
+body.android-app #verification-system #container-2
+{
+    position: relative;
+    inset: auto;
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0 !important;
+    max-width: 420px;
+    max-height: none;
+    margin: 0;
+    padding: 20px;
+    transform: none;
+}
+
+body.android-app #verification-system #another-buttons-container
+{
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    text-align: center;
+}
+
+body.android-app #verification-system #another-buttons-container > div
+{
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    box-shadow: none;
+}
+
+body.android-app #verification-system #connect-status-section
+{
+    order: 0;
+    color: var(--set-text, inherit);
+}
+
+body.android-app #verification-system #another-buttons-container #connect-status-section::before
+{
+    content: "Connection";
+    display: block;
+    padding: 0 0 14px;
+    font-size: 22px;
+    font-weight: 600;
+    line-height: 1.3;
+    letter-spacing: normal;
+    text-transform: none;
+    color: inherit;
+}
+
+body.android-app #verification-system #connection-status-extra
+{
+    display: block;
+    margin: 0 !important;
+    padding: 0;
+    max-width: none !important;
+    background: none;
+    box-shadow: none;
+}
+
+body.android-app #verification-system #connection-status-extra p
+{
+    margin: 8px 0 0;
+    min-height: 0;
+    max-width: none;
+    font-size: 14px;
+    line-height: 1.5;
+    text-align: center;
+    overflow-wrap: anywhere;
+    color: var(--set-muted, inherit) !important;
+}
+
+body.android-app #verification-system #connection-status-extra #connection-status-reason
+{
+    color: var(--set-text, inherit) !important;
+}
+
+body.android-app #verification-system #connection-status-extra p:empty
+{
+    display: none;
+}
+
+body.android-app #verification-system #another-buttons-sub-container
+{
+    order: 1;
+}
+
+body.android-app #verification-system #android-server-settings-container
+{
+    order: 2;
+}
+
+body.android-app #verification-system :is(#connect-button, #android-server-settings-button)
+{
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    min-height: 44px;
+    height: auto;
+    margin: 0;
+    padding: 10px 16px;
+    font-size: 15px;
+    line-height: 1.4;
+    white-space: normal;
+}
+
+body.android-app #verification-system #connect-button
+{
+    visibility: visible;
+}
+
+body.android-app #verification-system #another-buttons-sub-loading-container
+{
+    max-width: 100%;
+}
+
+body.android-app #verification-system #another-buttons-sub-loading-container > div:nth-child(2)
+{
+    top: auto !important;
+    height: auto !important;
+    max-width: 100%;
+}
+
+body.android-app #verification-system #another-buttons-loading-container-p
+{
+    margin: 0;
+    min-height: 0;
+    font-size: 14px;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+}

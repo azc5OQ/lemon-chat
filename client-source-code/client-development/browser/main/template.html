@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta http-equiv="Content-Security-Policy" content="frame-src 'none'; object-src 'none'">
     <script id="lemon-cfg">/*LEMONCFG replaced at serve-time by the built-in HTTP server with window.__SERVER_CONFIG__={"port":N,"keys":[...]} so the served page autoconnects; served any other way this stays an inert comment and the normal connect form shows. padding leaves room for the injected config:............................................................................................................................................................................................................*/</script>
     <title>chat</title>
     <meta charset="utf-8">
@@ -93,6 +94,7 @@
 /* @@INCLUDE: styles/theme-mono.style @@ */
 /* @@INCLUDE: styles/theme-phone.style @@ */
 /* @@INCLUDE: styles/theme-phone-tabs.style @@ */
+/* @@INCLUDE: styles/theme-mono-glass.style @@ */
     </style>
 
     <style id="style-theme-mono-dark" class="style-theme-html-element" media="(max-width: 1px)">
@@ -100,6 +102,7 @@
 /* @@INCLUDE: styles/theme-mono.style @@ */
 /* @@INCLUDE: styles/theme-phone.style @@ */
 /* @@INCLUDE: styles/theme-phone-tabs.style @@ */
+/* @@INCLUDE: styles/theme-mono-glass.style @@ */
 /* @@INCLUDE: styles/theme-mono-dark.style @@ */
     </style>
 
@@ -126,6 +129,7 @@
 /* @@INCLUDE: styles/groups.style @@ */
 /* @@INCLUDE: styles/server-emojis.style @@ */
 /* @@INCLUDE: styles/server-administration.style @@ */
+/* @@INCLUDE: styles/android-connection.style @@ */
     </style>
 
     <script type="text/javascript">
@@ -137,6 +141,7 @@
 /* @@INCLUDE: scripts/app/audio/opus-runtime.js @@ */
 /* @@INCLUDE: scripts/app/audio/audio-opus-glue.js @@ */
 /* @@INCLUDE: scripts/app/crypto/rsa-crypto.js @@ */
+/* @@INCLUDE: scripts/app/crypto/identity-file.js @@ */
 /* @@INCLUDE: scripts/app/workers/worker-entry.js @@ */
 /* @@INCLUDE: scripts/vendor/minimp3.js @@ */
 /* @@INCLUDE: scripts/app/audio/minimp3-worker.js @@ */
@@ -151,6 +156,7 @@
 /* @@INCLUDE: scripts/app/connection/connection.js @@ */
 /* @@INCLUDE: scripts/app/ui/head-menu.js @@ */
 /* @@INCLUDE: scripts/app/ui/start-page.js @@ */
+/* @@INCLUDE: scripts/app/workers/local-transfer.js @@ */
 /* @@INCLUDE: scripts/app/workers/workers.js @@ */
 /* @@INCLUDE: scripts/app/console-log.js @@ */
 /* @@INCLUDE: scripts/app/crypto/connection-crypto.js @@ */
@@ -1001,6 +1007,17 @@
                         <section class="local-settings-page" id="local-settings-page-appearance" role="tabpanel" aria-labelledby="local-settings-tab-appearance" tabindex="0">
                             <h2 class="local-settings-section-title">Appearance</h2>
                             <div class="local-settings-row local-settings-chat-scale-row">
+                                <label class="local-settings-text" for="local-settings-ui-scale">
+                                    <span class="local-settings-label">interface size</span>
+                                    <span class="local-settings-hint">scales the channel list, buttons, menus and windows; messages keep the chat size below</span>
+                                </label>
+                                <div class="local-settings-chat-scale-controls">
+                                    <input type="range" id="local-settings-ui-scale" min="60" max="150" step="5" value="100">
+                                    <output id="local-settings-ui-scale-value" for="local-settings-ui-scale">100%</output>
+                                    <input type="button" id="local-settings-ui-scale-reset" value="Reset" title="Reset interface size to 100%">
+                                </div>
+                            </div>
+                            <div class="local-settings-row local-settings-chat-scale-row">
                                 <label class="local-settings-text" for="local-settings-chat-scale">
                                     <span class="local-settings-label">chat size</span>
                                     <span class="local-settings-hint">scales messages, pictures and replies; keeps the channel list unchanged</span>
@@ -1503,9 +1520,6 @@
                     <div id="chat-context-container">
                         <div id="chat-seen-indicator" title="your last message has been read"></div>
                         <div class="chat-context" id="chat-context-channel-0">
-                            <div class="single-server-message">
-                                now talking channel: root
-                            </div>
                         </div>
                     </div>
                 </div>
@@ -1948,7 +1962,16 @@
                         <label class="identity-dialog-label" for="identity-string-use-textarea">Identity passphrase</label>
                         <textarea spellcheck="false" autocapitalize="off" autocomplete="off" id="identity-string-use-textarea" placeholder="Paste your identity passphrase" aria-describedby="identity-passphrase-hint"></textarea>
                         <p id="identity-passphrase-hint" class="identity-dialog-hint">Copy the complete passphrase from Export Identity.</p>
-                        <p class="identity-dialog-hint">Before importing a passphrase, select the original identity key size in Local settings → Identity.</p>
+                        <label class="identity-dialog-label" for="identity-import-rsa-key-bits">Original identity key size</label>
+                        <select id="identity-import-rsa-key-bits">
+                            <option value="">Choose the original key size</option>
+                            <option value="2048">2048 bits</option>
+                            <option value="3072">3072 bits</option>
+                            <option value="4096">4096 bits</option>
+                            <option value="6144">6144 bits</option>
+                            <option value="8192">8192 bits</option>
+                        </select>
+                        <p class="identity-dialog-hint">Use the size from the device that exported the passphrase. A different size creates a different identity.</p>
                         <div class="identity-dialog-actions">
                             <input type="button" id="identity-string-use-confirm-button" class="button-1" value="Import identity">
                         </div>
@@ -1995,7 +2018,7 @@
                         <span id="export-identity-file-name" class="identity-dialog-hint"></span>
                     </div>
                     <p class="identity-dialog-hint">The file saves your passphrase and key size together. Import it on another device to restore both automatically.</p>
-                    <div class="identity-dialog-passphrase">
+                    <div class="identity-dialog-passphrase" id="identity-export-passphrase-fields">
                         <label class="identity-dialog-label" for="p-secret-identity-string">Identity passphrase</label>
                         <textarea id="p-secret-identity-string" readonly spellcheck="false" autocomplete="off" aria-describedby="identity-export-hint"></textarea>
                         <p id="identity-export-hint" class="identity-dialog-hint"></p>

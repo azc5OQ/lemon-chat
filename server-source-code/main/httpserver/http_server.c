@@ -33,10 +33,10 @@ typedef SOCKET http_socket_t;
 #include <unistd.h>
 #include <fcntl.h>
 #include <poll.h>
-typedef int http_socket_t; // POSIX socket descriptor.
+typedef int http_socket_t; // POSIX socket descriptor
 #define HTTP_INVALID_SOCKET (-1)
 #define http_close_socket close
-/* MSG_NOSIGNAL keeps send() to a closed peer from raising SIGPIPE (which would end the server process).
+/* MSG_NOSIGNAL keeps send() to a closed peer from raising SIGPIPE (which would end the server process)
    Linux has the flag; macOS/BSD do not - there the SO_NOSIGPIPE socket option is set per connection
    in _http_server_internal__handle_connection instead, so the send flag is just 0 */
 #ifdef MSG_NOSIGNAL
@@ -53,14 +53,14 @@ typedef int http_socket_t; // POSIX socket descriptor.
 #define HTTP_SERVER_HEADER_SIZE 512
 #define HTTP_SERVER_RECV_TIMEOUT_SECONDS 10
 #define HTTP_SERVER_SEND_TIMEOUT_SECONDS 10
-// Keep room for a burst of new connections while their worker threads start.
-// The separate worker limit below still bounds how many requests run at once.
+// keep room for a burst of new connections while their worker threads start
+// the separate worker limit below still bounds how many requests run at once
 #define HTTP_SERVER_LISTEN_BACKLOG 128
 #define HTTP_SERVER_MAX_CONNECTIONS 32
 
-// Each visitor gets a separate thread, so a browser that opens a connection
+// each visitor gets a separate thread, so a browser that opens a connection
 // and waits before sending its request does not stop other visitors. Keep a
-// limit on those threads so waiting connections cannot use unlimited memory.
+// limit on those threads so waiting connections cannot use unlimited memory
 static pthread_mutex_t g_http_connections_mutex = PTHREAD_MUTEX_INITIALIZER;
 static uint64 g_http_active_connections = 0;
 
@@ -85,7 +85,7 @@ typedef struct http_gzip_page
 {
     ubyte *data;
     uint64 size;
-    uint64 references; // Cache and active downloads; protected by g_http_config_mutex.
+    uint64 references; // cache and active downloads; protected by g_http_config_mutex
 } http_gzip_page_t;
 
 #ifndef DEBUG_ACTIVE
@@ -96,7 +96,7 @@ static uint64 g_http_client_page_cache_size = 0;
 static http_gzip_page_t *g_http_gzip_page_cache = NULL_POINTER;
 #endif
 
-// One deadline covers every header/body send in this worker response.
+// one deadline covers every header/body send in this worker response
 static _Thread_local uint64 g_http_response_deadline;
 
 // declarations
@@ -121,8 +121,8 @@ static void _http_server_internal__refresh_gzip_page(void);
 #endif
 
 /**
- * @brief Reads an elapsed-time clock so changing the computer clock cannot extend an HTTP request
- *        timeout.
+ * @brief reads an elapsed-time clock so changing the computer clock cannot extend an HTTP request
+ *        timeout
  *
  * @return uint64 -> the monotonic clock value in milliseconds, or zero if the POSIX clock cannot be read
  */
@@ -143,8 +143,10 @@ static uint64 _http_server_internal__monotonic_ms(void)
 }
 
 /**
- * @brief Reads a file's byte length and returns its position to the beginning.
+ * @brief reads a file's byte length and returns its position to the beginning
+ *
  * @param FILE* file -> open file whose contents will be read from the start
+ *
  * @return int64 -> byte length, or -1 when seeking or reading the position fails
  */
 static int64 _http_server_internal__file_size(FILE *file)
@@ -179,9 +181,9 @@ static int64 _http_server_internal__file_size(FILE *file)
 }
 
 /**
- * @brief Waits for the complete HTTP request headers even when they arrive in several socket reads.
+ * @brief waits for the complete HTTP request headers even when they arrive in several socket reads
  *
- * All pieces share one timeout. Oversized headers receive HTTP 431; embedded zero bytes receive HTTP 400.
+ * all pieces share one timeout. Oversized headers receive HTTP 431; embedded zero bytes receive HTTP 400
  *
  * @param http_socket_t client_socket -> the accepted connection to read
  * @param char* buffer -> receives the request bytes and an ending zero byte
@@ -286,7 +288,7 @@ static uint64 _http_server_internal__read_request(http_socket_t client_socket, c
 }
 
 /**
- * @brief Sends the whole buffer, repeating socket writes until every byte is sent or writing fails.
+ * @brief sends the whole buffer, repeating socket writes until every byte is sent or writing fails
  *
  * @param http_socket_t client_socket -> the connection to write to
  * @param void* data -> the bytes to send; the caller keeps ownership
@@ -440,7 +442,7 @@ void http_server__set_client_config(char *config_script)
     // copy the script
     if (copy != NULL_POINTER)
     {
-        memcpy(copy, config_script, size);
+        clib__copy_memory(config_script, copy, size, size);
     }
 
     // replace stored script
@@ -458,7 +460,7 @@ void http_server__set_client_config(char *config_script)
 }
 
 /**
- * @brief Finds the first occurrence of a byte sequence inside a buffer.
+ * @brief finds the first occurrence of a byte sequence inside a buffer
  *
  * @param char* haystack -> the buffer to search; no ending zero byte is required
  * @param uint64 haystack_length -> the number of bytes available in haystack
@@ -498,8 +500,16 @@ static char *_http_server_internal__find_bytes(char *haystack, uint64 haystack_l
     return NULL_POINTER;
 }
 
-// Caller holds g_http_config_mutex. Old downloads keep their own reference
-// when a settings change replaces the cached response.
+// caller holds g_http_config_mutex. Old downloads keep their own reference
+// when a settings change replaces the cached response
+/**
+ * @brief releases a cached page reference and wipes the last copy
+ * caller holds the HTTP configuration mutex
+ *
+ * @param http_gzip_page_t * page -> page to release, or NULL_POINTER
+ *
+ * @return void
+ */
 static void _http_server_internal__release_gzip_page(http_gzip_page_t *page)
 {
     // free after last reference
@@ -511,6 +521,15 @@ static void _http_server_internal__release_gzip_page(http_gzip_page_t *page)
     }
 }
 
+/**
+ * @brief injects connection configuration and builds a compressed page
+ *
+ * @param char * page -> source HTML bytes
+ * @param uint64 size -> source byte count
+ * @param const char * config -> replacement configuration script, or NULL_POINTER
+ *
+ * @return http_gzip_page_t * -> owned page with one reference, or NULL_POINTER on failure
+ */
 static http_gzip_page_t *_http_server_internal__compress_page(char *page, uint64 size, const char *config)
 {
     uint64 prefix = 0;
@@ -554,9 +573,9 @@ static http_gzip_page_t *_http_server_internal__compress_page(char *page, uint64
         }
 
         // copy the three parts
-        memcpy(body, page, prefix);
-        memcpy(body + prefix, config, config_size);
-        memcpy(body + prefix + config_size, end + 2, suffix);
+        clib__copy_memory(page, body, prefix, body_size);
+        clib__copy_memory(config, body + prefix, config_size, body_size - prefix);
+        clib__copy_memory(end + 2, body + prefix + config_size, suffix, body_size - prefix - config_size);
     }
 
     // compress the body
@@ -582,8 +601,14 @@ static http_gzip_page_t *_http_server_internal__compress_page(char *page, uint64
 }
 
 #ifndef DEBUG_ACTIVE
-// Called under g_http_config_mutex, only on startup or configuration changes.
-// Compression and downloads use RAM; no generated file contains the login keys.
+// called under g_http_config_mutex, only on startup or configuration changes
+// compression and downloads use RAM; no generated file contains the login keys
+/**
+ * @brief replaces the compressed cache using the current HTML and configuration
+ * caller holds the HTTP configuration mutex
+ *
+ * @return void
+ */
 static void _http_server_internal__refresh_gzip_page(void)
 {
     http_gzip_page_t *replacement = NULL_POINTER;
@@ -671,11 +696,23 @@ static void _http_server_internal__cache_client_page(void)
  *
  * @param http_socket_t client_socket -> the connection to write the response to
  * @param char* request_path -> the url path from the request line (e.g. "/", "/scripts/app/main.js")
+ * @param http_encoding_t encoding -> selected response compression
+ * @param boole identity_allowed -> whether the request accepts an uncompressed response
  *
  * @return void
  */
-// The cached page remains unmodified. Each request gets a short configuration
-// snapshot, so a slow download never blocks a settings save or another visitor.
+// the cached page remains unmodified. Each request gets a short configuration
+// snapshot, so a slow download never blocks a settings save or another visitor
+/**
+ * @brief serves the client page using the selected encoding and current policy
+ *
+ * @param http_socket_t client_socket -> socket receiving the HTTP response
+ * @param char * request_path -> requested path to validate
+ * @param http_encoding_t encoding -> preferred response encoding
+ * @param boole identity_allowed -> whether an uncompressed fallback is allowed
+ *
+ * @return void
+ */
 static void _http_server_internal__serve_file(http_socket_t client_socket, char *request_path, http_encoding_t encoding, boole identity_allowed)
 {
     boole blank = FALSE;
@@ -725,7 +762,7 @@ static void _http_server_internal__serve_file(http_socket_t client_socket, char 
         config = malloc(config_size + 1);
         if (config != NULL_POINTER)
         {
-            memcpy(config, g_http_client_config_script, config_size + 1);
+            clib__copy_memory(g_http_client_config_script, config, config_size + 1, config_size + 1);
         }
     }
 
@@ -881,8 +918,16 @@ done:
     }
 }
 
-// Only the local TLS proxy can supply the marker that suppresses HTTPS redirects.
-// Match a complete header, never text in a URL, another header value, or a body.
+// only the local TLS proxy can supply the marker that suppresses HTTPS redirects
+// match a complete header, never text in a URL, another header value, or a body
+/**
+ * @brief checks a loopback request for one valid stunnel address marker
+ *
+ * @param http_socket_t client_socket -> socket whose peer must be localhost
+ * @param const char * request -> terminated HTTP request headers
+ *
+ * @return boole -> TRUE when the peer and marker match the expected proxy format
+ */
 static boole _http_server_internal__is_https_proxy_request(http_socket_t client_socket, const char *request)
 {
     const char *name = NULL_POINTER;
@@ -989,7 +1034,7 @@ static boole _http_server_internal__is_https_proxy_request(http_socket_t client_
             }
 
             // check the address
-            memcpy(address, value, value_size);
+            clib__copy_memory(value, address, value_size, sizeof(address));
             address[value_size] = '\0';
             if (inet_pton(AF_INET, address, &binary) != 1 && inet_pton(AF_INET6, address, &binary) != 1)
             {
@@ -1003,8 +1048,17 @@ static boole _http_server_internal__is_https_proxy_request(http_socket_t client_
     }
 }
 
-// Read exactly one Host field, then keep only its validated host component.
-// The redirect uses the configured HTTPS port, not the port supplied by a visitor.
+// read exactly one Host field, then keep only its validated host component
+// the redirect uses the configured HTTPS port, not the port supplied by a visitor
+/**
+ * @brief validates the Host header and extracts its host without the port
+ *
+ * @param const char * request -> terminated HTTP request headers
+ * @param char * host -> destination for the host or bracketed IPv6 address
+ * @param uint64 capacity -> destination bytes including the terminator
+ *
+ * @return boole -> TRUE when exactly one valid host was copied
+ */
 static boole _http_server_internal__redirect_host(const char *request, char *host, uint64 capacity)
 {
     const char *end = NULL_POINTER;
@@ -1125,7 +1179,7 @@ static boole _http_server_internal__redirect_host(const char *request, char *hos
         }
 
         // check IPv6 address
-        memcpy(address, value + 1, (uint64)(closing - value - 1));
+        clib__copy_memory(value + 1, address, (uint64)(closing - value - 1), sizeof(address));
         address[closing - value - 1] = 0;
         if (inet_pton(AF_INET6, address, &binary) != 1)
         {
@@ -1200,14 +1254,16 @@ static boole _http_server_internal__redirect_host(const char *request, char *hos
     }
 
     // copy the host
-    memcpy(host, value, host_size);
+    clib__copy_memory(value, host, host_size, capacity);
     host[host_size] = 0;
     return TRUE;
 }
 
 /**
  * @brief reads one http request from the socket and dispatches it (GET only)
+ *
  * @param http_socket_t client_socket -> the accepted connection socket
+ *
  * @return void
  */
 static void _http_server_internal__handle_connection(http_socket_t client_socket)
@@ -1361,6 +1417,13 @@ static void _http_server_internal__handle_connection(http_socket_t client_socket
     _http_server_internal__serve_file(client_socket, request_path, encoding, identity_allowed);
 }
 
+/**
+ * @brief waits briefly for a pending HTTP connection
+ *
+ * @param http_socket_t listener -> listening socket to poll
+ *
+ * @return boole -> TRUE when the listener is readable, otherwise FALSE
+ */
 static boole _http_server_internal__listener_ready(http_socket_t listener)
 {
 #ifdef WIN32
@@ -1380,12 +1443,11 @@ static boole _http_server_internal__listener_ready(http_socket_t listener)
 }
 
 /**
- * @brief accepts HTTP connections and gives each one to a separate thread, so waiting for one
- *        visitor does not delay the others
+ * @brief accepts bounded HTTP connections and starts their request threads
  *
- * @param void* arg_unused -> unused
+ * @param void* argument -> allocated listener socket pointer consumed and freed by this thread
  *
- * @return void* always 0
+ * @return void* NULL after the listener is stopped and closed
  */
 static void *_http_server_internal__server_thread(void *argument)
 {
@@ -1467,7 +1529,7 @@ static void *_http_server_internal__server_thread(void *argument)
 }
 
 /**
- * @brief Serves one HTTP visitor and releases its connection slot when the request ends.
+ * @brief serves one HTTP visitor and releases its connection slot when the request ends
  *
  * @param void* arg_socket -> an allocated http_socket_t passed by the listener; this thread frees it and closes the socket
  *
@@ -1492,9 +1554,9 @@ static void *_http_server_internal__connection_thread(void *arg_socket)
 }
 
 /**
- * @brief Chooses whether HTTP visitors are redirected to the HTTPS front end.
+ * @brief chooses whether HTTP visitors are redirected to the HTTPS front end
  *
- * Call this before starting the HTTP server so connections use the chosen redirect settings.
+ * call this before starting the HTTP server so connections use the chosen redirect settings
  *
  * @param boole enabled -> TRUE to enable redirects or FALSE to serve the client page over HTTP
  * @param int64 https_port -> the HTTPS port included in redirect URLs
@@ -1507,7 +1569,15 @@ void http_server__set_https_redirect(boole enabled, int64 https_port)
     g_http_https_redirect_port = https_port;
 }
 
-// Initialize once even when HTTP starts disabled, so it can be enabled live.
+// initialize once even when HTTP starts disabled, so it can be enabled live
+/**
+ * @brief stores the HTTP port and webroot once and prepares the page cache
+ *
+ * @param int64 port -> listener port
+ * @param char * webroot -> directory containing client.html
+ *
+ * @return void
+ */
 void http_server__initialize(int64 port, char *webroot)
 {
     // initialize only once
@@ -1542,8 +1612,16 @@ void http_server__initialize(int64 port, char *webroot)
 #endif
 }
 
-// Bind synchronously so the settings panel can report a busy/invalid port.
-// Only the listener is joined on shutdown; existing bounded HTTP downloads finish.
+// bind synchronously so the settings panel can report a busy/invalid port
+// only the listener is joined on shutdown; existing bounded HTTP downloads finish
+/**
+ * @brief starts or stops the listener and applies client page visibility
+ *
+ * @param boole enabled -> whether to serve the client page
+ * @param boole blank_when_disabled -> whether a disabled page still serves an empty response
+ *
+ * @return boole -> TRUE when the mode was applied, otherwise FALSE after startup failure
+ */
 boole http_server__set_mode(boole enabled, boole blank_when_disabled)
 {
 #ifndef WIN32
@@ -1671,6 +1749,14 @@ done:
     return success;
 }
 
+/**
+ * @brief initializes HTTP configuration and requests listener startup
+ *
+ * @param int64 port -> listener port
+ * @param char * webroot -> directory containing client.html
+ *
+ * @return void
+ */
 void http_server__start(int64 port, char *webroot)
 {
     http_server__initialize(port, webroot);

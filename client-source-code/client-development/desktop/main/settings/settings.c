@@ -1,6 +1,6 @@
 #include "platform/memory.h"
 #include "crypto/crypto_session.h"
-// Shared validation and JSON serialization for local desktop settings.
+// shared validation and JSON serialization for local desktop settings
 #include "settings/settings.h"
 #include "settings/settings_file.h"
 #include "platform/hotkey.h"
@@ -10,8 +10,10 @@
 #include "cJSON.h"
 
 /**
- * @brief confines theme names to CSS files in the application's themes directory.
- * @param const char* name -> bounded filename; empty selects the classic theme
+ * @brief confines theme names to CSS files in the application's themes directory
+ *
+ * @param const char* name -> bounded filename. Empty selects the classic theme
+ *
  * @return boole -> TRUE for a simple ASCII filename without path components
  */
 boole desktop_settings__valid_theme(const char *name)
@@ -45,8 +47,10 @@ boole desktop_settings__valid_theme(const char *name)
 }
 
 /**
- * @brief validates a named TCP WebSocket address without retaining credentials.
+ * @brief validates a named TCP WebSocket address without retaining credentials
+ *
  * @param const desktop_bookmark_t* bookmark -> bounded name and address
+ *
  * @return boole -> TRUE for a nonblank name and a valid endpoint
  */
 boole desktop_settings__valid_bookmark(const desktop_bookmark_t *bookmark)
@@ -84,11 +88,11 @@ boole desktop_settings__valid_bookmark(const desktop_bookmark_t *bookmark)
 }
 
 /**
- * @brief accepts an executable basename and rejects paths, reserved characters and unterminated data.
+ * @brief accepts an executable basename and rejects paths, reserved characters and unterminated data
  *
  * @param const char* executable -> game executable basename
  *
- * @return boole -> 1 for a valid .exe name; 0 otherwise
+ * @return boole -> 1 for a valid .exe name. 0 otherwise
  */
 boole desktop_settings__valid_game(const char *executable)
 {
@@ -118,8 +122,10 @@ boole desktop_settings__valid_game(const char *executable)
 }
 
 /**
- * @brief loads saved preferences, leaving the overlay disabled on invalid or missing data.
+ * @brief loads saved preferences, leaving the overlay disabled on invalid or missing data
+ *
  * @param desktop_settings_t* settings -> destination settings
+ *
  * @return void
  */
 void desktop_settings__load(desktop_settings_t *settings)
@@ -249,7 +255,7 @@ void desktop_settings__load(desktop_settings_t *settings)
         settings->microphone_gain = field->valueint;
     }
 
-    // read the push-to-talk key
+    // read the push to talk key
     field = cJSON_GetObjectItemCaseSensitive(root, "push_to_talk_key");
     if (cJSON_IsNumber(field) && field->valuedouble == field->valueint && desktop_hotkey__index(field->valueint) >= 0)
     {
@@ -338,9 +344,11 @@ void desktop_settings__load(desktop_settings_t *settings)
 }
 
 /**
- * @brief validates and serializes preferences before asking the platform to save them.
+ * @brief validates and serializes preferences before asking the platform to save them
+ *
  * @param const desktop_settings_t* settings -> preferences selected by the user
- * @return boole -> 1 when saved; 0 on invalid input or a write error
+ *
+ * @return boole -> 1 when saved. 0 on invalid input or a write error
  */
 boole desktop_settings__save(const desktop_settings_t *settings)
 {

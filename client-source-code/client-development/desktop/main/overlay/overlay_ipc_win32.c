@@ -1,5 +1,5 @@
 #include "platform/memory.h"
-// Exchanges display-only snapshots between the desktop and selected game process.
+// exchanges display only snapshots between the desktop and selected game process
 #include <windows.h>
 #include <stdlib.h>
 #include "overlay_ipc.h"
@@ -14,10 +14,10 @@ struct desktop_overlay_ipc_t
 };
 
 /**
- * @brief opens the bounded shared display mapping and its mutex for one game process.
+ * @brief opens the bounded shared display mapping and its mutex for one game process
  *
  * @param uint game_pid -> game process ID used in the mapping name
- * @param boole writer -> nonzero for the desktop writer; zero for a game reader
+ * @param boole writer -> nonzero for the desktop writer. Zero for a game reader
  *
  * @return desktop_overlay_ipc_t* -> the owned IPC handle, or NULL on failure
  */
@@ -59,7 +59,7 @@ desktop_overlay_ipc_t *desktop_overlay_ipc__open(uint game_pid, boole writer)
 }
 
 /**
- * @brief releases the mapping, mutex and local IPC handle.
+ * @brief releases the mapping, mutex and local IPC handle
  *
  * @param desktop_overlay_ipc_t* ipc -> shared display mapping handle
  *
@@ -97,12 +97,12 @@ void desktop_overlay_ipc__close(desktop_overlay_ipc_t *ipc)
 }
 
 /**
- * @brief copies a valid snapshot under a bounded mutex wait and refreshes its owner and heartbeat.
+ * @brief copies a valid snapshot under a bounded mutex wait and refreshes its owner and heartbeat
  *
  * @param desktop_overlay_ipc_t* ipc -> shared display mapping handle
  * @param const desktop_overlay_snapshot_t* snapshot -> bounded channel display snapshot
  *
- * @return boole -> 1 when written; 0 if busy, invalid or owned by another running client
+ * @return boole -> 1 when written. 0 if busy, invalid or owned by another running client
  */
 boole desktop_overlay_ipc__write(desktop_overlay_ipc_t *ipc, const desktop_overlay_snapshot_t *snapshot)
 {
@@ -153,12 +153,12 @@ boole desktop_overlay_ipc__write(desktop_overlay_ipc_t *ipc, const desktop_overl
 }
 
 /**
- * @brief copies a validated snapshot without making the game render thread wait for the mutex.
+ * @brief copies a validated snapshot without making the game render thread wait for the mutex
  *
  * @param desktop_overlay_ipc_t* ipc -> shared display mapping handle
  * @param desktop_overlay_snapshot_t* snapshot -> bounded channel display snapshot
  *
- * @return boole -> 1 when copied; 0 if busy or invalid
+ * @return boole -> 1 when copied. 0 if busy or invalid
  */
 boole desktop_overlay_ipc__read(desktop_overlay_ipc_t *ipc, desktop_overlay_snapshot_t *snapshot)
 {

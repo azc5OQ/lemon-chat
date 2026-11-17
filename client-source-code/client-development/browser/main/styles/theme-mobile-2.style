@@ -1,29 +1,14 @@
-/* Mobile 2: the Termix theme of a computer, arranged and sized for a touch screen; included after
-   theme-termix.style, which gives every colour and shape.
-   On a touch screen main.js hides the layout button and layout.js does not arrange the panels; the
-   rules that start with that hidden button arrange them here.
-   - A screen of 768px or more: the channel tree and the chat with the message box under it stand side
-     by side.
-   - A narrower screen shows either the channel tree, or the chat with the message box and, in a narrow
-     column at its left, the people of the user's own channel. The button with the eye in the top bar
-     switches between the two; it calls UI.hide_chat_container(), which writes "display" and "width"
-     into the style attributes of the panels and sets the class "chat-hidden" on the button.
-   - The list of all people, with the description of the channel and the details of a chosen person
-     above it, is a panel at the right edge that lies over the other panels. The button with the two
-     people at the right end of the top bar shows and hides it: main.js switches the class
-     "member-list-shown" on that button. While the panel is shown, the rest of the page under the top
-     bar is blurred, and a press on the blurred part hides the panel.
-   - The top bar has no button for the admin password.
-   Without a touch screen Termix's own arrangement is kept. Rows and buttons are larger, for a finger. */
+/* Mobile 2 adds touch sizing to Termix. Wide touch screens show channels beside chat. Narrow screens switch between them and keep current channel members beside chat. The full member list opens over the page. Desktop layouts remain in Termix. */
 :root
 {
+    /* The login code (dispatch.js) reads this value: with 1, a login on a touch screen opens the chat with the
+       people of the current channel beside it, not the channel tree alone. */
+    --chat-shown-after-login: 1;
     --mobile2-top: 56px;
     --tree-icon-size: 20px;
 }
 
-/* The top bar: one row of buttons that does not wrap. On a screen that is too narrow for the row the
-   buttons get narrower. The bar does not cut off its content, so the lists that open under its buttons
-   (connections, bookmarks, identity) are shown whole. */
+/* Keep toolbar buttons on one row without clipping their menus. */
 #communication-system-head-menu
 {
     flex-wrap: nowrap;
@@ -42,9 +27,7 @@
     background-size: 22px 22px;
 }
 
-/* "connections" and "bookmarks" are pictures on a screen of up to 620px (layout.style). Termix gives
-   these two buttons a text size and side padding with more weight, so a part of the word was drawn over
-   the picture. Here the word is not drawn, and the two buttons are as large as the other buttons. */
+/* Remove Termix text spacing when Connections and Bookmarks use icons on narrow screens. */
 @media (max-width: 620px)
 {
     #communication-system-head-menu #head-menu-left-group :is(#connections-menu-button, #bookmarks-menu-button)
@@ -75,9 +58,7 @@
     font-size: 15px;
 }
 
-/* The buttons of the top bar stand in the order of the Mobile theme, from left to right: server settings,
-   identity, local settings, theme, layout, the eye, and the button that clears the chat. The button for the
-   list of people, which only this theme has, comes last. */
+/* Use the Mobile theme's toolbar order and keep the admin password button hidden. */
 #communication-system-head-menu > #enter-server-settings
 {
     order: 1;
@@ -137,7 +118,7 @@
 /* The page under the top bar is as high as the rest of the screen. Only a panel scrolls, not the page. */
 :root:has(#layout-edit-button[style*="display: none"]) #communication-system-container[style*="display: block"]
 {
-    height: calc(100dvh - var(--mobile2-top));
+    height: calc(calc(100dvh / var(--ui-display-scale, 1)) - var(--mobile2-top));
     overflow: hidden;
 }
 
@@ -154,9 +135,7 @@
     overflow-y: auto;
 }
 
-/* The list of all people: a panel at the right edge that lies over the other panels, shown while the
-   button with the two people has the class "member-list-shown". The hold-to-talk button stays above
-   the panel; the free place under the last row lets every row be moved out from under that button. */
+/* Open the member list over the right side. Reserve scrolling space below the microphone button. */
 :root:has(#layout-edit-button[style*="display: none"]) #space-devider-42
 {
     display: none !important;
@@ -182,10 +161,7 @@
     padding-bottom: 112px;
 }
 
-/* While the panel is shown, the rest of the page under the top bar is blurred and darkened. The blurred
-   layer is drawn by the page element itself (a ::before part), so a press on it has the page element as
-   its target; main.js hides the panel after such a press. The layer and the panel have the same z-index:
-   the panel comes later in the page and is drawn above the layer. */
+/* Blur and dim the page behind the open member list. Clicking the backdrop closes it. */
 :root:has(#layout-edit-button[style*="display: none"]):has(#show-hide-member-list-button.member-list-shown) #communication-system-container[style*="display: block"]::before
 {
     content: "";
@@ -265,12 +241,10 @@
         overflow-y: auto;
     }
 
-    /* The second screen: the chat with the message box under it and, in a narrow column at its left,
-       the people of the user's own channel, each with the picture and the name. The column is a quarter
-       of the screen, at least 76px and at most 110px. */
+    /* Place the chat and composer beside a narrow column of current channel members. */
     :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden))
     {
-        --mobile2-people-width: clamp(76px, 25vw, 110px);
+        --mobile2-people-width: clamp(76px, calc(25vw / var(--ui-display-scale, 1)), 110px);
     }
 
     :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #communication-system-container[style*="display: block"]
@@ -311,6 +285,8 @@
     :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #channel-list-container
     {
         max-height: calc(100% - 84px);
+        /* the rows start at the left edge of the column */
+        padding-left: 0;
         overflow-x: hidden;
         overflow-y: auto;
         /* the list is moved with a finger; a scroll bar would take a part of the names */
@@ -328,7 +304,7 @@
         display: flex !important;
         min-width: 0;
         margin: 0;
-        padding: 3px 3px 3px 5px;
+        padding: 3px 3px 3px 2px;
         border-radius: 0;
     }
 
@@ -337,11 +313,7 @@
         margin-right: 4px;
     }
 
-    /* The tree is one flat list: a channel row, then the rows of its people, then the next channel row.
-       The people of the user's own channel are the rows around the user's own row with no channel row
-       between. Not shown: every channel row, every person's row that has a channel row between itself
-       and the user's own row further down, and every person's row after a channel row that follows the
-       user's own row. */
+    /* The channel tree is flat. Hide channel rows and users separated from the local user by a channel row. */
     :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #channel-list-container > .single-channel,
     :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #channel-list-container > .connected-client:has(~ .single-channel ~ .connected-local-client),
     :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #channel-list-container > .connected-local-client ~ .single-channel ~ .connected-client
@@ -349,10 +321,26 @@
         display: none !important;
     }
 
-    /* the empty part that moves a row to the right by the depth of its channel, the flag, the name of the played song and the group pictures */
-    :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #channel-list-container > .connected-client > :is(div:first-child, .connected-client-country-flag, .marquee-music-playing-container, .client-groups)
+    /* the empty part that moves a row to the right by the depth of its channel, the flag and the group pictures */
+    :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #channel-list-container > .connected-client > :is(div:first-child, .connected-client-country-flag, .client-groups)
     {
         display: none !important;
+    }
+
+    /* the name of the song a person plays: a second line under the person's name, starting where the name
+       starts (22px: the 18px circle and its 4px distance). layout.style shortens it to the note picture
+       when the line is 60px wide or less */
+    :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #channel-list-container > .connected-client:has(> .marquee-music-playing-container[style*="inline-block"])
+    {
+        flex-wrap: wrap;
+    }
+
+    :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #channel-list-container > .connected-client > .marquee-music-playing-container[style*="inline-block"]
+    {
+        flex: 0 0 calc(100% - 22px);
+        max-width: calc(100% - 22px);
+        margin-left: 22px;
+        font-size: 11px;
     }
 
     /* A name takes up to two lines; a longer name ends with three dots. The user's own name is a text
@@ -382,12 +370,6 @@
     {
         display: block;
         white-space: nowrap;
-    }
-
-    /* the row of a person who talks: a green background; Termix itself draws a green ring around the picture */
-    :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #channel-list-container > .connected-client:has(> .client-audio-state-microphone-active)
-    {
-        background: color-mix(in srgb, var(--tmx-green) 26%, transparent);
     }
 
     :root:has(#layout-edit-button[style*="display: none"]) #space-devider2
@@ -448,13 +430,16 @@
     font-size: 15px;
 }
 
-/* Rows of the tree and of the list of people: high enough for a finger, with larger text. */
+/* Rows of the tree and of the list of people: high enough for a finger, with larger text. A channel row is
+   38px high in all: 32px line, 2px padding above and below, 1px margin. */
 .single-channel
 {
-    min-height: 42px;
-    margin: 2px 8px;
+    min-height: 32px;
+    margin: 1px 8px;
+    padding-top: 2px;
+    padding-bottom: 2px;
     border-radius: 8px;
-    line-height: 42px;
+    line-height: 32px;
 }
 
 #channel-list-container .connected-client,
@@ -487,9 +472,7 @@
     --settings-phone-button: var(--tmx-input);
 }
 
-/* The open conversations are chosen from a list (<select>) in place of the row of tabs. The bar keeps the
-   place, the height and the look of that row, and the list has the look of the tab of the shown
-   conversation: its field and the violet line at its lower edge. */
+/* Replace conversation tabs with a selector that keeps the existing bar's position and appearance. */
 #chat-window-container > #chat-context-selectors-container
 {
     display: none !important;
@@ -553,9 +536,7 @@
     margin-left: 6px;
 }
 
-/* The "#" of a channel row is the button that collapses and expands the channel (theme-termix.style). It has
-   the text size of the name here. Its part that takes a press is 8px wider at each side; the negative
-   left margin keeps the "#" at its place. */
+/* Match the channel collapse button to the name size and enlarge its touch target. */
 :is(#channel-list-container, #idle-clients-container) .single-channel > :is(.single-channel-collapse-button, .single-channel-expand-button)
 {
     margin-left: -8px;

@@ -1,4 +1,4 @@
-// This file sends chat messages, edits, typing notices, pokes, offline messages and URL previews.
+// this file sends chat messages, edits, typing notices, pokes, offline messages and URL previews
 
 #include "server_msg.h"
 #include "../../base.h"
@@ -10,7 +10,7 @@
 #include "../../../third-party/zhicheng/base64.h"
 
 /**
- * @brief metadata are sent, so that the client knows an image is being sent to it.
+ * @brief metadata are sent, so that the client knows an image is being sent to it
  *
  * @param client_t* receiver -> the client that sent the message
  * @param uint64 chat_message_id -> id of server message
@@ -114,10 +114,7 @@ void server_msg__chat__send_message_to_clients_in_same_channel(client_t *sender,
 }
 
 /**
- * @brief sends a delete/edit action for a chat message to a SINGLE client (private/direct case).
- *        the action carries the target server chat id and the requester's public key + admin flag,
- *        so the receiver can decide for itself whether to honour it (author or admin). for an edit
- *        it also carries the new value.
+ * @brief sends one message action with the requester identity used by the receiver to authorize it
  *
  * @param client_t* receiver -> the client to send the action to
  * @param char* action_type -> "chat_message_delete" or "chat_message_edit"
@@ -155,9 +152,7 @@ void server_msg__chat__send_message_action_to_single_client(client_t *receiver, 
 }
 
 /**
- * @brief sends a delete/edit action for a chat message to every client in a channel (channel case).
- *        unlike a normal chat broadcast this does NOT skip the requester, so the message updates in
- *        their own view too.
+ * @brief sends a message action to every channel member, including the requester
  *
  * @param uint64 receiving_channel_id -> the channel whose clients receive the action
  * @param char* action_type -> "chat_message_delete" or "chat_message_edit"
@@ -226,9 +221,7 @@ void server_msg__chat__send_poke_to_single_client(client_t *receiver, client_t *
 }
 
 /**
- * @brief tells the people a client is writing to that the client is typing. carries no message
- *        content at all - only who is typing and which conversation it belongs to, so the receiver
- *        can show it against the right chat and drop it again when it stops being refreshed.
+ * @brief sends the typing client's identity and conversation context without message content
  *
  * @param client_t* subject -> the client that is typing
  * @param char* receiver_type -> "channel" or "user", the kind of conversation being written to
@@ -305,15 +298,16 @@ void server_msg__chat__send_typing_indicator(client_t *subject, char *receiver_t
 }
 
 /**
- * @brief Removes queued offline messages in time order and sends their encrypted payloads.
+ * @brief removes queued offline messages in time order and sends their encrypted payloads
  *
- * Each queued message is sent as a separate offline_chat_message with its original ciphertext.
+ * each queued message is sent as a separate offline_chat_message with its original ciphertext
  *
  * @param client_t* receiver -> the freshly authenticated client
  *
- * @return void
  *
- * @note takes g_offline_messages_mutex (leaf lock). caller holds the clients lock.
+ * @note takes g_offline_messages_mutex (leaf lock). caller holds the clients lock
+ *
+ * @return void
  */
 void server_msg__chat__send_queued_offline_messages_to_single_client(client_t *receiver)
 {
@@ -413,14 +407,14 @@ void server_msg__chat__send_queued_offline_messages_to_single_client(client_t *r
 }
 
 /**
- * @brief Queues an encrypted URL preview reply for the client that requested it.
+ * @brief queues an encrypted URL preview reply for the client that requested it
  *
  * @param client_t* client -> receiving client
  * @param const char* request_id -> id used to match the reply to its request
  * @param const char* url -> requested website URL
  * @param const cJSON* result -> preview to copy, or NULL_POINTER when unavailable or disabled
  *
- * @attention The caller holds the clients lock and keeps ownership of result.
+ * @attention the caller holds the clients lock and keeps ownership of result
  *
  * @return void
  */

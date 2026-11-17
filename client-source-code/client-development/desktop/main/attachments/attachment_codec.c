@@ -14,8 +14,10 @@ static boole _attachment_codec_internal__body(desktop_attachment_record_t *recor
 static cJSON *_attachment_codec_internal__parse(const char *text);
 
 /**
- * @brief limits JSON structure before cJSON can allocate nodes; attachment envelopes contain only small flat objects.
+ * @brief limits JSON structure before cJSON can allocate nodes. Attachment envelopes contain only small flat objects
+ *
  * @param const char* text -> bounded, terminated decrypted text
+ *
  * @return cJSON* -> owned tree or NULL
  */
 static cJSON *_attachment_codec_internal__parse(const char *text)
@@ -98,9 +100,11 @@ static cJSON *_attachment_codec_internal__parse(const char *text)
 }
 
 /**
- * @brief encodes bounded attachment bytes without depending on a locale or text encoding.
+ * @brief encodes bounded attachment bytes without depending on a locale or text encoding
+ *
  * @param const ubyte* bytes -> borrowed source
  * @param uint64 size -> source length
+ *
  * @return char* -> owned base64 string, or NULL
  */
 static char *_attachment_codec_internal__base64(const ubyte *bytes, uint64 size)
@@ -120,11 +124,13 @@ static char *_attachment_codec_internal__base64(const ubyte *bytes, uint64 size)
 }
 
 /**
- * @brief encrypts channel attachments with a hidden message IV and direct attachments with fresh key IVs.
+ * @brief encrypts channel attachments with a hidden message IV and direct attachments with fresh key IVs
+ *
  * @param desktop_attachment_record_t* record -> worker-owned transfer
  * @param desktop_crypto_t* crypto -> attachment worker's identity and RNG
  * @param const char* text -> plaintext
  * @param uint64 padding -> protocol padding floor
+ *
  * @return char* -> owned wire string or NULL
  */
 static char *_attachment_codec_internal__seal(desktop_attachment_record_t *record, desktop_crypto_t *crypto, const char *text, uint64 padding)
@@ -159,11 +165,13 @@ static char *_attachment_codec_internal__seal(desktop_attachment_record_t *recor
 }
 
 /**
- * @brief opens the browser attachment envelope using only the intended recipient's copied identity.
+ * @brief opens the browser attachment envelope using only the intended recipient's copied identity
+ *
  * @param desktop_attachment_record_t* record -> worker-owned transfer
  * @param desktop_crypto_t* crypto -> worker-owned identity
  * @param const char* text -> bounded encrypted body
- * @param const desktop_content_keys_t* keys -> captured channel-key candidate
+ * @param const desktop_content_keys_t* keys -> captured channel key candidate
+ *
  * @return char* -> owned plaintext or NULL
  */
 static char *_attachment_codec_internal__open(desktop_attachment_record_t *record, desktop_crypto_t *crypto, const char *text, const desktop_content_keys_t *keys)
@@ -206,9 +214,11 @@ static char *_attachment_codec_internal__open(desktop_attachment_record_t *recor
 }
 
 /**
- * @brief reads, validates and encrypts one selected file on the attachment worker.
+ * @brief reads, validates and encrypts one selected file on the attachment worker
+ *
  * @param desktop_attachment_record_t* record -> owned work item with immutable destination
  * @param desktop_crypto_t* crypto -> independent worker crypto
+ *
  * @return void
  */
 void desktop_attachment_codec__pack(desktop_attachment_record_t *record, desktop_crypto_t *crypto)
@@ -347,10 +357,12 @@ label_finished:
 }
 
 /**
- * @brief validates metadata and decoded length before retaining incoming bytes or allocating an image preview.
+ * @brief validates metadata and decoded length before retaining incoming bytes or allocating an image preview
+ *
  * @param desktop_attachment_record_t* record -> worker-owned incoming transfer
  * @param const char* plaintext -> decrypted picture data URL or file JSON
  * @param const char* header -> decrypted file header, NULL for pictures
+ *
  * @return boole -> TRUE for a complete validated body
  */
 static boole _attachment_codec_internal__body(desktop_attachment_record_t *record, const char *plaintext, const char *header)
@@ -476,9 +488,11 @@ label_finished:
 }
 
 /**
- * @brief decrypts a complete transfer with the keys captured when its metadata arrived.
+ * @brief decrypts a complete transfer with the keys captured when its metadata arrived
+ *
  * @param desktop_attachment_record_t* record -> owned ciphertext and metadata
  * @param desktop_crypto_t* crypto -> worker-owned recipient identity
+ *
  * @return void
  */
 void desktop_attachment_codec__decode(desktop_attachment_record_t *record, desktop_crypto_t *crypto)
@@ -531,9 +545,11 @@ void desktop_attachment_codec__decode(desktop_attachment_record_t *record, deskt
 }
 
 /**
- * @brief validates a direct offer before exposing Accept to the user.
+ * @brief validates a direct offer before exposing Accept to the user
+ *
  * @param desktop_attachment_record_t* record -> incoming offer with copied peer lifetime
  * @param desktop_crypto_t* crypto -> worker-owned recipient identity
+ *
  * @return void
  */
 void desktop_attachment_codec__offer(desktop_attachment_record_t *record, desktop_crypto_t *crypto)

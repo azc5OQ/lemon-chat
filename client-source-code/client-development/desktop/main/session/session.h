@@ -227,7 +227,7 @@ typedef struct desktop_session_view_t
     desktop_client_t clients[DESKTOP_SESSION_CLIENTS];
     desktop_chat_t chats[DESKTOP_SESSION_HISTORY];
     desktop_attachments_view_t attachments;
-    // Owned channel storage. Copy views with desktop_session__view_copy, never by assignment.
+    // owned channel storage. Copy views with desktop_session__view_copy, never by assignment
     desktop_channel_t *channels;
     int64 channel_capacity;
 } desktop_session_view_t;

@@ -1,5 +1,5 @@
 #include "clib.h"
-// Existing Lemon identity and metadata protocol, using the vendored crypto primitives.
+// existing Lemon identity and metadata protocol, using the vendored crypto primitives
 #include <stdlib.h>
 #include <stdatomic.h>
 #include "crypto/crypto_session.h"
@@ -40,13 +40,15 @@ struct desktop_crypto_t
     char first_mix[DESKTOP_DH_TEXT_CAPACITY];
 };
 
-// The browser calculation has static scratch storage. Serialize native callers.
+// the browser calculation has static scratch storage. Serialize native callers
 static atomic_flag g_identity_lock = ATOMIC_FLAG_INIT;
 
 /**
- * @brief copies only the keys used by the existing media protocol into worker-owned storage.
+ * @brief copies only the keys used by the existing media protocol into worker-owned storage
+ *
  * @param desktop_crypto_t* crypto -> authenticated session crypto
- * @param desktop_media_keys_t* keys -> cleared on failure; never publish to the GUI or overlay
+ * @param desktop_media_keys_t* keys -> cleared on failure. Never publish to the GUI or overlay
+ *
  * @return boole -> 1 when the DH session is established
  */
 boole crypto_session__media_keys(desktop_crypto_t *crypto, desktop_media_keys_t *keys)
@@ -71,10 +73,12 @@ boole crypto_session__media_keys(desktop_crypto_t *crypto, desktop_media_keys_t 
 }
 
 /**
- * @brief draws bounded random bytes from this worker's cryptographic generator.
+ * @brief draws bounded random bytes from this worker's cryptographic generator
+ *
  * @param desktop_crypto_t* crypto -> worker-owned crypto context
  * @param ubyte* bytes -> destination with size bytes
  * @param uint64 size -> requested byte count, limited to 256
+ *
  * @return boole -> 1 when filled
  */
 boole crypto_session__random(desktop_crypto_t *crypto, ubyte *bytes, uint64 size)
@@ -96,11 +100,13 @@ static boole _crypto_session_internal__flat_envelope(const char *text, uint64 le
 static char *_crypto_session_internal__attachment(desktop_crypto_t *crypto, const desktop_content_keys_t *keys, const char *text, boole encrypt, boole picture, uint64 padding, boole require_authentication);
 
 /**
- * @brief encodes bytes into a capacity-carrying string buffer.
+ * @brief encodes bytes into a capacity carrying string buffer
+ *
  * @param char* output -> writable destination including terminator space
  * @param uint64 output_capacity -> destination capacity in bytes, including its terminator
  * @param const ubyte* bytes -> source bytes
  * @param uint64 length -> source byte count
+ *
  * @return boole -> 1 on success
  */
 static boole _crypto_session_internal__base64(char *output, uint64 output_capacity, const ubyte *bytes, uint64 length)
@@ -119,7 +125,8 @@ static boole _crypto_session_internal__base64(char *output, uint64 output_capaci
 }
 
 /**
- * @brief initializes per-session entropy and crypto contexts.
+ * @brief initializes per session entropy and crypto contexts
+ *
  * @return desktop_crypto_t* -> owned state, or NULL on allocation/entropy failure
  */
 desktop_crypto_t *crypto_session__create(void)
@@ -150,8 +157,10 @@ desktop_crypto_t *crypto_session__create(void)
 }
 
 /**
- * @brief gives an attachment worker its own RSA state and random generator without recalculating the identity.
- * @param const desktop_crypto_t* source -> session-owned identity, read only on the session worker
+ * @brief gives an attachment worker its own RSA state and random generator without recalculating the identity
+ *
+ * @param const desktop_crypto_t* source -> session owned identity, read only on the session worker
+ *
  * @return desktop_crypto_t* -> independent owned context, or NULL
  */
 desktop_crypto_t *crypto_session__copy_identity(const desktop_crypto_t *source)
@@ -168,8 +177,10 @@ desktop_crypto_t *crypto_session__copy_identity(const desktop_crypto_t *source)
 }
 
 /**
- * @brief clears and releases a session's owned cryptographic material.
+ * @brief clears and releases a session's owned cryptographic material
+ *
  * @param desktop_crypto_t* crypto -> owned state, or NULL
+ *
  * @return void
  */
 void crypto_session__destroy(desktop_crypto_t *crypto)
@@ -196,9 +207,11 @@ void crypto_session__destroy(desktop_crypto_t *crypto)
 }
 
 /**
- * @brief creates a new random identity string for the existing deterministic key calculation.
+ * @brief creates a new random identity string for the existing deterministic key calculation
+ *
  * @param char* identity -> writable buffer of at least 201 bytes
  * @param uint64 identity_capacity -> destination capacity in bytes, including its terminator
+ *
  * @return boole -> 1 when a complete identity was written
  */
 boole crypto_session__new_identity(char *identity, uint64 identity_capacity)
@@ -238,17 +251,47 @@ boole crypto_session__new_identity(char *identity, uint64 identity_capacity)
 }
 
 /**
- * @brief derives the same RSA identity as the browser, then imports it for blinded private operations.
+ * @brief hashes the supplied identity bytes and imports the derived RSA key pair
+ *
  * @param desktop_crypto_t* crypto -> worker-owned crypto state
  * @param const char* identity -> existing identity string
- * @param int64 bits -> key size from 2048 through 8192, in 256-bit increments
+ * @param int64 bits -> key size from 2048 through 8192, in 256 bit increments
  * @param char* public_key -> base64 of the modulus, matching the existing protocol
  * @param uint64 public_key_capacity -> destination capacity in bytes, including its terminator
+ *
  * @return boole -> 1 on success
  */
 boole crypto_session__identity(desktop_crypto_t *crypto, const char *identity, int64 bits, char *public_key, uint64 public_key_capacity)
 {
     ubyte digest[32] = { 0 };
+    boole complete = FALSE;
+
+    if (!crypto || !identity || !identity[0] || bits < 2048 || bits > 8192 || bits % 256)
+    {
+        return FALSE;
+    }
+
+    if (mbedtls_sha256((const ubyte *)identity, clib__strlen(identity), digest, 0) == 0)
+    {
+        complete = crypto_session__identity_seed(crypto, digest, bits, public_key, public_key_capacity);
+    }
+    mbedtls_platform_zeroize(digest, sizeof(digest));
+    return complete;
+}
+
+/**
+ * @brief derives an RSA identity from an already calculated passphrase digest
+ *
+ * @param desktop_crypto_t* crypto -> worker-owned crypto state
+ * @param const ubyte[32] digest -> SHA256 digest from the caller's identity encoding
+ * @param int64 bits -> RSA key size from 2048 through 8192 in 256 bit increments
+ * @param char* public_key -> receives the base64 modulus
+ * @param uint64 public_key_capacity -> destination capacity including the terminator
+ *
+ * @return boole -> 1 when the key pair and public modulus are ready
+ */
+boole crypto_session__identity_seed(desktop_crypto_t *crypto, const ubyte digest[32], int64 bits, char *public_key, uint64 public_key_capacity)
+{
     ubyte modulus[1024] = { 0 };
     const char hex[] = "0123456789abcdef";
     ubyte *seed = NULL_POINTER;
@@ -258,13 +301,7 @@ boole crypto_session__identity(desktop_crypto_t *crypto, const char *identity, i
     boole complete = 0;
 
     // check arguments
-    if (!crypto || !identity || !identity[0] || bits < 2048 || bits > 8192 || bits % 256)
-    {
-        return 0;
-    }
-
-    // hash the identity
-    if (mbedtls_sha256((const ubyte *)identity, clib__strlen(identity), digest, 0) != 0)
+    if (!crypto || !digest || bits < 2048 || bits > 8192 || bits % 256)
     {
         return 0;
     }
@@ -283,7 +320,7 @@ boole crypto_session__identity(desktop_crypto_t *crypto, const char *identity, i
 
     // write hex seed
     seed = rsa_keygen__get_seed_buffer();
-    for (index = 0; index < sizeof(digest); index++)
+    for (index = 0; index < 32; index++)
     {
         seed[index * 2] = hex[digest[index] >> 4];
         seed[index * 2 + 1] = hex[digest[index] & 15];
@@ -301,7 +338,7 @@ boole crypto_session__identity(desktop_crypto_t *crypto, const char *identity, i
     // clear state and unlock
     rsa_keygen__clear_sensitive();
     atomic_flag_clear_explicit(&g_identity_lock, memory_order_release);
-    // generator order is N, E, D, P, Q; the import API takes N, P, Q, D, E
+    // generator order is N, E, D, P, Q. The import API takes N, P, Q, D, E
     complete = complete && mbedtls_rsa_import(&crypto->rsa, &values[0], &values[3], &values[4], &values[2], &values[1]) == 0 && mbedtls_rsa_complete(&crypto->rsa) == 0 && mbedtls_rsa_check_privkey(&crypto->rsa) == 0 && mbedtls_rsa_set_padding(&crypto->rsa, MBEDTLS_RSA_PKCS_V15, MBEDTLS_MD_NONE) == 0;
 
     // encode public key
@@ -315,16 +352,17 @@ boole crypto_session__identity(desktop_crypto_t *crypto, const char *identity, i
     }
 
     // clear the buffers
-    mbedtls_platform_zeroize(digest, sizeof(digest));
     mbedtls_platform_zeroize(modulus, sizeof(modulus));
     return complete;
 }
 
 /**
- * @brief derives configured metadata layers from newline-separated server key strings.
+ * @brief derives configured metadata layers from newline separated server key strings
+ *
  * @param desktop_crypto_t* crypto -> worker-owned state
- * @param const char* keys -> key strings in the server's configured order; empty means none
- * @return boole -> 1 on success; 0 on an empty interior row or too many keys
+ * @param const char* keys -> key strings in the server's configured order. Empty means none
+ *
+ * @return boole -> 1 on success. 0 on an empty interior row or too many keys
  */
 boole crypto_session__server_keys(desktop_crypto_t *crypto, const char *keys)
 {
@@ -394,10 +432,12 @@ boole crypto_session__server_keys(desktop_crypto_t *crypto, const char *keys)
 }
 
 /**
- * @brief creates the existing protocol's ephemeral Diffie-Hellman public mix.
+ * @brief creates the existing protocol's ephemeral Diffie-Hellman public mix
+ *
  * @param desktop_crypto_t* crypto -> worker-owned state
  * @param char* public_mix -> destination for the decimal public mix
  * @param uint64 public_mix_capacity -> destination capacity in bytes, including its terminator
+ *
  * @return boole -> 1 on success
  */
 boole crypto_session__begin_dh(desktop_crypto_t *crypto, char *public_mix, uint64 public_mix_capacity)
@@ -434,10 +474,12 @@ boole crypto_session__begin_dh(desktop_crypto_t *crypto, char *public_mix, uint6
 }
 
 /**
- * @brief validates the server mix and derives the existing AES/HMAC session keys.
+ * @brief validates the server mix and derives the existing AES/HMAC session keys
+ *
  * @param desktop_crypto_t* crypto -> state containing a fresh private exponent
  * @param const char* public_mix -> decimal server public mix
- * @return boole -> 1 on success; invalid public mixes never activate the session layer
+ *
+ * @return boole -> 1 on success. Invalid public mixes never activate the session layer
  */
 boole crypto_session__finish_dh(desktop_crypto_t *crypto, const char *public_mix)
 {
@@ -470,12 +512,14 @@ boole crypto_session__finish_dh(desktop_crypto_t *crypto, const char *public_mix
 }
 
 /**
- * @brief decrypts the server's RSA identity challenge with private-operation blinding.
+ * @brief decrypts the server's RSA identity challenge with private operation blinding
+ *
  * @param desktop_crypto_t* crypto -> initialized identity state
  * @param const char* encoded -> base64 RSA ciphertext
  * @param char* plaintext -> bounded challenge response output
  * @param uint64 plaintext_capacity -> destination capacity in bytes, including its terminator
- * @return boole -> 1 on valid padding and a nonempty, NUL-free response
+ *
+ * @return boole -> 1 on valid padding and a nonempty, NUL free response
  */
 boole crypto_session__challenge(desktop_crypto_t *crypto, const char *encoded, char *plaintext, uint64 plaintext_capacity)
 {
@@ -506,11 +550,13 @@ boole crypto_session__challenge(desktop_crypto_t *crypto, const char *encoded, c
 }
 
 /**
- * @brief applies one existing AES-256 CTR layer, resetting its counter for each message.
+ * @brief applies one existing AES-256 CTR layer, resetting its counter for each message
+ *
  * @param const ubyte key[32] -> layer key
  * @param const ubyte iv[16] -> message counter
  * @param ubyte* bytes -> data transformed in place
  * @param uint64 length -> byte count
+ *
  * @return void
  */
 static void _crypto_session_internal__layer(const ubyte key[32], const ubyte iv[16], ubyte *bytes, uint64 length)
@@ -526,11 +572,14 @@ static void _crypto_session_internal__layer(const ubyte key[32], const ubyte iv[
 }
 
 /**
- * @brief computes the protocol HMAC over the base64 IV followed by base64 ciphertext.
+ * @brief computes the protocol HMAC over the base64 IV followed by base64 ciphertext
+ *
  * @param desktop_crypto_t* crypto -> established session
  * @param const char* iv -> encoded IV
  * @param const char* data -> encoded ciphertext
  * @param ubyte output[32] -> destination checksum
+ * @param boole receiving -> TRUE to use the server sending key, FALSE for the client sending key
+ *
  * @return boole -> 1 on success
  */
 static boole _crypto_session_internal__mac(desktop_crypto_t *crypto, const char *iv, const char *data, ubyte output[32], boole receiving)
@@ -548,9 +597,11 @@ static boole _crypto_session_internal__mac(desktop_crypto_t *crypto, const char 
 }
 
 /**
- * @brief pads, encrypts and authenticates one outgoing metadata message.
+ * @brief pads, encrypts and authenticates one outgoing metadata message
+ *
  * @param desktop_crypto_t* crypto -> worker-owned state
  * @param const char* plaintext -> complete JSON message
+ *
  * @return char* -> owned envelope released with crypto_session__free_text, or NULL
  */
 char *crypto_session__encrypt(desktop_crypto_t *crypto, const char *plaintext)
@@ -643,10 +694,12 @@ label_finished:
 }
 
 /**
- * @brief verifies an incoming envelope before decrypting its metadata layers.
+ * @brief verifies an incoming envelope before decrypting its metadata layers
+ *
  * @param desktop_crypto_t* crypto -> worker-owned state
  * @param const char* envelope -> input frame
  * @param uint64 length -> exact frame byte count
+ *
  * @return char* -> owned plaintext released with crypto_session__free_text, or NULL
  */
 char *crypto_session__decrypt(desktop_crypto_t *crypto, const char *envelope, uint64 length)
@@ -733,7 +786,7 @@ char *crypto_session__decrypt(desktop_crypto_t *crypto, const char *envelope, ui
             goto label_finished;
         }
     }
-    // zero padding terminates the JSON; reject hidden nonzero data after it
+    // zero padding terminates the JSON. Reject hidden nonzero data after it
     index = clib__strlen(bytes);
     while (index < data_length && !bytes[index])
     {
@@ -755,8 +808,10 @@ label_finished:
 }
 
 /**
- * @brief clears an owned JSON string before releasing it through cJSON's allocator.
+ * @brief clears an owned JSON string before releasing it through cJSON's allocator
+ *
  * @param char* text -> owned string, or NULL
+ *
  * @return void
  */
 void crypto_session__free_text(char *text)
@@ -770,8 +825,10 @@ void crypto_session__free_text(char *text)
 }
 
 /**
- * @brief erases owned JSON strings and numeric key values before releasing their library allocations.
- * @param cJSON* json -> owned tree; borrowed reference children and constant keys are left untouched
+ * @brief erases owned JSON strings and numeric key values before releasing their library allocations
+ *
+ * @param cJSON* json -> owned tree. Borrowed reference children and constant keys are left untouched
+ *
  * @return void
  */
 void crypto_session__free_json(cJSON *json)
@@ -805,9 +862,11 @@ void crypto_session__free_json(cJSON *json)
 }
 
 /**
- * @brief creates the four key/counter pairs used by existing channel and direct messages.
+ * @brief creates the four key/counter pairs used by existing channel and direct messages
+ *
  * @param desktop_crypto_t* crypto -> worker-owned random source
  * @param desktop_content_keys_t* keys -> writable key set
+ *
  * @return boole -> 1 on success
  */
 boole crypto_session__content_keys(desktop_crypto_t *crypto, desktop_content_keys_t *keys)
@@ -817,8 +876,10 @@ boole crypto_session__content_keys(desktop_crypto_t *crypto, desktop_content_key
 }
 
 /**
- * @brief serializes channel keys using the existing numeric-array wire format.
+ * @brief serializes channel keys using the existing numeric array wire format
+ *
  * @param const desktop_content_keys_t* keys -> key set
+ *
  * @return char* -> owned JSON string, or NULL
  */
 char *crypto_session__keys_json(const desktop_content_keys_t *keys)
@@ -874,9 +935,11 @@ char *crypto_session__keys_json(const desktop_content_keys_t *keys)
 }
 
 /**
- * @brief validates every byte before accepting a received channel or direct-message key set.
- * @param const char* json -> four numeric-array key entries
+ * @brief validates every byte before accepting a received channel or direct message key set
+ *
+ * @param const char* json -> four numeric array key entries
  * @param desktop_content_keys_t* keys -> output, cleared on failure
+ *
  * @return boole -> 1 on success
  */
 boole crypto_session__read_keys(const char *json, desktop_content_keys_t *keys)
@@ -937,10 +1000,12 @@ boole crypto_session__read_keys(const char *json, desktop_content_keys_t *keys)
 }
 
 /**
- * @brief bounds a flat envelope before cJSON allocates any nodes or strings.
+ * @brief bounds a flat envelope before cJSON allocates any nodes or strings
+ *
  * @param const char* text -> complete, bounded JSON text
  * @param uint64 length -> text byte count excluding its terminator
  * @param uint64 maximum_members -> maximum permitted object fields
+ *
  * @return boole -> TRUE when bounded enough for full JSON validation
  */
 static boole _crypto_session_internal__flat_envelope(const char *text, uint64 length, uint64 maximum_members)
@@ -1023,12 +1088,14 @@ static boole _crypto_session_internal__flat_envelope(const char *text, uint64 le
 }
 
 /**
- * @brief validates a flat content envelope before allocating its JSON strings or decoding its IV.
+ * @brief validates a flat content envelope before allocating its JSON strings or decoding its IV
+ *
  * @param const char* text -> complete, bounded JSON text
  * @param uint64 length -> text byte count excluding its terminator
- * @param cJSON** root -> owned parsed envelope; caller clears it on success and failure
- * @param ubyte iv[16] -> decoded per-message IV
+ * @param cJSON** root -> owned parsed envelope. Caller clears it on success and failure
+ * @param ubyte iv[16] -> decoded per message IV
  * @param const char** encoded -> ciphertext borrowed from the parsed envelope on success
+ *
  * @return boole -> TRUE for one IV and one nonempty ciphertext string
  */
 static boole _crypto_session_internal__content_envelope(const char *text, uint64 length, cJSON **root, ubyte iv[16], const char **encoded)
@@ -1060,11 +1127,13 @@ static boole _crypto_session_internal__content_envelope(const char *text, uint64
 }
 
 /**
- * @brief implements the existing four-layer content envelope, including legacy bare-base64 reads.
- * @param desktop_crypto_t* crypto -> random source for encryption; unused for decryption
+ * @brief implements the existing four layer content envelope, including legacy bare base64 reads
+ *
+ * @param desktop_crypto_t* crypto -> random source for encryption. Unused for decryption
  * @param const desktop_content_keys_t* keys -> channel keys
  * @param const char* text -> plaintext or envelope
  * @param boole encrypt -> nonzero to encrypt
+ *
  * @return char* -> owned result, or NULL
  */
 static char *_crypto_session_internal__content(desktop_crypto_t *crypto, const desktop_content_keys_t *keys, const char *text, boole encrypt)
@@ -1197,10 +1266,12 @@ label_finished:
 }
 
 /**
- * @brief encrypts a channel message body under a fresh per-message IV.
+ * @brief encrypts a channel message body under a fresh per message IV
+ *
  * @param desktop_crypto_t* crypto -> worker-owned random source
  * @param const desktop_content_keys_t* keys -> content key set
  * @param const char* text -> plaintext
+ *
  * @return char* -> owned content envelope, or NULL
  */
 char *crypto_session__content_encrypt(desktop_crypto_t *crypto, const desktop_content_keys_t *keys, const char *text)
@@ -1209,9 +1280,11 @@ char *crypto_session__content_encrypt(desktop_crypto_t *crypto, const desktop_co
 }
 
 /**
- * @brief decrypts an internal channel message body.
+ * @brief decrypts an internal channel message body
+ *
  * @param const desktop_content_keys_t* keys -> content key set
  * @param const char* text -> encrypted content
+ *
  * @return char* -> owned plaintext, or NULL
  */
 char *crypto_session__content_decrypt(const desktop_content_keys_t *keys, const char *text)
@@ -1219,6 +1292,15 @@ char *crypto_session__content_decrypt(const desktop_content_keys_t *keys, const 
     return _crypto_session_internal__content(NULL, keys, text, 0);
 }
 
+/**
+ * @brief derives attachment encryption and MAC keys from content keys and an IV
+ *
+ * @param const desktop_content_keys_t* keys -> four content keys and their IVs
+ * @param const ubyte* iv -> attachment IV used as HKDF salt
+ * @param ubyte* derived -> destination for 160 derived bytes
+ *
+ * @return boole -> true when derivation succeeds
+ */
 static boole _crypto_session_internal__attachment_derive(const desktop_content_keys_t *keys, const ubyte iv[16], ubyte derived[160])
 {
     ubyte material[192];
@@ -1241,6 +1323,17 @@ static boole _crypto_session_internal__attachment_derive(const desktop_content_k
     return status == 0;
 }
 
+/**
+ * @brief authenticates an attachment label, IV and ciphertext
+ *
+ * @param const ubyte* derived -> derived keys containing the MAC key in the last 32 bytes
+ * @param const ubyte* iv -> attachment IV
+ * @param const ubyte* data -> encrypted attachment bytes
+ * @param size_t size -> ciphertext byte count
+ * @param ubyte* tag -> destination for the 32 byte MAC
+ *
+ * @return boole -> true when the MAC was computed
+ */
 static boole _crypto_session_internal__attachment_tag(const ubyte derived[160], const ubyte iv[16], const ubyte *data, size_t size, ubyte tag[32])
 {
     const char label[] = "lemon-attachment-v2";
@@ -1257,15 +1350,17 @@ static boole _crypto_session_internal__attachment_tag(const ubyte derived[160], 
 }
 
 /**
- * @brief follows the browser's separate picture and file encryption formats within the attachment size limit.
- * @param desktop_crypto_t* crypto -> random source for file and picture encryption; unused for decoding
+ * @brief follows the browser's separate picture and file encryption formats within the attachment size limit
+ *
+ * @param desktop_crypto_t* crypto -> random source for file and picture encryption. Unused for decoding
  * @param const desktop_content_keys_t* keys -> captured channel keys
  * @param const char* text -> terminated plaintext, current IV envelope or legacy base64 ciphertext
  * @param boole encrypt -> TRUE to encrypt, FALSE to decrypt
- * @param boole picture -> TRUE for the existing picture IV envelope; FALSE for authenticated v2 files
+ * @param boole picture -> TRUE for the existing picture IV envelope. FALSE for authenticated v2 files
  * @param uint64 padding -> minimum plaintext bytes, at most 4096
  * @param boole require_authentication -> reject content without the authenticated file format
- * @return char* -> owned terminated result; free with crypto_session__free_text
+ *
+ * @return char* -> owned terminated result. Free with crypto_session__free_text
  */
 static char *_crypto_session_internal__attachment(desktop_crypto_t *crypto, const desktop_content_keys_t *keys, const char *text, boole encrypt, boole picture, uint64 padding, boole require_authentication)
 {
@@ -1477,10 +1572,13 @@ label_finished:
 }
 
 /**
- * @brief encrypts file headers and bodies with fresh keys and an authenticated v2 envelope.
+ * @brief encrypts file headers and bodies with fresh keys and an authenticated v2 envelope
+ *
+ * @param desktop_crypto_t* crypto -> session supplying secure random bytes
  * @param const desktop_content_keys_t* keys -> worker-owned content keys
  * @param const char* text -> attachment plaintext
  * @param uint64 padding -> protocol padding floor: 1024 for headers, 4096 for bodies
+ *
  * @return char* -> owned ciphertext or NULL
  */
 char *crypto_session__attachment_encrypt(desktop_crypto_t *crypto, const desktop_content_keys_t *keys, const char *text, uint64 padding)
@@ -1489,11 +1587,13 @@ char *crypto_session__attachment_encrypt(desktop_crypto_t *crypto, const desktop
 }
 
 /**
- * @brief encrypts a picture using the fresh-IV envelope already supported by the browser.
+ * @brief encrypts a picture using the fresh IV envelope already supported by the browser
+ *
  * @param desktop_crypto_t* crypto -> attachment worker's random source
  * @param const desktop_content_keys_t* keys -> captured channel keys
  * @param const char* text -> picture data URL
  * @param uint64 padding -> minimum plaintext size
+ *
  * @return char* -> owned picture envelope or NULL
  */
 char *crypto_session__picture_encrypt(desktop_crypto_t *crypto, const desktop_content_keys_t *keys, const char *text, uint64 padding)
@@ -1502,9 +1602,11 @@ char *crypto_session__picture_encrypt(desktop_crypto_t *crypto, const desktop_co
 }
 
 /**
- * @brief decrypts a browser-compatible attachment without raising the chat-message size limit.
+ * @brief decrypts a browser compatible attachment without raising the chat message size limit
+ *
  * @param const desktop_content_keys_t* keys -> captured content keys
  * @param const char* text -> bounded current IV envelope or legacy base64 ciphertext
+ *
  * @return char* -> owned plaintext or NULL
  */
 char *crypto_session__attachment_decrypt(const desktop_content_keys_t *keys, const char *text)
@@ -1513,9 +1615,11 @@ char *crypto_session__attachment_decrypt(const desktop_content_keys_t *keys, con
 }
 
 /**
- * @brief Opens a file header or body only when its authenticated format and tag are valid.
+ * @brief opens a file header or body only when its authenticated format and tag are valid
+ *
  * @param const desktop_content_keys_t* keys -> captured channel keys
  * @param const char* text -> restored internal file envelope
+ *
  * @return char* -> owned plaintext, or NULL
  */
 char *crypto_session__file_decrypt(const desktop_content_keys_t *keys, const char *text)
@@ -1524,9 +1628,11 @@ char *crypto_session__file_decrypt(const desktop_content_keys_t *keys, const cha
 }
 
 /**
- * @brief Derives a separate key for hiding a channel message IV.
+ * @brief derives a separate key for hiding a channel message IV
+ *
  * @param const desktop_content_keys_t* keys -> four channel key and IV pairs
  * @param ubyte derived[32] -> AES key for the IV block
+ *
  * @return boole -> TRUE when the key was derived
  */
 static boole _crypto_session_internal__channel_derive(const desktop_content_keys_t *keys, ubyte derived[32])
@@ -1553,9 +1659,11 @@ static boole _crypto_session_internal__channel_derive(const desktop_content_keys
 }
 
 /**
- * @brief Hides the random message IV before sending encrypted channel content.
+ * @brief hides the random message IV before sending encrypted channel content
+ *
  * @param const desktop_content_keys_t* keys -> current channel key and IV pairs
  * @param const char* content -> internal text, picture or authenticated file envelope
+ *
  * @return char* -> owned channel envelope, or NULL
  */
 char *crypto_session__channel_seal(const desktop_content_keys_t *keys, const char *content)
@@ -1693,9 +1801,11 @@ label_finished:
 }
 
 /**
- * @brief Recovers a channel packet's hidden IV for internal content decryption.
+ * @brief recovers a channel packet's hidden IV for internal content decryption
+ *
  * @param const desktop_content_keys_t* keys -> current or previous channel key and IV pairs
  * @param const char* text -> received channel envelope containing its encrypted IV and ciphertext
+ *
  * @return char* -> owned internal content envelope, or NULL
  */
 char *crypto_session__channel_open(const desktop_content_keys_t *keys, const char *text)
@@ -1824,9 +1934,11 @@ label_finished:
 }
 
 /**
- * @brief Derives direct file encryption and authentication keys from its four fresh key pairs.
+ * @brief derives direct file encryption and authentication keys from its four fresh key pairs
+ *
  * @param const desktop_content_keys_t* keys -> four independent key and IV pairs
  * @param ubyte derived[160] -> four AES keys followed by the file MAC key
+ *
  * @return boole -> TRUE when derivation succeeded
  */
 static boole _crypto_session_internal__direct_file_derive(const desktop_content_keys_t *keys, ubyte derived[160])
@@ -1853,11 +1965,13 @@ static boole _crypto_session_internal__direct_file_derive(const desktop_content_
 }
 
 /**
- * @brief Computes the file integrity check without an extra direct-message IV.
+ * @brief computes the file integrity check without an extra direct message IV
+ *
  * @param const ubyte derived[160] -> derived direct file encryption and MAC keys
  * @param const ubyte* data -> encrypted file header or body
  * @param uint64 length -> ciphertext length
  * @param ubyte tag[32] -> HMAC-SHA256 output
+ *
  * @return boole -> TRUE when the tag was computed
  */
 static boole _crypto_session_internal__direct_file_tag(const ubyte derived[160], const ubyte *data, uint64 length, ubyte tag[32])
@@ -1876,12 +1990,14 @@ static boole _crypto_session_internal__direct_file_tag(const ubyte derived[160],
 }
 
 /**
- * @brief Uses each fresh direct key's own IV, retaining authentication only for files.
+ * @brief uses each fresh direct key's own IV, retaining authentication only for files
+ *
  * @param const desktop_content_keys_t* keys -> fresh keys for this one direct content item
  * @param const char* text -> plaintext or strict internal direct envelope
  * @param uint64 padding -> encryption padding floor, at most 4096 bytes
  * @param boole authenticated -> TRUE for a file header or body
  * @param boole encrypt -> TRUE to encrypt, FALSE to decrypt
+ *
  * @return char* -> owned result, or NULL
  */
 static char *_crypto_session_internal__direct_content(const desktop_content_keys_t *keys, const char *text, uint64 padding, boole authenticated, boole encrypt)
@@ -2073,11 +2189,13 @@ label_finished:
 }
 
 /**
- * @brief Encrypts direct content using its four fresh keys and their own IVs.
+ * @brief encrypts direct content using its four fresh keys and their own IVs
+ *
  * @param const desktop_content_keys_t* keys -> fresh key and IV pairs for this content item
  * @param const char* text -> plaintext text, picture, file header or file body
  * @param uint64 padding -> minimum plaintext length, at most 4096 bytes
  * @param boole authenticated -> TRUE for file headers and bodies
+ *
  * @return char* -> owned internal direct envelope, or NULL
  */
 char *crypto_session__direct_content_encrypt(const desktop_content_keys_t *keys, const char *text, uint64 padding, boole authenticated)
@@ -2086,10 +2204,12 @@ char *crypto_session__direct_content_encrypt(const desktop_content_keys_t *keys,
 }
 
 /**
- * @brief Decrypts direct content without accepting an extra message IV or older file formats.
+ * @brief decrypts direct content without accepting an extra message IV or older file formats
+ *
  * @param const desktop_content_keys_t* keys -> recovered direct key and IV pairs
  * @param const char* content -> strict internal direct envelope
  * @param boole authenticated -> TRUE to require and verify the file tag
+ *
  * @return char* -> owned plaintext, or NULL
  */
 char *crypto_session__direct_content_decrypt(const desktop_content_keys_t *keys, const char *content, boole authenticated)
@@ -2098,11 +2218,13 @@ char *crypto_session__direct_content_decrypt(const desktop_content_keys_t *keys,
 }
 
 /**
- * @brief Encrypts the four fresh key and IV pairs for the direct recipient.
+ * @brief encrypts the four fresh key and IV pairs for the direct recipient
+ *
  * @param desktop_crypto_t* crypto -> sender's crypto state
  * @param const char* public_key -> recipient's public key
  * @param const desktop_content_keys_t* keys -> four fresh content keys and their IVs
  * @param const char* content -> encrypted text, picture or authenticated file envelope
+ *
  * @return char* -> owned direct envelope, or NULL
  */
 char *crypto_session__direct_seal(desktop_crypto_t *crypto, const char *public_key, const desktop_content_keys_t *keys, const char *content)
@@ -2200,10 +2322,12 @@ label_finished:
 }
 
 /**
- * @brief Recovers the direct recipient's four key pairs and validates the encrypted content shape.
+ * @brief recovers the direct recipient's four key pairs and validates the encrypted content shape
+ *
  * @param desktop_crypto_t* crypto -> recipient's private identity
  * @param const struct cJSON* envelope -> direct envelope containing encrypted keys and content
- * @param desktop_content_keys_t* keys -> recovered content keys; cleared on failure
+ * @param desktop_content_keys_t* keys -> recovered content keys. Cleared on failure
+ *
  * @return char* -> owned internal content envelope, or NULL
  */
 char *crypto_session__direct_open(desktop_crypto_t *crypto, const struct cJSON *envelope, desktop_content_keys_t *keys)
@@ -2245,7 +2369,7 @@ char *crypto_session__direct_open(desktop_crypto_t *crypto, const struct cJSON *
         return NULL;
     }
 
-    // recover recipient-only data
+    // recover recipient only data
     protected_json = crypto_session__hybrid_decrypt(crypto, encrypted_keys->valuestring);
     if (!protected_json)
     {
@@ -2312,10 +2436,12 @@ label_finished:
 }
 
 /**
- * @brief reproduces the browser's RSA plus AES-CBC envelope for protected key JSON.
+ * @brief reproduces the browser's RSA plus AES-CBC envelope for protected key JSON
+ *
  * @param desktop_crypto_t* crypto -> worker-owned random source
  * @param const char* public_key -> receiver's base64 modulus, exponent 3
- * @param const char* text -> ASCII key-array JSON
+ * @param const char* text -> ASCII key array JSON
+ *
  * @return char* -> owned hybrid envelope, or NULL
  */
 char *crypto_session__hybrid_encrypt(desktop_crypto_t *crypto, const char *public_key, const char *text)
@@ -2422,9 +2548,11 @@ label_finished:
 }
 
 /**
- * @brief unwraps the browser's hybrid envelope without treating its binary AES key as a C string.
+ * @brief unwraps the browser's hybrid envelope without treating its binary AES key as a C string
+ *
  * @param desktop_crypto_t* crypto -> initialized local RSA identity
- * @param const char* text -> encrypted key-array JSON
+ * @param const char* text -> encrypted key array JSON
+ *
  * @return char* -> owned ASCII plaintext, or NULL
  */
 char *crypto_session__hybrid_decrypt(desktop_crypto_t *crypto, const char *text)
@@ -2507,7 +2635,7 @@ char *crypto_session__hybrid_decrypt(desktop_crypto_t *crypto, const char *text)
     {
         goto label_finished;
     }
-    // reject hidden nonzero bytes after a terminator before returning an exact-size string
+    // reject hidden nonzero bytes after a terminator before returning an exact size string
     length = 0;
     while (length < body_length - 16 && body[16 + length])
     {
@@ -2543,7 +2671,15 @@ label_finished:
     return result;
 }
 
-/** @brief Accepts a bounded v2 policy and produces a fresh mix for each requested exchange. */
+/**
+ * @brief validates the server policy and creates the client exchange request
+ *
+ * @param desktop_crypto_t* crypto -> session state receiving the policy and private exponents
+ * @param const cJSON* policy -> server negotiation policy
+ * @param const char* public_key -> client public identity key
+ *
+ * @return cJSON* -> owned JSON request, or NULL on invalid input or setup failure
+ */
 cJSON *crypto_session__negotiate(desktop_crypto_t *crypto, const cJSON *policy, const char *public_key)
 {
     const cJSON *version = cJSON_GetObjectItemCaseSensitive(policy, "version");
@@ -2617,7 +2753,14 @@ failed:
     return NULL;
 }
 
-/** @brief Verifies every DH mix, the hidden cipher's inner proof and the final server transcript proof. */
+/**
+ * @brief verifies the exchange reply and installs the resulting session keys
+ *
+ * @param desktop_crypto_t* crypto -> session awaiting the exchange reply
+ * @param const cJSON* message -> server reply with public mixes and confirmation
+ *
+ * @return boole -> TRUE if the exchange and confirmation succeeded
+ */
 boole crypto_session__finish_negotiation(desktop_crypto_t *crypto, const cJSON *message)
 {
     const cJSON *reply = cJSON_GetObjectItemCaseSensitive(message, "crypto");

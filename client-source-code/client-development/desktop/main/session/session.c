@@ -1,6 +1,6 @@
 #include "clib.h"
 #include "attachments/attachments_internal.h"
-// A worker owns authentication, channel keys and protocol state; the GUI receives value snapshots.
+// A worker owns authentication, channel keys and protocol state. The GUI receives value snapshots
 #include <stdlib.h>
 #include "session/session_internal.h"
 #include "msg/client/client_msg.h"
@@ -19,9 +19,11 @@
 static void _session_internal__worker(void *context);
 
 /**
- * @brief finds a worker-owned client slot by its server ID.
- * @param desktop_session_t* session -> session state; worker-owned unless this is a GUI entry point
- * @param int64 id -> server-assigned ID to look up
+ * @brief finds a worker-owned client slot by its server ID
+ *
+ * @param desktop_session_t* session -> session state. Worker owned unless this is a GUI entry point
+ * @param int64 id -> server assigned ID to look up
+ *
  * @return int64 -> matching client slot, or -1 when absent
  */
 int64 desktop_session__client(desktop_session_t *session, int64 id)
@@ -40,9 +42,11 @@ int64 desktop_session__client(desktop_session_t *session, int64 id)
 }
 
 /**
- * @brief finds a worker-owned channel slot by its server ID.
- * @param desktop_session_t* session -> session state; worker-owned unless this is a GUI entry point
- * @param int64 id -> server-assigned ID to look up
+ * @brief finds a worker-owned channel slot by its server ID
+ *
+ * @param desktop_session_t* session -> session state. Worker owned unless this is a GUI entry point
+ * @param int64 id -> server assigned ID to look up
+ *
  * @return int64 -> matching channel slot, or -1 when absent
  */
 int64 desktop_session__channel(desktop_session_t *session, int64 id)
@@ -61,8 +65,10 @@ int64 desktop_session__channel(desktop_session_t *session, int64 id)
 }
 
 /**
- * @brief publishes a complete value snapshot without exposing worker pointers to the GUI.
- * @param desktop_session_t* session -> session state; worker-owned unless this is a GUI entry point
+ * @brief publishes a complete value snapshot without exposing worker pointers to the GUI
+ *
+ * @param desktop_session_t* session -> session state. Worker owned unless this is a GUI entry point
+ *
  * @return void
  */
 void desktop_session__publish(desktop_session_t *session)
@@ -87,10 +93,12 @@ void desktop_session__publish(desktop_session_t *session)
 }
 
 /**
- * @brief records a visible status and optionally ends the session.
- * @param desktop_session_t* session -> session state; worker-owned unless this is a GUI entry point
- * @param const char* text -> borrowed NUL-terminated text; copied before returning when retained
+ * @brief records a visible status and optionally ends the session
+ *
+ * @param desktop_session_t* session -> session state. Worker owned unless this is a GUI entry point
+ * @param const char* text -> borrowed NUL terminated text. Copied before returning when retained
  * @param boole fatal -> nonzero to stop the session after publishing this error
+ *
  * @return void
  */
 void desktop_session__detail(desktop_session_t *session, const char *text, boole fatal)
@@ -104,8 +112,10 @@ void desktop_session__detail(desktop_session_t *session, const char *text, boole
 }
 
 /**
- * @brief checks cancellation under the same lock used by the GUI.
- * @param desktop_session_t* session -> session state; worker-owned unless this is a GUI entry point
+ * @brief checks cancellation under the same lock used by the GUI
+ *
+ * @param desktop_session_t* session -> session state. Worker owned unless this is a GUI entry point
+ *
  * @return boole -> nonzero when cancellation or failure requires stopping
  */
 boole desktop_session__stopping(desktop_session_t *session)
@@ -120,8 +130,10 @@ boole desktop_session__stopping(desktop_session_t *session)
 }
 
 /**
- * @brief forgets channel keys and authority when the local user changes channel.
- * @param desktop_session_t* session -> session state; worker-owned unless this is a GUI entry point
+ * @brief forgets channel keys and authority when the local user changes channel
+ *
+ * @param desktop_session_t* session -> session state. Worker owned unless this is a GUI entry point
+ *
  * @return void
  */
 void desktop_session__keys_reset(desktop_session_t *session)
@@ -145,8 +157,10 @@ void desktop_session__keys_reset(desktop_session_t *session)
 }
 
 /**
- * @brief performs identity login and processes authenticated state without running crypto on the GUI thread.
+ * @brief performs identity login and processes authenticated state without running crypto on the GUI thread
+ *
  * @param void* context -> session retained by its owner until the worker has joined
+ *
  * @return void
  */
 static void _session_internal__worker(void *context)
@@ -521,7 +535,8 @@ label_finished:
 }
 
 /**
- * @brief creates the GUI-owned session and its stable transport; no connection starts here.
+ * @brief creates the GUI owned session and its stable transport. No connection starts here
+ *
  * @return desktop_session_t* -> owned session, or NULL on allocation failure
  */
 desktop_session_t *desktop_session__create(void)
@@ -561,8 +576,10 @@ desktop_session_t *desktop_session__create(void)
 }
 
 /**
- * @brief requests cancellation; the worker releases protocol and key storage after exiting.
- * @param desktop_session_t* session -> session state; worker-owned unless this is a GUI entry point
+ * @brief requests cancellation. The worker releases protocol and key storage after exiting
+ *
+ * @param desktop_session_t* session -> session state. Worker owned unless this is a GUI entry point
+ *
  * @return void
  */
 void desktop_session__disconnect(desktop_session_t *session)
@@ -577,8 +594,10 @@ void desktop_session__disconnect(desktop_session_t *session)
 }
 
 /**
- * @brief joins the worker before destroying anything it owns.
- * @param desktop_session_t* session -> session state; worker-owned unless this is a GUI entry point
+ * @brief joins the worker before destroying anything it owns
+ *
+ * @param desktop_session_t* session -> session state. Worker owned unless this is a GUI entry point
+ *
  * @return void
  */
 void desktop_session__destroy(desktop_session_t *session)
@@ -607,10 +626,12 @@ void desktop_session__destroy(desktop_session_t *session)
 }
 
 /**
- * @brief copies local voice preferences without opening devices on the GUI thread.
- * @param desktop_session_t* session -> GUI-owned session
+ * @brief copies local voice preferences without opening devices on the GUI thread
+ *
+ * @param desktop_session_t* session -> GUI owned session
  * @param const desktop_audio_options_t* options -> requested local preferences
- * @param int64 key -> persistent push-to-talk key, as defined by the platform key adapter
+ * @param int64 key -> persistent push to talk key, as defined by the platform key adapter
+ *
  * @return void
  */
 void desktop_session__audio(desktop_session_t *session, const desktop_audio_options_t *options, int64 key)
@@ -623,10 +644,12 @@ void desktop_session__audio(desktop_session_t *session, const desktop_audio_opti
 }
 
 /**
- * @brief accesses the lifetime-stable voice engine from the GUI even while disconnected.
- * @param desktop_session_t* session -> GUI-owned live session
- * @param desktop_devices_view_t* view -> caller-owned device snapshot
+ * @brief accesses the lifetime stable voice engine from the GUI even while disconnected
+ *
+ * @param desktop_session_t* session -> GUI owned live session
+ * @param desktop_devices_view_t* view -> caller owned device snapshot
  * @param boole refresh -> TRUE to request asynchronous enumeration
+ *
  * @return boole -> TRUE when the snapshot changed
  */
 boole desktop_session__devices(desktop_session_t *session, desktop_devices_view_t *view, boole refresh)
@@ -635,10 +658,12 @@ boole desktop_session__devices(desktop_session_t *session, desktop_devices_view_
 }
 
 /**
- * @brief starts one session with copied, validated settings; called only by the GUI owner.
- * @param desktop_session_t* session -> session state; worker-owned unless this is a GUI entry point
- * @param const desktop_connection_t* connection -> validated connection options copied into session-owned storage
- * @return boole -> 1 when the worker started; 0 when invalid, busy or unavailable
+ * @brief starts one session with copied, validated settings. Called only by the GUI owner
+ *
+ * @param desktop_session_t* session -> session state. Worker owned unless this is a GUI entry point
+ * @param const desktop_connection_t* connection -> validated connection options copied into session owned storage
+ *
+ * @return boole -> 1 when the worker started. 0 when invalid, busy or unavailable
  */
 boole desktop_session__connect(desktop_session_t *session, const desktop_connection_t *connection)
 {
@@ -685,8 +710,10 @@ boole desktop_session__connect(desktop_session_t *session, const desktop_connect
 }
 
 /**
- * @brief checks whether a connection is still active or finishing before local settings are replaced.
- * @param desktop_session_t* session -> GUI-owned session
+ * @brief checks whether a connection is still active or finishing before local settings are replaced
+ *
+ * @param desktop_session_t* session -> GUI owned session
+ *
  * @return boole -> TRUE while the worker owns the current connection
  */
 boole desktop_session__busy(desktop_session_t *session)
@@ -701,9 +728,11 @@ boole desktop_session__busy(desktop_session_t *session)
 }
 
 /**
- * @brief copies a new immutable snapshot into GUI-owned storage only when its revision changed.
- * @param desktop_session_t* session -> session state; worker-owned unless this is a GUI entry point
- * @param desktop_session_view_t* view -> GUI-owned session snapshot
+ * @brief copies a new immutable snapshot into GUI owned storage only when its revision changed
+ *
+ * @param desktop_session_t* session -> session state. Worker owned unless this is a GUI entry point
+ * @param desktop_session_view_t* view -> GUI owned session snapshot
+ *
  * @return boole -> 1 when a newer snapshot was copied
  */
 boole desktop_session__view(desktop_session_t *session, desktop_session_view_t *view)
@@ -722,10 +751,12 @@ boole desktop_session__view(desktop_session_t *session, desktop_session_view_t *
 }
 
 /**
- * @brief queues a channel request without blocking the GUI on network writes.
- * @param desktop_session_t* session -> session state; worker-owned unless this is a GUI entry point
- * @param int64 channel -> server-assigned channel ID
+ * @brief queues a channel request without blocking the GUI on network writes
+ *
+ * @param desktop_session_t* session -> session state. Worker owned unless this is a GUI entry point
+ * @param int64 channel -> server assigned channel ID
  * @param const char* password -> borrowed channel password, copied into the bounded command queue
+ *
  * @return boole -> 1 when the bounded command queue accepted the request
  */
 boole desktop_session__join(desktop_session_t *session, int64 channel, const char *password)
@@ -758,9 +789,11 @@ boole desktop_session__join(desktop_session_t *session, int64 channel, const cha
 }
 
 /**
- * @brief queues plain channel text, preserving the selected channel at submission time.
- * @param desktop_session_t* session -> session state; worker-owned unless this is a GUI entry point
- * @param const char* text -> borrowed NUL-terminated text; copied before returning when retained
+ * @brief queues plain channel text, preserving the selected channel at submission time
+ *
+ * @param desktop_session_t* session -> session state. Worker owned unless this is a GUI entry point
+ * @param const char* text -> borrowed NUL terminated text. Copied before returning when retained
+ *
  * @return boole -> 1 when channel keys are ready and text was queued
  */
 boole desktop_session__chat(desktop_session_t *session, const char *text)
@@ -791,11 +824,13 @@ boole desktop_session__chat(desktop_session_t *session, const char *text)
 }
 
 /**
- * @brief queues private text only for the exact connected peer selected by the GUI.
- * @param desktop_session_t* session -> GUI-owned session handle
+ * @brief queues private text only for the exact connected peer selected by the GUI
+ *
+ * @param desktop_session_t* session -> GUI owned session handle
  * @param int64 peer -> selected client ID
  * @param uint64 serial -> selected client's connection lifetime
  * @param const char* text -> bounded plain text copied before returning
+ *
  * @return boole -> 1 when queued, zero when unavailable or full
  */
 boole desktop_session__direct(desktop_session_t *session, int64 peer, uint64 serial, const char *text)
@@ -840,9 +875,9 @@ boole desktop_session__direct(desktop_session_t *session, int64 peer, uint64 ser
 }
 
 /**
- * @brief queues the notice that the local user closed the private conversation with one client.
+ * @brief queues the notice that the local user closed the private conversation with one client
  *
- * @param desktop_session_t* session -> GUI-owned session handle
+ * @param desktop_session_t* session -> GUI owned session handle
  * @param int64 peer -> client ID of the other side of the conversation
  * @param uint64 serial -> that client's connection lifetime
  *
@@ -869,7 +904,14 @@ boole desktop_session__direct_closed(desktop_session_t *session, int64 peer, uin
     return queued;
 }
 
-/** @brief Changes outgoing formatting; already queued messages retain their captured selection. */
+/**
+ * @brief stores a valid outgoing text format under the session lock
+ *
+ * @param desktop_session_t* session -> session receiving the selection
+ * @param const desktop_chat_format_t* format -> requested format, or NULL to select defaults
+ *
+ * @return void
+ */
 void desktop_session__set_chat_format(desktop_session_t *session, const desktop_chat_format_t *format)
 {
     desktop_chat_format_t selected;
@@ -888,11 +930,13 @@ void desktop_session__set_chat_format(desktop_session_t *session, const desktop_
 }
 
 /**
- * @brief queues a local listening change for one connected client, leaving server permissions untouched.
- * @param desktop_session_t* session -> GUI-owned session handle
+ * @brief queues a local listening change for one connected client, leaving server permissions untouched
+ *
+ * @param desktop_session_t* session -> GUI owned session handle
  * @param int64 peer -> selected client ID
  * @param uint64 serial -> selected client's connection lifetime
  * @param boole muted -> nonzero to silence this peer locally
+ *
  * @return boole -> 1 when queued
  */
 boole desktop_session__mute(desktop_session_t *session, int64 peer, uint64 serial, boole muted)
@@ -918,9 +962,11 @@ boole desktop_session__mute(desktop_session_t *session, int64 peer, uint64 seria
 }
 
 /**
- * @brief extracts current-channel display data only; private keys and chat never enter game IPC.
- * @param const desktop_session_view_t* view -> GUI-owned session snapshot
- * @param desktop_overlay_snapshot_t* overlay -> destination for current-channel display data only
+ * @brief extracts current channel display data only. Private keys and chat never enter game IPC
+ *
+ * @param const desktop_session_view_t* view -> GUI owned session snapshot
+ * @param desktop_overlay_snapshot_t* overlay -> destination for current channel display data only
+ *
  * @return void
  */
 void desktop_session__overlay(const desktop_session_view_t *view, desktop_overlay_snapshot_t *overlay)
@@ -984,11 +1030,29 @@ void desktop_session__overlay(const desktop_session_view_t *view, desktop_overla
     overlay->enabled = 1;
 }
 
+/**
+ * @brief plays a session notification through its voice owner
+ *
+ * @param desktop_session_t* session -> session owning the audio
+ * @param desktop_sound_t id -> notification sound to play
+ *
+ * @return void
+ */
 void desktop_session__sound(desktop_session_t *session, desktop_sound_t id)
 {
     desktop_voice__sound(session->voice, id);
 }
 
+/**
+ * @brief applies notification playback settings to the session
+ *
+ * @param desktop_session_t* session -> session owning the audio
+ * @param boole enabled -> whether notification playback is enabled
+ * @param int64 volume -> volume percentage
+ * @param const char* output -> output device name
+ *
+ * @return void
+ */
 void desktop_session__notifications(desktop_session_t *session, boole enabled, int64 volume, const char *output)
 {
     desktop_voice__notifications(session->voice, enabled, volume, output);

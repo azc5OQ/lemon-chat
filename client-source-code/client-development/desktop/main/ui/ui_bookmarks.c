@@ -20,9 +20,11 @@ static void _ui_bookmarks_internal__remove(gui_event_t *event);
 static void _ui_bookmarks_internal__use(gui_event_t *event);
 
 /**
- * @brief copies plain text into a scene control.
+ * @brief copies plain text into a scene control
+ *
  * @param const char* id -> control ID
  * @param const char* text -> copied display text
+ *
  * @return void
  */
 static void _ui_bookmarks_internal__text(const char *id, const char *text)
@@ -37,9 +39,11 @@ static void _ui_bookmarks_internal__text(const char *id, const char *text)
 }
 
 /**
- * @brief opens a floating panel without blocking the remaining window.
+ * @brief opens a floating panel without blocking the remaining window
+ *
  * @param const char* id -> panel ID
  * @param boole visible -> requested visibility
+ *
  * @return void
  */
 static void _ui_bookmarks_internal__panel(const char *id, boole visible)
@@ -62,7 +66,8 @@ static void _ui_bookmarks_internal__panel(const char *id, boole visible)
 }
 
 /**
- * @brief rebuilds the bounded saved-address list and its selection.
+ * @brief rebuilds the bounded saved address list and its selection
+ *
  * @return void
  */
 static void _ui_bookmarks_internal__list(void)
@@ -121,8 +126,10 @@ static void _ui_bookmarks_internal__list(void)
 }
 
 /**
- * @brief loads a saved entry as an editable draft without applying changes.
+ * @brief loads a saved entry as an editable draft without applying changes
+ *
  * @param gui_event_t* event -> selected saved row
+ *
  * @return void
  */
 static void _ui_bookmarks_internal__choose(gui_event_t *event)
@@ -146,8 +153,10 @@ static void _ui_bookmarks_internal__choose(gui_event_t *event)
 }
 
 /**
- * @brief prepares a new bookmark using the current connection address.
+ * @brief prepares a new bookmark using the current connection address
+ *
  * @param gui_event_t* event -> unused button event
+ *
  * @return void
  */
 static void _ui_bookmarks_internal__add(gui_event_t *event)
@@ -172,8 +181,10 @@ static void _ui_bookmarks_internal__add(gui_event_t *event)
 }
 
 /**
- * @brief opens the bookmark editor with a fresh draft.
+ * @brief opens the bookmark editor with a fresh draft
+ *
  * @param gui_event_t* event -> unused toolbar event
+ *
  * @return void
  */
 static void _ui_bookmarks_internal__show(gui_event_t *event)
@@ -183,8 +194,10 @@ static void _ui_bookmarks_internal__show(gui_event_t *event)
 }
 
 /**
- * @brief closes the editor without saving its draft.
+ * @brief closes the editor without saving its draft
+ *
  * @param gui_event_t* event -> unused close event
+ *
  * @return void
  */
 static void _ui_bookmarks_internal__close(gui_event_t *event)
@@ -194,8 +207,10 @@ static void _ui_bookmarks_internal__close(gui_event_t *event)
 }
 
 /**
- * @brief saves a validated draft before replacing the current settings.
+ * @brief saves a validated draft before replacing the current settings
+ *
  * @param gui_event_t* event -> explicit save button event
+ *
  * @return void
  */
 static void _ui_bookmarks_internal__save(gui_event_t *event)
@@ -246,8 +261,10 @@ label_finished:
 }
 
 /**
- * @brief explicitly removes the selected saved entry while preserving the others.
+ * @brief explicitly removes the selected saved entry while preserving the others
+ *
  * @param gui_event_t* event -> remove button event
+ *
  * @return void
  */
 static void _ui_bookmarks_internal__remove(gui_event_t *event)
@@ -287,8 +304,10 @@ label_finished:
 }
 
 /**
- * @brief fills Connections without changing identity or sending a network request.
- * @param gui_event_t* event -> use-address button event
+ * @brief fills Connections without changing identity or sending a network request
+ *
+ * @param gui_event_t* event -> use address button event
+ *
  * @return void
  */
 static void _ui_bookmarks_internal__use(gui_event_t *event)
@@ -332,8 +351,10 @@ static void _ui_bookmarks_internal__use(gui_event_t *event)
 }
 
 /**
- * @brief registers bookmark handlers before the native layout is parsed.
- * @param desktop_settings_t* settings -> GUI-owned saved preferences
+ * @brief registers bookmark handlers before the native layout is parsed
+ *
+ * @param desktop_settings_t* settings -> GUI owned saved preferences
+ *
  * @return void
  */
 void desktop_ui_bookmarks__initialize(desktop_settings_t *settings)

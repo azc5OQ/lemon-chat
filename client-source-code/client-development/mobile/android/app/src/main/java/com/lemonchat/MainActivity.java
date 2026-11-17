@@ -42,23 +42,36 @@ import org.json.JSONObject;
 public class MainActivity extends AppCompatActivity
 {
 	private BackgroundService backgroundService = null;
+	private ServiceConnection serviceConnection;
+	private boolean serviceBound;
+	private boolean resumed;
+	private boolean destroyed;
+	private Intent pendingCallIntent;
+	private static final int CONNECTION_WIZARD = 208;
+	private boolean connectionWizardOpen;
+	private boolean firstConnectionOffered;
+	private boolean pendingWizardConnect;
+	private boolean pendingAdvancedSettings;
+	private boolean nativeSettingsOpen;
 
 	private ChatSettings settings = null;
 
-	public static MainActivity instance = null;
+	public static volatile MainActivity instance = null;
 
 	SharedPreferences preferences = null;
 
 	private Permissions permissions = null;
 
-	public static int FILE_CHOOSER_RESULT_CODE = 987454;
 
 	// guards the first-run mode dialog so a second permission callback cannot stack another copy on it
 	private boolean isAppModeDialogVisible = false;
 
-	// the permission run starts on the first onResume, not in onCreate, and only once per process
+	// offer first setup after the activity becomes visible
 	private boolean hasBegunPermissionChain = false;
 
+	/**
+	 * restores the visible page and offers first setup
+	 */
 	@Override protected void onResume()
 	{
 		Log.d("Info", "[lemonchat] onResume");
@@ -66,6 +79,11 @@ public class MainActivity extends AppCompatActivity
 		super.onResume();
 
 		MainActivity.instance = this;
+		this.resumed = true;
+		if (this.backgroundService != null)
+		{
+			this.backgroundService.completeAudioPermission(this);
+		}
 
 		// Move WebView back from service overlay (if it was there)
 
@@ -79,17 +97,25 @@ public class MainActivity extends AppCompatActivity
 			ex.printStackTrace();
 		}
 
-		//the activity is on screen now, so a system dialog has something to sit on. the guard keeps
-		//every later resume (returning from the prompts themselves included) from restarting the run
+		// do not reopen setup after returning from another screen
 		if (this.permissions != null && this.hasBegunPermissionChain == false)
 		{
 			this.hasBegunPermissionChain = true;
 			this.permissions.beginCheck();
 		}
+		this.connectAfterWizard();
+		if (this.pendingAdvancedSettings)
+		{
+			this.pendingAdvancedSettings = false;
+			this.showSettings();
+		}
 
 		// no handover on resume: node keeps the server connection, the webview only re-renders
 	}
 
+	/**
+	 * Releases foreground UI ownership while the Node runtime keeps its remote connection.
+	 */
 	@Override protected void onPause()
 	{
 		try
@@ -104,16 +130,25 @@ public class MainActivity extends AppCompatActivity
 		super.onPause();
 	}
 
-	//fires when the call notification's accept button reuses an existing instance (single_top)
+	/**
+	 * Forwards a new call acceptance intent when Android reuses this activity.
+	 *
+	 * @param intent replacement activity intent
+	 */
 	@Override protected void onNewIntent(Intent intent)
 	{
 		super.onNewIntent(intent);
 
+		this.setIntent(intent);
 		this.forwardAcceptCallToService(intent);
 	}
 
-	//the accept action targets this activity because android 12+ forbids the old route of the
-	//service starting an activity off a notification tap; the accept plumbing stays in the service
+	/**
+	 * Forwards an Accept capability before normal foreground presence reconciliation.
+	 * If binding has not completed, the action waits for the service connection.
+	 *
+	 * @param intent activity intent that may contain an Accept action
+	 */
 	private void forwardAcceptCallToService(Intent intent)
 	{
 		if (intent == null || BackgroundService.ACTION_ACCEPT_CALL.equals(intent.getAction()) == false)
@@ -123,16 +158,35 @@ public class MainActivity extends AppCompatActivity
 
 		Intent acceptIntent = new Intent(this, BackgroundService.class);
 		acceptIntent.setAction(BackgroundService.ACTION_ACCEPT_CALL);
-		acceptIntent.putExtra("channelId", intent.getIntExtra("channelId", 0));
-		this.startService(acceptIntent);
+		acceptIntent.putExtra("call_id", intent.getStringExtra("call_id"));
+		acceptIntent.putExtra("session_id", intent.getStringExtra("session_id"));
+		if (this.backgroundService == null)
+		{
+			this.pendingCallIntent = acceptIntent;
+		}
+		else
+		{
+			this.backgroundService.handleCallAction(acceptIntent);
+		}
 
 		//clear the action so a relaunch of this activity cannot re-accept the call
 		intent.setAction(null);
 	}
 
+	/**
+	 * Routes an Android permission result to its pending page request or startup permission sequence.
+	 *
+	 * @param requestCode originating permission request code
+	 * @param permissions permissions included in the result
+	 * @param grantResults Android grant or denial results
+	 */
 	@Override public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults)
 	{
 		super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+		if (requestCode == 101 && this.backgroundService != null)
+		{
+			this.backgroundService.completeAudioPermission(this);
+		}
 
 		// resume the permission chain instead of asking the first-run question here: this callback
 		// fires after EVERY classic permission prompt (the notification one comes first!), so asking
@@ -145,61 +199,73 @@ public class MainActivity extends AppCompatActivity
 		}
 	}
 
-	//onActivityResult for file chooser in WebView
+	/**
+	 * Routes a file picker result to the service that owns the current page callback.
+	 *
+	 * @param requestCode originating activity request code
+	 * @param resultCode Android result status
+	 * @param data returned picker intent, which may be {@code null}
+	 */
 	@Override protected void onActivityResult(int requestCode, int resultCode, Intent data)
 	{
 		super.onActivityResult(requestCode, resultCode, data);
-		if (requestCode == FILE_CHOOSER_RESULT_CODE)
+		if (requestCode == CONNECTION_WIZARD)
 		{
-			Log.d("Info", "[lemonchat] onActivityResult :");
-
-			if (resultCode == RESULT_OK && this.backgroundService.fileChooserCallback != null)
+			this.connectionWizardOpen = false;
+			if (resultCode == RESULT_OK)
 			{
-				Log.d("Info", "[lemonchat] onActivityResult :");
-
-				Uri[] result = null;
-
-				if (data != null)
-				{
-					String dataString = data.getDataString();
-					if (dataString != null)
-					{
-						result = new Uri[] { Uri.parse(dataString) };
-					}
-				}
-
-				this.backgroundService.fileChooserCallback.onReceiveValue(result);
+				this.pendingWizardConnect = true;
+				this.connectAfterWizard();
 			}
-			else
+			else if (resultCode == ConnectionWizardActivity.ADVANCED_SETTINGS)
 			{
-				//user cancelled or error occured
-				//pass null to reset the state of the file input
-
-				if (this.backgroundService.fileChooserCallback != null)
-				{
-					this.backgroundService.fileChooserCallback.onReceiveValue(null);
-				}
+				this.pendingAdvancedSettings = true;
 			}
-
-			this.backgroundService.fileChooserCallback = null;
+			return;
+		}
+		if (this.backgroundService != null)
+		{
+			this.backgroundService.completeFileChooser(this, requestCode, resultCode, data);
 		}
 	}
 
+	/**
+	 * Starts the foreground service when needed and binds this activity to its existing runtime.
+	 */
 	private void startLemonchatBackgroundService()
 	{
-		ServiceConnection connection = new ServiceConnection() {
+		this.serviceConnection = new ServiceConnection()
+		{
 			@Override public void onServiceConnected(ComponentName name, IBinder service)
 			{
+				if (MainActivity.this.destroyed)
+				{
+					return;
+				}
 				BackgroundService.LocalBinder binder = (BackgroundService.LocalBinder)service;
 				MainActivity.this.backgroundService = binder.getService();
+				MainActivity.this.connectAfterWizard();
+				if (MainActivity.this.pendingCallIntent != null)
+				{
+					MainActivity.this.backgroundService.handleCallAction(MainActivity.this.pendingCallIntent);
+					MainActivity.this.pendingCallIntent = null;
+				}
 
 				//do something
 
-				MainActivity.this.handleOnResumeOnCreate();
+				if (!MainActivity.this.destroyed && MainActivity.this.resumed)
+				{
+					MainActivity.this.handleOnResumeOnCreate();
+				}
+				else
+				{
+					MainActivity.this.reportUiVisibility(false);
+				}
 			}
 
 			@Override public void onServiceDisconnected(ComponentName name)
 			{
+				MainActivity.this.backgroundService = null;
 			}
 		};
 
@@ -218,12 +284,23 @@ public class MainActivity extends AppCompatActivity
 			Log.d("Info", "[lemonchat] service already running !:");
 		}
 
-		this.bindService(intent, connection, Context.BIND_AUTO_CREATE); //this is what triggers onServiceConnected
+		this.serviceBound = this.bindService(intent, this.serviceConnection, Context.BIND_AUTO_CREATE); //this is what triggers onServiceConnected
 	}
 
+	/**
+	 * Releases this activity's visibility and detaches its WebView without affecting a newer activity.
+	 */
 	private void handleOnStopOnDestroyOnPause()
 	{
-		MainActivity.instance = null;
+		this.resumed = false;
+		if (MainActivity.instance != null && MainActivity.instance != this)
+		{
+			return;
+		}
+		if (MainActivity.instance == this)
+		{
+			MainActivity.instance = null;
+		}
 
 		//nobody is looking any more, so node may go back to idle
 		this.reportUiVisibility(false);
@@ -241,6 +318,9 @@ public class MainActivity extends AppCompatActivity
 					if (frameLayout != null && this.backgroundService != null)
 					{
 						frameLayout.removeView(this.backgroundService.webView);
+
+						// release the activity
+						this.backgroundService.setWebViewWindowOwner(null);
 						this.backgroundService.attachWebViewToInvisibleWindow();
 					}
 				}
@@ -248,14 +328,25 @@ public class MainActivity extends AppCompatActivity
 		}
 	}
 
+	/**
+	 * Initializes the activity, native settings and service binding before the first resume.
+	 *
+	 * @param savedInstanceState framework state from a previous activity instance, if available
+	 */
 	@Override protected void onCreate(Bundle savedInstanceState)
 	{
 		try
 		{
 			super.onCreate(savedInstanceState);
+			if (savedInstanceState != null)
+			{
+				this.firstConnectionOffered = savedInstanceState.getBoolean("connection_setup_offered");
+				this.connectionWizardOpen = savedInstanceState.getBoolean("connection_setup_open");
+				this.pendingWizardConnect = savedInstanceState.getBoolean("connection_setup_connect");
+				this.pendingAdvancedSettings = savedInstanceState.getBoolean("connection_setup_advanced");
+			}
 			setContentView(R.layout.main_activity);
-
-			MainActivity.instance = this;
+			HybridWindowInsets.apply(this, findViewById(R.id.main));
 
 			//named file, NOT getPreferences(): since the launcher aliases, getPreferences() names
 			//the file after the launching alias and split the settings away from ChatSettings
@@ -267,10 +358,18 @@ public class MainActivity extends AppCompatActivity
 
 			this.ensureIdentityAndMode();
 
-			//registering must happen here, but ASKING must not: a permission dialog launched from
-			//onCreate has no started activity to attach to and the system drops it, which is why the
-			//notification prompt only turned up on the second launch. onResume starts the chain.
+			// register result callbacks before the activity starts
 			this.permissions = new Permissions(this);
+			this.permissions.restoreState(savedInstanceState);
+			View callAlerts = this.findViewById(R.id.settings_call_alerts);
+			callAlerts.setVisibility(Build.VERSION.SDK_INT >= 34 ? View.VISIBLE : View.GONE);
+			callAlerts.setOnClickListener(view ->
+			{
+				if (Build.VERSION.SDK_INT >= 34)
+				{
+					this.startActivity(new Intent(android.provider.Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, Uri.parse("package:" + this.getPackageName())));
+				}
+			});
 
 			//	sometimes onCreate is called if service is not running, sometimes its called when service is already running
 			//	handle both cases
@@ -313,13 +412,101 @@ public class MainActivity extends AppCompatActivity
 		}
 	}
 
+	@Override protected void onSaveInstanceState(@NonNull Bundle state)
+	{
+		if (this.permissions != null)
+		{
+			this.permissions.saveState(state);
+		}
+		state.putBoolean("connection_setup_offered", this.firstConnectionOffered);
+		state.putBoolean("connection_setup_open", this.connectionWizardOpen);
+		state.putBoolean("connection_setup_connect", this.pendingWizardConnect);
+		state.putBoolean("connection_setup_advanced", this.pendingAdvancedSettings);
+		super.onSaveInstanceState(state);
+	}
+
+	/**
+	 * opens the optional walkthrough from the settings form
+	 *
+	 * @param view the setup button
+	 */
+	public void runConnectionSetup(View view)
+	{
+		this.showConnectionWizard();
+	}
+
+	/** opens a separate connection draft without changing saved settings */
+	public void showConnectionWizard()
+	{
+		if (this.connectionWizardOpen || this.destroyed || this.isFinishing())
+		{
+			return;
+		}
+		this.firstConnectionOffered = true;
+		this.connectionWizardOpen = true;
+		this.startActivityForResult(new Intent(this, ConnectionWizardActivity.class), CONNECTION_WIZARD);
+	}
+
+	/** sends the explicit Connect action after the service is available */
+	private void connectAfterWizard()
+	{
+		if (this.pendingWizardConnect && this.resumed && !this.destroyed && this.backgroundService != null && this.backgroundService.nodeBridge != null)
+		{
+			if (this.permissions != null && !this.permissions.prepareConnection())
+			{
+				return;
+			}
+			this.pendingWizardConnect = false;
+			this.restoreWebViewToForeground();
+			this.backgroundService.nodeBridge.sendConnect();
+		}
+	}
+
+	/** continues an explicit connection after its optional permission prompts */
+	public void resumePendingConnection()
+	{
+		this.connectAfterWizard();
+	}
+
+	/** queues an explicit page connection until this activity can present permission prompts */
+	public void requestConnection()
+	{
+		this.pendingWizardConnect = true;
+		this.connectAfterWizard();
+	}
+
+	/**
+	 * checks whether this activity can admit microphone access
+	 *
+	 * @return whether this activity is the visible owner
+	 */
+	public boolean isMediaActivityVisible()
+	{
+		return this.resumed && !this.destroyed && !this.isFinishing() && MainActivity.instance == this;
+	}
+
+	private void offerFirstConnection()
+	{
+		if (!this.firstConnectionOffered && this.settings != null && this.settings.getInitializationError().isEmpty() && this.settings.getIpAddress().isEmpty())
+		{
+			this.showConnectionWizard();
+		}
+	}
+
+	/**
+	 * Loads the latest committed settings into the native form and shows that panel.
+	 */
 	public void showSettings()
 	{
+		this.nativeSettingsOpen = true;
 		FrameLayout frameLayout = this.findViewById(R.id.root_container);
 
 		if (frameLayout != null && this.backgroundService != null)
 		{
 			frameLayout.removeView(this.backgroundService.webView);
+
+			// release the activity
+			this.backgroundService.setWebViewWindowOwner(null);
 			this.backgroundService.attachWebViewToInvisibleWindow();
 		}
 
@@ -329,23 +516,37 @@ public class MainActivity extends AppCompatActivity
 		// in the previous activity - saved settings looked lost even though they were on disk
 		this.LoadSettings();
 
+		// no setup while connected
+		boolean isServerConnected = this.backgroundService != null && this.backgroundService.nodeBridge != null && this.backgroundService.nodeBridge.isServerConnected;
+		this.findViewById(R.id.run_connection_setup).setVisibility(isServerConnected ? android.view.View.GONE : VISIBLE);
+
 		this.findViewById(R.id.settings_panel).setVisibility(VISIBLE);
 	}
 
-	//saved server configurations, kept beside the settings json under their own preference key so
-	//that saving settings can never disturb them: [{ name, host, port, metadata_keys }]
+	/**
+	 * Reads saved server profiles from their separate preference entry.
+	 *
+	 * @return saved profiles, or an empty array if the stored value cannot be parsed
+	 */
 	private JSONArray loadServerBookmarks()
 	{
 		try { return new JSONArray(this.preferences.getString("server_bookmarks", "[]")); }
 		catch (Exception ex) { return new JSONArray(); }
 	}
 
+	/**
+	 * Schedules persistence of the server profiles without replacing connection settings.
+	 *
+	 * @param bookmarks complete profile array to store
+	 */
 	private void storeServerBookmarks(JSONArray bookmarks)
 	{
 		this.preferences.edit().putString("server_bookmarks", bookmarks.toString()).apply();
 	}
 
-	//row 0 is the placeholder, so bookmark N is row N + 1
+	/**
+	 * Rebuilds the profile selector with a placeholder at row zero.
+	 */
 	private void refreshServerBookmarkSpinner()
 	{
 		Spinner spinner = this.findViewById(R.id.bookmark_spinner);
@@ -376,7 +577,12 @@ public class MainActivity extends AppCompatActivity
 		spinner.setAdapter(adapter);
 	}
 
-	//the key rows currently on screen, which belong to whichever server is in the fields
+	/**
+	 * reads server keys in their displayed order
+	 *
+	 * @return the ordered metadata-key array represented by the form
+	 * @throws IllegalArgumentException when a key needs correction
+	 */
 	private JSONArray readKeyFields()
 	{
 		JSONArray keysArray = new JSONArray();
@@ -384,10 +590,13 @@ public class MainActivity extends AppCompatActivity
 
 		for (int i = 0; i < keysContainer.getChildCount(); i++)
 		{
-			EditText keyInput = keysContainer.getChildAt(i).findViewById(R.id.key_input);
-			String key = keyInput.getText().toString().trim();
-
-			if (key.isEmpty() == false)
+			View row = keysContainer.getChildAt(i);
+			EditText keyInput = row.findViewById(R.id.key_input);
+			Spinner cipher = row.findViewById(R.id.key_type);
+			int selected = cipher.getSelectedItemPosition();
+			String type = selected >= 0 && selected < MetadataKey.TYPES.size() ? MetadataKey.TYPES.get(selected) : "";
+			JSONObject key = MetadataKey.encode(keyInput.getTag(), type, keyInput.getText().toString());
+			if (key != null)
 			{
 				keysArray.put(key);
 			}
@@ -396,6 +605,9 @@ public class MainActivity extends AppCompatActivity
 		return keysArray;
 	}
 
+	/**
+	 * Installs native profile selection, save and delete controls.
+	 */
 	private void wireServerBookmarks()
 	{
 		Spinner spinner = this.findViewById(R.id.bookmark_spinner);
@@ -437,9 +649,9 @@ public class MainActivity extends AppCompatActivity
 				{
 					for (int i = 0; i < keys.length(); i++)
 					{
-						String value = keys.optString(i, "");
+						Object value = keys.opt(i);
 
-						if (value.isEmpty() == false)
+						if (value != null)
 						{
 							MainActivity.this.addKeyField(value);
 						}
@@ -460,6 +672,9 @@ public class MainActivity extends AppCompatActivity
 		this.findViewById(R.id.bookmark_delete).setOnClickListener(v -> this.deleteSelectedServerBookmark());
 	}
 
+	/**
+	 * Saves the host, port and metadata keys currently shown in the native form as a profile.
+	 */
 	private void saveCurrentServerAsBookmark()
 	{
 		String name = ((EditText) this.findViewById(R.id.bookmark_name)).getText().toString().trim();
@@ -514,9 +729,13 @@ public class MainActivity extends AppCompatActivity
 		catch (Exception ex)
 		{
 			Log.e("lemonchat", "saving a server bookmark failed", ex);
+			Toast.makeText(this, ex instanceof IllegalArgumentException ? ex.getMessage() : "This server bookmark could not be saved.", Toast.LENGTH_LONG).show();
 		}
 	}
 
+	/**
+	 * Removes the selected saved server profile and refreshes the selector.
+	 */
 	private void deleteSelectedServerBookmark()
 	{
 		Spinner spinner = this.findViewById(R.id.bookmark_spinner);
@@ -545,40 +764,72 @@ public class MainActivity extends AppCompatActivity
 		((EditText) this.findViewById(R.id.bookmark_name)).setText("");
 	}
 
-	// Add a key row (inflated from key_field_row.xml: outlined password field + remove button)
-	private void addKeyField(String valueOfThatKeyField)
+	/**
+	 * adds a password row with its cipher selector and remove control
+	 *
+	 * @param valueOfThatKeyField typed cipher entry, legacy string, or {@code null} for an empty row
+	 */
+	private void addKeyField(Object valueOfThatKeyField)
 	{
 		LinearLayout keysContainer = findViewById(R.id.keys_container);
 
 		View row = getLayoutInflater().inflate(R.layout.key_field_row, keysContainer, false);
 
 		EditText keyInput = row.findViewById(R.id.key_input);
-
-		if (valueOfThatKeyField != null)
+		keyInput.setSaveEnabled(false);
+		keyInput.setTag(valueOfThatKeyField);
+		keyInput.setText(MetadataKey.password(valueOfThatKeyField));
+		Spinner cipher = row.findViewById(R.id.key_type);
+		java.util.ArrayList<String> labels = new java.util.ArrayList<>(MetadataKey.LABELS);
+		int selected = MetadataKey.TYPES.indexOf(MetadataKey.type(valueOfThatKeyField));
+		if (selected < 0)
 		{
-			keyInput.setText(valueOfThatKeyField);
+			selected = labels.size();
+			labels.add("Unsupported saved type");
 		}
+		ArrayAdapter<String> choices = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, labels);
+		choices.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+		cipher.setAdapter(choices);
+		cipher.setSelection(selected);
+		cipher.setSaveEnabled(false);
 
-		// removing every key row is fine - servers can run without metadata keys
-		row.findViewById(R.id.remove_key).setOnClickListener(v -> keysContainer.removeView(row));
+		// servers without keys can leave this list empty
+		row.findViewById(R.id.remove_key).setOnClickListener(v ->
+		{
+			keysContainer.removeView(row);
+		});
 
 		keysContainer.addView(row);
 	}
 
-	//app-held identity + first-run mode question. the identity seed is generated once and kept in
-	//SharedPreferences (with allowBackup it survives reinstalls); both values are merged into the
-	//stored settings json so the web client receives them with the rest of the settings
+	/**
+	 * Loads the saved identity and offers recovery when legacy records conflict.
+	 * Applies a saved mode or waits for permissions before offering a mode choice.
+	 */
 	private void ensureIdentityAndMode()
 	{
-		String identitySeed = this.preferences.getString("identity_seed", "");
-
-		if (identitySeed.equals(""))
+		if (!this.settings.loadPersistedState())
 		{
-			identitySeed = ChatSettings.generateIdentitySeed();
-			this.preferences.edit().putString("identity_seed", identitySeed).apply();
+			if ("legacy_identity_conflict".equals(this.settings.getInitializationError()))
+			{
+				new AlertDialog.Builder(this)
+					.setTitle("Choose the identity to keep")
+					.setMessage("Two different saved identities were found. Neither has been replaced. Choose the identity used by your saved connection settings, or the older app identity. Keep your identity backup until you confirm your server permissions.")
+					.setPositiveButton("Connection identity", (dialog, which) ->
+					{
+						this.finishIdentityRecovery(true);
+					})
+					.setNegativeButton("Older app identity", (dialog, which) ->
+					{
+						this.finishIdentityRecovery(false);
+					})
+					.setNeutralButton("Keep both for now", null)
+					.show();
+				return;
+			}
+			Toast.makeText(this, "Identity settings could not be loaded. Existing data was kept.", Toast.LENGTH_LONG).show();
+			return;
 		}
-
-		this.mergeFieldIntoStoredSettings("identity_string", identitySeed);
 
 		// a mode that was already chosen just rides along into the settings json. the first-run
 		// QUESTION is not asked here: it used to be, and it opened underneath the android permission
@@ -592,32 +843,38 @@ public class MainActivity extends AppCompatActivity
 		}
 	}
 
-	//adds/updates one field of the persisted settings json. it CREATES the json when none exists
-	//yet: the web client only ever learns the app mode (and with it, that simple mode wants the
-	//normie look) from these settings, so a user who picks a mode on first run but never opens the
-	//settings screen used to stay on the default theme forever.
-	private void mergeFieldIntoStoredSettings(String fieldName, String value)
+	/**
+	 * Commits the chosen legacy identity and requests connection after successful recovery.
+	 *
+	 * @param useSettingsIdentity whether to retain the identity from the saved connection settings
+	 */
+	private void finishIdentityRecovery(boolean useSettingsIdentity)
 	{
-		try
+		if (!this.settings.recoverLegacyIdentity(useSettingsIdentity))
 		{
-			String json = this.preferences.getString("settings", "");
-			JSONObject settingsJson = (json.equals("") == false) ? new JSONObject(json) : new JSONObject();
-
-			if (value.equals(settingsJson.optString(fieldName, "")) == false)
-			{
-				settingsJson.put(fieldName, value);
-				this.settings.saveJsonSettings(settingsJson.toString());
-			}
+			Toast.makeText(this, "Identity could not be saved. Existing data was kept.", Toast.LENGTH_LONG).show();
+			return;
 		}
-		catch (Exception ex)
+		if (this.backgroundService != null && this.backgroundService.nodeBridge != null)
 		{
-			ex.printStackTrace();
+			this.backgroundService.nodeBridge.sendConnect();
 		}
 	}
 
-	// asked once, and only after the android permission prompts are finished, so our dialog is never
-	// buried under a system one. safe to call repeatedly: it returns immediately once a mode is stored,
-	// while the dialog is already up, or while the activity is going away.
+	/**
+	 * Requests a single field update against the latest committed settings.
+	 *
+	 * @param fieldName settings field to update
+	 * @param value new string value
+	 */
+	private void mergeFieldIntoStoredSettings(String fieldName, String value)
+	{
+		this.settings.updateSetting(fieldName, value);
+	}
+
+	/**
+	 * Shows the initial mode choice after permissions finish, unless a choice or dialog already exists.
+	 */
 	public void promptForAppModeIfNeeded()
 	{
 		if (this.preferences == null || this.isAppModeDialogVisible || this.isFinishing())
@@ -627,12 +884,16 @@ public class MainActivity extends AppCompatActivity
 
 		if (this.preferences.getString("app_mode", "").equals("") == false)
 		{
+			this.offerFirstConnection();
 			return;
 		}
 
 		this.showFirstRunModeDialog();
 	}
 
+	/**
+	 * Displays the guarded Simple or Advanced mode choice.
+	 */
 	private void showFirstRunModeDialog()
 	{
 		this.isAppModeDialogVisible = true;
@@ -646,6 +907,11 @@ public class MainActivity extends AppCompatActivity
 			.show();
 	}
 
+	/**
+	 * Stores the selected mode and publishes it to the current page.
+	 *
+	 * @param mode selected application mode
+	 */
 	private void storeAppMode(String mode)
 	{
 		this.isAppModeDialogVisible = false;
@@ -659,10 +925,16 @@ public class MainActivity extends AppCompatActivity
 		{
 			this.backgroundService.javascriptJavaBridge.JavaExportRequestCurrentSettingsFromAndroid();
 		}
+		this.offerFirstConnection();
 	}
 
-	//tells node if the user is looking at the app. being connected is not the same as being on
-	//screen, and mixing the two up is why opening the app used to leave the client idle
+	/**
+	 * Reports native activity visibility to the Node owner, preserving idle after a declined call.
+	 * While the file chooser of the page is open, the hidden report keeps the session out of idle:
+	 * the chooser is another app's screen in front of this activity, not the user leaving the app.
+	 *
+	 * @param isVisible whether this activity is currently on screen
+	 */
 	private void reportUiVisibility(boolean isVisible)
 	{
 		if (this.backgroundService == null || this.backgroundService.nodeBridge == null)
@@ -670,27 +942,31 @@ public class MainActivity extends AppCompatActivity
 			return;
 		}
 
-		//a file picker is another app sitting on top of ours, not the user walking away.
-		//without this check, picking a file would send the client to idle
-		if (isVisible == false && this.backgroundService.fileChooserCallback != null)
-		{
-			return;
-		}
-
-		//the user just declined a call, so he should stay idle. the flag is cleared further down
-		//in this same resume, so we look at it here and leave the clearing to that code
-		if (isVisible == true && BackgroundService.suppressNextIdleExit)
-		{
-			return;
-		}
-
-		this.backgroundService.nodeBridge.sendUiVisible(isVisible);
+		// open file chooser
+		boolean isFileChooserOpen = !isVisible && this.backgroundService.fileChooserCallback != null;
+		this.backgroundService.nodeBridge.sendUiVisible(isVisible, (isVisible && BackgroundService.suppressNextIdleExit) || isFileChooserOpen);
 	}
 
+	/**
+	 * Restores the WebView and presence only after this activity has actually resumed.
+	 */
 	public void handleOnResumeOnCreate()
 	{
+		if (!this.resumed || this.destroyed)
+		{
+			this.reportUiVisibility(false);
+			return;
+		}
 		//both entry points: resume, and service connect for when the activity beat the binding
+		if (this.backgroundService != null)
+		{
+			this.backgroundService.resumePageMedia(this);
+		}
 		this.reportUiVisibility(true);
+		if (this.nativeSettingsOpen)
+		{
+			return;
+		}
 
 		//check if WebView is attached to invisible window of background service
 		if (this.backgroundService != null)
@@ -719,6 +995,8 @@ public class MainActivity extends AppCompatActivity
 							params = new WindowManager.LayoutParams(android.view.ViewGroup.LayoutParams.WRAP_CONTENT, android.view.ViewGroup.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.TYPE_PHONE, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE, PixelFormat.TRANSLUCENT);
 						}
 
+						// set window owner
+						this.backgroundService.setWebViewWindowOwner(this);
 						frameLayout.addView(this.backgroundService.webView, params);
 					}
 				}
@@ -728,6 +1006,9 @@ public class MainActivity extends AppCompatActivity
 					Log.d("Info", "[lemonchat] app started for first time");
 					FrameLayout frameLayout = this.findViewById(R.id.root_container);
 
+					// set window owner
+					this.backgroundService.setWebViewWindowOwner(this);
+
 					if (!(this.backgroundService.webView.getParent() instanceof ViewGroup))
 					{
 						frameLayout.addView(this.backgroundService.webView);
@@ -736,7 +1017,7 @@ public class MainActivity extends AppCompatActivity
 
 				//node may have (re)connected while the page's retry timers were throttled in the
 				//background; poke it so reattaching starts now instead of waiting out a countdown
-				this.backgroundService.webView.evaluateJavascript("if (typeof JavascriptJavaBridge__request_loopback_reattach === 'function') { JavascriptJavaBridge__request_loopback_reattach(); }", null);
+				this.backgroundService.webView.evaluateJavascript("if (typeof JavascriptJavaBridge__request_loopback_reattach === 'function')\n{\n    JavascriptJavaBridge__request_loopback_reattach();\n}", null);
 
 				//re-deliver node's current phase: a push lost while the page was busy or detached
 				//left the status frozen (the stuck "generating the identity key" episode)
@@ -755,12 +1036,15 @@ public class MainActivity extends AppCompatActivity
 				{
 					// typeof guard: this can fire while the page is still loading, where a bare
 					// call is a ReferenceError that evaluateJavascript swallows silently
-					this.backgroundService.webView.evaluateJavascript("if (typeof JavascriptJavaBridge__send_come_from_idle_mode_request === 'function') { JavascriptJavaBridge__send_come_from_idle_mode_request(); }", null);
+					this.backgroundService.webView.evaluateJavascript("if (typeof JavascriptJavaBridge__send_come_from_idle_mode_request === 'function')\n{\n    JavascriptJavaBridge__send_come_from_idle_mode_request();\n}", null);
 				}
 			}
 		}
 	}
 
+	/**
+	 * Releases foreground ownership and asks the detached page to stop idle sensitive media work.
+	 */
 	@Override protected void onStop()
 	{
 		try
@@ -772,23 +1056,34 @@ public class MainActivity extends AppCompatActivity
 			// and that request rides the loopback through node like any other.
 			// the file picker is another app on top of ours, so this fired and dropped the user
 			// into idle just for opening it - a pending chooser callback means we are still "in"
-			if (this.backgroundService != null && this.backgroundService.webView != null
+			if (MainActivity.instance == null && this.backgroundService != null && this.backgroundService.webView != null
 				&& this.backgroundService.fileChooserCallback == null)
 			{
-				this.backgroundService.webView.evaluateJavascript("if (typeof JavascriptJavaBridge__send_go_to_idle_mode_request === 'function') { JavascriptJavaBridge__send_go_to_idle_mode_request(); }", null);
+				this.backgroundService.webView.evaluateJavascript("if (typeof JavascriptJavaBridge__send_go_to_idle_mode_request === 'function')\n{\n    JavascriptJavaBridge__send_go_to_idle_mode_request();\n}", null);
 			}
 
-			super.onStop();
 		}
 		catch (Exception ex)
 		{
 			Log.d("Info", "[lemonchat] onCreate" + ex.getMessage());
 			ex.printStackTrace();
 		}
+		finally
+		{
+			super.onStop();
+		}
 	}
 
+	/**
+	 * Cancels activity native callbacks and releases its service binding even during early teardown.
+	 */
 	@Override protected void onDestroy()
 	{
+		this.destroyed = true;
+		if (this.permissions != null)
+		{
+			this.permissions.destroy();
+		}
 		try
 		{
 			Log.d("Info", "[lemonchat] onDestroy");
@@ -797,32 +1092,51 @@ public class MainActivity extends AppCompatActivity
 			//the line below, which refuses to report anything while a picker is remembered
 			if (this.backgroundService != null)
 			{
-				this.backgroundService.abandonPendingFileChooser();
+				this.backgroundService.abandonPendingFileChooser(this);
+				this.backgroundService.cancelPendingPermission(this);
 			}
 
 			this.handleOnStopOnDestroyOnPause();
-			this.backgroundService.webView.evaluateJavascript("if (typeof JavascriptJavaBridge__send_go_to_idle_mode_request === 'function') { JavascriptJavaBridge__send_go_to_idle_mode_request(); }", null);
+			if (MainActivity.instance == null && this.backgroundService != null && this.backgroundService.webView != null)
+			{
+				this.backgroundService.webView.evaluateJavascript("if (typeof JavascriptJavaBridge__send_go_to_idle_mode_request === 'function')\n{\n    JavascriptJavaBridge__send_go_to_idle_mode_request();\n}", null);
+			}
 
-			super.onDestroy();
 		}
 		catch (Exception ex)
 		{
 			Log.d("Info", "[lemonchat] onDestroy" + ex.getMessage());
 			ex.printStackTrace();
 		}
+		finally
+		{
+			try
+			{
+				if (this.serviceBound)
+				{
+					this.unbindService(this.serviceConnection);
+					this.serviceBound = false;
+				}
+			}
+			finally
+			{
+				super.onDestroy();
+			}
+		}
 	}
 
-	//invoked by
-	// @JavascriptInterface public void JavaExportRequestCurrentSettingsFromAndroid()
+	/**
+	 * Populates the native connection form from the latest settings snapshot using defaults for missing fields.
+	 *
+	 * @return whether form loading completed without an exception
+	 */
 	public boolean LoadSettings()
 	{
 		boolean result = false;
 
 		try
 		{
-			String json = this.preferences.getString("settings", "");
-
-			this.settings.saveJsonSettings(json);
+			String json = this.settings.getJsonSettings();
 
 			if (json.equals("") == false)
 			{
@@ -837,10 +1151,7 @@ public class MainActivity extends AppCompatActivity
 				String ipAddress = settingsJson.optString("host", "");
 				int websocketPort = settingsJson.optInt("port", 0);
 				String defaultUsername = settingsJson.optString("default_username", "");
-				boolean isMicAlwaysOnEnabled = settingsJson.optBoolean("is_microphone_always_on", false);
 				boolean isAutoconnectEnabled = settingsJson.optBoolean("is_autoconnect_enabled", true);
-				boolean isAudioEffectDisabled = settingsJson.optBoolean("is_audio_effect_enabled", false);
-				boolean isAppLogEnabled = settingsJson.optBoolean("is_app_log_enabled", false);
 
 				LinearLayout keysContainerLinearLayout = findViewById(R.id.keys_container);
 				EditText ipAddressEditText = findViewById(R.id.ip_address);
@@ -866,8 +1177,8 @@ public class MainActivity extends AppCompatActivity
 				{
 					for (int i = 0; i < keys.length(); i++)
 					{
-						String value = keys.optString(i, "");
-						if (!value.isEmpty())
+						Object value = keys.opt(i);
+						if (value != null)
 						{
 							this.addKeyField(value);
 						}
@@ -877,10 +1188,6 @@ public class MainActivity extends AppCompatActivity
 				//the saved list can have grown since the screen was last built
 				this.refreshServerBookmarkSpinner();
 
-				this.settings.setDefaultUsername(defaultUsername);
-				this.settings.setWebsocketPort(websocketPort);
-				this.settings.setAreAudioEffectsEnabled(!isAudioEffectDisabled);
-				this.settings.setContinousAudioBroadcastEnabled(isMicAlwaysOnEnabled);
 			}
 
 			result = true;
@@ -894,10 +1201,12 @@ public class MainActivity extends AppCompatActivity
 		return result;
 	}
 
-	// hides the settings panel and brings the chat webview back to the foreground. shared by Save
-	// and by the Back button - the ONLY difference is Back does not persist the fields
+	/**
+	 * Closes the native settings panel and attaches the chat view to the foreground container.
+	 */
 	private void restoreWebViewToForeground()
 	{
+		this.nativeSettingsOpen = false;
 		FrameLayout frameLayout = this.findViewById(R.id.root_container);
 
 		this.findViewById(R.id.settings_panel).setVisibility(INVISIBLE);
@@ -922,16 +1231,28 @@ public class MainActivity extends AppCompatActivity
 				params = new WindowManager.LayoutParams(android.view.ViewGroup.LayoutParams.WRAP_CONTENT, android.view.ViewGroup.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.TYPE_PHONE, WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE, PixelFormat.TRANSLUCENT);
 			}
 
+			// set window owner
+			this.backgroundService.setWebViewWindowOwner(this);
 			frameLayout.addView(this.backgroundService.webView, params);
 		}
 	}
 
-	// Back button: leaves settings and returns to chat WITHOUT saving. Save was the only way out
+	/**
+	 * Closes the native settings panel without saving its current form values.
+	 *
+	 * @param view button that triggered the action
+	 */
 	public void closeSettings(View view)
 	{
 		this.restoreWebViewToForeground();
 	}
 
+	/**
+	 * Commits the native connection form and returns to chat after a successful save.
+	 * Saving settings does not create a new Connect intent.
+	 *
+	 * @param view button that triggered the action
+	 */
 	public void saveSettings(View view)
 	{
 		// read the form BEFORE restoring the webview - reading after the teardown is what a
@@ -957,15 +1278,6 @@ public class MainActivity extends AppCompatActivity
 			ex.printStackTrace();
 		}
 
-		//these three moved into the client's local settings; carry the stored values through
-		//untouched so saving connection details cannot silently reset them
-		JSONObject previousSettings = null;
-		try { previousSettings = new JSONObject(this.settings.getJsonSettings()); }
-		catch (Exception noPrevious) { previousSettings = new JSONObject(); }
-
-		boolean isContinousAudioBroadcastEnabled = previousSettings.optBoolean("is_microphone_always_on", false);
-		boolean isAudioEffectsEnabled = previousSettings.optBoolean("is_audio_effect_enabled", false);
-		boolean isAppLogEnabled = previousSettings.optBoolean("is_app_log_enabled", false);
 		boolean isAutoconnectEnabled = autoConnect.isChecked();
 
 		// Create the master JSONObject
@@ -977,40 +1289,32 @@ public class MainActivity extends AppCompatActivity
 			settingsJson.put("host", ip);
 			settingsJson.put("port", portStr);
 			settingsJson.put("default_username", defaultUsernameString);
-			settingsJson.put("is_microphone_always_on", isContinousAudioBroadcastEnabled);
-			settingsJson.put("is_autoconnect_enabled", isAutoconnectEnabled);
-			settingsJson.put("is_audio_effect_enabled", isAudioEffectsEnabled);
-			settingsJson.put("is_app_log_enabled", isAppLogEnabled);
 
-			//app-held identity and mode ride along with every save
-			settingsJson.put("identity_string", this.preferences.getString("identity_seed", ""));
+			settingsJson.put("is_autoconnect_enabled", isAutoconnectEnabled);
+
+
+
+			//Only the selected mode is patched here; the canonical identity stays with ChatSettings.
+
 			settingsJson.put("app_mode", this.preferences.getString("app_mode", "advanced"));
 
 			// Create a JSONArray for the dynamic keys. servers may run with no metadata keys at all,
 			// so an empty row is simply skipped instead of failing the whole save - it just means
 			// "no key here". a server that does use keys rejects the connection on its own.
-			JSONArray keysArray = new JSONArray();
-			for (int i = 0; i < keysContainer.getChildCount(); i++)
+			settingsJson.put("metadata_keys", this.readKeyFields());
+			if (!this.settings.saveJsonSettings(settingsJson.toString()))
 			{
-				View row = keysContainer.getChildAt(i);
-				EditText keyInput = row.findViewById(R.id.key_input);
-				String key = keyInput.getText().toString().trim();
-				if (!key.isEmpty())
-				{
-					keysArray.put(key);
-				}
+				Toast.makeText(this, "Settings could not be saved. Please try again.", Toast.LENGTH_LONG).show();
+				return;
 			}
-
-			settingsJson.put("metadata_keys", keysArray);
-
-			this.settings.saveJsonSettings(settingsJson.toString());
 
 			// pushing to node and the webview is the save hook's job (ChatSettings.onSettingsSaved)
 		}
 		catch (Exception e)
 		{
-			// Exception, not JSONException: an NPE here used to silently discard the whole save
 			Log.e("lemonchat", "saveSettings failed", e);
+			Toast.makeText(this, e instanceof IllegalArgumentException ? e.getMessage() : "Settings could not be saved. Please try again.", Toast.LENGTH_LONG).show();
+			return;
 		}
 
 		this.restoreWebViewToForeground();

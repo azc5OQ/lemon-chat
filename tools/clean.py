@@ -197,7 +197,7 @@ def generated_file(path, in_build, in_cache):
         return True
     if name in {'lemon-chat.rc', 'lemon-chat.manifest', 'build.lock'}:
         return True
-    # Unix executables have no extension; never mistake an executable source script for a binary.
+    # Unix executables have no extension. Never mistake an executable source script for a binary.
     with path.open('rb') as stream:
         return stream.read(4) in (b'\x7fELF', b'\xcf\xfa\xed\xfe', b'\xce\xfa\xed\xfe', b'\xca\xfe\xba\xbe')
 
@@ -241,7 +241,7 @@ def plan(tracked, scope='all', include_stunnel=False):
                 preserved.append((rel, 'runtime data'))
                 continue
             if is_link(path):
-                # Unlink only a generated library link itself; never walk its destination.
+                # Unlink only a generated library link itself. Never walk its destination.
                 if in_build and path.is_symlink() and not path.is_dir() and rel.casefold() not in tracked \
                         and any(fnmatch.fnmatch(path.name, pattern) for pattern in ('*.so', '*.so.*', '*.dylib')):
                     selected.append(path)
@@ -282,7 +282,7 @@ def plan(tracked, scope='all', include_stunnel=False):
 
 
 def check_path(path):
-    # Recheck the canonical parent immediately before unlinking; directory links are never followed.
+    # Recheck the canonical parent immediately before unlinking. Directory links are never followed.
     parent = path.parent
     while parent != ROOT:
         if ROOT not in parent.parents or is_link(parent):

@@ -1,4 +1,4 @@
-// Bounded parsing of TCP WebSocket addresses used by the native client.
+// bounded parsing of TCP WebSocket addresses used by the native client
 #if defined(_WIN32)
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -9,12 +9,14 @@
 #include "clib.h"
 
 /**
- * @brief validates separate hostname and port fields and builds the initial secure WebSocket URL.
- * @param const char* host -> domain name, IPv4 address or bare IPv6 address; never a URL
+ * @brief validates separate hostname and port fields and builds the initial secure WebSocket URL
+ *
+ * @param const char* host -> domain name, IPv4 address or bare IPv6 address. Never a URL
  * @param const char* port -> decimal port from 1 through 65535
  * @param const char* path -> WebSocket request path starting with slash
- * @param char* output -> caller-owned URL buffer, empty on failure
+ * @param char* output -> caller owned URL buffer, empty on failure
  * @param uint64 capacity -> output capacity including NUL
+ *
  * @return boole -> TRUE for a valid domain or IP address and explicit port
  */
 boole desktop_endpoint__compose(const char *host, const char *port, const char *path, char *output, uint64 capacity)
@@ -133,14 +135,22 @@ boole desktop_endpoint__compose(const char *host, const char *port, const char *
 }
 
 /**
- * @brief validates a TCP WebSocket address and separates its host, port and path.
+ * @brief validates a TCP WebSocket address and separates its host, port and path
  *
  * @param const char* url -> ws:// or wss:// endpoint
  * @param desktop_endpoint_t* endpoint -> destination for the validated endpoint
  *
- * @return boole -> 1 on success; 0 for a malformed address or a field that exceeds its buffer
+ * @return boole -> 1 on success. 0 for a malformed address or a field that exceeds its buffer
  */
 /* ws/wss only. No embedded credentials, fragments or whitespace. */
+/**
+ * @brief parses a WebSocket URL into bounded host, port and path fields
+ *
+ * @param const char* url -> ws or wss URL
+ * @param desktop_endpoint_t* endpoint -> destination endpoint
+ *
+ * @return boole -> true for a supported URL that fits the endpoint buffers
+ */
 boole desktop_endpoint__parse(const char *url, desktop_endpoint_t *endpoint)
 {
     const char *cursor = NULL_POINTER;

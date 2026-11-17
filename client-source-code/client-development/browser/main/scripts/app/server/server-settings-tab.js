@@ -1,10 +1,6 @@
-// server-settings-tab.js is embedded in template.html along with the other client files
-// it is the admin's server settings tab: the field table that loads and saves the general and log
-// settings, the policy the server announces, the icon upload queue and the country block list
-// dispatch.js feeds it the server's values, ui.js has the click handlers
+// loads and saves server settings, policy controls, icons and country restrictions
 
-// the server settings tab, one row per input: "key" is the field name in the settings message, "kind" says checkbox or
-// number field, "tab" which save button sends it. the load and both saves walk this table
+// each entry maps a settings field to its input type and save tab
 var SERVER_SETTINGS_FIELDS = [
     { key: "is_client_http_enabled", id: "server-http-enabled", kind: "bool", tab: "general" },
     { key: "is_client_http_blank_when_disabled", id: "server-http-disable-mode", kind: "http-mode", tab: "general" },
@@ -132,7 +128,7 @@ var SERVER_SETTINGS_FIELDS = [
     { key: "admin_log_retention_days", id: "server-settings-log-retention-select", kind: "number", fallback: 7, tab: "log" }
 ];
 
-// stylesheet harvest and the Intl helper, both resolved once on first use
+// load flag codes and country names on first use
 var country_code_cache = null;
 
 var country_display_names = null;
@@ -160,14 +156,21 @@ var server_settings_save_notice = "";
 var server_settings_active_page = "general";
 var server_settings_page_scroll = {};
 
-/** @brief Prevents overlapping requests that share the server_settings_saved reply. */
+/**
+ * @brief prevents overlapping requests that share the server_settings_saved reply
+ *
+ * @return boolean|undefined truthy while a settings, music or emoji save is pending
+ */
 function server_settings_tab__save_pending()
 {
-    return server_settings_pending_save !== null || server_music_snapshot_action !== null
-        || (typeof server_emojis !== "undefined" && server_emojis.saving);
+    return server_settings_pending_save !== null || server_music_snapshot_action !== null || (typeof server_emojis !== "undefined" && server_emojis.saving);
 }
 
-/** @brief Keeps the shared save button and its feedback outside the scrolling settings. */
+/**
+ * @brief updates settings controls and save feedback from loading and pending save state
+ *
+ * @return void
+ */
 function server_settings_tab__refresh_save_state()
 {
     let pending = server_settings_tab__save_pending();
@@ -197,9 +200,7 @@ function server_settings_tab__refresh_save_state()
     }
     if (status)
     {
-        status.textContent = !server_settings_drafts.general.loaded ? "Loading settings..."
-            : pending ? "Saving..." : server_settings_save_notice
-                || (server_settings_drafts.general.dirty ? "Unsaved changes" : "");
+        status.textContent = !server_settings_drafts.general.loaded ? "Loading settings..." : pending ? "Saving..." : server_settings_save_notice || (server_settings_drafts.general.dirty ? "Unsaved changes" : "");
     }
     if (typeof server_emojis__render_admin === "function")
     {
@@ -207,7 +208,14 @@ function server_settings_tab__refresh_save_state()
     }
 }
 
-/** @brief Records edits so a later settings reply cannot overwrite an unfinished draft. */
+/**
+ * @brief records edits so a later settings reply cannot overwrite an unfinished draft
+ *
+ * @param string tab -> draft tab to mark
+ * @param boolean passwords -> whether connection passwords also changed
+ *
+ * @return void
+ */
 function server_settings_tab__mark_dirty(tab, passwords = false)
 {
     let draft = server_settings_drafts[tab];
@@ -221,7 +229,14 @@ function server_settings_tab__mark_dirty(tab, passwords = false)
     server_settings_tab__refresh_save_state();
 }
 
-/** @brief Serializes settings saves and remembers which edits the request contains. */
+/**
+ * @brief serializes settings saves and remembers which edits the request contains
+ *
+ * @param string tab -> draft tab being saved
+ * @param object settings -> settings request to track
+ *
+ * @return boolean -> true when the save was registered
+ */
 function server_settings_tab__begin_save(tab, settings)
 {
     let draft = server_settings_drafts[tab];
@@ -241,7 +256,11 @@ function server_settings_tab__begin_save(tab, settings)
     return true;
 }
 
-/** @brief Discards connection-specific drafts and clears typed passwords after disconnect. */
+/**
+ * @brief clears server settings drafts and typed passwords after disconnecting
+ *
+ * @return void
+ */
 function server_settings_tab__reset_drafts()
 {
     for (let draft of Object.values(server_settings_drafts))
@@ -269,20 +288,30 @@ function server_settings_tab__reset_drafts()
     server_settings_tab__refresh_save_state();
 }
 
-/** @brief Tracks edits in the persistent controls, including dynamically added password rows. */
+/**
+ * @brief tracks settings edits and binds navigation and disconnect cleanup
+ *
+ * @return void
+ */
 function server_settings_tab__setup()
 {
     let fields = document.getElementById("server-settings-general-settings-container");
     let log = document.getElementById("server-settings-log-container");
     let picker = document.getElementById("server-settings-page-select");
+    /**
+     * @brief marks general settings dirty while keeping banner and music recovery controls separate
+     *
+     * @param Event event -> input or change event from a settings control
+     *
+     * @return void
+     */
     let edited = function(event)
     {
         if (event.target.closest("#server-music-snapshot-key-rows") || event.target.id === "server-banner-file-input")
         {
             return;
         }
-        server_settings_tab__mark_dirty("general", event.target.id === "server-encryption-replace-passwords"
-            || event.target.closest("#server-encryption-password-rows") !== null);
+        server_settings_tab__mark_dirty("general", event.target.id === "server-encryption-replace-passwords" || event.target.closest("#server-encryption-password-rows") !== null);
     };
     fields.addEventListener("input", edited);
     fields.addEventListener("change", edited);
@@ -327,7 +356,13 @@ function server_settings_tab__setup()
     server_settings_tab__refresh_save_state();
 }
 
-/** @brief Maps the sidebar entries to the same sections in the narrow-screen dropdown. */
+/**
+ * @brief maps sidebar entries to the settings dropdown sections
+ *
+ * @param Element item -> sidebar entry
+ *
+ * @return string|undefined -> matching page identifier
+ */
 function server_settings_tab__navigation_value(item)
 {
     let management =
@@ -340,7 +375,11 @@ function server_settings_tab__navigation_value(item)
     return item.getAttribute("data-settings-page") || management[item.getAttribute("data-action")];
 }
 
-/** @brief Keeps the dropdown on the open section after navigation or a screen resize. */
+/**
+ * @brief selects the open settings section in the navigation dropdown
+ *
+ * @return void
+ */
 function server_settings_tab__sync_navigation()
 {
     let selected = document.querySelector(".server-settings-tab-li-selected");
@@ -350,7 +389,13 @@ function server_settings_tab__sync_navigation()
     }
 }
 
-/** @brief Switches settings pages without rebuilding controls or requesting replacement values. */
+/**
+ * @brief switches settings pages without rebuilding controls or requesting replacement values
+ *
+ * @param string page -> settings page identifier
+ *
+ * @return boolean -> true when the page was found and shown
+ */
 function server_settings_tab__show_page(page)
 {
     let fields = document.getElementById("server-settings-general-settings-container");
@@ -370,9 +415,7 @@ function server_settings_tab__show_page(page)
 }
 
 /**
- * @brief fills the two default theme selects with the themes this page contains, once. the list
- *        is read from the theme buttons of the local settings, so a theme added to the page shows
- *        up here without a second list. the first entry (an empty name) leaves the choice to the page
+ * @brief fills the server theme selectors from the themes available in this client
  *
  * @return void
  */
@@ -401,7 +444,7 @@ function server_settings_tab__fill_theme_selects()
         label = theme_buttons[i].textContent;
         desktop_select.appendChild(new Option(label, name));
 
-        // a phone only accepts the themes made for a phone (UI.is_theme_allowed_on_this_device)
+        // offer only mobile themes on touch devices
         if (theme_buttons[i].getAttribute("data-mobile") === "true")
         {
             mobile_select.appendChild(new Option(label, name));
@@ -410,7 +453,7 @@ function server_settings_tab__fill_theme_selects()
 }
 
 /**
- * @brief fills the tab's inputs from a server_settings_values message; a number the server left out shows its fallback
+ * @brief loads server settings into the form and supplies missing numeric defaults
  *
  * @param object values -> the message body
  *
@@ -428,8 +471,7 @@ function server_settings_tab__apply_server_settings_values_to_tab(values)
         let field = SERVER_SETTINGS_FIELDS[i];
         let element = document.getElementById(field.id);
 
-        if (server_settings_drafts[field.tab].dirty
-            || (server_settings_pending_save !== null && server_settings_pending_save.tab === field.tab))
+        if (server_settings_drafts[field.tab].dirty || (server_settings_pending_save !== null && server_settings_pending_save.tab === field.tab))
         {
             continue;
         }
@@ -462,7 +504,7 @@ function server_settings_tab__apply_server_settings_values_to_tab(values)
 }
 
 /**
- * @brief Shows the channel size and event choices when key reuse is enabled.
+ * @brief shows the channel size and event choices when key reuse is enabled
  */
 function server_settings_tab__refresh_channel_key_reuse_options()
 {
@@ -473,8 +515,7 @@ function server_settings_tab__refresh_channel_key_reuse_options()
 }
 
 /**
- * @brief reads one tab's inputs back into a save_server_settings message body
- *        an empty number field sends its fallback; 0 stays 0, because some fields mean "off" by it
+ * @brief builds one tab's save request while preserving explicit zero values
  *
  * @param string tab -> "general" or "log", which fields to read
  *
@@ -539,7 +580,7 @@ function server_settings_tab__collect_server_settings_from_tab(tab)
 }
 
 /**
- * @brief the audio switch shows or hides the "audio connections" select below it
+ * @brief shows audio transport choices only while audio is enabled
  *
  * @return void
  */
@@ -557,8 +598,7 @@ function server_settings_tab__refresh_audio_connections_row_visibility()
 }
 
 /**
- * @brief applies the server's client-facing policy to g_server_policy, from authentication_status on join and from the "server_policy" broadcast an admin's settings save triggers
- *        a field an older server does not send keeps its current value; a number is taken only when positive
+ * @brief applies announced server policy fields and retains defaults for omitted fields
  *
  * @param object data -> the message body
  *
@@ -596,8 +636,7 @@ function server_settings_tab__apply_server_policy_fields(data)
         }
     }
 
-    // The server also starts a fresh waiting period when checks are enabled again.
-    // A long pause while they were disabled must not cause an immediate reconnect.
+    // restart the waiting period when checks are enabled again
     if (previous_is_connection_check_enforced === false && g_server_policy.is_connection_check_enforced === true)
     {
         g_connection_check.last_response_timestamp = new Date().valueOf();
@@ -605,7 +644,7 @@ function server_settings_tab__apply_server_policy_fields(data)
 
     if (previous_key_policy !== keys__channel_key_reuse_policy_signature(g_server_policy))
     {
-        // Refresh once so stricter settings also apply to keys already in use.
+        // refresh once so stricter settings also apply to keys already in use
         keys__cancel_channel_key_creation();
         if (g_is_authenticated)
         {
@@ -623,7 +662,7 @@ function server_settings_tab__apply_server_policy_fields(data)
 }
 
 /**
- * @brief greys the local rename input when the server ignores user renames, because a rename that silently does nothing reads as a bug; an admin keeps the input editable
+ * @brief enables local renaming when the server policy or admin status allows it
  *
  * @return void
  */
@@ -643,8 +682,7 @@ function server_settings_tab__apply_rename_policy_to_ui()
 }
 
 /**
- * @brief the icon upload loop: sends the next queued icon unless one is still being sent
- *        the reply handler clears g_icon_upload_in_flight_base64 and calls this again for the rest of the queue
+ * @brief starts the next icon upload when no upload is active
  *
  * @return void
  */
@@ -677,9 +715,9 @@ function server_settings_tab__send_next_queued_icon_upload()
 }
 
 /**
- * @brief english name for an iso country code
+ * @brief resolves an ISO country code to its English name
  *
- * @param string code -> the two-letter code
+ * @param string code -> the country code with two letters
  *
  * @return string the name, or the code itself when the browser cannot name it
  */
@@ -708,14 +746,16 @@ function server_settings_tab__get_country_display_name(code)
                 return name;
             }
         }
-        catch (lookup_error) { }
+        catch (lookup_error)
+        {
+        }
     }
 
     return code;
 }
 
 /**
- * @brief every code the flag stylesheet can draw, sorted by display name
+ * @brief lists supported flag codes sorted by country name
  *
  * @return array the codes, [] headless
  */
@@ -781,7 +821,7 @@ function server_settings_tab__get_all_country_codes()
 }
 
 /**
- * @brief fills the country picker once, the first time the section becomes visible
+ * @brief fills the country picker on first use
  *
  * @return void
  */
@@ -818,7 +858,7 @@ function server_settings_tab__populate_country_block_select()
 }
 
 /**
- * @brief repaints the blocked-countries list from g_blocked_countries_draft, "no blocked countries" when empty
+ * @brief renders the draft country block list
  *
  * @return void
  */
@@ -869,7 +909,10 @@ function server_settings_tab__render_blocked_countries_list()
 
             let removed_code = event.currentTarget.getAttribute("data-country-code");
 
-            g_blocked_countries_draft = g_blocked_countries_draft.filter(function(entry) { return entry != removed_code; });
+            g_blocked_countries_draft = g_blocked_countries_draft.filter(function(entry)
+            {
+                return entry != removed_code;
+            });
             server_settings_tab__mark_dirty("general");
             server_settings_tab__render_blocked_countries_list();
         };
@@ -880,7 +923,7 @@ function server_settings_tab__render_blocked_countries_list()
 }
 
 /**
- * @brief picking an option adds it to the draft (at most 100, sorted by name); the picker snaps back to its placeholder
+ * @brief adds the selected country to the draft block list
  *
  * @return void
  */
@@ -917,7 +960,7 @@ function server_settings_tab__country_block_select_onchange()
 }
 
 /**
- * @brief the "hide admin's flag" row only makes sense while flags are displayed at all, so it follows the flags checkbox
+ * @brief shows the admin flag setting only while country flags are enabled
  *
  * @return void
  */
@@ -935,8 +978,7 @@ function server_settings_tab__refresh_hide_admin_flag_row_visibility()
 }
 
 /**
- * @brief the country-blocking checkbox shows or hides the picker below it
- *        the block list itself is server state either way; unchecking just disables enforcement, it does not clear the list
+ * @brief shows country selection controls without changing the saved block list
  *
  * @return void
  */
@@ -962,16 +1004,15 @@ function server_settings_tab__refresh_country_blocking_visibility()
 }
 
 /**
- * @brief takes the blocked countries the server currently has, straight from server_settings_values, into the draft
+ * @brief loads the server's country block list into the draft
  *
- * @param array list -> the two-letter codes
+ * @param array list -> country codes with two letters
  *
  * @return void
  */
 function server_settings_tab__set_blocked_countries_from_server(list)
 {
-    if (server_settings_drafts.general.dirty
-        || (server_settings_pending_save !== null && server_settings_pending_save.tab === "general"))
+    if (server_settings_drafts.general.dirty || (server_settings_pending_save !== null && server_settings_pending_save.tab === "general"))
     {
         return;
     }
@@ -981,8 +1022,7 @@ function server_settings_tab__set_blocked_countries_from_server(list)
     {
         for (let i = 0; i < list.length; i++)
         {
-            if (typeof list[i] === "string" && /^[A-Za-z]{2}$/.test(list[i]) == true
-                && g_blocked_countries_draft.indexOf(list[i].toUpperCase()) == -1)
+            if (typeof list[i] === "string" && /^[A-Za-z]{2}$/.test(list[i]) == true && g_blocked_countries_draft.indexOf(list[i].toUpperCase()) == -1)
             {
                 g_blocked_countries_draft.push(list[i].toUpperCase());
             }
@@ -992,12 +1032,18 @@ function server_settings_tab__set_blocked_countries_from_server(list)
     server_settings_tab__render_blocked_countries_list();
 }
 
+/**
+ * @brief shows the configured connection password count and wires the replacement editor
+ *
+ * @param number count -> saved password count, defaulting to zero when not an integer
+ *
+ * @return void
+ */
 function server_settings_tab__initialize_encryption(count)
 {
     let toggle = document.getElementById("server-encryption-replace-passwords");
     let editor = document.getElementById("server-encryption-password-editor");
-    document.getElementById("server-encryption-password-count").textContent =
-        String(Number.isInteger(count) ? count : 0) + " connection password(s) currently configured.";
+    document.getElementById("server-encryption-password-count").textContent = String(Number.isInteger(count) ? count : 0) + " connection password(s) currently configured.";
     toggle.onchange = function()
     {
         editor.hidden = !toggle.checked;
@@ -1005,11 +1051,23 @@ function server_settings_tab__initialize_encryption(count)
     document.getElementById("server-encryption-add-password").onclick = server_settings_tab__add_connection_password;
 }
 
+/**
+ * @brief adds a blank cipher and password row to the connection password editor
+ *
+ * @return void
+ */
 function server_settings_tab__add_connection_password()
 {
     server_settings_tab__add_password_row(document.getElementById("server-encryption-password-rows"));
 }
 
+/**
+ * @brief adds a removable cipher and password row until the editor reaches 100 rows
+ *
+ * @param HTMLElement rows -> connection or music recovery password row container
+ *
+ * @return void
+ */
 function server_settings_tab__add_password_row(rows)
 {
     if (rows.children.length >= 100)
@@ -1055,6 +1113,13 @@ function server_settings_tab__add_password_row(rows)
     password.focus();
 }
 
+/**
+ * @brief applies a settings or music snapshot result while preserving edits made after the request
+ *
+ * @param object message -> server_settings_saved reply with success and snapshot status
+ *
+ * @return void
+ */
 function server_settings_tab__encryption_save_result(message)
 {
     if (!G_HAS_DOM || message.type !== "server_settings_saved")
@@ -1064,9 +1129,7 @@ function server_settings_tab__encryption_save_result(message)
     server_settings_tab__apply_music_snapshot_status(message);
     if (server_music_snapshot_action !== null)
     {
-        document.getElementById("server-music-snapshot-status").textContent = message.success === true
-            ? (server_music_snapshot_action === "delete" ? "Saved music overwritten and cleared from disk. Songs in RAM remain available." : "Music restored to RAM. The saved copy remains on disk.")
-            : (message.music_bot_snapshot_error || "Music snapshot action failed.");
+        document.getElementById("server-music-snapshot-status").textContent = message.success === true ? (server_music_snapshot_action === "delete" ? "Saved music overwritten and cleared from disk. Songs in RAM remain available." : "Music restored to RAM. The saved copy remains on disk.") : (message.music_bot_snapshot_error || "Music snapshot action failed.");
         if (message.success !== true)
         {
             sounds__play("error");
@@ -1089,12 +1152,8 @@ function server_settings_tab__encryption_save_result(message)
     }
     if (pending.tab === "general")
     {
-        server_settings_save_notice = message.success !== true
-            ? "Settings could not be saved; your edits are still here."
-            : draft.dirty ? "Settings saved. Newer edits are not saved yet." : "Settings saved.";
-        document.getElementById("server-encryption-result").textContent = message.success === true
-            ? "Settings saved. New connections use the new encryption settings; connected users keep their keys."
-            : "Settings could not be saved; the previous settings remain in use.";
+        server_settings_save_notice = message.success !== true ? "Settings could not be saved; your edits are still here." : draft.dirty ? "Settings saved. Newer edits are not saved yet." : "Settings saved.";
+        document.getElementById("server-encryption-result").textContent = message.success === true ? "Settings saved. New connections use the new encryption settings; connected users keep their keys." : "Settings could not be saved; the previous settings remain in use.";
         if (message.success === true && pending.password_count !== null)
         {
             server_settings_tab__initialize_encryption(pending.password_count);
@@ -1114,6 +1173,11 @@ function server_settings_tab__encryption_save_result(message)
     server_settings_tab__refresh_save_state();
 }
 
+/**
+ * @brief shows HTTP shutdown options only when HTTP is disabled
+ *
+ * @return void
+ */
 function server_settings_tab__refresh_http_options()
 {
     let enabled = document.getElementById("server-http-enabled");
@@ -1123,6 +1187,13 @@ function server_settings_tab__refresh_http_options()
 
 var server_music_snapshot_action = null;
 
+/**
+ * @brief shows saved music status and enables the available recovery actions
+ *
+ * @param object values -> snapshot presence, restore availability and optional error
+ *
+ * @return void
+ */
 function server_settings_tab__apply_music_snapshot_status(values)
 {
     if (typeof values.music_bot_snapshot_present !== "boolean")
@@ -1130,9 +1201,7 @@ function server_settings_tab__apply_music_snapshot_status(values)
         return;
     }
     let status = document.getElementById("server-music-snapshot-status");
-    status.textContent = values.music_bot_snapshot_error || (values.music_bot_snapshot_present
-        ? "Saved songs and playlists remain on disk until replaced by another music save or cleared with Clear from disk."
-        : "No saved music snapshot is on disk. Save server settings to save the songs and playlists.");
+    status.textContent = values.music_bot_snapshot_error || (values.music_bot_snapshot_present ? "Saved songs and playlists remain on disk until replaced by another music save or cleared with Clear from disk." : "No saved music snapshot is on disk. Save server settings to save the songs and playlists.");
     status.className = values.music_bot_snapshot_error ? "server-settings-general-warning" : "server-settings-general-help";
     status.setAttribute("role", values.music_bot_snapshot_error ? "alert" : "status");
     document.getElementById("server-music-snapshot-recovery").hidden = !values.music_bot_snapshot_present;
@@ -1155,6 +1224,13 @@ function server_settings_tab__apply_music_snapshot_status(values)
     };
 }
 
+/**
+ * @brief sends a music restore or delete request and clears entered recovery passwords
+ *
+ * @param string action -> restore or delete operation
+ *
+ * @return void
+ */
 function server_settings_tab__music_snapshot_action(action)
 {
     if (server_settings_tab__save_pending())

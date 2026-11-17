@@ -40,10 +40,12 @@ static void _ui_channels_internal__confirm(gui_event_t *event);
 static void _ui_channels_internal__cancel_delete(gui_event_t *event);
 
 /**
- * @brief copies plain text into a scene-owned control.
+ * @brief copies plain text into a scene owned control
+ *
  * @param const char* id -> control ID
  * @param const char* text -> bounded display text
- * @return boole -> TRUE when the text was replaced; FALSE retains the previous value
+ *
+ * @return boole -> TRUE when the text was replaced. FALSE retains the previous value
  */
 static boole _ui_channels_internal__text(const char *id, const char *text)
 {
@@ -52,9 +54,11 @@ static boole _ui_channels_internal__text(const char *id, const char *text)
 }
 
 /**
- * @brief keeps unavailable controls in place without overwriting an enabled control's hover state.
+ * @brief keeps unavailable controls in place without overwriting an enabled control's hover state
+ *
  * @param const char* id -> control ID
  * @param boole enabled -> nonzero when the current permission allows editing
+ *
  * @return void
  */
 static void _ui_channels_internal__enabled(const char *id, boole enabled)
@@ -73,9 +77,11 @@ static void _ui_channels_internal__enabled(const char *id, boole enabled)
 }
 
 /**
- * @brief shows a floating editor without a full-window input barrier.
+ * @brief shows a floating editor without a full window input barrier
+ *
  * @param const char* id -> panel ID
  * @param boole visible -> nonzero to show
+ *
  * @return void
  */
 static void _ui_channels_internal__panel(const char *id, boole visible)
@@ -98,9 +104,11 @@ static void _ui_channels_internal__panel(const char *id, boole visible)
 }
 
 /**
- * @brief sets one checkbox while populating a draft, without sending a change.
+ * @brief sets one checkbox while populating a draft, without sending a change
+ *
  * @param const char* id -> checkbox ID
  * @param boole checked -> checkbox value
+ *
  * @return void
  */
 static void _ui_channels_internal__checked(const char *id, boole checked)
@@ -113,8 +121,10 @@ static void _ui_channels_internal__checked(const char *id, boole checked)
 }
 
 /**
- * @brief reads one checkbox from the unsaved draft.
+ * @brief reads one checkbox from the unsaved draft
+ *
  * @param const char* id -> checkbox ID
+ *
  * @return boole -> nonzero when checked
  */
 static boole _ui_channels_internal__value(const char *id)
@@ -124,10 +134,12 @@ static boole _ui_channels_internal__value(const char *id)
 }
 
 /**
- * @brief parses an entire unsigned decimal field with a checked bound.
+ * @brief parses an entire unsigned decimal field with a checked bound
+ *
  * @param const char* id -> numeric input ID
  * @param int64 maximum -> highest accepted value
  * @param int64* value -> receives the parsed value only on success
+ *
  * @return boole -> nonzero when every character is valid and the result fits
  */
 static boole _ui_channels_internal__number(const char *id, int64 maximum, int64 *value)
@@ -160,8 +172,10 @@ static boole _ui_channels_internal__number(const char *id, int64 maximum, int64 
 }
 
 /**
- * @brief finds a channel by its server ID in the GUI snapshot.
+ * @brief finds a channel by its server ID in the GUI snapshot
+ *
  * @param int64 id -> server channel ID
+ *
  * @return const desktop_channel_t* -> current borrowed record, or NULL
  */
 static const desktop_channel_t *_ui_channels_internal__find(int64 id)
@@ -180,7 +194,8 @@ static const desktop_channel_t *_ui_channels_internal__find(int64 id)
 }
 
 /**
- * @brief loads all current channel options into an unsaved form.
+ * @brief loads all current channel options into an unsaved form
+ *
  * @return void
  */
 static void _ui_channels_internal__fill(void)
@@ -222,8 +237,10 @@ static void _ui_channels_internal__fill(void)
 }
 
 /**
- * @brief captures a selected channel version and asks the server for its editable fields.
+ * @brief captures a selected channel version and asks the server for its editable fields
+ *
  * @param int64 id -> selected channel ID
+ *
  * @return void
  */
 static void _ui_channels_internal__select(int64 id)
@@ -263,7 +280,8 @@ static void _ui_channels_internal__select(int64 id)
 }
 
 /**
- * @brief rebuilds the channel selector using a stable snapshot for its button indices.
+ * @brief rebuilds the channel selector using a stable snapshot for its button indices
+ *
  * @return void
  */
 static void _ui_channels_internal__list(void)
@@ -329,8 +347,10 @@ static void _ui_channels_internal__list(void)
 }
 
 /**
- * @brief opens channel settings on the current channel without joining another channel.
+ * @brief opens channel settings on the current channel without joining another channel
+ *
  * @param gui_event_t* event -> unused toolbar event
+ *
  * @return void
  */
 static void _ui_channels_internal__show(gui_event_t *event)
@@ -354,9 +374,11 @@ static void _ui_channels_internal__show(gui_event_t *event)
 }
 
 /**
- * @brief opens the selected channel's existing draft or confirmation from its context menu.
+ * @brief opens the selected channel's existing draft or confirmation from its context menu
+ *
  * @param int64 channel -> current server channel ID
  * @param desktop_channel_action_e action -> create, edit, or remove
+ *
  * @return void
  */
 void desktop_ui_channels__open(int64 channel, desktop_channel_action_e action)
@@ -388,8 +410,10 @@ void desktop_ui_channels__open(int64 channel, desktop_channel_action_e action)
 }
 
 /**
- * @brief closes the editor and clears its password draft.
+ * @brief closes the editor and clears its password draft
+ *
  * @param gui_event_t* event -> unused close event
+ *
  * @return void
  */
 static void _ui_channels_internal__close(gui_event_t *event)
@@ -412,6 +436,11 @@ static void _ui_channels_internal__close(gui_event_t *event)
     _ui_channels_internal__panel("channel-delete-panel", 0);
 }
 
+/**
+ * @brief releases the channel editor list and clears its open state
+ *
+ * @return void
+ */
 void desktop_ui_channels__shutdown(void)
 {
     // free the channel copy
@@ -422,8 +451,10 @@ void desktop_ui_channels__shutdown(void)
 }
 
 /**
- * @brief selects the channel represented by the stable selector snapshot.
- * @param gui_event_t* event -> channel button with one-based snapshot index
+ * @brief selects the channel represented by the stable selector snapshot
+ *
+ * @param gui_event_t* event -> channel button with one based snapshot index
+ *
  * @return void
  */
 static void _ui_channels_internal__choose(gui_event_t *event)
@@ -436,8 +467,10 @@ static void _ui_channels_internal__choose(gui_event_t *event)
 }
 
 /**
- * @brief starts an unsaved child channel under the selected permanent channel.
+ * @brief starts an unsaved child channel under the selected permanent channel
+ *
  * @param gui_event_t* event -> unused create button event
+ *
  * @return void
  */
 static void _ui_channels_internal__create(gui_event_t *event)
@@ -465,8 +498,10 @@ static void _ui_channels_internal__create(gui_event_t *event)
 }
 
 /**
- * @brief validates the whole form and queues one explicit channel save.
+ * @brief validates the whole form and queues one explicit channel save
+ *
  * @param gui_event_t* event -> unused save event
+ *
  * @return void
  */
 static void _ui_channels_internal__save(gui_event_t *event)
@@ -555,8 +590,10 @@ static void _ui_channels_internal__save(gui_event_t *event)
 }
 
 /**
- * @brief captures a channel deletion and asks for explicit confirmation.
+ * @brief captures a channel deletion and asks for explicit confirmation
+ *
  * @param gui_event_t* event -> unused delete event
+ *
  * @return void
  */
 static void _ui_channels_internal__remove(gui_event_t *event)
@@ -583,8 +620,10 @@ static void _ui_channels_internal__remove(gui_event_t *event)
 }
 
 /**
- * @brief deletes only the channel version captured by the confirmation.
+ * @brief deletes only the channel version captured by the confirmation
+ *
  * @param gui_event_t* event -> unused confirmation event
+ *
  * @return void
  */
 static void _ui_channels_internal__confirm(gui_event_t *event)
@@ -608,8 +647,10 @@ static void _ui_channels_internal__confirm(gui_event_t *event)
 }
 
 /**
- * @brief closes the deletion confirmation without changing the editor draft.
+ * @brief closes the deletion confirmation without changing the editor draft
+ *
  * @param gui_event_t* event -> unused cancellation event
+ *
  * @return void
  */
 static void _ui_channels_internal__cancel_delete(gui_event_t *event)
@@ -620,7 +661,8 @@ static void _ui_channels_internal__cancel_delete(gui_event_t *event)
 }
 
 /**
- * @brief applies fresh permissions without replacing unsaved fields and handles explicit save replies.
+ * @brief applies fresh permissions without replacing unsaved fields and handles explicit save replies
+ *
  * @return void
  */
 void desktop_ui_channels__update(void)
@@ -723,9 +765,11 @@ void desktop_ui_channels__update(void)
 }
 
 /**
- * @brief registers channel-management handlers before layout parsing.
- * @param desktop_session_t* session -> application-owned connection
+ * @brief registers channel management handlers before layout parsing
+ *
+ * @param desktop_session_t* session -> application owned connection
  * @param const desktop_session_view_t* view -> stable GUI snapshot storage
+ *
  * @return void
  */
 void desktop_ui_channels__initialize(desktop_session_t *session, const desktop_session_view_t *view)

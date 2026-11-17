@@ -11,8 +11,10 @@ static boole _client_attachments_internal__extra(cJSON *message, const desktop_a
 static boole _client_attachments_internal__valid(desktop_session_t *session, const desktop_attachment_record_t *record);
 
 /**
- * @brief selects an existing browser upload intent without inferring the destination from current UI state.
+ * @brief selects an existing browser upload intent without inferring the destination from current UI state
+ *
  * @param const desktop_attachment_record_t* record -> locked transfer
+ *
  * @return const char* -> static wire intent
  */
 static const char *_client_attachments_internal__intent(const desktop_attachment_record_t *record)
@@ -25,9 +27,11 @@ static const char *_client_attachments_internal__intent(const desktop_attachment
 }
 
 /**
- * @brief attaches all required routing fields or reports an incomplete allocation.
+ * @brief attaches all required routing fields or reports an incomplete allocation
+ *
  * @param cJSON* message -> owned message being constructed
  * @param const desktop_attachment_record_t* record -> locked transfer
+ *
  * @return boole -> TRUE when every required field exists
  */
 static boole _client_attachments_internal__extra(cJSON *message, const desktop_attachment_record_t *record)
@@ -37,9 +41,11 @@ static boole _client_attachments_internal__extra(cJSON *message, const desktop_a
 }
 
 /**
- * @brief prevents a selected destination from changing after a reconnect, channel move or client-ID reuse.
+ * @brief prevents a selected destination from changing after a reconnect, channel move or client ID reuse
+ *
  * @param desktop_session_t* session -> protocol worker state
  * @param const desktop_attachment_record_t* record -> transfer metadata
+ *
  * @return boole -> TRUE when the originally selected destination remains available
  */
 static boole _client_attachments_internal__valid(desktop_session_t *session, const desktop_attachment_record_t *record)
@@ -57,9 +63,11 @@ static boole _client_attachments_internal__valid(desktop_session_t *session, con
 }
 
 /**
- * @brief queues bounded file preparation with a copied destination and independent content keys.
+ * @brief queues bounded file preparation with a copied destination and independent content keys
+ *
  * @param desktop_session_t* session -> sole protocol worker
  * @param const desktop_attachment_request_t* request -> copied GUI selection
+ *
  * @return void
  */
 void client_msg__attachments__send(desktop_session_t *session, const desktop_attachment_request_t *request)
@@ -148,8 +156,10 @@ void client_msg__attachments__send(desktop_session_t *session, const desktop_att
 }
 
 /**
- * @brief pumps at most one bounded control or 16 KiB chunk per session iteration; never waits for transport space.
+ * @brief pumps at most one bounded control or 16 KiB chunk per session iteration. Never waits for transport space
+ *
  * @param desktop_session_t* session -> sole protocol worker
+ *
  * @return void
  */
 void client_msg__attachments__tick(desktop_session_t *session)
@@ -275,7 +285,7 @@ void client_msg__attachments__tick(desktop_session_t *session)
     // send the built message
     if (message && complete)
     {
-        // the mutex protects copied chunk data and state; this send only queues a bounded message
+        // the mutex protects copied chunk data and state. This send only queues a bounded message
         sent = client_msg__delivery__try_send(session, message);
         message = NULL;
     }

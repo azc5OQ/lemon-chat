@@ -1,4 +1,4 @@
-// This file checks requests to create or remove music bots and to manage or play their songs.
+// this file checks requests to create or remove music bots and to manage or play their songs
 #include "client_msg.h"
 #include "../../core/permissions.h"
 #include "../../core/client_session.h"
@@ -18,7 +18,12 @@ static boole _client_msg_musicbot_internal__is_musicbot_get_song_list_request_va
 static boole _client_msg_musicbot_internal__is_remove_song_from_music_bot_request_valid(cJSON *json_root);
 
 /**
- * @brief Validates a whole-number slot index before the request uses the cached integer value.
+ * @brief checks that a slot index is a whole number within the slot count
+ *
+ * @param cJSON* value -> index to check
+ * @param uint64 count -> number of available slots
+ *
+ * @return boole -> TRUE if the index is valid
  */
 static boole _client_msg_musicbot_internal__is_index_valid(cJSON *value, uint64 count)
 {
@@ -277,7 +282,7 @@ void client_msg__musicbot__process_create_request(cJSON *json_root, uint64 sende
     clib__write_lock(&g_clients_global_rwlock_guard);
     clib__write_lock(&g_channels_global_rwlock_guard);
 
-    // check if the client that sent the message is valid: connected and existing.
+    // check if the client that sent the message is valid: connected and existing
     // this was checked before but not within write lock like here
     if (base__is_current_client_request(sender_client_id) == FALSE)
     {
@@ -300,10 +305,8 @@ void client_msg__musicbot__process_create_request(cJSON *json_root, uint64 sende
     }
 
 #ifndef MUSICBOT_DEBUG_ALLOW_MULTIPLE_BOTS_PER_CHANNEL
-    // one music bot per channel. define MUSICBOT_DEBUG_ALLOW_MULTIPLE_BOTS_PER_CHANNEL (definitions.h)
-    // to lift this limit - debug aid only: several bots give several simultaneous audio senders for
-    // testing multi-speaker mixing without needing several people. everything downstream (per-bot frame
-    // ids, per-bot decoders, delete-all-bots-in-channel) works in both modes
+    // allow one music bot per channel unless MUSICBOT_DEBUG_ALLOW_MULTIPLE_BOTS_PER_CHANNEL
+    // is enabled for testing simultaneous audio senders
     if (g_channel_array[json_channel_id->valueint].is_music_bot_active_in_channel == TRUE)
     {
         goto label_client_msg__process_create_music_bot_end;
@@ -412,7 +415,7 @@ void client_msg__musicbot__process_delete_request(cJSON *json_root, uint64 sende
     clib__write_lock(&g_clients_global_rwlock_guard);
     clib__write_lock(&g_channels_global_rwlock_guard);
 
-    // check if the client that sent the message is valid: connected and existing.
+    // check if the client that sent the message is valid: connected and existing
     // this was checked before but not within write lock like here
     if (base__is_current_client_request(sender_client_id) == FALSE)
     {
@@ -439,11 +442,8 @@ void client_msg__musicbot__process_delete_request(cJSON *json_root, uint64 sende
         goto label_client_msg__process_delete_music_bot_end;
     }
 
-    // tear down EVERY music bot in the channel (there can be several since multi-bot was allowed).
-    // nothing is freed here: musicbot__begin_delete only signals the bot's stream thread and hides the
-    // bot; a detached reaper thread joins the stream thread and THEN frees the songs and the slot.
-    // freeing inline here was a use-after-free against the stream/preload threads, and nulling the
-    // client_t made the slot reusable while the old bot thread still wrote into it
+    // hide each bot and signal its stream thread to stop
+    // the reaper joins the thread before freeing its songs and client slot
     DBG_CLIENT_MESSAGE log_info("%s", "client_msg__musicbot__process_delete_request \n");
 
     for (bot_loop_index = 0; bot_loop_index < g_server_settings.max_client_count; bot_loop_index++)
@@ -557,7 +557,7 @@ void client_msg__musicbot__process_get_song_list_request(cJSON *json_root, uint6
     // lock the clients
     clib__read_lock(&g_clients_global_rwlock_guard);
 
-    // check if the client that sent the message is valid: connected and existing.
+    // check if the client that sent the message is valid: connected and existing
     // this was checked before but not within read lock like here
     client = &g_clients_array[sender_client_id];
 

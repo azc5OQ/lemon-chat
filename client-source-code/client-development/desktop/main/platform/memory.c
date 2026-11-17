@@ -1,9 +1,11 @@
 #include "platform/memory.h"
 
 /**
- * @brief clears an owned buffer through volatile stores so release-time wiping survives optimization.
- * @param void* buffer -> writable allocation or stack buffer; NULL is accepted
+ * @brief clears an owned buffer through volatile stores so release time wiping survives optimization
+ *
+ * @param void* buffer -> writable allocation or stack buffer. NULL is accepted
  * @param uint64 capacity -> full known byte capacity, never an inferred string length
+ *
  * @return void
  */
 void desktop_memory__erase(void *buffer, uint64 capacity)

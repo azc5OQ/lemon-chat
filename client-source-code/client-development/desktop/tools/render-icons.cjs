@@ -1,4 +1,4 @@
-// Optional asset maintenance tool; the desktop build uses the checked-in PNGs.
+// Regenerates icon assets. Desktop builds use the committed PNGs.
 const fs = require("node:fs");
 const path = require("node:path");
 const {chromium} = require(process.argv[2] || "playwright");

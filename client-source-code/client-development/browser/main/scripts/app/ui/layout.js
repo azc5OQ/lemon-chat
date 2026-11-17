@@ -1,14 +1,10 @@
-// layout.js is embedded in template.html along with the other client files
-// it is the desktop grid layout engine: column order and widths, the chat-input row and the edit mode,
-// persisted in localStorage under lemon_layout; touch devices keep the legacy layout and skip it
-// main.js wires it at load, ui.js calls it when panels are toggled; the state is g_layout in globals.js
+// manages the saved desktop grid layout. touch devices keep their existing layout
 
 var layout_edit_drag = null;
 var layout_edit_animations = [];
 
 /**
- * @brief restores g_layout.state from localStorage "lemon_layout" when the saved shape is valid
- *        snaps a collapsed info column (saved before the 90px minimum) back to its default width
+ * @brief restores a valid saved layout and resets collapsed information columns
  *
  * @return void
  */
@@ -17,16 +13,18 @@ function layout__layout_load_saved_state()
     try
     {
         let raw = utils__storage_get("lemon_layout");
-        if (raw == null) { return; }
-        let saved = JSON.parse(raw);
-        if (saved != null && Array.isArray(saved.order) && saved.order.length == 3
-            && saved.order.indexOf("channels") != -1 && saved.order.indexOf("chat") != -1
-            && saved.order.indexOf("info") != -1 && ["channels", "chat", "info"].indexOf(saved.input_col) != -1
-            && ["top", "bottom"].indexOf(saved.input_pos) != -1)
+        if (raw == null)
         {
-            // a collapsed info column (saved before the 90px minimum existed) looks like
-            // the panel was deleted - snap it back to the default width
-            if (parseInt(saved.col_info, 10) < 90) { saved.col_info = "13%"; }
+            return;
+        }
+        let saved = JSON.parse(raw);
+        if (saved != null && Array.isArray(saved.order) && saved.order.length == 3 && saved.order.indexOf("channels") != -1 && saved.order.indexOf("chat") != -1 && saved.order.indexOf("info") != -1 && ["channels", "chat", "info"].indexOf(saved.input_col) != -1 && ["top", "bottom"].indexOf(saved.input_pos) != -1)
+        {
+            // restore old layouts whose information column is narrower than 90 pixels
+            if (parseInt(saved.col_info, 10) < 90)
+            {
+                saved.col_info = "13%";
+            }
             if (!["full", "channels", "chat", "info"].includes(saved.toolbar_col))
             {
                 saved.toolbar_col = "full";
@@ -38,11 +36,14 @@ function layout__layout_load_saved_state()
             g_layout.state = saved;
         }
     }
-    catch (e) { console.warn("layout state restore failed:", e.message); }
+    catch (e)
+    {
+        console.warn("layout state restore failed:", e.message);
+    }
 }
 
 /**
- * @brief persists g_layout.state to localStorage under "lemon_layout"
+ * @brief saves the current layout in lemon_layout
  *
  * @return void
  */
@@ -52,8 +53,7 @@ function layout__layout_save_state()
 }
 
 /**
- * @brief (re)builds the grid templates from g_layout.state and g_is_chat_hidden and assigns the panels to their areas
- *        does not touch the container's display; connect/disconnect owns that
+ * @brief applies panel positions and widths without changing connection visibility
  *
  * @return void
  */
@@ -63,7 +63,10 @@ function layout__layout_apply()
     {
         _internal__layout_edit_finish(false, false);
     }
-    if (g_layout.grid_active == false) { return; }
+    if (g_layout.grid_active == false)
+    {
+        return;
+    }
 
     let container = document.getElementById("communication-system-container");
 
@@ -75,14 +78,14 @@ function layout__layout_apply()
     let heights = null;
     let toolbar_row = null;
 
-    // Keep connection and local-settings buttons available while the chat is hidden after disconnecting.
+    // keep connection and local settings controls available after disconnecting
     if (connected)
     {
         if (head_menu.parentElement !== container)
         {
             container.prepend(head_menu);
         }
-        container.style.height = "100vh";
+        container.style.height = "calc(100vh / var(--ui-display-scale, 1))";
         head_menu.dataset.layoutToolbar = toolbar_position;
     }
     else
@@ -92,16 +95,19 @@ function layout__layout_apply()
             container.parentElement.insertBefore(head_menu, container);
         }
         delete head_menu.dataset.layoutToolbar;
-        container.style.height = "calc(100vh - " + head_menu.offsetHeight + "px)";
+        container.style.height = "calc(100vh / var(--ui-display-scale, 1) - " + head_menu.offsetHeight + "px)";
     }
 
     let order = g_layout.state.order.slice();
     if (g_is_chat_hidden == true)
     {
-        order = order.filter(function(col) { return col != "chat"; });
+        order = order.filter(function(col)
+        {
+            return col != "chat";
+        });
     }
 
-    // The message box shares the width of whichever column it is attached to.
+    // the message box shares the width of whichever column it is attached to
     let row_a = [], row_b = [];
     for (let i = 0; i < order.length; i++)
     {
@@ -112,8 +118,14 @@ function layout__layout_apply()
     }
 
     let widths = order.map(function(col) {
-        if (col == "channels") { return "minmax(150px, " + g_layout.state.col_channels + ")"; }
-        if (col == "info") { return "minmax(90px, " + g_layout.state.col_info + ")"; } // min 90: collapsing to 0 made the panel look deleted
+        if (col == "channels")
+        {
+            return "minmax(150px, " + g_layout.state.col_channels + ")";
+        }
+        if (col == "info")
+        {
+            return "minmax(90px, " + g_layout.state.col_info + ")";
+        } // min 90: collapsing to 0 made the panel look deleted
         return "minmax(330px, 1fr)"; // chat soaks up the leftover space
     });
     if (g_is_chat_hidden == true && order.indexOf("channels") != -1)
@@ -125,7 +137,7 @@ function layout__layout_apply()
     heights = g_layout.state.input_pos === "top" ? ["auto", "minmax(0, 1fr)"] : ["minmax(0, 1fr)", "auto"];
     if (connected)
     {
-        // Extending the adjacent row keeps the other panels rectangular when the toolbar shares a column.
+        // extending the adjacent row keeps the other panels rectangular when the toolbar shares a column
         toolbar_row = (toolbar_position === "top" ? row_a : row_b).slice();
         if (!order.includes(toolbar_column))
         {
@@ -156,7 +168,7 @@ function layout__layout_apply()
     g_layout.panels.input.style.gridArea = "input";
     head_menu.style.gridArea = "toolbar";
 
-    // neutralize the legacy inline-block sizing: the grid alone decides the geometry
+    // clear old panel sizes so the grid controls their layout
     let names = ["channels", "chat", "info", "input"];
     for (let i = 0; i < names.length; i++)
     {
@@ -167,8 +179,7 @@ function layout__layout_apply()
         panel.style.left = "0px";
     }
 
-    // no left inset here: the input is in the chat column, so the corner mic button is
-    // outside it and the composer starts flush with the chat panel's edge
+    // align the composer with its chat column. the microphone sits outside it
     g_layout.panels.input.style.paddingLeft = "";
 
     document.getElementById("space-devider3").style.display = "none"; // legacy spacer row, obsolete in the grid
@@ -177,12 +188,10 @@ function layout__layout_apply()
     g_layout.panels.input.style.display = (g_is_chat_hidden == true) ? "none" : "block";
 }
 
-// ---- column-width dragging (the 2px line at the chat panel's left edge, and the
-// ---- matching handle at the info panel's left edge) ----
+// column boundary dragging
 
 /**
- * @brief starts a column-width drag on a panel's left handle: the boundary to its left neighbour moves
- *        the elastic chat column (1fr) has no stored width, so adjusting only the other column moves the same boundary
+ * @brief starts a column boundary drag and records its width limits
  *
  * @param object e -> the mouse event
  * @param string panel_name -> "channels", "chat" or "info"
@@ -191,17 +200,32 @@ function layout__layout_apply()
  */
 function layout__layout_column_drag_start(e, panel_name)
 {
-    if (g_layout.grid_active == false || g_layout.edit_active == true) { return; }
+    if (g_layout.grid_active == false || g_layout.edit_active == true)
+    {
+        return;
+    }
 
     let order = g_layout.state.order;
     let idx = order.indexOf(panel_name);
-    if (idx == -1 || idx == 0) { return; } // leftmost: no boundary to its left
+    if (idx == -1 || idx == 0)
+    {
+        return;
+    } // leftmost: no boundary to its left
 
     let neighbour = order[idx - 1];
-    let width_of = function(name) { return Math.round(g_layout.panels[name].getBoundingClientRect().width); };
+    /**
+     * @brief reads a panel width for the column drag limits
+     *
+     * @param string name -> panel name in the current layout
+     *
+     * @return number -> rounded width in pixels
+     */
+    let width_of = function(name)
+    {
+        return Math.round(g_layout.panels[name].getBoundingClientRect().width);
+    };
 
-    // dx limits so no column in the pair leaves its minimum (channels 150px, info 0px);
-    // the chat minimum (330px) is guarded by the single-target max computed in the move handler
+    // keep both columns within their width limits. the move handler also preserves chat width
     let dx_min = -Infinity, dx_max = Infinity;
     let targets = [];
     if (neighbour != "chat")
@@ -230,7 +254,7 @@ function layout__layout_column_drag_start(e, panel_name)
 }
 
 /**
- * @brief the live column drag: clamps dx to the stored limits (plus the chat 330px minimum when chat is the elastic side), writes the new widths into g_layout.state and re-applies the grid
+ * @brief updates column widths while preserving the chat's minimum width
  *
  * @param object e -> the mouse event
  *
@@ -238,7 +262,10 @@ function layout__layout_column_drag_start(e, panel_name)
  */
 function layout__layout_column_drag_move(e)
 {
-    if (g_layout.drag == null) { return; }
+    if (g_layout.drag == null)
+    {
+        return;
+    }
 
     let dx = e.clientX - g_layout.drag.start_x;
 
@@ -251,41 +278,62 @@ function layout__layout_column_drag_move(e)
         let other = (t.name == "channels") ? "info" : "channels";
         let other_width = Math.round(g_layout.panels[other].getBoundingClientRect().width);
         let max_width = total - other_width - ((g_is_chat_hidden == false) ? 330 : 0) - 8;
-        if (t.sign == 1) { dx = Math.min(dx, max_width - t.start); }
-        else { dx = Math.max(dx, t.start - max_width); }
+        if (t.sign == 1)
+        {
+            dx = Math.min(dx, max_width - t.start);
+        }
+        else
+        {
+            dx = Math.max(dx, t.start - max_width);
+        }
     }
 
-    if (dx < g_layout.drag.dx_min) { dx = g_layout.drag.dx_min; }
-    if (dx > g_layout.drag.dx_max) { dx = g_layout.drag.dx_max; }
+    if (dx < g_layout.drag.dx_min)
+    {
+        dx = g_layout.drag.dx_min;
+    }
+    if (dx > g_layout.drag.dx_max)
+    {
+        dx = g_layout.drag.dx_max;
+    }
 
     for (let i = 0; i < g_layout.drag.targets.length; i++)
     {
         let t = g_layout.drag.targets[i];
         let new_width = t.start + t.sign * dx;
-        if (t.name == "channels") { g_layout.state.col_channels = new_width + "px"; }
-        else { g_layout.state.col_info = new_width + "px"; }
+        if (t.name == "channels")
+        {
+            g_layout.state.col_channels = new_width + "px";
+        }
+        else
+        {
+            g_layout.state.col_info = new_width + "px";
+        }
     }
 
     layout__layout_apply();
 }
 
 /**
- * @brief ends a column drag: persists the widths once and removes the document listeners
+ * @brief saves dragged widths and removes the drag listeners
  *
  * @return void
  */
 function layout__layout_column_drag_stop()
 {
-    if (g_layout.drag != null) { layout__layout_save_state(); }
+    if (g_layout.drag != null)
+    {
+        layout__layout_save_state();
+    }
     g_layout.drag = null;
     document.documentElement.removeEventListener("mousemove", layout__layout_column_drag_move, false);
     document.documentElement.removeEventListener("mouseup", layout__layout_column_drag_stop, false);
 }
 
-// ---- Drag panels to preview a layout, then release to keep it. ----
+// drag panels to preview a layout, then release to save it
 
 /**
- * @brief Turns panel rearranging on or off. Leaving it cancels an unfinished move.
+ * @brief turns panel rearranging on or off. leaving it cancels an unfinished move
  */
 function layout__layout_edit_toggle()
 {
@@ -296,15 +344,15 @@ function layout__layout_edit_toggle()
     document.body.setAttribute("data-layout-edit", g_layout.edit_active ? "1" : "0");
     button.value = g_layout.edit_active ? "lock layout" : "layout";
     button.setAttribute("aria-pressed", g_layout.edit_active ? "true" : "false");
-    button.title = g_layout.edit_active
-        ? "drag panels or the toolbar; use the top or bottom edge for a full-width toolbar; Escape cancels; click here to lock"
-        : "rearrange the panels";
+    button.title = g_layout.edit_active ? "drag panels or the toolbar; use the top or bottom edge for a full-width toolbar; Escape cancels; click here to lock" : "rearrange the panels";
 }
 
 /**
- * @brief Finds the panel under the mouse.
- * @param object e -> Mouse event.
- * @return string|null Panel name, or null outside the panels.
+ * @brief finds the panel under the mouse
+ *
+ * @param object e -> mouse event
+ *
+ * @return string|null panel name, or null outside the panels
  */
 function layout__layout_panel_name_from_event(e)
 {
@@ -322,7 +370,7 @@ function layout__layout_panel_name_from_event(e)
 }
 
 /**
- * @brief Removes the appearance used while moving a panel.
+ * @brief removes the appearance used while moving a panel
  */
 function layout__layout_edit_clear_highlight()
 {
@@ -337,9 +385,11 @@ function layout__layout_edit_clear_highlight()
 }
 
 /**
- * @brief Copies the layout without sharing its column order array.
- * @param object state -> Layout to copy.
- * @return object Independent layout state.
+ * @brief copies the layout without sharing its column order array
+ *
+ * @param object state -> layout to copy
+ *
+ * @return object independent layout state
  */
 function _internal__layout_edit_copy_state(state)
 {
@@ -347,8 +397,9 @@ function _internal__layout_edit_copy_state(state)
 }
 
 /**
- * @brief Reads all panel positions before any styles are changed.
- * @return object Panel rectangles indexed by name.
+ * @brief reads all panel positions before any styles are changed
+ *
+ * @return object panel rectangles indexed by name
  */
 function _internal__layout_edit_boxes()
 {
@@ -363,8 +414,9 @@ function _internal__layout_edit_boxes()
 }
 
 /**
- * @brief Releases a completed panel animation.
- * @param object e -> Animation completion event.
+ * @brief releases a completed panel animation
+ *
+ * @param object e -> animation completion event
  */
 function _internal__layout_edit_animation_finished(e)
 {
@@ -377,7 +429,7 @@ function _internal__layout_edit_animation_finished(e)
 }
 
 /**
- * @brief Stops earlier panel movement before measuring the new layout.
+ * @brief stops earlier panel movement before measuring the new layout
  */
 function _internal__layout_edit_stop_animations()
 {
@@ -392,10 +444,11 @@ function _internal__layout_edit_stop_animations()
 }
 
 /**
- * @brief Slides panels from their old screen positions into the new grid.
- * @param object before -> Positions before changing the grid.
- * @param object after -> New grid positions.
- * @param string|null dragged -> Panel following the mouse, if any.
+ * @brief slides panels from their old screen positions into the new grid
+ *
+ * @param object before -> positions before changing the grid
+ * @param object after -> new grid positions
+ * @param string|null dragged -> panel following the mouse, if any
  */
 function _internal__layout_edit_animate(before, after, dragged)
 {
@@ -433,8 +486,9 @@ function _internal__layout_edit_animate(before, after, dragged)
 }
 
 /**
- * @brief Removes the mouse offset so the panel's grid position can be measured.
- * @param object drag -> Current panel move.
+ * @brief removes the mouse offset so the panel's grid position can be measured
+ *
+ * @param object drag -> current panel move
  */
 function _internal__layout_edit_restore_translate(drag)
 {
@@ -451,8 +505,9 @@ function _internal__layout_edit_restore_translate(drag)
 }
 
 /**
- * @brief Keeps the grabbed point under the mouse and marks the intended position.
- * @param object drag -> Current panel move and mouse position.
+ * @brief keeps the grabbed point under the mouse and marks the intended position
+ *
+ * @param object drag -> current panel move and mouse position
  */
 function _internal__layout_edit_position(drag)
 {
@@ -463,16 +518,18 @@ function _internal__layout_edit_position(drag)
 
     g_layout.panels[drag.source].style.setProperty("translate", dx + "px " + dy + "px", "important");
     drag.placeholder.hidden = !drag.valid;
-    drag.placeholder.style.left = (box.left - drag.container_rect.left - container.clientLeft + container.scrollLeft) + "px";
-    drag.placeholder.style.top = (box.top - drag.container_rect.top - container.clientTop + container.scrollTop) + "px";
+    drag.placeholder.style.left = ((box.left - drag.container_rect.left) / g_position_scale - container.clientLeft + container.scrollLeft) + "px";
+    drag.placeholder.style.top = ((box.top - drag.container_rect.top) / g_position_scale - container.clientTop + container.scrollTop) + "px";
     drag.placeholder.style.width = box.width + "px";
     drag.placeholder.style.height = box.height + "px";
 }
 
 /**
- * @brief Chooses a column position, or a top or bottom position for the message box and toolbar.
- * @param object drag -> Current panel move with unanimated grid positions.
- * @return object Layout preview for the current mouse position.
+ * @brief chooses a column position, or a top or bottom position for the message box and toolbar
+ *
+ * @param object drag -> current panel move with unanimated grid positions
+ *
+ * @return object layout preview for the current mouse position
  */
 function _internal__layout_edit_next_state(drag)
 {
@@ -547,7 +604,7 @@ function _internal__layout_edit_next_state(drag)
             }
         }
         remaining.splice(index, 0, drag.source);
-        // Keep a hidden chat column in its saved position.
+        // keep a hidden chat column in its saved position
         index = 0;
         next.order = next.order.map(function(column)
         {
@@ -562,7 +619,7 @@ function _internal__layout_edit_next_state(drag)
 }
 
 /**
- * @brief Updates the live layout at most once per screen refresh.
+ * @brief updates the live layout at most once per screen refresh
  */
 function _internal__layout_edit_frame()
 {
@@ -578,9 +635,7 @@ function _internal__layout_edit_frame()
     }
     drag.frame = 0;
     rect = container.getBoundingClientRect();
-    if (g_is_chat_hidden != drag.chat_hidden || getComputedStyle(container).display != "grid"
-        || Math.abs(rect.left - drag.container_rect.left) > 1 || Math.abs(rect.top - drag.container_rect.top) > 1
-        || Math.abs(rect.width - drag.container_rect.width) > 1 || Math.abs(rect.height - drag.container_rect.height) > 1)
+    if (g_is_chat_hidden != drag.chat_hidden || getComputedStyle(container).display != "grid" || Math.abs(rect.left - drag.container_rect.left) > 1 || Math.abs(rect.top - drag.container_rect.top) > 1 || Math.abs(rect.width - drag.container_rect.width) > 1 || Math.abs(rect.height - drag.container_rect.height) > 1)
     {
         _internal__layout_edit_finish(false, false);
         return;
@@ -604,9 +659,7 @@ function _internal__layout_edit_frame()
     if (drag.valid)
     {
         next = _internal__layout_edit_next_state(drag);
-        if (next.order.join() != g_layout.state.order.join()
-            || next.input_col != g_layout.state.input_col || next.input_pos != g_layout.state.input_pos
-            || next.toolbar_col != g_layout.state.toolbar_col || next.toolbar_pos != g_layout.state.toolbar_pos)
+        if (next.order.join() != g_layout.state.order.join() || next.input_col != g_layout.state.input_col || next.input_pos != g_layout.state.input_pos || next.toolbar_col != g_layout.state.toolbar_col || next.toolbar_pos != g_layout.state.toolbar_pos)
         {
             before = _internal__layout_edit_boxes();
             _internal__layout_edit_stop_animations();
@@ -623,9 +676,10 @@ function _internal__layout_edit_frame()
 }
 
 /**
- * @brief Saves a completed move or restores the layout from before the drag.
- * @param boolean commit -> Keep the preview when released inside the layout.
- * @param boolean animate -> Slide panels into their final positions.
+ * @brief saves a completed move or restores the layout from before the drag
+ *
+ * @param boolean commit -> keep the preview when released inside the layout
+ * @param boolean animate -> slide panels into their final positions
  */
 function _internal__layout_edit_finish(commit, animate)
 {
@@ -667,8 +721,9 @@ function _internal__layout_edit_finish(commit, animate)
 }
 
 /**
- * @brief Cancels when Escape is pressed or the browser view changes.
- * @param object e -> Keyboard, visibility, resize or focus event.
+ * @brief cancels when Escape is pressed or the browser view changes
+ *
+ * @param object e -> keyboard, visibility, resize or focus event
  */
 function _internal__layout_edit_cancel(e)
 {
@@ -684,8 +739,9 @@ function _internal__layout_edit_cancel(e)
 }
 
 /**
- * @brief Remembers the grabbed panel and its starting layout.
- * @param object e -> Mouse press inside the layout.
+ * @brief remembers the grabbed panel and its starting layout
+ *
+ * @param object e -> mouse press inside the layout
  */
 function layout__layout_edit_mousedown(e)
 {
@@ -749,8 +805,9 @@ function layout__layout_edit_mousedown(e)
 }
 
 /**
- * @brief Queues the next live preview while the left mouse button is held.
- * @param object e -> Mouse movement.
+ * @brief queues the next live preview while the left mouse button is held
+ *
+ * @param object e -> mouse movement
  */
 function layout__layout_edit_mousemove(e)
 {
@@ -773,8 +830,9 @@ function layout__layout_edit_mousemove(e)
 }
 
 /**
- * @brief Finishes the preview at the release position and saves a valid drop.
- * @param object e -> Mouse release.
+ * @brief finishes the preview at the release position and saves a valid drop
+ *
+ * @param object e -> mouse release
  */
 function layout__layout_edit_mouseup(e)
 {

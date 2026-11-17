@@ -44,7 +44,13 @@ static void _server_logs_internal__pop_oldest_locked(void);
 static void _server_logs_internal__purge_over_cap_locked(uint64 cap);
 static void _server_logs_internal__append(char *text);
 
-/** @brief Reads live logging policy using the same lock as its writers. */
+/**
+ * @brief reads a logging switch under the clients lock
+ *
+ * @param const boole* setting -> logging switch to read
+ *
+ * @return boole -> current value of the switch
+ */
 static boole _server_logs_internal__enabled(const boole *setting)
 {
     boole enabled;
@@ -56,7 +62,13 @@ static boole _server_logs_internal__enabled(const boole *setting)
     return enabled;
 }
 
-/** @brief Snapshots limits before taking the log mutex, preserving clients-to-log lock order. */
+/**
+ * @brief reads log limits before taking the log mutex
+ *
+ * @param int64* retention -> receives retention days, or may be NULL
+ *
+ * @return uint64 -> per log size cap in bytes
+ */
 static uint64 _server_logs_internal__limits(int64 *retention)
 {
     uint64 cap;
@@ -73,9 +85,10 @@ static uint64 _server_logs_internal__limits(int64 *retention)
 }
 
 /**
- * @brief Removes and frees the oldest admin log entry, if one exists.
+ * @brief removes and frees the oldest admin log entry, if one exists
+ *
  * @return void
- * @attention The caller holds g_admin_log_mutex.
+ * @attention the caller holds g_admin_log_mutex
  */
 static void _server_logs_internal__pop_oldest_locked(void)
 {
@@ -105,9 +118,12 @@ static void _server_logs_internal__pop_oldest_locked(void)
 }
 
 /**
- * @brief Removes old entries until the log fits its size cap, keeping at least the newest entry.
+ * @brief removes old entries until the log fits its size cap, keeping at least the newest entry
+ * @attention the caller holds g_admin_log_mutex
+ *
+ * @param uint64 cap -> maximum retained bytes, unless keeping the newest entry exceeds it
+ *
  * @return void
- * @attention The caller holds g_admin_log_mutex.
  */
 static void _server_logs_internal__purge_over_cap_locked(uint64 cap)
 {
@@ -616,7 +632,7 @@ void server_logs__cleared_by(char *admin_username)
 }
 
 /**
- * @brief the whole admin log as a cJSON string array, oldest line first.
+ * @brief the whole admin log as a cJSON string array, oldest line first
  *
  * @return cJSON* -> the array; the caller owns it (attach or delete)
  */

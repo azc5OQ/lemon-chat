@@ -1,5 +1,5 @@
 #include "../clib/clib.h"
-// This file stores channel group assignments and checks their rights within one channel.
+// this file stores channel group assignments and checks their rights within one channel
 #include "channel_groups.h"
 #include "permissions.h"
 #include "../base.h"
@@ -14,7 +14,7 @@ static boole _channel_groups_internal__append_member(channel_t *channel, const c
 static cstring g_channel_group_power_names[PERMISSION_POWER_COUNT] = { NULL_POINTER, NULL_POINTER, NULL_POINTER, NULL_POINTER, "channel_group_assignment_power", "channel_group_protection", "talk_power", "channel_message_power", "channel_picture_power", "stream_power", "channel_kick_power", "channel_kick_protection", "channel_moderation_power", "channel_moderation_protection", NULL_POINTER, NULL_POINTER, NULL_POINTER, NULL_POINTER, NULL_POINTER, NULL_POINTER, NULL_POINTER, NULL_POINTER, NULL_POINTER, "channel_file_power", NULL_POINTER, "channel_create_power" };
 
 /**
- * @brief Creates the default Channel Admin group before saved groups are loaded.
+ * @brief creates the default Channel Admin group before saved groups are loaded
  */
 void channel_groups__init(void)
 {
@@ -52,11 +52,14 @@ void channel_groups__init(void)
 }
 
 /**
- * @brief Checks management rights and prevents granting stronger channel permissions.
- * @param actor Requesting client with the clients lock held.
- * @param permission Create, edit or delete channel groups.
- * @param previous Existing definition, or null when creating.
- * @param proposed New definition, or null when deleting.
+ * @brief checks management rights and prevents granting stronger channel permissions
+ *
+ * @param actor Requesting client with the clients lock held
+ * @param permission Create, edit or delete channel groups
+ * @param previous Existing definition, or null when creating
+ * @param proposed New definition, or null when deleting
+ *
+ * @return boole -> TRUE if the actor may apply the proposed change, otherwise FALSE
  */
 boole channel_groups__can_edit_definition(const client_t *actor, permission_t permission, const channel_group_t *previous, const channel_group_t *proposed)
 {
@@ -125,9 +128,12 @@ boole channel_groups__can_edit_definition(const client_t *actor, permission_t pe
 }
 
 /**
- * @brief Returns this identity's group in the selected channel.
- * @param client Client whose identity is checked with the clients lock held.
- * @param channel Channel being read with the channels lock held.
+ * @brief returns this identity's group in the selected channel
+ *
+ * @param client Client whose identity is checked with the clients lock held
+ * @param channel Channel being read with the channels lock held
+ *
+ * @return uint64 -> assigned group for an active channel member, otherwise CHANNEL_GROUP_MEMBER
  */
 uint64 channel_groups__role(const client_t *client, const channel_t *channel)
 {
@@ -141,7 +147,14 @@ uint64 channel_groups__role(const client_t *client, const channel_t *channel)
     return channel_groups__assigned_role(client, channel);
 }
 
-/** Looks up saved identity membership solely for entry checks; it grants no rights outside that channel. */
+/**
+ * @brief looks up saved membership for channel entry checks
+ *
+ * @param const client_t* client -> client whose identity is checked with the clients lock held
+ * @param const channel_t* channel -> channel being read with the channels lock held
+ *
+ * @return uint64 -> saved group or temporary admin role, otherwise CHANNEL_GROUP_MEMBER
+ */
 uint64 channel_groups__assigned_role(const client_t *client, const channel_t *channel)
 {
     uint64 i = 0;
@@ -172,8 +185,11 @@ uint64 channel_groups__assigned_role(const client_t *client, const channel_t *ch
 }
 
 /**
- * @brief Identifies actions that can be granted within one channel.
- * @param permission Action being checked.
+ * @brief identifies actions that can be granted within one channel
+ *
+ * @param permission Action being checked
+ *
+ * @return boole -> TRUE if the action supports channel permissions, otherwise FALSE
  */
 boole channel_groups__supports(permission_t permission)
 {
@@ -198,9 +214,12 @@ boole channel_groups__supports(permission_t permission)
 }
 
 /**
- * @brief Reads only actions and powers that can apply inside a channel.
- * @param object Proposed or saved channel permissions.
- * @param permissions Receives the validated values.
+ * @brief reads only actions and powers that can apply inside a channel
+ *
+ * @param object Proposed or saved channel permissions
+ * @param permissions Receives the validated values
+ *
+ * @return boole -> TRUE after copying valid permissions, otherwise FALSE without changing the output
  */
 boole channel_groups__read_permissions(cJSON *object, group_permissions_t *permissions)
 {
@@ -307,8 +326,11 @@ boole channel_groups__read_permissions(cJSON *object, group_permissions_t *permi
 }
 
 /**
- * @brief Writes channel permissions without unrelated server permissions.
- * @param permissions Channel group values to save or send.
+ * @brief writes channel permissions without unrelated server permissions
+ *
+ * @param permissions Channel group values to save or send
+ *
+ * @return cJSON* -> new permissions object for the caller to free, or NULL on allocation failure
  */
 cJSON *channel_groups__write_permissions(const group_permissions_t *permissions)
 {
@@ -353,9 +375,12 @@ json_failure:
 }
 
 /**
- * @brief Checks a channel group's grant for an action that can be limited to a channel.
- * @param role Saved channel group ID.
- * @param permission Action being checked.
+ * @brief checks a channel group's grant for an action that can be limited to a channel
+ *
+ * @param role Saved channel group ID
+ * @param permission Action being checked
+ *
+ * @return boole -> TRUE if the existing group grants this supported action, otherwise FALSE
  */
 boole channel_groups__allows(uint64 role, permission_t permission)
 {
@@ -363,9 +388,12 @@ boole channel_groups__allows(uint64 role, permission_t permission)
 }
 
 /**
- * @brief Reads a channel group's power without searching memberships per media packet.
- * @param group_id Assigned channel group.
- * @param power Numerical permission.
+ * @brief reads a channel group's power without searching memberships per media packet
+ *
+ * @param group_id Assigned channel group
+ * @param power Numerical permission
+ *
+ * @return uint64 -> configured channel power, or zero if disabled, unsupported or unavailable
  */
 uint64 channel_groups__power(uint64 group_id, permission_power_t power)
 {
@@ -373,7 +401,11 @@ uint64 channel_groups__power(uint64 group_id, permission_power_t power)
 }
 
 /**
- * @brief Returns the channel-scoped wire name, or null for server-only powers.
+ * @brief finds the wire name of a channel permission power
+ *
+ * @param permission_power_t power -> permission power to look up
+ *
+ * @return cstring -> channel power name, or NULL for an invalid or unsupported power
  */
 cstring channel_groups__power_name(permission_power_t power)
 {
@@ -381,11 +413,14 @@ cstring channel_groups__power_name(permission_power_t power)
 }
 
 /**
- * @brief Prevents a channel assignment from granting rights the actor does not hold.
- * @param actor Client making the change with the clients lock held.
- * @param target Client receiving the assignment.
- * @param channel Affected channel with the channels lock held.
- * @param group_id New group, or zero to remove the assignment.
+ * @brief prevents a channel assignment from granting rights the actor does not hold
+ *
+ * @param actor Client making the change with the clients lock held
+ * @param target Client receiving the assignment
+ * @param channel Affected channel with the channels lock held
+ * @param group_id New group, or zero to remove the assignment
+ *
+ * @return boole -> TRUE if the assignment is permitted, otherwise FALSE
  */
 boole channel_groups__can_assign(const client_t *actor, const client_t *target, const channel_t *channel, uint64 group_id)
 {
@@ -461,10 +496,13 @@ boole channel_groups__can_assign(const client_t *actor, const client_t *target, 
 }
 
 /**
- * @brief Combines server rights with rights assigned in this channel.
- * @param client Client making the request with the clients lock held.
- * @param channel Channel being changed with the channels lock held.
- * @param permission Requested action.
+ * @brief combines server rights with rights assigned in this channel
+ *
+ * @param client Client making the request with the clients lock held
+ * @param channel Channel being changed with the channels lock held
+ * @param permission Requested action
+ *
+ * @return boole -> TRUE if the combined permissions allow the action, otherwise FALSE
  */
 boole channel_groups__is_allowed(const client_t *client, const channel_t *channel, permission_t permission)
 {
@@ -472,11 +510,14 @@ boole channel_groups__is_allowed(const client_t *client, const channel_t *channe
 }
 
 /**
- * @brief Checks moderation rights and protection in the affected channel.
- * @param actor Client requesting the action with the clients lock held.
- * @param target Client affected by the action.
- * @param channel Target's channel with the channels lock held.
- * @param permission Move, channel kick, mute or stream stop.
+ * @brief checks moderation rights and protection in the affected channel
+ *
+ * @param actor Client requesting the action with the clients lock held
+ * @param target Client affected by the action
+ * @param channel Target's channel with the channels lock held
+ * @param permission Move, channel kick, mute or stream stop
+ *
+ * @return boole -> TRUE if the actor may moderate this target, otherwise FALSE
  */
 boole channel_groups__can_moderate(const client_t *actor, const client_t *target, const channel_t *channel, permission_t permission)
 {
@@ -509,10 +550,13 @@ boole channel_groups__can_moderate(const client_t *actor, const client_t *target
 }
 
 /**
- * @brief Adds, changes or removes one saved channel assignment.
- * @param channel Channel being changed with the channels write lock held.
- * @param identity Authenticated identity hash.
- * @param role New group, with Member removing the stored assignment.
+ * @brief adds, changes or removes one saved channel assignment
+ *
+ * @param channel Channel being changed with the channels write lock held
+ * @param identity Authenticated identity hash
+ * @param role New group, with Member removing the stored assignment
+ *
+ * @return boole -> TRUE if the assignment was applied or already absent, otherwise FALSE
  */
 boole channel_groups__set(channel_t *channel, cstring identity, uint64 role)
 {
@@ -580,8 +624,9 @@ boole channel_groups__set(channel_t *channel, cstring identity, uint64 role)
 }
 
 /**
- * @brief Updates saved powers when a client enters a channel or changes channel group.
- * @param client Client to update with the clients write lock and channels lock held.
+ * @brief updates saved powers when a client enters a channel or changes channel group
+ *
+ * @param client Client to update with the clients write lock and channels lock held
  */
 void channel_groups__refresh(client_t *client)
 {
@@ -592,8 +637,9 @@ void channel_groups__refresh(client_t *client)
 }
 
 /**
- * @brief Loads channel rights and an unexpired mute into the connected client.
- * @param client Client to update with clients, channels and groups locks held.
+ * @brief loads channel rights and an unexpired mute into the connected client
+ *
+ * @param client Client to update with clients, channels and groups locks held
  */
 void channel_groups__refresh_locked(client_t *client)
 {
@@ -636,10 +682,13 @@ void channel_groups__refresh_locked(client_t *client)
 }
 
 /**
- * @brief Stores a temporary mute by identity so reconnecting does not remove it.
- * @param channel Affected channel with the channels write lock held.
- * @param identity Authenticated identity hash.
- * @param until_ms Monotonic expiry, or zero to unmute.
+ * @brief stores a temporary mute by identity so reconnecting does not remove it
+ *
+ * @param channel Affected channel with the channels write lock held
+ * @param identity Authenticated identity hash
+ * @param until_ms Monotonic expiry, or zero to unmute
+ *
+ * @return boole -> TRUE if the mute was applied or already absent, otherwise FALSE
  */
 boole channel_groups__mute(channel_t *channel, cstring identity, uint64 until_ms)
 {
@@ -700,8 +749,9 @@ boole channel_groups__mute(channel_t *channel, cstring identity, uint64 until_ms
 }
 
 /**
- * @brief Frees assignments before a channel slot is cleared.
- * @param channel Channel being removed with the channels write lock held.
+ * @brief frees assignments before a channel slot is cleared
+ *
+ * @param channel Channel being removed with the channels write lock held
  */
 void channel_groups__clear(channel_t *channel)
 {
@@ -710,9 +760,10 @@ void channel_groups__clear(channel_t *channel)
 }
 
 /**
- * @brief Loads channel assignments from the settings file during startup.
- * @param channel Channel receiving the assignments.
- * @param members Saved array of identity hashes and channel roles.
+ * @brief loads channel assignments from the settings file during startup
+ *
+ * @param channel Channel receiving the assignments
+ * @param members Saved array of identity hashes and channel roles
  */
 void channel_groups__read(channel_t *channel, cJSON *members)
 {
@@ -739,8 +790,11 @@ void channel_groups__read(channel_t *channel, cJSON *members)
 }
 
 /**
- * @brief Writes channel assignments for persistence.
- * @param channel Channel being read with the channels lock held.
+ * @brief writes channel assignments for persistence
+ *
+ * @param channel Channel being read with the channels lock held
+ *
+ * @return cJSON* -> new membership array for the caller to free, or NULL on allocation failure
  */
 cJSON *channel_groups__write(const channel_t *channel)
 {
@@ -781,8 +835,11 @@ json_failure:
 }
 
 /**
- * @brief Loads custom channel group definitions at startup.
- * @param catalog Saved definitions, separate from server groups.
+ * @brief loads custom channel group definitions at startup
+ *
+ * @param catalog Saved definitions, separate from server groups
+ *
+ * @return boole -> TRUE if the catalog was absent or loaded, otherwise FALSE for invalid data
  */
 boole channel_groups__load_catalog(cJSON *catalog)
 {
@@ -847,8 +904,11 @@ boole channel_groups__load_catalog(cJSON *catalog)
 }
 
 /**
- * @brief Writes channel group names and icons, optionally including their permissions.
- * @param include_permissions Whether the recipient may read permission values.
+ * @brief writes channel group names and icons, optionally including their permissions
+ *
+ * @param include_permissions Whether the recipient may read permission values
+ *
+ * @return cJSON* -> new catalog array for the caller to free, or NULL on allocation failure
  */
 cJSON *channel_groups__write_catalog(boole include_permissions)
 {
@@ -904,8 +964,12 @@ json_failure:
 }
 
 /**
- * @brief Grows the vendored vector without its allocation-asserting append macro.
- * @attention The old vector remains intact on failure; callers hold the channels write lock.
+ * @brief appends a member without losing the old vector on allocation failure
+ *
+ * @param channel_t* channel -> channel being changed with the channels write lock held
+ * @param const channel_group_member_t* member -> member record to copy into the vector
+ *
+ * @return boole -> TRUE if appended, otherwise FALSE with the old vector intact
  */
 static boole _channel_groups_internal__append_member(channel_t *channel, const channel_group_member_t *member)
 {
@@ -950,7 +1014,7 @@ static boole _channel_groups_internal__append_member(channel_t *channel, const c
         if (channel->group_members != NULL_POINTER)
         {
             old_storage = cvector_vec_to_base(channel->group_members);
-            memcpy(new_storage, old_storage, sizeof(cvector_metadata_t) + count * sizeof(channel_group_member_t));
+            clib__copy_memory(old_storage, new_storage, sizeof(cvector_metadata_t) + count * sizeof(channel_group_member_t), bytes);
             clib__null_memory(old_storage, sizeof(cvector_metadata_t) + capacity * sizeof(channel_group_member_t));
             free(old_storage);
         }

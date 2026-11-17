@@ -1,4 +1,4 @@
-// This file prepares server icons and emojis in a browser worker before uploading them.
+// this file prepares server icons and emojis in a browser worker before uploading them
 
 var image_upload =
 {
@@ -8,13 +8,18 @@ var image_upload =
 };
 
 /**
- * @brief Reads and resizes images in a separate thread without loading the rest of the chat.
+ * @brief reads and resizes images in a separate thread without loading the rest of the chat
+ *
+ * @return void
  */
 function image_upload__worker_main()
 {
     /**
-     * @brief Converts the finished image to the format used by upload messages.
+     * @brief converts the finished image to the format used by upload messages
+     *
      * @param blob -> resized image or unchanged original file
+     *
+     * @return Promise<string> -> the image data URL
      */
     async function to_data_url(blob)
     {
@@ -39,8 +44,7 @@ function image_upload__worker_main()
             if (file.type === "image/webp")
             {
                 let header = new Uint8Array(await file.slice(0, 30).arrayBuffer());
-                if (header.length < 20 || String.fromCharCode(...header.slice(0, 4)) !== "RIFF"
-                    || String.fromCharCode(...header.slice(8, 12)) !== "WEBP")
+                if (header.length < 20 || String.fromCharCode(...header.slice(0, 4)) !== "RIFF" || String.fromCharCode(...header.slice(8, 12)) !== "WEBP")
                 {
                     throw new Error("Choose a valid WebP image.");
                 }
@@ -71,8 +75,7 @@ function image_upload__worker_main()
             bitmap = await createImageBitmap(file);
             let ratio = Math.min(1, maximum_dimension / bitmap.width, maximum_dimension / bitmap.height);
             let output = file;
-            if (file.type === "image/png" || file.type === "image/webp"
-                || (file.type === "image/jpeg" && (ratio < 1 || file.size > maximum_bytes)))
+            if (file.type === "image/png" || file.type === "image/webp" || (file.type === "image/jpeg" && (ratio < 1 || file.size > maximum_bytes)))
             {
                 if (typeof OffscreenCanvas !== "function")
                 {
@@ -120,7 +123,7 @@ function image_upload__worker_main()
 }
 
 /**
- * @brief Frees the image worker after inactivity or a processing failure.
+ * @brief frees the image worker after inactivity or a processing failure
  */
 function image_upload__stop_worker()
 {
@@ -134,10 +137,13 @@ function image_upload__stop_worker()
 }
 
 /**
- * @brief Sends one image to the worker and waits for its result.
+ * @brief sends one image to the worker and waits for its result
+ *
  * @param file -> selected image
  * @param kind -> icon or emoji
  * @param maximum_bytes -> largest allowed static image after resizing
+ *
+ * @return Promise<string> -> the processed image data URL
  */
 function image_upload__run(file, kind, maximum_bytes)
 {
@@ -147,6 +153,13 @@ function image_upload__run(file, kind, maximum_bytes)
         let worker = null;
         clearTimeout(image_upload.idle_timer);
 
+        /**
+         * @brief stops the image worker and rejects the current preparation
+         *
+         * @param string message -> failure reported to the caller
+         *
+         * @return void
+         */
         function fail(message)
         {
             clearTimeout(timer);
@@ -209,10 +222,12 @@ function image_upload__run(file, kind, maximum_bytes)
 }
 
 /**
- * @brief Prepares icons and emojis one at a time without interrupting the chat or audio threads.
+ * @brief prepares icons and emojis one at a time without interrupting the chat or audio threads
+ *
  * @param file -> PNG, JPEG or WebP image, or a GIF for emojis
  * @param kind -> icon or emoji
  * @param maximum_bytes -> server size limit for the finished static image
+ *
  * @return Promise -> image data URL ready for upload
  */
 function image_upload__prepare(file, kind, maximum_bytes = 30000)
@@ -240,7 +255,7 @@ function image_upload__prepare(file, kind, maximum_bytes = 30000)
     });
     image_upload.queue = result.catch(function()
     {
-        // A rejected image does not prevent the next selected image from being processed.
+        // a rejected image does not prevent the next selected image from being processed
     });
     return result;
 }

@@ -1,6 +1,4 @@
-// sounds.js is embedded in template.html along with the other client files
-// Short UI clips stay embedded as Base64 data URLs. Each sounds__play call
-// creates its own playback instance, so repeated notifications can overlap.
+// embedded notification clips. each playback gets its own Audio instance so sounds can overlap
 
 if (typeof Audio !== "undefined")
 {
@@ -40,9 +38,16 @@ if (typeof Audio !== "undefined")
     };
 }
 
-// Each event owns a playback instance, so rapid notifications can overlap.
+// each event owns a playback instance, so rapid notifications can overlap
 var g_active_sound_effects = new Map();
 
+/**
+ * @brief starts a separate sound instance and releases it when playback ends or fails
+ *
+ * @param string name -> sound key in the loaded sound effects
+ *
+ * @return HTMLAudioElement|null -> playback instance, or null when disabled or unavailable
+ */
 function sounds__play(name)
 {
     if (!g_are_sound_effects_enabled || g_sound_effects == null || !g_sound_effects[name])
@@ -65,7 +70,7 @@ function sounds__play(name)
         {
             playing.catch(function()
             {
-                // Autoplay refusal or decode failure must release this instance too.
+                // autoplay refusal or decode failure must release this instance too
                 sounds__release(sound);
             });
         }
@@ -77,6 +82,13 @@ function sounds__play(name)
     return sound;
 }
 
+/**
+ * @brief stops a tracked sound instance and releases its media resource
+ *
+ * @param HTMLAudioElement sound -> active playback instance
+ *
+ * @return void
+ */
 function sounds__release(sound)
 {
     if (!g_active_sound_effects.delete(sound))
@@ -90,6 +102,13 @@ function sounds__release(sound)
     sound.load();
 }
 
+/**
+ * @brief stops every active instance of the named sound
+ *
+ * @param string name -> sound key to stop
+ *
+ * @return void
+ */
 function sounds__stop(name)
 {
     for (let [sound, active_name] of g_active_sound_effects)
@@ -101,6 +120,11 @@ function sounds__stop(name)
     }
 }
 
+/**
+ * @brief applies the sound preference to loaded clips and active playback
+ *
+ * @return void
+ */
 function sounds__apply_sound_effects_muted()
 {
     if (g_sound_effects == null)

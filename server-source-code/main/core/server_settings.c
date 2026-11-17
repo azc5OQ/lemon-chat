@@ -34,10 +34,12 @@ static void _settings_internal__build_and_push_client_config(int64 websocket_por
 static boole _settings_internal__serialize_identities(cJSON *json_root);
 
 /**
- * @brief Reads which attachment types clients may choose to block.
+ * @brief reads which attachment types clients may choose to block
+ *
  * @param cJSON* message -> saved settings or an admin request, with optional boolean fields
+ *
  * @return void
- * @attention Runtime callers hold the clients write lock.
+ * @attention runtime callers hold the clients write lock
  */
 void settings__read_attachment_receive_policy(cJSON *message)
 {
@@ -74,7 +76,7 @@ void settings__read_attachment_receive_policy(cJSON *message)
 
 /**
  * @brief seeds channel slot 0 as the root channel every client starts in: named "root", audio on,
- *        no parent and no maintainer yet.
+ *        no parent and no maintainer yet
  *
  * @return void
  */
@@ -103,11 +105,8 @@ void settings__init_channel_list(void)
 }
 
 /**
- * @brief Restores saved channels, icons, groups, bans and identities into allocated arrays.
- *
- * @details Channels, icons and groups retain their saved array indices; runtime fields are reset. The root channel and seeded admin group and icon remain in place. The admin icon link is restored after loading icons. Bans and identities use sequential slots; identities without groups, an avatar or an offline key are skipped.
- *
- * @note must run after the arrays are allocated and before any client can connect.
+ * @brief restores saved channels, icons, groups, bans and identities
+ * @note run after allocating state arrays and before accepting clients
  *
  * @return void
  */
@@ -591,7 +590,7 @@ void settings__load_persisted_state(void)
                 util__json_read_int64(json_field, 0, 9007199254740991LL, &identity_in_loop->last_seen_unix_seconds);
             }
 
-            // the raw rsa public key, so peers can encrypt to this identity while it is offline.
+            // the raw rsa public key, so peers can encrypt to this identity while it is offline
             // only meaningful while offline messages are enabled
             json_field = cJSON_GetObjectItemCaseSensitive(json_identity, "raw_public_key");
             if (cJSON_IsString(json_field) == TRUE && json_field->valuestring != NULL_POINTER)
@@ -692,7 +691,7 @@ void settings__load_persisted_state(void)
 }
 
 /**
- * @brief Creates the admin group with a grey shield icon. Saved icon choices are loaded afterwards.
+ * @brief creates the admin group with a grey shield icon. Saved icon choices are loaded afterwards
  */
 void settings__init_groups_and_icons(void)
 {
@@ -726,8 +725,9 @@ void settings__init_groups_and_icons(void)
 }
 
 /**
- * @brief Restores the automatic Guest group or creates it in a free slot before clients connect.
- * @return FALSE when every group slot is already occupied and no Guest group was saved.
+ * @brief restores the automatic Guest group or creates it in a free slot before clients connect
+ *
+ * @return FALSE when every group slot is already occupied and no Guest group was saved
  */
 boole settings__ensure_default_groups(void)
 {
@@ -816,12 +816,12 @@ boole settings__ensure_default_groups(void)
 }
 
 /**
- * @brief Builds the client configuration script injected into the bundled web page.
+ * @brief builds the client configuration script injected into the bundled web page
  *
- * @details Connection addresses and plaintext keys are included only when client config embedding is enabled. A configured theme is included, and client policy flags are always included so the page can apply the server settings.
+ * @details Connection addresses and plaintext keys are included only when client config embedding is enabled. A configured theme is included, and client policy flags are always included so the page can apply the server settings
  *
  * @param int64 websocket_port -> the port clients should open the websocket on
- * @param char plaintext_keys[][256] -> the connect keys in cleartext, one per row
+ * @param char plaintext_keys the connect keys in cleartext, one per row
  * @param uint64 keys_count -> how many rows of plaintext_keys are filled
  *
  * @return void
@@ -950,7 +950,7 @@ static void _settings_internal__build_and_push_client_config(int64 websocket_por
     {
         if (*input == '<')
         {
-            memcpy(output, "\\u003c", 6);
+            clib__copy_memory("\\u003c", output, 6, 6);
             output += 6;
         }
         else
@@ -985,7 +985,7 @@ done:
 /**
  * @brief reads the wireguard mode fields from a parsed server_settings.json: the switch, the
  *        router's public address and the forwarded udp range. called by settings__load and by the
- *        first time setup after the tunnel setup wrote the file.
+ *        first time setup after the tunnel setup wrote the file
  *
  * @param cJSON* json_root -> the parsed settings file
  *
@@ -1043,9 +1043,8 @@ void settings__read_wireguard_fields(cJSON *json_root)
 }
 
 /**
- * @brief Loads defaults and saved settings, or runs first-time setup when the file is absent.
- *
- * @details An unreadable or malformed existing file stops startup. Missing fields retain their defaults, including the array sizes. Plaintext connection keys stay in a local buffer for setup and client configuration, then the buffer is cleared.
+ * @brief loads defaults and saved settings, or runs setup when no file exists
+ * @attention an unreadable or malformed existing file stops startup
  *
  * @return void
  */
@@ -1980,7 +1979,7 @@ void settings__load(void)
                 }
 
                 // update the client config
-                memcpy(g_server_settings.plaintext_keys, plaintext_keys, sizeof(plaintext_keys));
+                clib__copy_memory(plaintext_keys, g_server_settings.plaintext_keys, sizeof(plaintext_keys), sizeof(g_server_settings.plaintext_keys));
                 settings__refresh_client_config();
 
                 // free the JSON
@@ -2003,7 +2002,7 @@ void settings__load(void)
     first_time_setup__run(plaintext_keys);
 
     // update the client config
-    memcpy(g_server_settings.plaintext_keys, plaintext_keys, sizeof(plaintext_keys));
+    clib__copy_memory(plaintext_keys, g_server_settings.plaintext_keys, sizeof(plaintext_keys), sizeof(g_server_settings.plaintext_keys));
     settings__refresh_client_config();
 
     // clear the local keys
@@ -2011,9 +2010,9 @@ void settings__load(void)
 }
 
 /**
- * @brief Writes a bounded settings document through a temporary file, flushes it, then atomically
+ * @brief writes a bounded settings document through a temporary file, flushes it, then atomically
  *        replaces the target. The previous version stays intact until replacement succeeds. POSIX
- *        temporary files are created exclusively with owner-only permissions.
+ *        temporary files are created exclusively with owner-only permissions
  *
  * @param char* path -> the destination file path
  * @param char* contents -> the NUL-terminated text to write
@@ -2177,14 +2176,11 @@ atomic_write_end:
 }
 
 /**
- * @brief Serializes stored identities into the JSON identities array under the store mutex. When
- *        identity storage is disabled, the existing JSON identities are preserved.
+ * @brief writes stored identities while holding the identity store mutex
  *
- * @details Entries need a hash and at least one group, avatar or offline messaging key.
+ * @param cJSON* json_root -> settings document to update
  *
- * @param cJSON* json_root -> the settings document being written
- *
- * @return void
+ * @return boole -> TRUE if serialized or identity storage is disabled, otherwise FALSE on allocation failure
  */
 static boole _settings_internal__serialize_identities(cJSON *json_root)
 {
@@ -3126,10 +3122,10 @@ json_failure:
 }
 
 /**
- * @brief Saves setup settings and plaintext connection keys to server_settings.json. A failed file
- *        write is reported on stdout; setup continues.
+ * @brief saves setup settings and plaintext connection keys to server_settings.json. A failed file
+ *        write is reported on stdout; setup continues
  *
- * @param char plaintext_keys[][256] -> connection passwords as entered, one per row; the file keeps their text and type so startup can derive the same keys
+ * @param char plaintext_keys connection passwords as entered, one per row; the file keeps their text and type so startup can derive the same keys
  * @param uint64 keys_count -> number of valid entries in plaintext_keys
  *
  * @return void
@@ -3669,7 +3665,15 @@ typedef struct saved_channel_graph_node_t
     ubyte state;
 } saved_channel_graph_node_t;
 
-// qsort requires an int return value for its comparison callback.
+// qsort requires an int return value for its comparison callback
+/**
+ * @brief compares saved channel IDs for sorting
+ *
+ * @param const void * left -> first saved channel node
+ * @param const void * right -> second saved channel node
+ *
+ * @return int -> negative, zero or positive according to ID order
+ */
 static int _settings_internal__compare_channel_ids(const void *left, const void *right)
 {
     const saved_channel_graph_node_t *a = left;
@@ -3679,8 +3683,11 @@ static int _settings_internal__compare_channel_ids(const void *left, const void 
 }
 
 /**
- * @brief Rejects duplicate slots, missing parents and cycles before restoring any saved channel.
- * @details Memory depends on saved entries, not configured capacity. Sorting and parent lookup take O(n log n) work; iterative cycle detection visits each node at most twice.
+ * @brief checks saved channel slots, parents and cycles before restoration
+ *
+ * @param cJSON* channels -> saved channel array, or NULL when no channels were saved
+ *
+ * @return boole -> TRUE for a valid graph, otherwise FALSE if data is invalid or allocation fails
  */
 static boole _settings_internal__validate_channel_graph(cJSON *channels)
 {
@@ -3820,8 +3827,16 @@ done:
     return valid;
 }
 
-// Validate first, then apply to a settings snapshot under the clients write lock.
-// A missing password field keeps the list; an explicit empty list removes it.
+// validate first, then apply to a settings snapshot under the clients write lock
+// A missing password field keeps the list; an explicit empty list removes it
+/**
+ * @brief validates connection encryption fields before updating settings
+ *
+ * @param cJSON * message -> settings fields to validate
+ * @param server_settings_t * destination -> settings to update, or NULL_POINTER for validation only
+ *
+ * @return boole -> TRUE when all supplied fields and passwords are valid
+ */
 boole settings__read_connection_encryption(cJSON *message, server_settings_t *destination)
 {
     cJSON *type = NULL_POINTER;
@@ -3884,13 +3899,13 @@ boole settings__read_connection_encryption(cJSON *message, server_settings_t *de
         {
             ciphers__clear(destination->keys, sizeof(destination->keys));
             ciphers__clear(destination->plaintext_keys, sizeof(destination->plaintext_keys));
-            memcpy(destination->keys, keys, count * sizeof(crypto_key_t));
+            clib__copy_memory(keys, destination->keys, count * sizeof(crypto_key_t), sizeof(destination->keys));
             destination->keys_count = count;
             count = 0;
             cJSON_ArrayForEach(entry, passwords)
             {
                 password = cJSON_GetObjectItemCaseSensitive(entry, "password");
-                memcpy(destination->plaintext_keys[count++], password->valuestring, strlen(password->valuestring));
+                clib__copy_memory(password->valuestring, destination->plaintext_keys[count++], strlen(password->valuestring), sizeof(destination->plaintext_keys[0]));
             }
         }
     }
@@ -3903,6 +3918,11 @@ done:
     return success;
 }
 
+/**
+ * @brief rebuilds and publishes browser connection configuration
+ *
+ * @return void
+ */
 void settings__refresh_client_config(void)
 {
     _settings_internal__build_and_push_client_config(g_server_settings.websocket_port, g_server_settings.plaintext_keys, g_server_settings.keys_count);

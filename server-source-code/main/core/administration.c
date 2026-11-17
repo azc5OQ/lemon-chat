@@ -1,4 +1,4 @@
-// This file manages bans, groups and icons, checks banner images and limits attempts to guess the admin password.
+// this file manages bans, groups and icons, checks banner images and limits attempts to guess the admin password
 #include "identity_store.h"
 #include "administration.h"
 #include "../definitions.h"
@@ -145,7 +145,7 @@ boole server_admin__is_country_blocked(char *country_iso_code)
 }
 
 /**
- * @brief Records an IP/identity pair, preserving distinct identities that share an IP.
+ * @brief records an IP/identity pair, preserving distinct identities that share an IP
  *
  * @param char* ip_address -> the banned ip (matched at socket open)
  * @param char* country_iso_code -> the client's country at ban time (may be empty)
@@ -225,7 +225,7 @@ boole server_admin__add_ban(char *ip_address, char *country_iso_code, char *iden
 }
 
 /**
- * @brief Removes every ban entry matching an IP address, including its associated identities.
+ * @brief removes every ban entry matching an IP address, including its associated identities
  *
  * @param char* ip_address -> the ip to unban
  *
@@ -258,11 +258,11 @@ boole server_admin__remove_ban_by_ip(char *ip_address)
 }
 
 /**
- * @brief returns TRUE if a group with the given id exists
+ * @brief checks whether a group ID exists
  *
- * @param uint64 group_id -> id of the group to check
+ * @param uint64 group_id -> group ID to find
  *
- * @return boole
+ * @return boole TRUE if an existing group has this ID, otherwise FALSE
  */
 boole server_admin__is_group_id_real(uint64 group_id)
 {
@@ -291,14 +291,12 @@ boole server_admin__is_group_id_real(uint64 group_id)
 }
 
 /**
- * @brief returns TRUE if the client already has the given group id
+ * @brief checks whether a client already belongs to a group
  *
- * @param uint64 client_id -> id of the client
- * @param uint64 this_group_id -> id of the group
+ * @param uint64 client_id -> valid client slot
+ * @param uint64 this_group_id -> valid group ID to find
  *
- * @return boole
- *
- * @attention this function assumes that client_id is correct and that this_group_id is also correct
+ * @return boole TRUE if the client has this group, otherwise FALSE
  */
 boole server_admin__is_client_already_assigned_this_group_id(uint64 client_id, uint64 this_group_id)
 {
@@ -362,9 +360,11 @@ int64 server_admin__get_index_of_group_id_of_client(uint64 client_id, uint64 thi
 }
 
 /**
- * @brief Checks the PNG signature, first image header and banner dimensions.
+ * @brief checks the PNG signature, first image header and banner dimensions
+ *
  * @param const ubyte* image -> decoded image bytes
  * @param uint64 length -> available image bytes
+ *
  * @return boole -> TRUE when the header describes an allowed banner size
  */
 static boole _server_admin_internal__is_png_banner_header_valid(const ubyte *image, uint64 length)
@@ -386,9 +386,11 @@ static boole _server_admin_internal__is_png_banner_header_valid(const ubyte *ima
 }
 
 /**
- * @brief Finds JPEG image dimensions without reading beyond any marker segment.
+ * @brief finds JPEG image dimensions without reading beyond any marker segment
+ *
  * @param const ubyte* image -> decoded image bytes
  * @param uint64 length -> available image bytes
+ *
  * @return boole -> TRUE when a complete frame header gives an allowed banner size
  */
 static boole _server_admin_internal__is_jpeg_banner_header_valid(const ubyte *image, uint64 length)
@@ -463,9 +465,11 @@ static boole _server_admin_internal__is_jpeg_banner_header_valid(const ubyte *im
 }
 
 /**
- * @brief Checks the WebP container and reads its image or canvas dimensions.
+ * @brief checks the WebP container and reads its image or canvas dimensions
+ *
  * @param const ubyte* image -> decoded image bytes
  * @param uint64 length -> available image bytes
+ *
  * @return boole -> TRUE when the header describes an allowed banner size
  */
 static boole _server_admin_internal__is_webp_banner_header_valid(const ubyte *image, uint64 length)
@@ -530,8 +534,10 @@ static boole _server_admin_internal__is_webp_banner_header_valid(const ubyte *im
 }
 
 /**
- * @brief Checks an uploaded banner's data URL, size, image header and dimensions.
+ * @brief checks an uploaded banner's data URL, size, image header and dimensions
+ *
  * @param cstring banner -> PNG, JPEG or WebP data URL; an empty string removes it
+ *
  * @return boole -> TRUE for an empty string or a supported image header within the limits
  */
 boole server_admin__is_server_banner_valid(cstring banner)
@@ -715,11 +721,13 @@ void server_admin__free_icon_base64(icon_t *icon)
 }
 
 /**
- * @brief Records an admin-password attempt when the address has not used its five-per-minute limit.
+ * @brief records an admin-password attempt when the address has not used its five-per-minute limit
+ *
  * @param char* ip_address -> address making the attempt
  * @param uint64 now -> current server timestamp in milliseconds
+ *
  * @return boole -> TRUE when allowed; FALSE when limited or tracking storage is unavailable
- * @attention The caller holds the clients write lock.
+ * @attention the caller holds the clients write lock
  */
 boole server_admin__allow_admin_password_attempt(char *ip_address, uint64 now)
 {

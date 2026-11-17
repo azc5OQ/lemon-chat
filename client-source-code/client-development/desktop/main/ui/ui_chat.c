@@ -23,13 +23,15 @@ static void _ui_chat_internal__draw(gui_node_t *node, float scale);
 static void _ui_chat_internal__layout(gui_node_t *node, float x, float y, float width, float height, float scale);
 
 /**
- * @brief resolves pencil visibility from the message's actual hover state before painting and hit testing.
- * @param gui_node_t* node -> scene-owned button
+ * @brief resolves pencil visibility from the message's actual hover state before painting and hit testing
+ *
+ * @param gui_node_t* node -> scene owned button
  * @param float x -> allocated x
  * @param float y -> allocated y
  * @param float width -> available width
  * @param float height -> available height
  * @param float scale -> physical pixels per logical unit
+ *
  * @return void
  */
 static void _ui_chat_internal__layout(gui_node_t *node, float x, float y, float width, float height, float scale)
@@ -45,16 +47,18 @@ static void _ui_chat_internal__layout(gui_node_t *node, float x, float y, float 
     // set the button visibility
     if (clib__strcmp(node->klass, "chat-edit-button") == 0)
     {
-        // meek currently treats visibility:visible as an unspecified style value.
+        // meek currently treats visibility:visible as an unspecified style value
         // resolve this control explicitly while retaining its stable layout space
         node->resolved.visibility = message && (message->state == GUI_NODE_STATE__HOVER || message->state == GUI_NODE_STATE__PRESSED) ? GUI_VISIBILITY__VISIBLE : GUI_VISIBILITY__HIDDEN;
     }
 }
 
 /**
- * @brief paints a compact pencil instead of a permanent text button, using the selected theme's ink.
- * @param gui_node_t* node -> scene-owned button
+ * @brief paints a compact pencil instead of a permanent text button, using the selected theme's ink
+ *
+ * @param gui_node_t* node -> scene owned button
  * @param float scale -> physical pixels per logical unit
+ *
  * @return void
  */
 static void _ui_chat_internal__draw(gui_node_t *node, float scale)
@@ -95,9 +99,11 @@ static void _ui_chat_internal__draw(gui_node_t *node, float scale)
 }
 
 /**
- * @brief resolves the editor's retained message without relying on a mutable history index.
+ * @brief resolves the editor's retained message without relying on a mutable history index
+ *
  * @param uint64 sequence -> original message sequence
  * @param uint64 connection -> original connection lifetime
+ *
  * @return const desktop_chat_t* -> borrowed snapshot entry, or NULL after eviction/reconnection
  */
 static const desktop_chat_t *_ui_chat_internal__message(uint64 sequence, uint64 connection)
@@ -122,8 +128,10 @@ static const desktop_chat_t *_ui_chat_internal__message(uint64 sequence, uint64 
 }
 
 /**
- * @brief displays an editor result as plain text.
+ * @brief displays an editor result as plain text
+ *
  * @param const char* text -> borrowed status text
+ *
  * @return void
  */
 static void _ui_chat_internal__result(const char *text)
@@ -138,8 +146,10 @@ static void _ui_chat_internal__result(const char *text)
 }
 
 /**
- * @brief opens a bounded multiline editor while leaving the chat usable behind it.
+ * @brief opens a bounded multiline editor while leaving the chat usable behind it
+ *
  * @param gui_event_t* event -> button carrying the retained message sequence
+ *
  * @return void
  */
 static void _ui_chat_internal__open(gui_event_t *event)
@@ -177,8 +187,10 @@ static void _ui_chat_internal__open(gui_event_t *event)
 }
 
 /**
- * @brief discards the editor draft and clears its owned text buffer before hiding it.
+ * @brief discards the editor draft and clears its owned text buffer before hiding it
+ *
  * @param gui_event_t* event -> unused click event
+ *
  * @return void
  */
 static void _ui_chat_internal__close(gui_event_t *event)
@@ -209,8 +221,10 @@ static void _ui_chat_internal__close(gui_event_t *event)
 }
 
 /**
- * @brief queues an explicit edit without sending a new message or consuming the main composer draft.
+ * @brief queues an explicit edit without sending a new message or consuming the main composer draft
+ *
  * @param gui_event_t* event -> unused click event
+ *
  * @return void
  */
 static void _ui_chat_internal__save(gui_event_t *event)
@@ -230,7 +244,8 @@ static void _ui_chat_internal__save(gui_event_t *event)
 }
 
 /**
- * @brief disables Save if its original message or connection is no longer available, preserving the draft.
+ * @brief disables Save if its original message or connection is no longer available, preserving the draft
+ *
  * @return void
  */
 void desktop_ui_chat__update(void)
@@ -246,9 +261,11 @@ void desktop_ui_chat__update(void)
 }
 
 /**
- * @brief registers the message editor before scene loading.
- * @param desktop_session_t* session -> GUI-owned command target
- * @param const desktop_session_view_t* view -> lifetime-stable GUI snapshot
+ * @brief registers the message editor before scene loading
+ *
+ * @param desktop_session_t* session -> GUI owned command target
+ * @param const desktop_session_view_t* view -> lifetime stable GUI snapshot
+ *
  * @return void
  */
 void desktop_ui_chat__initialize(desktop_session_t *session, const desktop_session_view_t *view)

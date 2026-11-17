@@ -10,8 +10,10 @@ static uint64 _attachments_internal__cache_size(const desktop_attachment_record_
 static boole _attachments_internal__make_room(desktop_attachments_t *attachments, uint64 id, uint64 required);
 
 /**
- * @brief clears private payloads and keys while retaining the display result.
+ * @brief clears private payloads and keys while retaining the display result
+ *
  * @param desktop_attachment_record_t* record -> exclusively owned record
+ *
  * @return void
  */
 void desktop_attachment_record__release(desktop_attachment_record_t *record)
@@ -55,8 +57,10 @@ void desktop_attachment_record__release(desktop_attachment_record_t *record)
 }
 
 /**
- * @brief releases every owned buffer before reusing a bounded record slot.
+ * @brief releases every owned buffer before reusing a bounded record slot
+ *
  * @param desktop_attachment_record_t* record -> exclusively owned record
+ *
  * @return void
  */
 void desktop_attachment_record__clear(desktop_attachment_record_t *record)
@@ -66,9 +70,11 @@ void desktop_attachment_record__clear(desktop_attachment_record_t *record)
 }
 
 /**
- * @brief reports failure without retaining unusable ciphertext or private keys.
+ * @brief reports failure without retaining unusable ciphertext or private keys
+ *
  * @param desktop_attachment_record_t* record -> exclusively owned record
  * @param const char* detail -> bounded display reason
+ *
  * @return void
  */
 void desktop_attachment_record__fail(desktop_attachment_record_t *record, const char *detail)
@@ -83,9 +89,11 @@ void desktop_attachment_record__fail(desktop_attachment_record_t *record, const 
 }
 
 /**
- * @brief finds a stable attachment ID; caller holds the manager mutex.
+ * @brief finds a stable attachment ID. Caller holds the manager mutex
+ *
  * @param desktop_attachments_t* attachments -> manager
  * @param uint64 id -> nonzero attachment ID
+ *
  * @return desktop_attachment_record_t* -> borrowed slot or NULL
  */
 desktop_attachment_record_t *desktop_attachments__find(desktop_attachments_t *attachments, uint64 id)
@@ -104,8 +112,10 @@ desktop_attachment_record_t *desktop_attachments__find(desktop_attachments_t *at
 }
 
 /**
- * @brief reserves an empty or oldest completed slot without evicting a worker-owned transfer.
- * @param desktop_attachments_t* attachments -> manager; caller holds its mutex
+ * @brief reserves an empty or oldest completed slot without evicting a worker-owned transfer
+ *
+ * @param desktop_attachments_t* attachments -> manager. Caller holds its mutex
+ *
  * @return desktop_attachment_record_t* -> initialized slot or NULL when all are active
  */
 desktop_attachment_record_t *desktop_attachments__reserve(desktop_attachments_t *attachments)
@@ -146,9 +156,11 @@ desktop_attachment_record_t *desktop_attachments__reserve(desktop_attachments_t 
 }
 
 /**
- * @brief counts retained original bytes and preview pixels, including work borrowed from this record.
+ * @brief counts retained original bytes and preview pixels, including work borrowed from this record
+ *
  * @param const desktop_attachment_record_t* record -> manager or worker-owned record
- * @return uint64 -> bounded retained-byte estimate
+ *
+ * @return uint64 -> bounded retained byte estimate
  */
 static uint64 _attachments_internal__cache_size(const desktop_attachment_record_t *record)
 {
@@ -156,10 +168,12 @@ static uint64 _attachments_internal__cache_size(const desktop_attachment_record_
 }
 
 /**
- * @brief evicts older completed payloads until a newly completed attachment fits the cache budget.
+ * @brief evicts older completed payloads until a newly completed attachment fits the cache budget
+ *
  * @param desktop_attachments_t* attachments -> locked manager
  * @param uint64 id -> record being committed
  * @param uint64 required -> new retained byte count
+ *
  * @return boole -> TRUE when the bounded cache can retain the payload
  */
 static boole _attachments_internal__make_room(desktop_attachments_t *attachments, uint64 id, uint64 required)
@@ -207,8 +221,10 @@ static boole _attachments_internal__make_room(desktop_attachments_t *attachments
 }
 
 /**
- * @brief owns file I/O, RSA/content processing and image decoding; GUI and protocol threads exchange bounded records.
+ * @brief owns file I/O, RSA/content processing and image decoding. GUI and protocol threads exchange bounded records
+ *
  * @param void* context -> manager retained until this worker joins
+ *
  * @return void
  */
 static void _attachments_internal__worker(void *context)
@@ -349,7 +365,8 @@ static void _attachments_internal__worker(void *context)
 }
 
 /**
- * @brief creates the stable bounded attachment store and its sleeping worker.
+ * @brief creates the stable bounded attachment store and its sleeping worker
+ *
  * @return desktop_attachments_t* -> owned manager or NULL
  */
 desktop_attachments_t *desktop_attachments__create(void)
@@ -383,8 +400,10 @@ desktop_attachments_t *desktop_attachments__create(void)
 }
 
 /**
- * @brief stops worker ownership before erasing cached files and cryptographic state.
+ * @brief stops worker ownership before erasing cached files and cryptographic state
+ *
  * @param desktop_attachments_t* attachments -> owned manager, or NULL
+ *
  * @return void
  */
 void desktop_attachments__destroy(desktop_attachments_t *attachments)
@@ -422,9 +441,11 @@ void desktop_attachments__destroy(desktop_attachments_t *attachments)
 }
 
 /**
- * @brief starts a new connection generation without sharing mutable RSA state across threads.
+ * @brief starts a new connection generation without sharing mutable RSA state across threads
+ *
  * @param desktop_attachments_t* attachments -> live manager
  * @param const desktop_crypto_t* crypto -> authenticated session identity
+ *
  * @return boole -> TRUE when the new worker identity was copied
  */
 boole desktop_attachments__start(desktop_attachments_t *attachments, const desktop_crypto_t *crypto)
@@ -467,8 +488,10 @@ boole desktop_attachments__start(desktop_attachments_t *attachments, const deskt
 }
 
 /**
- * @brief cancels network work while retaining completed files for an explicit Save as.
+ * @brief cancels network work while retaining completed files for an explicit Save as
+ *
  * @param desktop_attachments_t* attachments -> live manager
+ *
  * @return void
  */
 void desktop_attachments__disconnect(desktop_attachments_t *attachments)
@@ -501,9 +524,11 @@ void desktop_attachments__disconnect(desktop_attachments_t *attachments)
 }
 
 /**
- * @brief copies display values only; no payload or key pointer leaves the manager.
+ * @brief copies display values only. No payload or key pointer leaves the manager
+ *
  * @param desktop_attachments_t* attachments -> stable manager
- * @param desktop_attachments_view_t* view -> caller-owned snapshot
+ * @param desktop_attachments_view_t* view -> caller owned snapshot
+ *
  * @return boole -> TRUE when the revision changed
  */
 boole desktop_attachments__view(desktop_attachments_t *attachments, desktop_attachments_view_t *view)
@@ -528,10 +553,12 @@ boole desktop_attachments__view(desktop_attachments_t *attachments, desktop_atta
 }
 
 /**
- * @brief queues an explicit decision for a validated incoming offer.
+ * @brief queues an explicit decision for a validated incoming offer
+ *
  * @param desktop_attachments_t* attachments -> manager
  * @param uint64 id -> stable UI selection
  * @param boole accept -> TRUE for accept, FALSE for reject
+ *
  * @return boole -> TRUE when queued
  */
 boole desktop_attachments__decide(desktop_attachments_t *attachments, uint64 id, boole accept)
@@ -552,9 +579,11 @@ boole desktop_attachments__decide(desktop_attachments_t *attachments, uint64 id,
 }
 
 /**
- * @brief cancels pending or active work without releasing buffers still owned by the worker.
+ * @brief cancels pending or active work without releasing buffers still owned by the worker
+ *
  * @param desktop_attachments_t* attachments -> manager
  * @param uint64 id -> stable UI selection
+ *
  * @return boole -> TRUE when cancellation was queued
  */
 boole desktop_attachments__cancel(desktop_attachments_t *attachments, uint64 id)
@@ -580,10 +609,12 @@ boole desktop_attachments__cancel(desktop_attachments_t *attachments, uint64 id)
 }
 
 /**
- * @brief copies a destination for asynchronous Save as; incoming names never select filesystem paths.
+ * @brief copies a destination for asynchronous Save as. Incoming names never select filesystem paths
+ *
  * @param desktop_attachments_t* attachments -> manager
  * @param uint64 id -> completed attachment selected by the user
- * @param const char* path -> user-chosen new destination
+ * @param const char* path -> user chosen new destination
+ *
  * @return boole -> TRUE when queued
  */
 boole desktop_attachments__save(desktop_attachments_t *attachments, uint64 id, const char *path)
@@ -606,12 +637,14 @@ boole desktop_attachments__save(desktop_attachments_t *attachments, uint64 id, c
 }
 
 /**
- * @brief supplies a bounded copy of decoded preview pixels for a GUI-owned texture.
+ * @brief supplies a bounded copy of decoded preview pixels for a GUI owned texture
+ *
  * @param desktop_attachments_t* attachments -> manager
  * @param uint64 id -> attachment ID
  * @param int64* width -> pixel width
  * @param int64* height -> pixel height
- * @return ubyte* -> owned RGBA pixels, or NULL; release with free
+ *
+ * @return ubyte* -> owned RGBA pixels, or NULL. Release with free
  */
 ubyte *desktop_attachments__image(desktop_attachments_t *attachments, uint64 id, int64 *width, int64 *height)
 {
@@ -642,9 +675,11 @@ ubyte *desktop_attachments__image(desktop_attachments_t *attachments, uint64 id,
 }
 
 /**
- * @brief stores local receiving choices; the session forwards their next revision to the server.
+ * @brief stores local receiving choices. The session forwards their next revision to the server
+ *
  * @param desktop_attachments_t* attachments -> manager
  * @param const desktop_chat_preferences_t* preferences -> copied settings
+ *
  * @return void
  */
 void desktop_attachments__preferences(desktop_attachments_t *attachments, const desktop_chat_preferences_t *preferences)

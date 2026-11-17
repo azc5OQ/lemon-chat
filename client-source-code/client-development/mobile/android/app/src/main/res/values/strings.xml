@@ -4,4 +4,7 @@
     <string name="swipe_to_answer_desc">Swipe to Answer Button</string>
     <string name="decline_call_desc">Decline Call</string>
     <string name="accept_call_desc">Accept Call</string>
+    <string name="server_key_type">Server key type</string>
+    <string name="server_key_password">Server key password</string>
+    <string name="remove_server_key">Remove server key</string>
 </resources>

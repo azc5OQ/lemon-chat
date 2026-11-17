@@ -1,5 +1,5 @@
-// Application startup, copies of received data for the window, and shutdown.
-// Button and menu actions live in ui/ui_window.c; protocol handling lives in msg/.
+// application startup, copies of received data for the window, and shutdown
+// button and menu actions live in ui/ui_window.c. Protocol handling lives in msg/.
 #include "platform/system.h"
 #include "platform/hotkey.h"
 #include "platform/memory.h"
@@ -15,16 +15,16 @@
 #include "../checks/startup_check.h"
 #endif
 
-// Main owns these objects for the entire application lifetime. UI modules borrow
+// main owns these objects for the entire application lifetime. UI modules borrow
 // their addresses. The window copies the state published by the connection thread
-// into g_session_view; that thread never changes this copy or accesses controls.
+// into g_session_view. That thread never changes this copy or accesses controls
 static desktop_session_t *g_session;
 static desktop_session_view_t g_session_view;
 static desktop_settings_t g_settings;
 static desktop_overlay_controller_t *g_overlay;
 
 // A failed startup uses the same cleanup as a closed window. These flags record
-// which cleanup functions can run, including a partially initialized UI.
+// which cleanup functions can run, including a partially initialized UI
 static boole g_platform_initialized;
 static boole g_ui_initialized;
 
@@ -35,10 +35,12 @@ static void _main_internal__update(boole smoke);
 static void _main_internal__shutdown(void);
 
 /**
- * @brief creates the native window, connection objects and controls in their required order.
+ * @brief creates the native window, connection objects and controls in their required order
+ *
  * @param boole smoke -> hide the window and leave real audio devices and saved settings alone
  * @param boole preview -> show example members instead of an empty disconnected channel tree
- * @return boole -> TRUE when startup completed; FALSE requires the same shutdown as normal exit
+ *
+ * @return boole -> TRUE when startup completed. FALSE requires the same shutdown as normal exit
  */
 static boole _main_internal__initialize(boole smoke, boole preview)
 {
@@ -65,7 +67,7 @@ static boole _main_internal__initialize(boole smoke, boole preview)
     }
     g_platform_initialized = TRUE;
 
-    // creating a session prepares its queues and audio state; it does not connect.
+    // creating a session prepares its queues and audio state. It does not connect
     // the overlay controller checks for the chosen game only when enabled in settings
     g_session = desktop_session__create();
     g_overlay = desktop_overlay_controller__create();
@@ -75,7 +77,7 @@ static boole _main_internal__initialize(boole smoke, boole preview)
         return FALSE;
     }
 
-    // controls keep pointers to these objects, so neither may be a temporary local.
+    // controls keep pointers to these objects, so neither may be a temporary local
     // mark UI cleanup as required before registration: layout loading can fail later
     g_ui_initialized = TRUE;
     if (!desktop_ui_window__initialize(g_session, &g_session_view, &g_settings, g_overlay, preview, !smoke))
@@ -91,8 +93,10 @@ static boole _main_internal__initialize(boole smoke, boole preview)
 }
 
 /**
- * @brief loads the user's preferences, or supplies isolated defaults for the startup check.
+ * @brief loads the user's preferences, or supplies isolated defaults for the startup check
+ *
  * @param boole smoke -> use defaults without reading the saved identity or connection details
+ *
  * @return void
  */
 static void _main_internal__load_settings(boole smoke)
@@ -114,8 +118,10 @@ static void _main_internal__load_settings(boole smoke)
 }
 
 /**
- * @brief copies received state into the window and supplies channel members to the game overlay.
+ * @brief copies received state into the window and supplies channel members to the game overlay
+ *
  * @param boole smoke -> use a fixed preview time so captured indicators are repeatable
+ *
  * @return void
  */
 static void _main_internal__update(boole smoke)
@@ -138,7 +144,7 @@ static void _main_internal__update(boole smoke)
     desktop_ui_window__update(changed);
 
     // send only the channel and member display data to the overlay. on Windows,
-    // the controller shares this copy with the code drawing inside the chosen game.
+    // the controller shares this copy with the code drawing inside the chosen game
     // preview uses example members and does not require a server connection
     desktop_overlay_controller__status(g_overlay, overlay_status, sizeof(overlay_status));
 
@@ -162,8 +168,9 @@ static void _main_internal__update(boole smoke)
 }
 
 /**
- * @brief stops game detection and connections, frees window resources, and clears retained data.
- * Also handles failed startup; NULL objects and initialization flags identify what exists.
+ * @brief stops game detection and connections, frees window resources, and clears retained data
+ * also handles failed startup. NULL objects and initialization flags identify what exists
+ *
  * @return void
  */
 static void _main_internal__shutdown(void)
@@ -203,10 +210,12 @@ static void _main_internal__shutdown(void)
 }
 
 /**
- * @brief opens the chat window, processes input until it closes, then releases application resources.
- * @param int argc -> command-line argument count
- * @param char** argv -> arguments; --demo shows example members, --smoke runs the optional startup check
- * @return int -> zero on normal exit or a passed check; nonzero on startup or check failure
+ * @brief opens the chat window, processes input until it closes, then releases application resources
+ *
+ * @param int argc -> command line argument count
+ * @param char** argv -> arguments. --demo shows example members, --smoke runs the optional startup check
+ *
+ * @return int -> zero on normal exit or a passed check. Nonzero on startup or check failure
  */
 int main(int argc, char **argv)
 {

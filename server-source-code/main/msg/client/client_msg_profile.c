@@ -1,4 +1,4 @@
-// This file checks requests to change usernames and avatars or to view stored identities.
+// this file checks requests to change usernames and avatars or to view stored identities
 #include "client_msg.h"
 #include "../../core/permissions.h"
 #include "../../core/client_session.h"
@@ -16,7 +16,7 @@
 static boole _client_msg_profile_internal__is_change_client_username_message_valid(cJSON *json_root, uint64 client_id);
 
 /**
- * @brief This function checks if clients username change request json message has all nessecary
+ * @brief this function checks if clients username change request json message has all nessecary
  *        fields
  *
  * @param cJSON* json_root -> the parsed client request
@@ -92,7 +92,7 @@ static boole _client_msg_profile_internal__is_change_client_username_message_val
 }
 
 /**
- * @brief This function processes connection check message from client
+ * @brief this function processes connection check message from client
  *
  * @param cJSON* json_root -> the parsed client request
  * @param uint64 sender_client_id -> id of the client that sent the request
@@ -241,7 +241,8 @@ label_client_msg__process_change_client_username_end:
 }
 
 /**
- * @brief Sends stored names and avatars when the server settings and the client's groups allow it.
+ * @brief sends stored names and avatars when the server settings and the client's groups allow it
+ *
  * @param json_root -> request with no additional fields
  * @param sender_client_id -> client requesting the list
  */
@@ -295,13 +296,8 @@ label_client_msg__process_request_stored_clients_end:
 }
 
 /**
- * @brief a client sets its OWN avatar, a base64 image data-url, no admin rights needed
- *
- *        gated by is_avatar_upload_allowed. empty and oversize uploads (per the server's configured max, and
- *        never past MAX_CLIENT_AVATAR_LENGTH) are SILENTLY dropped, no error goes back. the image
- *        is kept on the live client_t so it can be served without a store lookup, and mirrored into
- *        the identity store keyed by the client's public-key hash so it persists with their
- *        identity. a lightweight avatar_changed event is then broadcast so others can re-request it.
+ * @brief stores the client's own avatar and broadcasts its change when uploads are allowed
+ *        invalid or oversized images are ignored. The identity store keeps a copy
  *
  * @param cJSON* json_root -> the parsed client request, carries message.base64_avatar
  * @param uint64 sender_client_id -> id of the client that sent the request
@@ -408,11 +404,8 @@ void client_msg__profile__process_avatar_upload(cJSON *json_root, uint64 sender_
 }
 
 /**
- * @brief a client deletes its OWN avatar
- *
- *        frees the live avatar on the client_t, clears the entry in the identity store (an empty
- *        string is what clears it) and broadcasts avatar_changed so everyone drops their copy.
- *        gated by is_avatar_upload_allowed. the request carries no fields.
+ * @brief clears the client's own live and saved avatar, then broadcasts the change
+ *        requires avatar uploads to be allowed
  *
  * @param cJSON* json_root -> the parsed client request (unused, the request carries no fields)
  * @param uint64 sender_client_id -> id of the client that sent the request
@@ -474,11 +467,8 @@ void client_msg__profile__process_delete_avatar(cJSON *json_root, uint64 sender_
 }
 
 /**
- * @brief a client requests ONE other client's avatar, as the profile pane needs
- *
- *        responds with a single client_avatar message, served straight from the target's live
- *        client_t->base64_avatar, or an empty string when the target has none. gated by
- *        is_avatar_upload_allowed, and the requested client id must be in range.
+ * @brief returns one live avatar, or an empty string when absent
+ *        requires avatar uploads to be allowed and a valid client identifier
  *
  * @param cJSON* json_root -> the parsed client request, carries message.client_id
  * @param uint64 sender_client_id -> id of the client that sent the request
@@ -539,12 +529,8 @@ void client_msg__profile__process_request_avatar_for_client(cJSON *json_root, ui
 }
 
 /**
- * @brief a client requests a CHUNK of avatars, a client_ids array, for lazy-loading
- *
- *        the server sends one client_avatar message per target that actually has a live avatar.
- *        targets with none are skipped so the client keeps its placeholder. no more than 100
- *        avatars go out per request, so a single call cannot blast unbounded work. gated by
- *        is_avatar_upload_allowed.
+ * @brief returns up to 100 requested live avatars when avatar uploads are allowed
+ *        clients without avatars are skipped
  *
  * @param cJSON* json_root -> the parsed client request, carries the message.client_ids array
  * @param uint64 sender_client_id -> id of the client that sent the request

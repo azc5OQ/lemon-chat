@@ -1,5 +1,5 @@
 #include "platform/memory.h"
-// Watches one configured game and manages opt-in overlay loading and display updates.
+// watches one configured game and manages opt in overlay loading and display updates
 #include <windows.h>
 #include <tlhelp32.h>
 #include <stdlib.h>
@@ -29,9 +29,9 @@ static boole _overlay_controller_internal__attach(desktop_overlay_controller_t *
 static DWORD WINAPI _overlay_controller_internal__worker(void *parameter);
 
 /**
- * @brief updates the controller status while holding its lock.
+ * @brief updates the controller status while holding its lock
  *
- * @param desktop_overlay_controller_t* controller -> desktop-owned overlay controller
+ * @param desktop_overlay_controller_t* controller -> desktop owned overlay controller
  * @param const char* message -> message text
  * @param DWORD error -> Windows error code, or zero
  *
@@ -53,12 +53,12 @@ static void _overlay_controller_internal__status(desktop_overlay_controller_t *c
 }
 
 /**
- * @brief publishes display data only for the currently selected, enabled game.
+ * @brief publishes display data only for the currently selected, enabled game
  *
- * @param desktop_overlay_controller_t* controller -> desktop-owned overlay controller
+ * @param desktop_overlay_controller_t* controller -> desktop owned overlay controller
  * @param desktop_overlay_ipc_t* ipc -> shared display mapping handle
  *
- * @return boole -> 1 when an enabled snapshot was published; 0 otherwise
+ * @return boole -> 1 when an enabled snapshot was published. 0 otherwise
  */
 static boole _overlay_controller_internal__publish(desktop_overlay_controller_t *controller, desktop_overlay_ipc_t *ipc)
 {
@@ -75,7 +75,7 @@ static boole _overlay_controller_internal__publish(desktop_overlay_controller_t 
 }
 
 /**
- * @brief finds a loaded module in the selected process.
+ * @brief finds a loaded module in the selected process
  *
  * @param DWORD process_id -> selected game process ID
  * @param const wchar_t* name -> module basename to look up
@@ -117,7 +117,7 @@ static nuint _overlay_controller_internal__module(DWORD process_id, const wchar_
 }
 
 /**
- * @brief finds the configured executable in this Windows session, excluding the client itself.
+ * @brief finds the configured executable in this Windows session, excluding the client itself
  *
  * @param const char* executable -> game executable basename
  *
@@ -176,13 +176,13 @@ static DWORD _overlay_controller_internal__find_game(const char *executable)
 }
 
 /**
- * @brief checks that the remote overlay was loaded from this client installation.
+ * @brief checks that the remote overlay was loaded from this client installation
  *
  * @param DWORD process_id -> selected game process ID
  * @param nuint address -> remote module base address
  * @param const wchar_t* expected -> expected full module path
  *
- * @return boole -> 1 when the module paths match; 0 otherwise
+ * @return boole -> 1 when the module paths match. 0 otherwise
  */
 static boole _overlay_controller_internal__same_module_path(DWORD process_id, nuint address, const wchar_t *expected)
 {
@@ -218,11 +218,11 @@ static boole _overlay_controller_internal__same_module_path(DWORD process_id, nu
     return matches;
 }
 
-// Keep the data heartbeat current during a bounded loader call. Never block the UI.
+// keep the data heartbeat current during a bounded loader call. Never block the UI
 /**
- * @brief waits at most five seconds for a loader call while refreshing the display heartbeat.
+ * @brief waits at most five seconds for a loader call while refreshing the display heartbeat
  *
- * @param desktop_overlay_controller_t* controller -> desktop-owned overlay controller
+ * @param desktop_overlay_controller_t* controller -> desktop owned overlay controller
  * @param desktop_overlay_ipc_t* ipc -> shared display mapping handle
  * @param HANDLE thread -> remote loader or startup thread
  *
@@ -246,13 +246,13 @@ static DWORD _overlay_controller_internal__wait(desktop_overlay_controller_t *co
 }
 
 /**
- * @brief loads the selected game overlay and starts it after the Windows loader finishes.
+ * @brief loads the selected game overlay and starts it after the Windows loader finishes
  *
- * @param desktop_overlay_controller_t* controller -> desktop-owned overlay controller
+ * @param desktop_overlay_controller_t* controller -> desktop owned overlay controller
  * @param desktop_overlay_ipc_t* ipc -> shared display mapping handle
  * @param DWORD process_id -> selected game process ID
  *
- * @return boole -> 1 when the overlay started; 0 on failure or cancellation
+ * @return boole -> 1 when the overlay started. 0 on failure or cancellation
  */
 static boole _overlay_controller_internal__attach(desktop_overlay_controller_t *controller, desktop_overlay_ipc_t *ipc, DWORD process_id)
 {
@@ -469,7 +469,7 @@ finished:
 }
 
 /**
- * @brief watches the configured game and publishes snapshots without blocking the UI thread.
+ * @brief watches the configured game and publishes snapshots without blocking the UI thread
  *
  * @param void* parameter -> controller passed to the worker
  *
@@ -658,7 +658,7 @@ static DWORD WINAPI _overlay_controller_internal__worker(void *parameter)
 }
 
 /**
- * @brief allocates a disabled overlay controller and starts its worker.
+ * @brief allocates a disabled overlay controller and starts its worker
  *
  * @return desktop_overlay_controller_t* -> the owned controller, or NULL on failure
  */
@@ -695,9 +695,9 @@ desktop_overlay_controller_t *desktop_overlay_controller__create(void)
 }
 
 /**
- * @brief stops the watcher, hides its overlay and releases controller resources.
+ * @brief stops the watcher, hides its overlay and releases controller resources
  *
- * @param desktop_overlay_controller_t* controller -> desktop-owned overlay controller
+ * @param desktop_overlay_controller_t* controller -> desktop owned overlay controller
  *
  * @return void
  */
@@ -735,9 +735,9 @@ void desktop_overlay_controller__destroy(desktop_overlay_controller_t *controlle
 }
 
 /**
- * @brief copies saved settings for the watcher to apply on its next iteration.
+ * @brief copies saved settings for the watcher to apply on its next iteration
  *
- * @param desktop_overlay_controller_t* controller -> desktop-owned overlay controller
+ * @param desktop_overlay_controller_t* controller -> desktop owned overlay controller
  * @param const desktop_settings_t* settings -> local overlay settings
  *
  * @return void
@@ -751,9 +751,9 @@ void desktop_overlay_controller__configure(desktop_overlay_controller_t *control
 }
 
 /**
- * @brief copies a validated display snapshot for the watcher to publish.
+ * @brief copies a validated display snapshot for the watcher to publish
  *
- * @param desktop_overlay_controller_t* controller -> desktop-owned overlay controller
+ * @param desktop_overlay_controller_t* controller -> desktop owned overlay controller
  * @param const desktop_overlay_snapshot_t* snapshot -> bounded channel display snapshot
  *
  * @return void
@@ -773,9 +773,9 @@ void desktop_overlay_controller__publish(desktop_overlay_controller_t *controlle
 }
 
 /**
- * @brief copies the current status into the caller-owned text buffer.
+ * @brief copies the current status into the caller owned text buffer
  *
- * @param desktop_overlay_controller_t* controller -> desktop-owned overlay controller
+ * @param desktop_overlay_controller_t* controller -> desktop owned overlay controller
  * @param char* text -> text buffer
  * @param uint64 capacity -> destination capacity including its terminator
  *

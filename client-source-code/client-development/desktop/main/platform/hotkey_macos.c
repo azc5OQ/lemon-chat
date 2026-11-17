@@ -6,8 +6,9 @@
 #include "platform/hotkey.h"
 
 /**
- * @brief prepares the platform key adapter before the GUI starts.
- * @return boole -> 1; Quartz key-state polling needs no initialization
+ * @brief prepares the platform key adapter before the GUI starts
+ *
+ * @return boole -> 1. Quartz key state polling needs no initialization
  */
 boole desktop_hotkey__initialize(void)
 {
@@ -20,7 +21,8 @@ struct desktop_hotkey_t
 };
 
 /**
- * @brief creates a push-to-talk polling context; macOS controls input-monitoring authorization.
+ * @brief creates a push to talk polling context. MacOS controls input monitoring authorization
+ *
  * @return desktop_hotkey_t* -> owned context, or NULL
  */
 desktop_hotkey_t *desktop_hotkey__create(void)
@@ -29,8 +31,10 @@ desktop_hotkey_t *desktop_hotkey__create(void)
 }
 
 /**
- * @brief releases the polling context after its worker exits.
+ * @brief releases the polling context after its worker exits
+ *
  * @param desktop_hotkey_t* hotkey -> owned context, or NULL
+ *
  * @return void
  */
 void desktop_hotkey__destroy(desktop_hotkey_t *hotkey)
@@ -40,9 +44,11 @@ void desktop_hotkey__destroy(desktop_hotkey_t *hotkey)
 }
 
 /**
- * @brief reads the chosen physical key without installing a global event tap.
+ * @brief reads the chosen physical key without installing a global event tap
+ *
  * @param desktop_hotkey_t* hotkey -> initialized polling context
- * @param int64 key -> printable ASCII key or legacy F-key number
+ * @param int64 key -> printable ASCII key or legacy F key number
+ *
  * @return boole -> nonzero while the authorized key query reports it held
  */
 boole desktop_hotkey__down(desktop_hotkey_t *hotkey, int64 key)

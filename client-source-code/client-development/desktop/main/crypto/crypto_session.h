@@ -21,6 +21,7 @@ desktop_crypto_t *crypto_session__copy_identity(const desktop_crypto_t *source);
 void crypto_session__destroy(desktop_crypto_t *crypto);
 boole crypto_session__new_identity(char *identity, uint64 identity_capacity);
 boole crypto_session__identity(desktop_crypto_t *crypto, const char *identity, int64 bits, char *public_key, uint64 public_key_capacity);
+boole crypto_session__identity_seed(desktop_crypto_t *crypto, const ubyte digest[32], int64 bits, char *public_key, uint64 public_key_capacity);
 boole crypto_session__server_keys(desktop_crypto_t *crypto, const char *keys);
 boole crypto_session__begin_dh(desktop_crypto_t *crypto, char *public_mix, uint64 public_mix_capacity);
 struct cJSON *crypto_session__negotiate(desktop_crypto_t *crypto, const struct cJSON *policy, const char *public_key);

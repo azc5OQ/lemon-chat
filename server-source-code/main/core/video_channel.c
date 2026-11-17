@@ -1,10 +1,10 @@
-// This file manages video streams in Lemon Chat channels. It checks who may start a stream,
+// this file manages video streams in Lemon Chat channels. It checks who may start a stream,
 // who may watch it, and when streaming must stop. It forwards the streamer's encrypted packets
-// to the viewers through video_websocket.c or video_webrtc.c.
+// to the viewers through video_websocket.c or video_webrtc.c
 //
-// Functions that change stream or viewer state require the clients and channels write locks.
-// When the WebRTC peers lock is also needed, the order is clients, WebRTC peers, then channels.
-// The packet relay takes its own read locks in that order.
+// functions that change stream or viewer state require the clients and channels write locks
+// when the WebRTC peers lock is also needed, the order is clients, WebRTC peers, then channels
+// the packet relay takes its own read locks in that order
 #include "../definitions.h"
 
 #include "../../third-party/dave-g-json/cJSON.h"
@@ -30,8 +30,8 @@ static void _video_channel_internal__announce_viewer_state(channel_t *channel, u
 static void _video_channel_internal__clear_viewer(client_t *client, client_t *streamer);
 
 /**
- * @brief Reports a viewer starting or stopping to the streamer and allowed members. Other members
- *        receive no viewer-state message.
+ * @brief reports a viewer starting or stopping to the streamer and allowed members. Other members
+ *        receive no viewer-state message
  *
  * @param channel_t* channel -> the channel of the stream
  * @param uint64 viewer_client_id -> the viewer that changed
@@ -99,21 +99,19 @@ static void _video_channel_internal__clear_viewer(client_t *client, client_t *st
 }
 
 /**
- * @brief starts a stream in the streamer's channel: records what it announced, lets every member
- *        present watch (they still have to accept), tells the channel and sends each member the
- *        offer the caller already checked the server-wide switch, the channel toggle and that the
- *        channel is free; this only refuses what it can see itself
+ * @brief starts a stream and offers it to current channel members
  *
- * @param client_t* streamer -> the client that wants to stream
- * @param cstring source -> "screen" or "file"
- * @param cstring codec -> the webcodecs codec string the streamer will encode with
+ * @param client_t* streamer -> client starting the stream
+ * @param cstring source -> screen or file source
+ * @param cstring codec -> announced WebCodecs codec string
  * @param int64 width -> encoded frame width
  * @param int64 height -> encoded frame height
  * @param int64 fps -> target frame rate
- * @param boole is_sound_included -> TRUE when the streamer sends sound packets next to the picture packets; the viewers are told, so they can show a volume control
- * @param cstring* out_refusal_reason -> set to a short reason code for the clients when FALSE comes back
+ * @param boole is_sound_included -> whether audio accompanies the video
+ * @param cstring* out_refusal_reason -> receives a reason code on refusal
  *
- * @return boole TRUE when the stream started
+ * @return boole TRUE if the stream started, otherwise FALSE
+ * @attention the caller checks server and channel switches and channel availability
  */
 boole video_channel__start(client_t *streamer, cstring source, cstring codec, int64 width, int64 height, int64 fps, boole is_sound_included, cstring *out_refusal_reason)
 {
@@ -315,8 +313,8 @@ void video_channel__stop(uint64 channel_id, cstring reason)
 }
 
 /**
- * @brief Stops streams whose sender no longer meets the channel's required stream power.
- * @attention The caller holds only the clients write lock.
+ * @brief stops streams whose sender no longer meets the channel's required stream power
+ * @attention the caller holds only the clients write lock
  */
 void video_channel__apply_permission_changes(void)
 {
@@ -667,12 +665,10 @@ void video_channel__forward_keyframe_request(client_t *viewer)
 }
 
 /**
- * @brief a client's video connection died (its webrtc peer left connected, its video data channel
- *        closed, or its video websocket closed): when no other video connection remains, a
- *        streamer's stream ends and a viewer stops receiving until it presses connect again the
- *        consent (allowed) survives, only the connection does not
+ * @brief stops streaming or watching after transport loss unless a video WebSocket remains
  *
- * @param uint64 client_id -> the client whose transport is gone
+ * @param uint64 client_id -> client whose transport was lost
+ * @note viewer permission remains available for reconnection
  *
  * @return void
  */
@@ -722,17 +718,14 @@ void video_channel__process_transport_lost(uint64 client_id)
 }
 
 /**
- * @brief Relays a video packet to allowed, watching members with a video connection.
+ * @brief relays a video packet to authorized viewers while preserving channel encryption
  *
- * @details Checks authentication and removes the streamer's encryption. The channel encryption remains; each viewer gets a copy encrypted with the viewer's keys. Uses the video websocket when attached, otherwise the data channel. Full data channel queues are skipped; full websocket queues drop their oldest packets.
- *
- * @param uint64 sender_id -> slot of the sending client
- * @param ws_cli_conn_t* socket -> the video websocket the packet arrived on, or NULL_POINTER
- * @param int data_channel -> the video data channel handle the packet arrived on, 0 with a socket
- * @param const ubyte* data -> the packet
- * @param uint64 size -> its length in bytes
- *
- * @attention takes the clients, peers and channels read locks for the whole relay loop, like the audio relay
+ * @param uint64 sender_id -> sending client's slot
+ * @param ws_cli_conn_t* socket -> incoming video WebSocket, or NULL for a data channel
+ * @param int data_channel -> incoming data channel handle, or zero for a WebSocket
+ * @param const ubyte* data -> received packet
+ * @param uint64 size -> packet length in bytes
+ * @attention holds the clients, peers and channels read locks during relay
  *
  * @return void
  */

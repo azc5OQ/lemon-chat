@@ -1,0 +1,256 @@
+package com.lemonchat;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+class Log
+{
+    public static int d(String tag, String message)
+    {
+        return 0;
+    }
+    public static int w(String tag, String message)
+    {
+        return 0;
+    }
+}
+class Intent
+{
+}
+class ServiceBase
+{
+    int removedCalls;
+    public void onTaskRemoved(Intent intent)
+    {
+        removedCalls++;
+    }
+}
+@interface JavascriptInterface
+{
+}
+class ActivityBase
+{
+    int destroyCalls;
+    int stopCalls;
+    int pauseCalls;
+    protected void onDestroy()
+    {
+        destroyCalls++;
+    }
+    protected void onStop()
+    {
+        stopCalls++;
+    }
+    protected void onPause()
+    {
+        pauseCalls++;
+    }
+}
+class R
+{
+    static class id
+    {
+        static final int root_container = 1;
+    }
+}
+class FrameLayout
+{
+    void removeView(WebView webView)
+    {
+    }
+}
+class WebView
+{
+    final ArrayDeque<Runnable> callbacks = new ArrayDeque<>();
+    boolean failEvaluation;
+    void post(Runnable callback)
+    {
+        callbacks.add(callback);
+    }
+    void evaluateJavascript(String script, Object callback)
+    {
+        if (failEvaluation)
+        {
+            throw new IllegalStateException("synthetic WebView failure");
+        }
+    }
+}
+class NodeBridge
+{
+    final ArrayList<Boolean> visibility = new ArrayList<>();
+    final ArrayList<Boolean> forced = new ArrayList<>();
+    void sendUiVisible(boolean visible, boolean preserveIdle)
+    {
+        sendUiVisible(visible, preserveIdle, false);
+    }
+    void sendUiVisible(boolean visible, boolean preserveIdle, boolean forceIdle)
+    {
+        visibility.add(visible);
+        forced.add(forceIdle);
+    }
+}
+class BackgroundService extends ServiceBase
+{
+    void retirePageMedia()
+    {
+    }
+    long generation = 1;
+    boolean isTrustedPage()
+    {
+        return true;
+    }
+    long getPageGeneration()
+    {
+        return generation;
+    }
+    void cancelPendingPermission(MainActivity owner)
+    {
+    }
+    static boolean suppressNextIdleExit;
+    WebView webView = new WebView();
+    NodeBridge nodeBridge = new NodeBridge();
+    Object fileChooserCallback;
+    boolean isWebViewAttachedToHiddenWindow;
+    void abandonPendingFileChooser(MainActivity owner)
+    {
+        fileChooserCallback = null;
+    }
+    void abandonPendingFileChooser()
+    {
+        fileChooserCallback = null;
+    }
+    void attachWebViewToInvisibleWindow()
+    {
+    }
+__TASK_REMOVED__
+}
+class MainActivity extends ActivityBase
+{
+    Permissions permissions;
+    static MainActivity instance;
+    BackgroundService backgroundService;
+    int settingsOpened;
+    int setupOpened;
+    boolean destroyed;
+    boolean resumed;
+    boolean serviceBound;
+    Object serviceConnection;
+    void unbindService(Object connection)
+    {
+    }
+    boolean isFinishing()
+    {
+        return destroyed;
+    }
+    FrameLayout findViewById(int id)
+    {
+        return new FrameLayout();
+    }
+    void showSettings()
+    {
+        settingsOpened++;
+    }
+    void showConnectionWizard()
+    {
+        setupOpened++;
+    }
+__ACTIVITY_METHODS__
+}
+class Permissions
+{
+    void destroy()
+    {
+    }
+}
+class JavascriptJavaBridge
+{
+    BackgroundService backgroundServiceInstance;
+    JavascriptJavaBridge(BackgroundService service)
+    {
+        backgroundServiceInstance = service;
+    }
+__BRIDGE_METHOD__
+}
+public class NativeCallbackProbe
+{
+    static int assertions;
+    static void check(boolean condition, String message)
+    {
+        assertions++;
+        if (!condition)
+        {
+            throw new AssertionError(message);
+        }
+    }
+    public static void main(String[] args)
+    {
+        MainActivity unbound = new MainActivity();
+        unbound.onDestroy();
+        check(unbound.destroyCalls == 1, "unbound destroy must call superclass");
+
+        MainActivity missingView = new MainActivity();
+        missingView.backgroundService = new BackgroundService();
+        missingView.backgroundService.webView = null;
+        missingView.onDestroy();
+        check(missingView.destroyCalls == 1, "null WebView destroy must call superclass");
+
+        MainActivity normal = new MainActivity();
+        normal.backgroundService = new BackgroundService();
+        normal.onStop();
+        normal.onDestroy();
+        check(normal.stopCalls == 1 && normal.destroyCalls == 1, "normal lifecycle control must call both super methods");
+
+        MainActivity failedView = new MainActivity();
+        failedView.backgroundService = new BackgroundService();
+        failedView.backgroundService.webView.failEvaluation = true;
+        failedView.onStop();
+        failedView.onDestroy();
+        check(failedView.stopCalls == 1 && failedView.destroyCalls == 1, "cleanup exception must still call both superclass callbacks");
+
+        BackgroundService service = new BackgroundService();
+        MainActivity ui = new MainActivity();
+        ui.backgroundService = service;
+        MainActivity.instance = ui;
+        JavascriptJavaBridge bridge = new JavascriptJavaBridge(service);
+        bridge.JavaExportGoToSettings();
+        service.webView.callbacks.remove().run();
+        check(ui.settingsOpened == 1 && ui.setupOpened == 0, "Settings opens the editing form without restarting setup");
+
+        bridge.JavaExportGoToSettings();
+        ui.onPause();
+        check(MainActivity.instance == null && ui.pauseCalls == 1, "production pause must clear reference and call super");
+        boolean nullDereference = false;
+        try
+        {
+            service.webView.callbacks.remove().run();
+        }
+        catch (NullPointerException expected)
+        {
+            nullDereference = true;
+        }
+        check(!nullDereference, "queued settings request after pause must not dereference a paused activity");
+        check(ui.settingsOpened == 1, "failed request should not open settings");
+        
+        MainActivity.instance = ui;
+        bridge.JavaExportGoToSettings();
+        service.generation++;
+        service.webView.callbacks.remove().run();
+        check(ui.settingsOpened == 1, "old document settings callback must not affect replacement");
+        for (int mode = 0; mode < 3; mode++)
+        {
+            BackgroundService removed = new BackgroundService();
+            if (mode == 1)
+            {
+                removed.webView = null;
+            }
+            if (mode == 2)
+            {
+                removed.webView.failEvaluation = true;
+            }
+            MainActivity.instance = new MainActivity();
+            removed.onTaskRemoved(new Intent());
+            check(removed.removedCalls == 1 && MainActivity.instance == null, "Task removal must report hidden and call superclass");
+            check(removed.nodeBridge.visibility.equals(java.util.Arrays.asList(false))
+                && removed.nodeBridge.forced.equals(java.util.Arrays.asList(true)), "Task removal must reach Node with force even without a usable page");
+        }
+        System.out.println("PASS: " + assertions + " production callback regressions, including unbound/null/throwing WebView teardown, paused activity and replaced document");
+    }
+}

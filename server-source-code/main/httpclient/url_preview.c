@@ -1,25 +1,25 @@
 #include "../clib/clib.h"
-// This file creates the URL preview shown when a client posts a website link
+// this file creates the URL preview shown when a client posts a website link
 // in chat. The feature must be enabled in the server settings. It finds the
 // page's title, description, site name and picture so the client can display
-// them below the message.
+// them below the message
 //
-// It reads the downloaded page without running the website's JavaScript.
-// Pictures are downloaded here and sent as image bytes so the receiving
-// clients do not have to contact the website themselves.
-// The result keeps only the pieces needed by the card. Its image_data member
-// owns an allocated data URL, or is NULL when no supported picture was found.
-// Call url_preview__free() when the result is no longer needed.
+// it reads the downloaded page without running the website's JavaScript
+// pictures are downloaded here and sent as image bytes so the receiving
+// clients do not have to contact the website themselves
+// the result keeps only the pieces needed by the card. Its image_data member
+// owns an allocated data URL, or is NULL when no supported picture was found
+// call url_preview__free() when the result is no longer needed
 //
-// Open Graph fields are preferred, followed by Twitter card fields and the
+// open Graph fields are preferred, followed by Twitter card fields and the
 // ordinary HTML title and description. Pages must return HTML without
-// compression. Sites that require login or JavaScript may have no preview.
-// Pages are limited to 1 MiB and pictures to 256 KiB. Oversized or unsupported
-// pictures are omitted while the title and description are kept.
-// Each download follows at most three redirects, checking the actual network
+// compression. Sites that require login or JavaScript may have no preview
+// pages are limited to 1 MiB and pictures to 256 KiB. Oversized or unsupported
+// pictures are omitted while the title and description are kept
+// each download follows at most three redirects, checking the actual network
 // address before every connection. Each connection gets eight seconds after
 // DNS lookup; DNS itself uses the operating system's timeout. Redirects and
-// pictures start another connection, so the complete lookup can take longer.
+// pictures start another connection, so the complete lookup can take longer
 #include "httpclient.h"
 #include "url_preview.h"
 #include <ctype.h>
@@ -44,8 +44,8 @@ static boole _url_preview_internal__header(const char *headers, const char *name
 static boole _url_preview_internal__download(char *url, uint64 url_capacity, uint64 limit, httpclient_response_t *response);
 
 /**
- * @brief Checks whether two strings contain the same text, ignoring uppercase and lowercase
- *        letters.
+ * @brief checks whether two strings contain the same text, ignoring uppercase and lowercase
+ *        letters
  *
  * @param const char* left -> the first string, ending with a zero byte
  * @param const char* right -> the second string, ending with a zero byte
@@ -66,8 +66,8 @@ static boole _url_preview_internal__same(const char *left, const char *right)
 }
 
 /**
- * @brief Checks whether a string starts with the requested text, ignoring uppercase and lowercase
- *        letters.
+ * @brief checks whether a string starts with the requested text, ignoring uppercase and lowercase
+ *        letters
  *
  * @param const char* text -> the string to check, ending with a zero byte
  * @param const char* prefix -> the text that must appear at the start
@@ -88,7 +88,7 @@ static boole _url_preview_internal__starts_with(const char *text, const char *pr
 }
 
 /**
- * @brief Finds the first occurrence of some text, ignoring uppercase and lowercase letters.
+ * @brief finds the first occurrence of some text, ignoring uppercase and lowercase letters
  *
  * @param const char* text -> the string to search, ending with a zero byte
  * @param const char* wanted -> the text to find
@@ -117,7 +117,7 @@ static const char *_url_preview_internal__find(const char *text, const char *wan
 }
 
 /**
- * @brief Copies text into a fixed-size buffer and leaves room for its ending zero byte.
+ * @brief copies text into a fixed-size buffer and leaves room for its ending zero byte
  *
  * @param char* output -> the buffer that receives the copied text
  * @param uint64 capacity -> the size of output in bytes, which must be greater than zero
@@ -140,10 +140,10 @@ static void _url_preview_internal__copy(char *output, uint64 capacity, const cha
 }
 
 /**
- * @brief Turns text read from HTML into the readable text shown in a URL preview.
+ * @brief turns text read from HTML into the readable text shown in a URL preview
  *
- * It reads HTML character references such as &amp; and &#233;, keeps valid UTF-8
- * characters whole when shortening the text, and turns line breaks into spaces.
+ * it reads HTML character references such as &amp; and &#233;, keeps valid UTF-8
+ * characters whole when shortening the text, and turns line breaks into spaces
  *
  * @param const char* source -> the HTML text to read
  * @param uint64 length -> the maximum number of source bytes to read
@@ -326,8 +326,8 @@ static void _url_preview_internal__text(const char *source, uint64 length, char 
 }
 
 /**
- * @brief Replaces a preview field when a new nonempty value has a higher priority than the current
- *        one.
+ * @brief replaces a preview field when a new nonempty value has a higher priority than the current
+ *        one
  *
  * @param char* output -> the preview field to update with cleaned HTML text
  * @param uint64 capacity -> the size of output in bytes, which must be greater than zero
@@ -351,10 +351,10 @@ static void _url_preview_internal__choose(char *output, uint64 capacity, const c
 }
 
 /**
- * @brief Reads a downloaded page for the title, description, site name and picture used in a URL
- *        preview.
+ * @brief reads a downloaded page for the title, description, site name and picture used in a URL
+ *        preview
  *
- * Scripts are skipped. Open Graph values take priority over Twitter and ordinary tags.
+ * scripts are skipped. Open Graph values take priority over Twitter and ordinary tags
  *
  * @param const char* html -> the HTML text, ending with a zero byte
  * @param url_preview_t* preview -> the initialized preview whose text and image URL fields are filled
@@ -554,11 +554,11 @@ void url_preview__read_html(const char *html, url_preview_t *preview)
 }
 
 /**
- * @brief Removes current-directory and parent-directory steps from the path in an absolute URL.
+ * @brief removes current-directory and parent-directory steps from the path in an absolute URL
  *
- * A picture such as ../images/cover.png names a file one directory above the page.
- * These steps are removed before requesting it, while everything after '?' stays
- * unchanged because it belongs to the website's query.
+ * A picture such as ../images/cover.png names a file one directory above the page
+ * these steps are removed before requesting it, while everything after '?' stays
+ * unchanged because it belongs to the website's query
  *
  * @param char* url -> a writable absolute URL containing ://, updated in place
  *
@@ -631,9 +631,9 @@ static void _url_preview_internal__remove_directory_steps(char *url)
 }
 
 /**
- * @brief Turns a page-relative picture or redirect link into a complete HTTP or HTTPS URL.
+ * @brief turns a page-relative picture or redirect link into a complete HTTP or HTTPS URL
  *
- * Fragments and directory steps are removed from the completed URL.
+ * fragments and directory steps are removed from the completed URL
  *
  * @param const char* base -> the absolute URL of the page containing the link
  * @param const char* reference -> the absolute or relative link to resolve
@@ -713,7 +713,7 @@ boole url_preview__absolute_url(const char *base, const char *reference, char *o
 }
 
 /**
- * @brief Copies the value of a named HTTP response header without surrounding spaces.
+ * @brief copies the value of a named HTTP response header without surrounding spaces
  *
  * @param const char* headers -> the response status line and headers, separated by CRLF line endings
  * @param const char* name -> the header name to find, ignoring uppercase and lowercase letters
@@ -786,16 +786,14 @@ static boole _url_preview_internal__header(const char *headers, const char *name
 }
 
 /**
- * @brief Downloads a preview page or picture, following a limited number of redirects.
+ * @brief downloads a public preview resource with bounded redirects and size
  *
- * Each request checks the destination address and limits the downloaded bytes.
- * A successful result must have status 200 and must not use HTTP compression.
+ * @param char* url -> URL to fetch, updated after redirects
+ * @param uint64 url_capacity -> URL buffer capacity in bytes
+ * @param uint64 limit -> maximum response body size
+ * @param httpclient_response_t* response -> receives the response. The caller frees it even on failure
  *
- * @param char* url -> the URL to request, updated after redirects; its buffer must hold 2049 bytes
- * @param uint64 limit -> the maximum response size accepted by the HTTP client
- * @param httpclient_response_t* response -> receives the response; the caller must free it even on failure
- *
- * @return boole -> TRUE when a usable response was received, otherwise FALSE
+ * @return boole -> TRUE for an uncompressed HTTP 200 response, otherwise FALSE
  */
 static boole _url_preview_internal__download(char *url, uint64 url_capacity, uint64 limit, httpclient_response_t *response)
 {
@@ -855,10 +853,10 @@ static boole _url_preview_internal__download(char *url, uint64 url_capacity, uin
 }
 
 /**
- * @brief Downloads a website page and an optional picture to build the preview shown below a chat
- *        link.
+ * @brief downloads a website page and an optional picture to build the preview shown below a chat
+ *        link
  *
- * Downloads use public addresses and limited redirects. Supported pictures become base64 data URLs.
+ * downloads use public addresses and limited redirects. Supported pictures become base64 data URLs
  *
  * @param const char* url -> the absolute website URL, limited to 2048 characters
  * @param url_preview_t* preview -> an empty preview that receives text and optional allocated image data; release it with url_preview__free()
@@ -976,7 +974,7 @@ boole url_preview__resolve(const char *url, url_preview_t *preview)
 }
 
 /**
- * @brief Frees a URL preview picture and clears the preview for reuse.
+ * @brief frees a URL preview picture and clears the preview for reuse
  *
  * @param url_preview_t* preview -> an initialized preview to clear; this pointer must not be NULL
  *

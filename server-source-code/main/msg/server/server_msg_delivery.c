@@ -1,5 +1,5 @@
 #include "../../clib/clib.h"
-// This file creates message objects and queues encrypted messages for delivery to clients.
+// this file creates message objects and queues encrypted messages for delivery to clients
 
 #include "server_msg.h"
 #include <string.h>
@@ -23,9 +23,8 @@ static void _server_msg_delivery_internal__send_text(client_t *client, char *dh_
 static void _server_msg_delivery_internal__send_text_to_all_clients(char *plaintext, client_t *except);
 
 /**
- * @brief Encrypts a queued message using the private copy of its text and keys. This lets a worker
- *        prepare it after the caller releases the clients lock, even if the client disconnects or
- *        reconnects through another socket meanwhile.
+ * @brief encrypts owned copies of the text and keys after the clients lock is released
+ *        disconnecting or replacing the connection does not invalidate these copies
  *
  * @param void* context -> outgoing_metadata_t owned by this queued message
  * @param size_t* size -> receives the encrypted message length, excluding the terminating zero
@@ -43,7 +42,7 @@ static char *_server_msg_delivery_internal__encode_queued_text(void *context, si
 }
 
 /**
- * @brief Erases and frees a queued message's private copy of its text and keys.
+ * @brief erases and frees a queued message's private copy of its text and keys
  *
  * @param void* context -> outgoing_metadata_t to release, or NULL_POINTER
  *
@@ -63,7 +62,7 @@ static void _server_msg_delivery_internal__release_queued_text(void *context)
 }
 
 /**
- * @brief Frees the encrypted text after the queue has sent it or cancelled delivery.
+ * @brief frees the encrypted text after the queue has sent it or cancelled delivery
  *
  * @param char* text -> encrypted message allocated by crypto_metadata__encrypt
  *
@@ -75,18 +74,18 @@ void server_msg__delivery__release_encoded_text(char *text)
 }
 
 /**
- * @brief Copies a message and its connection keys into the socket's outgoing queue so a worker can
- *        encrypt it and the socket writer can send it later.
+ * @brief queues a copy of the message and keys for encrypted delivery
  *
  * @param ws_cli_conn_t* socket -> the chat connection that will receive the message
  * @param const crypto_session_keys_t* session -> connection keys to copy, or NULL_POINTER before the key exchange
- * @param const char* plaintext -> zero-terminated message to copy; the caller keeps the original text
+ * @param crypto_password_set_t* passwords -> server password snapshot retained until the queue releases it
+ * @param const char* plaintext -> terminated message to copy. The caller keeps the text
  * @param boole bulk -> TRUE lets file delivery retry when the queue is busy
  * @param boole keepalive -> TRUE sends a connection-check reply before waiting messages
  *
- * @attention The caller holds the clients lock while choosing the socket and copying its keys. The queue takes ownership of the copy, including on failure. The immutable password snapshot stays alive until the queue releases it. The message-size limit is fixed at startup.
+ * @attention the caller holds the clients lock while choosing the socket and copying its keys
  *
- * @return int64 -> 0 queued, 1 busy for file delivery, -1 failed. Being queued does not mean the message has already reached the client.
+ * @return int64 -> 0 queued, 1 busy for file delivery, -1 failed. Enqueue is not delivery confirmation
  */
 int64 server_msg__delivery__queue_text(ws_cli_conn_t *socket, const crypto_session_keys_t *session, crypto_password_set_t *passwords, const char *plaintext, boole bulk, boole keepalive)
 {
@@ -125,7 +124,7 @@ int64 server_msg__delivery__queue_text(ws_cli_conn_t *socket, const crypto_sessi
         outgoing->session = *session;
     }
 
-    // reserve room for the text, encryption buffers, base64 and WebSocket frame.
+    // reserve room for the text, encryption buffers, base64 and WebSocket frame
     // the fixed allowance also covers padding when the message itself is short
     charged_bytes = sizeof(*outgoing) + text_size * 5 + 8192;
 
@@ -142,13 +141,13 @@ int64 server_msg__delivery__queue_text(ws_cli_conn_t *socket, const crypto_sessi
 }
 
 /**
- * @brief Queues a message for a client's current socket using a private copy of its connection keys
- *        and message text for later encryption and delivery.
+ * @brief queues a message for a client's current socket using a private copy of its connection keys
+ *        and message text for later encryption and delivery
  *
  * @param client_t* client -> client whose current connection will receive the message
  * @param const char* plaintext -> zero-terminated message to copy; the caller keeps the original text
  *
- * @attention The caller must hold the clients lock until this function returns. The queued message stores its own data and does not keep a client_t pointer.
+ * @attention the caller must hold the clients lock until this function returns. The queued message stores its own data and does not keep a client_t pointer
  *
  * @return boole -> TRUE when the message was queued; FALSE on failure
  */
@@ -204,12 +203,12 @@ cJSON *server_msg__delivery__new_message(const char *type, cJSON **out_message)
 }
 
 /**
- * @brief Queues a printed message for encrypted delivery to one client's chat socket.
+ * @brief queues a printed message for encrypted delivery to one client's chat socket
  *
  * @param client_t* client -> client whose current connection will receive the message
  * @param char* plaintext -> zero-terminated message to copy; the caller keeps the original text
  *
- * @attention The caller must hold the clients lock until the message and keys are copied.
+ * @attention the caller must hold the clients lock until the message and keys are copied
  *
  * @return void
  */
@@ -219,14 +218,13 @@ void server_msg__delivery__send_text_to_client(client_t *client, char *plaintext
 }
 
 /**
- * @brief Queues a message for a particular chat socket. The message and keys are copied now, then
- *        encrypted and sent after this function returns.
+ * @brief queues a message using the client's socket and supplied shared secret
  *
- * @param ws_cli_conn_t* socket -> the chat connection that will receive the message
- * @param char* dh_shared_secret -> connection's shared secret, or NULL_POINTER before the key exchange; without a shared secret, only the server's configured keys protect the message
- * @param char* plaintext -> zero-terminated message to copy; the caller keeps the original text
+ * @param client_t* client -> receiving client
+ * @param char* dh_shared_secret -> shared secret, or NULL_POINTER before key exchange
+ * @param char* plaintext -> terminated message to copy. The caller keeps the text
  *
- * @attention The caller holds the clients lock while choosing the socket and secret.
+ * @attention the caller holds the clients lock while choosing the socket and secret
  *
  * @return void
  */
@@ -254,13 +252,13 @@ static void _server_msg_delivery_internal__send_text(client_t *client, char *dh_
 }
 
 /**
- * @brief Queues a JSON message for encrypted delivery to one socket.
+ * @brief queues a JSON message for encrypted delivery to one socket
  *
- * @param ws_cli_conn_t* socket -> receiving chat connection
+ * @param client_t* client -> receiving client
  * @param char* dh_shared_secret -> connection secret, or NULL_POINTER before key exchange
  * @param cJSON* json_root -> message owned by the caller
  *
- * @attention The caller holds the clients lock.
+ * @attention the caller holds the clients lock
  *
  * @return void
  */
@@ -273,12 +271,12 @@ void server_msg__delivery__send_json(client_t *client, char *dh_shared_secret, c
 }
 
 /**
- * @brief Queues a JSON message for encrypted delivery to one client.
+ * @brief queues a JSON message for encrypted delivery to one client
  *
  * @param client_t* client -> receiving client
  * @param cJSON* json_root -> message owned by the caller
  *
- * @attention The caller holds the clients lock.
+ * @attention the caller holds the clients lock
  *
  * @return void
  */
@@ -318,12 +316,12 @@ static void _server_msg_delivery_internal__send_text_to_all_clients(char *plaint
 }
 
 /**
- * @brief Queues a JSON message for all authenticated clients except music bots.
+ * @brief queues a JSON message for all authenticated clients except music bots
  *
  * @param cJSON* json_root -> message owned by the caller
  * @param client_t* except -> client to skip, or NULL_POINTER
  *
- * @attention The caller holds the clients lock.
+ * @attention the caller holds the clients lock
  *
  * @return void
  */
@@ -336,14 +334,14 @@ void server_msg__delivery__send_json_to_all_clients(cJSON *json_root, client_t *
 }
 
 /**
- * @brief Queues text for authenticated clients in one channel, excluding music bots.
+ * @brief queues text for authenticated clients in one channel, excluding music bots
  *
  * @param char* plaintext -> message text to copy
  * @param uint64 channel_id -> receiving channel
  * @param client_t* except -> client to skip, or NULL_POINTER
  * @param cstring receive_type -> attachment type to check, or NULL_POINTER for ordinary messages
  *
- * @attention The caller holds the clients lock.
+ * @attention the caller holds the clients lock
  *
  * @return void
  */
@@ -365,13 +363,13 @@ void server_msg__delivery__send_text_to_channel(char *plaintext, uint64 channel_
 }
 
 /**
- * @brief Queues a JSON message for authenticated clients in one channel, excluding music bots.
+ * @brief queues a JSON message for authenticated clients in one channel, excluding music bots
  *
  * @param cJSON* json_root -> message owned by the caller
  * @param uint64 channel_id -> receiving channel
  * @param client_t* except -> client to skip, or NULL_POINTER
  *
- * @attention The caller holds the clients lock.
+ * @attention the caller holds the clients lock
  *
  * @return void
  */

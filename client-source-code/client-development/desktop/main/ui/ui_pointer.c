@@ -16,11 +16,13 @@ static void (*g_pointer_down[GUI_NODE_TYPE__COUNT])(gui_node_t *, int64, int64, 
 static void _ui_pointer_internal__down(gui_node_t *node, int64 x, int64 y, int64 button);
 
 /**
- * @brief keeps secondary clicks on tree rows and dismisses popups on the first outside press.
+ * @brief keeps secondary clicks on tree rows and dismisses popups on the first outside press
+ *
  * @param gui_node_t* node -> deepest pressed control
  * @param int64 x -> physical pointer x
  * @param int64 y -> physical pointer y
  * @param int64 button -> left 0, right 1, middle 2
+ *
  * @return void
  */
 static void _ui_pointer_internal__down(gui_node_t *node, int64 x, int64 y, int64 button)
@@ -75,13 +77,15 @@ static LRESULT CALLBACK _ui_pointer_internal__window(HWND window, UINT message, 
 static BOOL CALLBACK _ui_pointer_internal__attach(HWND window, LPARAM context);
 
 /**
- * @brief forwards secondary clicks missing from the current Windows backend, on this window's UI thread.
- * @param HWND window -> application-owned Meek window
+ * @brief forwards secondary clicks missing from the current Windows backend, on this window's UI thread
+ *
+ * @param HWND window -> application owned Meek window
  * @param UINT message -> native window event
  * @param WPARAM word -> native event data
  * @param LPARAM data -> native event data containing signed client coordinates
  * @param UINT_PTR identifier -> subclass registration identifier
  * @param DWORD_PTR context -> unused registration data
+ *
  * @return LRESULT -> native event result
  */
 static LRESULT CALLBACK _ui_pointer_internal__window(HWND window, UINT message, WPARAM word, LPARAM data, UINT_PTR identifier, DWORD_PTR context)
@@ -132,9 +136,11 @@ static LRESULT CALLBACK _ui_pointer_internal__window(HWND window, UINT message, 
 }
 
 /**
- * @brief attaches only to Meek's native window owned by the calling UI thread.
+ * @brief attaches only to Meek's native window owned by the calling UI thread
+ *
  * @param HWND window -> enumerated thread window
  * @param LPARAM context -> unused enumeration data
+ *
  * @return BOOL -> FALSE after installing the adapter, TRUE to keep searching
  */
 static BOOL CALLBACK _ui_pointer_internal__attach(HWND window, LPARAM context)
@@ -155,7 +161,8 @@ static BOOL CALLBACK _ui_pointer_internal__attach(HWND window, LPARAM context)
 #endif
 
 /**
- * @brief installs the Windows secondary-button adapter; other backends already deliver these events.
+ * @brief installs the Windows secondary button adapter. Other backends already deliver these events
+ *
  * @return boole -> TRUE when native pointer input is ready
  */
 boole desktop_ui_pointer__initialize(void)

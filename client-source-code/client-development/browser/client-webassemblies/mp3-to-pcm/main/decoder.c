@@ -3,16 +3,35 @@
 #define MINIMP3_NONSTANDARD_BUT_LOGICAL
 #define MINIMP3_IMPLEMENTATION
 #include "minimp3/minimp3.h"
+#include "../../common/clib.h"
 
 #define WASM_EXPORT __attribute__((visibility("default")))
 
 // memcpy/memset/memmove implementations
 
+/**
+ * @brief provides the memory copy ABI through the overlap-safe move routine
+ *
+ * @param void* dest -> destination buffer
+ * @param const void* src -> source buffer
+ * @param size_t n -> number of bytes
+ *
+ * @return void* -> destination pointer
+ */
 void *memcpy(void *dest, const void *src, size_t n)
 {
     return memmove(dest, src, n);
 }
 
+/**
+ * @brief fills a byte range for the decoder runtime ABI
+ *
+ * @param void* s -> destination buffer
+ * @param int c -> value converted to a byte
+ * @param size_t n -> number of bytes
+ *
+ * @return void* -> destination pointer
+ */
 void *memset(void *s, int c, size_t n)
 {
     char *dst = s;
@@ -26,6 +45,15 @@ void *memset(void *s, int c, size_t n)
 }
 
 // https://codereview.stackexchange.com/questions/174935/implementation-of-memmove
+/**
+ * @brief copies bytes in the direction needed to preserve overlapping input
+ *
+ * @param void* dest -> destination buffer
+ * @param const void* src -> source buffer
+ * @param size_t n -> number of bytes
+ *
+ * @return void* -> destination pointer
+ */
 void *memmove(void *dest, const void *src, size_t n)
 {
     char *d = (char *)(dest);
@@ -57,6 +85,11 @@ extern unsigned char __heap_base;
 
 const size_t WASM_PAGE_SIZE = 1024 * 64;
 
+/**
+ * @brief reads available linear memory after the decoder heap base
+ *
+ * @return size_t -> heap capacity in bytes
+ */
 static size_t heap_size()
 {
     uintptr_t heap_base = (uintptr_t)&__heap_base;
@@ -66,6 +99,13 @@ static size_t heap_size()
 #define DECODER_MAX_INPUT_BYTES (64U * 1024U * 1024U)
 #define DECODER_MAX_WORKING_BYTES (256U * 1024U * 1024U)
 
+/**
+ * @brief grows linear memory within the decoder limit or traps on failure
+ *
+ * @param size_t required_bytes -> required byte capacity after the heap base
+ *
+ * @return void
+ */
 static void grow_memory_if_needed(size_t required_bytes)
 {
     if (required_bytes > DECODER_MAX_WORKING_BYTES)
@@ -83,6 +123,13 @@ static void grow_memory_if_needed(size_t required_bytes)
     }
 }
 
+/**
+ * @brief aligns a size to four bytes within the decoder memory limit
+ *
+ * @param size_t sz -> unaligned byte count
+ *
+ * @return size_t -> aligned byte count
+ */
 static size_t roundup(size_t sz)
 {
     if (sz > DECODER_MAX_WORKING_BYTES - 3)
@@ -103,18 +150,33 @@ typedef struct decode_results
 
 static decode_results_t g_decode_results;
 
+/**
+ * @brief reads the sampling rate from the last scan or decode
+ *
+ * @return int -> sampling rate in Hz
+ */
 WASM_EXPORT
 int decode_results_sampling_rate()
 {
     return g_decode_results.sampling_rate;
 }
 
+/**
+ * @brief reads the channel count from the last scan or decode
+ *
+ * @return int -> decoded channel count
+ */
 WASM_EXPORT
 int decode_results_num_channels()
 {
     return g_decode_results.num_channels;
 }
 
+/**
+ * @brief reads the sample count from the last scan or decode
+ *
+ * @return int -> sample count including all channels
+ */
 WASM_EXPORT
 int decode_results_num_samples()
 {
@@ -134,24 +196,46 @@ static struct
     double current_time;
 } g_decoder;
 
+/**
+ * @brief initializes the MP3 codec state
+ *
+ * @return void
+ */
 WASM_EXPORT
 void decoder_init()
 {
     mp3dec_init(&g_decoder.mp3d);
 }
 
+/**
+ * @brief exposes the input region at the heap base
+ *
+ * @return const uint8_t* -> address where the caller places MP3 bytes
+ */
 WASM_EXPORT
 const uint8_t *decoder_mp3_data_offset()
 {
     return &__heap_base;
 }
 
+/**
+ * @brief reads the configured MP3 input length
+ *
+ * @return size_t -> input byte count
+ */
 WASM_EXPORT
 size_t decoder_mp3_data_size()
 {
     return g_decoder.mp3_data_size;
 }
 
+/**
+ * @brief reserves input memory and resets the read position and PCM length
+ *
+ * @param size_t size -> MP3 byte count within the input limit
+ *
+ * @return void
+ */
 WASM_EXPORT
 void decoder_set_mp3_data_size(size_t size)
 {
@@ -169,24 +253,51 @@ void decoder_set_mp3_data_size(size_t size)
     g_decoder.current_time = 0.0;
 }
 
+/**
+ * @brief locates PCM output after the aligned input region
+ *
+ * @return const uint8_t* -> PCM output address in linear memory
+ */
 WASM_EXPORT
 const uint8_t *decoder_pcm_data_offset()
 {
     return decoder_mp3_data_offset() + roundup(g_decoder.mp3_data_size);
 }
 
+/**
+ * @brief reads the last decoded PCM output length
+ *
+ * @return size_t -> PCM byte count
+ */
 WASM_EXPORT
 size_t decoder_pcm_data_size()
 {
     return g_decoder.pcm_data_size;
 }
 
+/**
+ * @brief reads the current position tracked by scan and decode operations
+ *
+ * @return double -> position in seconds
+ */
 WASM_EXPORT
 double decoder_current_time()
 {
     return g_decoder.current_time;
 }
 
+/**
+ * @brief scans complete frames before the requested duration or input end
+ *
+ * @param const uint8_t* mp3 -> MP3 input bytes
+ * @param size_t mp3_bytes -> available byte count
+ * @param double target_duration_in_seconds -> duration limit, or a negative value to scan all input
+ * @param decode_results_t* results -> output sample rate, channel count and total samples
+ * @param size_t* num_bytes -> output consumed byte count
+ * @param double* actual_duration -> output scanned duration in seconds
+ *
+ * @return void
+ */
 static void seek_internal(const uint8_t *mp3, size_t mp3_bytes, double target_duration_in_seconds,
                           decode_results_t *results, size_t *num_bytes, double *actual_duration)
 {
@@ -250,6 +361,13 @@ static void seek_internal(const uint8_t *mp3, size_t mp3_bytes, double target_du
     }
 }
 
+/**
+ * @brief scans from the input start and updates the decoder position
+ *
+ * @param double position_in_seconds -> requested position in seconds, or a negative value for input end
+ *
+ * @return void
+ */
 WASM_EXPORT
 void decoder_seek(double position_in_seconds)
 {
@@ -262,11 +380,20 @@ void decoder_seek(double position_in_seconds)
 
     seek_internal(mp3, mp3_bytes, position_in_seconds, &results, &num_bytes, &duration);
 
-    memcpy(&g_decode_results, &results, sizeof(decode_results_t));
+    clib__copy_memory(&results, &g_decode_results, sizeof(results), sizeof(g_decode_results));
     g_decoder.byte_offset = num_bytes;
     g_decoder.current_time = duration;
 }
 
+/**
+ * @brief decodes frames into PCM storage using the preceding scan results
+ *
+ * @param const uint8_t* mp3 -> MP3 input bytes
+ * @param size_t mp3_bytes -> available byte count
+ * @param decode_results_t* results -> expected sample count from the scan
+ *
+ * @return void
+ */
 static void decode_internal(const uint8_t *mp3, size_t mp3_bytes, decode_results_t *results)
 {
     mp3dec_frame_info_t frame;
@@ -287,12 +414,19 @@ static void decode_internal(const uint8_t *mp3, size_t mp3_bytes, decode_results
         {
             __builtin_trap();
         }
-        memcpy(pcm + num_samples, frame_pcm, (size_t)samples * frame.channels * sizeof(mp3d_sample_t));
+        clib__copy_memory(frame_pcm, pcm + num_samples, (size_t)samples * frame.channels * sizeof(mp3d_sample_t), (size_t)(results->num_samples - num_samples) * sizeof(mp3d_sample_t));
         num_bytes += frame.frame_bytes;
         num_samples += samples * frame.channels;
     }
 }
 
+/**
+ * @brief decodes the next bounded duration and advances the stored input position
+ *
+ * @param double duration_in_seconds -> duration to decode, or a negative value for the remaining input
+ *
+ * @return void
+ */
 WASM_EXPORT
 void decoder_decode(double duration_in_seconds)
 {
@@ -316,7 +450,7 @@ void decoder_decode(double duration_in_seconds)
     decode_internal(mp3, mp3_bytes, &results);
 
     // Update decoder state.
-    memcpy(&g_decode_results, &results, sizeof(decode_results_t));
+    clib__copy_memory(&results, &g_decode_results, sizeof(results), sizeof(g_decode_results));
     g_decoder.byte_offset += num_bytes;
     g_decoder.current_time += duration;
 }

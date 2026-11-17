@@ -1,4 +1,4 @@
-// This file provides helpers for clocks, threads, memory usage, executable lookup, random data, hashing and JSON.
+// this file provides helpers for clocks, threads, memory usage, executable lookup, random data, hashing and JSON
 #include "definitions.h"
 #include "clib/clib.h"
 #include "util.h"
@@ -24,10 +24,12 @@
 static boole _util_internal__check_executable(cstring candidate, char *path, uint64 capacity);
 
 /**
- * @brief Checks one executable file and returns its absolute path.
+ * @brief checks one executable file and returns its absolute path
+ *
  * @param cstring candidate File to check
  * @param char* path Buffer receiving the absolute path
  * @param uint64 capacity Buffer size in bytes
+ *
  * @return boole Whether a usable executable was found
  */
 static boole _util_internal__check_executable(cstring candidate, char *path, uint64 capacity)
@@ -104,10 +106,12 @@ static boole _util_internal__check_executable(cstring candidate, char *path, uin
 }
 
 /**
- * @brief Resolves an explicit executable path or searches the PATH directories.
+ * @brief resolves an explicit executable path or searches the PATH directories
+ *
  * @param cstring command Executable name or path without shell arguments
  * @param char* path Buffer receiving the absolute path
  * @param uint64 capacity Buffer size in bytes
+ *
  * @return boole Whether an executable was found and fit in the buffer
  */
 boole util__find_executable(cstring command, char *path, uint64 capacity)
@@ -268,8 +272,10 @@ boole util__find_executable(cstring command, char *path, uint64 capacity)
 }
 
 /**
- * @brief Reads the RAM currently occupied by this server process, including shared pages.
+ * @brief reads the RAM currently occupied by this server process, including shared pages
+ *
  * @param uint64* bytes -> receives the resident memory size in bytes, or zero on failure
+ *
  * @return boole -> TRUE when the operating system supplied a value
  */
 boole util__get_process_ram_usage(uint64 *bytes)
@@ -332,11 +338,13 @@ boole util__get_process_ram_usage(uint64 *bytes)
 }
 
 /**
- * @brief Starts a worker thread that releases its thread resources when it finishes.
+ * @brief starts a worker thread that releases its thread resources when it finishes
+ *
  * @param void* (*)(void*) entry -> function run by the worker
  * @param void* argument -> value passed to entry; the caller retains it if starting fails
+ *
  * @return boole -> TRUE when started; FALSE when thread setup or creation fails
- * @note No join is needed, even if the worker finishes before this function returns.
+ * @note no join is needed, even if the worker finishes before this function returns
  */
 boole util__start_detached_thread(void *(*entry)(void *), void *argument)
 {
@@ -423,15 +431,9 @@ boole util__normalize_country_code(cJSON *json_entry, char *out_code)
 }
 
 /**
- * @brief returns timestamp in milliseconds
+ * @brief reads milliseconds for local time comparisons
  *
- *        on windows this is GetTickCount64 (milliseconds since boot), everywhere else it is
- *        gettimeofday (milliseconds since the unix epoch). only differences between two readings
- *        are meaningful, the absolute value is not comparable across platforms.
- *
- * @attention should work on windows and linux
- *
- * @return uint64 -> the current timestamp in milliseconds
+ * @return uint64 -> milliseconds since boot on Windows, or since the Unix epoch elsewhere
  */
 uint64 util__get_timestamp_ms(void)
 {
@@ -456,8 +458,10 @@ uint64 util__get_timestamp_ms(void)
 }
 
 /**
- * @brief Reads a clock that is unaffected by changes to the calendar time.
+ * @brief reads a clock that is unaffected by changes to the calendar time
+ *
  * @param uint64* milliseconds -> receives the clock reading
+ *
  * @return boole -> TRUE when the clock was read successfully
  */
 boole util__get_monotonic_ms(uint64 *milliseconds)
@@ -478,8 +482,10 @@ boole util__get_monotonic_ms(uint64 *milliseconds)
 }
 
 /**
- * @brief Pauses the calling thread for the requested number of milliseconds.
+ * @brief pauses the calling thread for the requested number of milliseconds
+ *
  * @param uint64 milliseconds -> requested pause length
+ *
  * @return void
  */
 void util__sleep_for_milliseconds(uint64 milliseconds)
@@ -517,7 +523,8 @@ void util__sleep_for_milliseconds(uint64 milliseconds)
 
 #ifndef WIN32
 /**
- * @brief Finds the executable directory so bundled files can be opened beside it.
+ * @brief finds the executable directory so bundled files can be opened beside it
+ *
  * @param char* out_directory -> buffer receiving the directory, or an empty string on failure
  * @param uint64 out_directory_size -> buffer capacity in bytes
  */
@@ -590,7 +597,8 @@ void util__get_executable_directory(char *out_directory, uint64 out_directory_si
 }
 #else
 /**
- * @brief Finds the executable directory so bundled files can be opened beside it.
+ * @brief finds the executable directory so bundled files can be opened beside it
+ *
  * @param char* out_directory -> buffer receiving the directory, or an empty string on failure
  * @param uint64 out_directory_size -> buffer capacity in bytes
  */
@@ -628,9 +636,11 @@ void util__get_executable_directory(char *out_directory, uint64 out_directory_si
 }
 #endif
 /**
- * @brief Fills a buffer with unpredictable random bytes for keys and login checks.
+ * @brief fills a buffer with unpredictable random bytes for keys and login checks
+ *
  * @param ubyte* out_buffer -> buffer receiving the random bytes
  * @param uint64 length -> byte count, at most MBEDTLS_CTR_DRBG_MAX_REQUEST
+ *
  * @return boole -> TRUE on success; the caller must stop the operation on failure
  */
 boole util__fill_secure_random_bytes(ubyte *out_buffer, uint64 length)
@@ -678,9 +688,11 @@ boole util__fill_secure_random_bytes(ubyte *out_buffer, uint64 length)
 }
 
 /**
- * @brief Fills a buffer with unpredictable printable characters for a login challenge.
+ * @brief fills a buffer with unpredictable printable characters for a login challenge
+ *
  * @param char* block -> buffer receiving the characters, without a string terminator
  * @param uint64 length -> number of characters to write
+ *
  * @return boole -> TRUE on success; the caller must reject the login on failure
  */
 boole util__fill_block_of_data_with_ascii_characters(char *block, uint64 length)
@@ -705,7 +717,8 @@ boole util__fill_block_of_data_with_ascii_characters(char *block, uint64 length)
 }
 
 /**
- * @brief Deletes a JSON object and frees its printed string. Either may be NULL_POINTER.
+ * @brief deletes a JSON object and frees its printed string. Either may be NULL_POINTER
+ *
  * @param cJSON* json_root_object1 -> JSON object to delete
  * @param char* json_root_object1_string -> printed JSON string to free
  */
@@ -727,7 +740,7 @@ void util__free_json_message(cJSON *json_root_object1, char *json_root_object1_s
 
 /**
  * @brief SHA256-hashes a password then base64-encodes it, so auth secrets can be stored without
- *        plaintext.
+ *        plaintext
  *
  * @param char* plaintext -> the password to hash
  * @param char* out -> caller buffer for the base64(SHA256) text (44 chars + NUL)
@@ -756,7 +769,7 @@ void util__hash_password_to_base64(cstring plaintext, char *out, int64 out_size)
 }
 
 /**
- * @brief checks a submitted plaintext password against a stored base64(SHA256) hash.
+ * @brief checks a submitted plaintext password against a stored base64(SHA256) hash
  *
  * @param char* plaintext -> the submitted password
  * @param char* stored_base64_hash -> the stored base64(SHA256) to compare against
@@ -772,8 +785,15 @@ boole util__password_matches(char *plaintext, char *stored_base64_hash)
 }
 
 /**
- * @brief Reads a JSON integer only after validating its type and conversion range.
- * @attention A failed read leaves the destination unchanged.
+ * @brief reads a JSON integer only after validating its type and conversion range
+ * @attention A failed read leaves the destination unchanged
+ *
+ * @param const cJSON* value -> JSON number to check
+ * @param int64 minimum -> smallest accepted integer
+ * @param int64 maximum -> largest accepted integer
+ * @param int64* result -> receives the integer only on success
+ *
+ * @return boole -> TRUE for an integer in range, otherwise FALSE
  */
 boole util__json_read_int64(const cJSON *value, int64 minimum, int64 maximum, int64 *result)
 {
@@ -806,8 +826,14 @@ boole util__json_read_int64(const cJSON *value, int64 minimum, int64 maximum, in
 }
 
 /**
- * @brief Reads an unsigned JSON integer without fractional or out-of-range casts.
- * @attention A failed read leaves the destination unchanged.
+ * @brief reads an unsigned JSON integer without fractional or out-of-range casts
+ * @attention A failed read leaves the destination unchanged
+ *
+ * @param const cJSON* value -> JSON number to check
+ * @param uint64 maximum -> largest accepted nonnegative integer
+ * @param uint64* result -> receives the integer only on success
+ *
+ * @return boole -> TRUE for an integer in range, otherwise FALSE
  */
 boole util__json_read_uint64(const cJSON *value, uint64 maximum, uint64 *result)
 {
@@ -840,8 +866,10 @@ boole util__json_read_uint64(const cJSON *value, uint64 maximum, uint64 *result)
 }
 
 /**
- * @brief Clears owned JSON strings before releasing a tree.
- * @attention Borrowed strings and referenced child trees remain owned by their caller.
+ * @brief clears owned JSON strings before releasing a tree
+ * @attention borrowed strings and referenced child trees remain owned by their caller
+ *
+ * @param cJSON* root -> owned tree to clear and free, or NULL for no work
  */
 void util__json_delete_secure(cJSON *root)
 {
@@ -877,7 +905,15 @@ void util__json_delete_secure(cJSON *root)
     cJSON_Delete(root);
 }
 
-/** @brief Transfers ownership to the object, or releases the child on failure. */
+/**
+ * @brief transfers ownership to the object, or releases the child on failure
+ *
+ * @param cJSON* object -> destination object
+ * @param const char* name -> property name to copy
+ * @param cJSON* child -> owned value consumed on both success and failure
+ *
+ * @return boole -> TRUE if added, otherwise FALSE after freeing the child
+ */
 boole util__json_add_owned_object(cJSON *object, const char *name, cJSON *child)
 {
     if (!cJSON_AddItemToObject(object, name, child))
@@ -888,7 +924,14 @@ boole util__json_add_owned_object(cJSON *object, const char *name, cJSON *child)
     return TRUE;
 }
 
-/** @brief Transfers ownership to the array, or releases the child on failure. */
+/**
+ * @brief transfers ownership to the array, or releases the child on failure
+ *
+ * @param cJSON* array -> destination array
+ * @param cJSON* child -> owned value consumed on both success and failure
+ *
+ * @return boole -> TRUE if added, otherwise FALSE after freeing the child
+ */
 boole util__json_add_owned_array(cJSON *array, cJSON *child)
 {
     if (!cJSON_AddItemToArray(array, child))
@@ -899,7 +942,12 @@ boole util__json_add_owned_array(cJSON *array, cJSON *child)
     return TRUE;
 }
 
-/** @brief Clears the owned contents of a removed JSON property. */
+/**
+ * @brief clears the owned contents of a removed JSON property
+ *
+ * @param cJSON* object -> object containing the property
+ * @param const char* name -> exact property name to remove
+ */
 void util__json_delete_item_secure(cJSON *object, const char *name)
 {
     util__json_delete_secure(cJSON_DetachItemFromObjectCaseSensitive(object, name));

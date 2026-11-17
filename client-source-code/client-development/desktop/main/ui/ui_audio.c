@@ -28,8 +28,10 @@ static void _ui_audio_internal__refresh_devices(gui_event_t *event);
 static boole _ui_audio_internal__key_list(gui_node_t *parent);
 
 /**
- * @brief fills the key picker from the same table used by all platform adapters.
- * @param gui_node_t* parent -> GUI-owned select; existing options are retained
+ * @brief fills the key picker from the same table used by all platform adapters
+ *
+ * @param gui_node_t* parent -> GUI owned select. Existing options are retained
+ *
  * @return boole -> TRUE when every supported key has an option
  */
 static boole _ui_audio_internal__key_list(gui_node_t *parent)
@@ -58,10 +60,12 @@ static boole _ui_audio_internal__key_list(gui_node_t *parent)
 }
 
 /**
- * @brief rebuilds one bounded picker while preserving its unsaved device key.
+ * @brief rebuilds one bounded picker while preserving its unsaved device key
+ *
  * @param const char* id -> picker control ID
  * @param boole capture -> TRUE for input, FALSE for output
- * @param const char* selected -> unsaved key; empty means system default
+ * @param const char* selected -> unsaved key. Empty means system default
+ *
  * @return void
  */
 static void _ui_audio_internal__device_list(const char *id, boole capture, const char *selected)
@@ -171,8 +175,10 @@ static void _ui_audio_internal__device_list(const char *id, boole capture, const
 }
 
 /**
- * @brief records a draft selection; this handler never opens or switches an audio device.
+ * @brief records a draft selection. This handler never opens or switches an audio device
+ *
  * @param gui_event_t* event -> select change event
+ *
  * @return void
  */
 static void _ui_audio_internal__choose_device(gui_event_t *event)
@@ -219,8 +225,10 @@ static void _ui_audio_internal__choose_device(gui_event_t *event)
 }
 
 /**
- * @brief refreshes choices without changing the active input or output.
+ * @brief refreshes choices without changing the active input or output
+ *
  * @param gui_event_t* event -> unused button event
+ *
  * @return void
  */
 static void _ui_audio_internal__refresh_devices(gui_event_t *event)
@@ -236,7 +244,8 @@ static void _ui_audio_internal__refresh_devices(gui_event_t *event)
 }
 
 /**
- * @brief polls enumeration revisions while the floating audio panel is open.
+ * @brief polls enumeration revisions while the floating audio panel is open
+ *
  * @return void
  */
 void desktop_ui_audio__tick(void)
@@ -269,9 +278,11 @@ void desktop_ui_audio__tick(void)
 }
 
 /**
- * @brief copies control text and redraws only when its visible value changes.
+ * @brief copies control text and redraws only when its visible value changes
+ *
  * @param const char* id -> control ID
  * @param const char* text -> copied plain text
+ *
  * @return void
  */
 static void _ui_audio_internal__text(const char *id, const char *text)
@@ -289,9 +300,11 @@ static void _ui_audio_internal__text(const char *id, const char *text)
 }
 
 /**
- * @brief shows the audio panel without covering the surrounding chat.
+ * @brief shows the audio panel without covering the surrounding chat
+ *
  * @param const char* id -> panel control ID
  * @param boole visible -> TRUE to show, FALSE to hide
+ *
  * @return void
  */
 static void _ui_audio_internal__panel(const char *id, boole visible)
@@ -313,8 +326,10 @@ static void _ui_audio_internal__panel(const char *id, boole visible)
 }
 
 /**
- * @brief updates audio status from a copied session snapshot, never from device callbacks.
- * @param const desktop_session_view_t* view -> borrowed GUI-owned session snapshot
+ * @brief updates audio status from a copied session snapshot, never from device callbacks
+ *
+ * @param const desktop_session_view_t* view -> borrowed GUI owned session snapshot
+ *
  * @return void
  */
 void desktop_ui_audio__update(const desktop_session_view_t *view)
@@ -361,10 +376,12 @@ void desktop_ui_audio__update(const desktop_session_view_t *view)
 }
 
 /**
- * @brief registers audio controls before parsing the layout; the microphone uses the saved transmission mode.
- * @param desktop_session_t* session -> GUI-owned session
- * @param desktop_settings_t* settings -> shared GUI-owned saved settings
+ * @brief registers audio controls before parsing the layout. The microphone uses the saved transmission mode
+ *
+ * @param desktop_session_t* session -> GUI owned session
+ * @param desktop_settings_t* settings -> shared GUI owned saved settings
  * @param boole native_devices -> FALSE for a hidden preview that must not enumerate hardware
+ *
  * @return void
  */
 void desktop_ui_audio__initialize(desktop_session_t *session, desktop_settings_t *settings, boole native_devices)
@@ -387,7 +404,8 @@ void desktop_ui_audio__initialize(desktop_session_t *session, desktop_settings_t
 }
 
 /**
- * @brief updates audio preferences without changing the microphone control when speech starts.
+ * @brief updates audio preferences without changing the microphone control when speech starts
+ *
  * @return void
  */
 void desktop_ui_audio__apply(void)
@@ -424,8 +442,10 @@ void desktop_ui_audio__apply(void)
 }
 
 /**
- * @brief updates labels for unsaved audio slider values.
+ * @brief updates labels for unsaved audio slider values
+ *
  * @param gui_event_t* event -> unused GUI change event
+ *
  * @return void
  */
 static void _ui_audio_internal__audio_values(gui_event_t *event)
@@ -470,8 +490,10 @@ static void _ui_audio_internal__audio_values(gui_event_t *event)
 }
 
 /**
- * @brief opens audio settings with the currently applied values.
+ * @brief opens audio settings with the currently applied values
+ *
  * @param gui_event_t* event -> unused GUI click event
+ *
  * @return void
  */
 static void _ui_audio_internal__show_audio(gui_event_t *event)
@@ -545,8 +567,10 @@ static void _ui_audio_internal__show_audio(gui_event_t *event)
 }
 
 /**
- * @brief closes audio settings without applying slider changes.
+ * @brief closes audio settings without applying slider changes
+ *
  * @param gui_event_t* event -> unused GUI click event
+ *
  * @return void
  */
 static void _ui_audio_internal__close_audio(gui_event_t *event)
@@ -557,8 +581,10 @@ static void _ui_audio_internal__close_audio(gui_event_t *event)
 }
 
 /**
- * @brief saves slider values before changing live audio settings.
+ * @brief saves slider values before changing live audio settings
+ *
  * @param gui_event_t* event -> unused GUI click event
+ *
  * @return void
  */
 static void _ui_audio_internal__save_audio(gui_event_t *event)
@@ -617,8 +643,10 @@ static void _ui_audio_internal__save_audio(gui_event_t *event)
 }
 
 /**
- * @brief explicitly opens or closes microphone capture using the saved activation mode.
+ * @brief explicitly opens or closes microphone capture using the saved activation mode
+ *
  * @param gui_event_t* event -> unused GUI click event
+ *
  * @return void
  */
 static void _ui_audio_internal__microphone(gui_event_t *event)
@@ -637,8 +665,10 @@ static void _ui_audio_internal__microphone(gui_event_t *event)
 }
 
 /**
- * @brief restores audio from the bottom warning without changing the microphone or transmission mode.
+ * @brief restores audio from the bottom warning without changing the microphone or transmission mode
+ *
  * @param gui_event_t* event -> unused GUI click event
+ *
  * @return void
  */
 static void _ui_audio_internal__enable_audio(gui_event_t *event)

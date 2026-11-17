@@ -36,13 +36,11 @@ body {
 }
 
 #verification-system {
-    min-height: 100vh;
+    min-height: calc(100vh / var(--ui-display-scale, 1));
     text-align: center;
 }
 
-/* the connect window (connection.js): the connect form as a dialog card with the title bar of the other dialogs (layout.style).
-   android keeps the form as a page of its own, so the card look is for the browser only. the :where() keeps the
-   specificity at one id, so a theme sheet that follows this one (ozone) overrides the card with its own rules */
+/* Show the connection form as a dialog card. Android keeps its separate page layout. */
 :where(body:not(.android-app)) #container-2 {
     display: inline-block;
     text-align: center;
@@ -63,7 +61,7 @@ div {
 }
 
 #body-container {
-    height: 100vh;
+    height: calc(100vh / var(--ui-display-scale, 1));
     min-width: 550px;
 }
 
@@ -90,7 +88,7 @@ a-toast {
     top: 40%;
     box-sizing: border-box;
     min-width: 200px;
-    max-width: 90vw;
+    max-width: calc(90vw / var(--ui-display-scale, 1));
     text-align: center;
     padding: 10px 16px;
     background-color: var(--set-panel, #36393f);
@@ -2071,6 +2069,7 @@ a-toast:hover {
     position: absolute;
     inset: 9px;
     background: currentColor;
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='9' y='3' width='6' height='12' rx='3'/%3E%3Cpath d='M6 10v2a6 6 0 0 0 12 0v-2M12 18v3m-3 0h6'/%3E%3C/svg%3E") center / contain no-repeat;
     mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='9' y='3' width='6' height='12' rx='3'/%3E%3Cpath d='M6 10v2a6 6 0 0 0 12 0v-2M12 18v3m-3 0h6'/%3E%3C/svg%3E") center / contain no-repeat;
 }
 
@@ -2101,13 +2100,7 @@ a-toast:hover {
     border-color: #75d2ac;
 }
 
-/* voice.js and ui.js write a picture of the microphone into the style attribute of this label every time
-   the microphone is switched on or off. The themes Mobile, Hybrid, Hybrid v2 and Aero show the state with
-   that picture. This theme draws the state itself (::before, ::after and the colours above), so the picture
-   is not shown here: it stood behind the drawn microphone, and the wide button of the Mono themes,
-   which include this file, repeated it over its whole width. The layout with the bar of four screens
-   (body[data-conversation-tab], the Pocket theme) is left out: it gives the button pictures of its own with
-   the same property. */
+/* Draw the microphone state with pseudo elements and suppress the inline icon supplied by JavaScript. */
 :root:not(:has(body[data-conversation-tab])) #toggle-microphone-label
 {
     background-image: none !important;
@@ -2159,9 +2152,7 @@ a-toast:hover {
     background-color: #36393f;
 }
 
-/* the composer: the input row reads as one rounded card - the text field, the attach, image
-   and send controls and the small format tools all live inside a single surface, because the
-   old row scattered them (buttons top-right, slider floating over the text, a bare send) */
+/* Keep the field, attachment controls, Send button and formatting tools inside one composer. */
 #space-devider4 {
     position: relative;
     /* a little side room, so the card sits just inside the chat panel's edges instead of touching them */

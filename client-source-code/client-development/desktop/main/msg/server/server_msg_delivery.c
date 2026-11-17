@@ -6,9 +6,11 @@
 #include "mbedtls/platform_util.h"
 
 /**
- * @brief reads an optional JSON string without returning a null pointer.
- * @param const cJSON* object -> borrowed JSON object; may be NULL
- * @param const char* key -> case-sensitive JSON member name
+ * @brief reads an optional JSON string without returning a null pointer
+ *
+ * @param const cJSON* object -> borrowed JSON object. May be NULL
+ * @param const char* key -> case sensitive JSON member name
+ *
  * @return const char* -> borrowed JSON string, or an empty literal
  */
 const char *server_msg__read_string(const cJSON *object, const char *key)
@@ -18,9 +20,11 @@ const char *server_msg__read_string(const cJSON *object, const char *key)
 }
 
 /**
- * @brief reads a nonnegative integer representable exactly by the existing JSON protocol.
- * @param const cJSON* object -> borrowed JSON object; may be NULL
- * @param const char* key -> case-sensitive JSON member name
+ * @brief reads a nonnegative integer representable exactly by the existing JSON protocol
+ *
+ * @param const cJSON* object -> borrowed JSON object. May be NULL
+ * @param const char* key -> case sensitive JSON member name
+ *
  * @return int64 -> exact nonnegative integer, or -1 for missing/invalid data
  */
 int64 server_msg__read_number(const cJSON *object, const char *key)

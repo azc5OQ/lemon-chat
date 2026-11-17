@@ -1,16 +1,16 @@
-// Small TCP WebSocket echo probe for development endpoints.
+// small TCP WebSocket echo probe for development endpoints
 #include "clib.h"
 #include "platform/system.h"
 #include <stdio.h>
 #include "network/transport.h"
 
 /**
- * @brief runs a bounded echo probe against a development endpoint.
+ * @brief runs a bounded echo probe against a development endpoint
  *
- * @param int argc -> command-line argument count
- * @param char** argv -> command-line arguments
+ * @param int argc -> command line argument count
+ * @param char** argv -> command line arguments
  *
- * @return int -> 0 on success; nonzero on failure
+ * @return int -> 0 on success. Nonzero on failure
  */
 int main(int argc, char **argv)
 {

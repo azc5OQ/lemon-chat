@@ -253,7 +253,7 @@ body.member-conversations-active .member-conversation-participants
 #channel-participants-list
 {
     min-height: 0;
-    max-height: 50vh;
+    max-height: calc(50vh / var(--ui-display-scale, 1));
     margin: 0;
     padding: 0;
     overflow-y: auto;

@@ -1,5 +1,8 @@
 :root
 {
+    /* The login code (dispatch.js) reads this value: with 1, a login on a touch screen opens the chat with the
+       people of the current channel beside it, not the channel tree alone. */
+    --chat-shown-after-login: 1;
     --chat-picture-deleted-icon: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMiIgaGVpZ2h0PSIzMiIgdmlld0JveD0iMCAwIDI0IDI0Ij48ZyBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiPjxyZWN0IHg9IjMuNSIgeT0iMy41IiB3aWR0aD0iMTciIGhlaWdodD0iMTciIHJ4PSIyIiBmaWxsPSIjMTYzMzNjIiBzdHJva2U9IiNhNmNiZDUiIHN0cm9rZS13aWR0aD0iMS40Ii8+PGNpcmNsZSBjeD0iOCIgY3k9IjgiIHI9IjEuNCIgZmlsbD0iI2E2Y2JkNSIvPjxwYXRoIGQ9Im00IDE3IDUtNSA0IDQgMy0zIDQgNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjYTZjYmQ1IiBzdHJva2Utd2lkdGg9IjEuNCIvPjxwYXRoIGQ9Im0zIDMgMTggMTgiIHN0cm9rZT0iI2M3ZGRlMyIgc3Ryb2tlLXdpZHRoPSIyIi8+PC9nPjwvc3ZnPg==");
     --chat-tab-close-color: #b7d3da;
     --chat-tab-close-hover-color: #ffffff;
@@ -62,13 +65,11 @@ body {
 }
 
 #verification-system {
-    min-height: 100vh;
+    min-height: calc(100vh / var(--ui-display-scale, 1));
     text-align: center;
 }
 
-/* the connect window (connection.js): the connect form as a dialog card with the title bar of the other dialogs (layout.style).
-   android keeps the form as a page of its own, so the card look is for the browser only. the :where() keeps the
-   specificity at one id, so a theme sheet that follows this one (ozone) overrides the card with its own rules */
+/* Show the connection form as a dialog card. Android keeps its separate page layout. */
 :where(body:not(.android-app)) #container-2 {
     display: inline-block;
     text-align: center;
@@ -119,7 +120,7 @@ a-toast {
     top: 40%;
     box-sizing: border-box;
     min-width: 200px;
-    max-width: 90vw;
+    max-width: calc(90vw / var(--ui-display-scale, 1));
     text-align: center;
     padding: 10px 16px;
     background-color: var(--set-panel, #36393f);
@@ -613,7 +614,7 @@ a-toast:hover {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 60vw;
+    max-width: calc(60vw / var(--ui-display-scale, 1));
 }
 
 .ban-entry-remove {
@@ -699,10 +700,7 @@ a-toast:hover {
     white-space: nowrap;
 }
 
-/* The state of a person's microphone: a round badge of 20px with a drawing, the same as in the Default
-   theme (the five rules are copies of the rules at the end of theme-default.style, which apply only while
-   Default is the theme in use). Grey: the microphone is off or not available. Green with a light around
-   it: the person is talking. Before, this theme used four small PNG pictures. */
+/* Use the Default theme's microphone state badges at a size of 20px. */
 .client-audio-state
 {
     display: inline-block;
@@ -1196,7 +1194,9 @@ a-toast:hover {
     vertical-align: top;
     outline: none;
     border: 0px;
-    width: 80px;
+    /* as wide as the name: --own-name-length is the number of characters, written by channel-tree.js;
+       1.1ch per character because letters are on average a little wider than the digit 0 */
+    width: calc(var(--own-name-length, 8) * 1.1ch + 4px);
     color: #CDDC39;
     top: 3px;
 }
@@ -1247,7 +1247,15 @@ a-toast:hover {
     padding-top: 3px;
     font-size: 12px;
     max-width: 943px;
-    word-break: break-all;
+    /* a line ends between words; a word is divided only when it alone is wider than the line */
+    overflow-wrap: anywhere;
+}
+
+/* With avatars shown, the message text starts under the sender's name: the avatar is 26px wide with a
+   6px margin. */
+.single-message-content:has(> :is(.single-chat-message-sender-username-container, .single-chat-message-sender-local-username-container) > .chat-message-avatar) > .single-chat-message-content
+{
+    margin-left: 32px;
 }
 
 .single-chat-message-content-p {
@@ -2088,7 +2096,7 @@ body.android-app #verification-system {
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding-top: calc(10vh + 44px);
+    padding-top: calc(calc(10vh / var(--ui-display-scale, 1)) + 44px);
 }
 
 body.android-app #verification-system::before {
@@ -2111,7 +2119,7 @@ body.android-app #verification-system::after {
     color: rgba(255, 255, 255, 0.78);
 }
 
-body.android-app #verification-system > div[style*="25vmin"] {
+body.android-app #verification-system > div[style*="calc(25vmin / var(--ui-display-scale, 1))"] {
     display: none;
 }
 
@@ -2153,14 +2161,14 @@ body.android-app #android-server-settings-button {
 @media (max-width: 700px) {
 
     #server-settings-tab {
-        width: 96vw !important;
+        width: calc(96vw / var(--ui-display-scale, 1)) !important;
         min-width: 0 !important;
-        max-width: 96vw !important;
-        height: 80vh !important;
+        max-width: calc(96vw / var(--ui-display-scale, 1)) !important;
+        height: calc(80vh / var(--ui-display-scale, 1)) !important;
         min-height: 0 !important;
         /* left/top need !important, because the drag code pins the dialog with inline left/top */
-        left: 2vw !important;
-        top: 6vh !important;
+        left: calc(2vw / var(--ui-display-scale, 1)) !important;
+        top: calc(6vh / var(--ui-display-scale, 1)) !important;
     }
 
     #server-settings-tab-subcontainer {
@@ -2183,8 +2191,8 @@ body.android-app #android-server-settings-button {
 #identity-string-use-container-enter,
 #secret-identity-string-container-enter
 {
-        max-width: 94vw !important;
-        max-height: 82vh !important;
+        max-width: calc(94vw / var(--ui-display-scale, 1)) !important;
+        max-height: calc(82vh / var(--ui-display-scale, 1)) !important;
         overflow-y: auto !important;
         box-sizing: border-box !important;
     }
@@ -2313,9 +2321,7 @@ div#local-settings-container #local-settings-close-button {
     background-color: #36393f;
 }
 
-/* the composer facelift: one rounded card like the desktop default theme has now - the text
-   field, the attach, image and send controls all inside a single surface, sized for thumbs
-   (42px targets, and 16px text because ios zooms the whole page into any smaller input) */
+/* Keep the message field, attachment controls and Send button in one rounded composer. */
 #space-devider4 {
     height: auto;
     position: relative;
@@ -2484,9 +2490,9 @@ div#local-settings-container #local-settings-close-button {
 /* Settings use the full screen so their labels and controls have enough room. */
 div#local-settings-container
 {
-    height: 100dvh;
-    max-height: 100dvh;
-    max-width: 100vw;
+    height: calc(100dvh / var(--ui-display-scale, 1));
+    max-height: calc(100dvh / var(--ui-display-scale, 1));
+    max-width: calc(100vw / var(--ui-display-scale, 1));
     animation: none;
     overflow: hidden;
 }
@@ -2513,9 +2519,9 @@ div#local-settings-container div#menu-bar-container
 /* Keep new dialogs and their controls usable with a finger. */
 :root #channel-properties-edit
 {
-    width: min(430px, calc(100vw - 16px));
-    max-width: calc(100vw - 16px) !important;
-    max-height: calc(100dvh - 16px) !important;
+    width: min(430px, calc(calc(100vw / var(--ui-display-scale, 1)) - 16px));
+    max-width: calc(calc(100vw / var(--ui-display-scale, 1)) - 16px) !important;
+    max-height: calc(calc(100dvh / var(--ui-display-scale, 1)) - 16px) !important;
     border-radius: 10px;
 }
 
@@ -2566,8 +2572,8 @@ div#local-settings-container div#menu-bar-container
 
 :root :is(#groups-dialog, #groups-icon-picker, #groups-log-dialog, #server-info-dialog)
 {
-    max-width: calc(100vw - 16px);
-    max-height: calc(100dvh - 16px);
+    max-width: calc(calc(100vw / var(--ui-display-scale, 1)) - 16px);
+    max-height: calc(calc(100dvh / var(--ui-display-scale, 1)) - 16px);
     font-size: 14px;
 }
 
@@ -2719,12 +2725,12 @@ div#local-settings-container div#menu-bar-container
         z-index: 60;
         left: 0 !important;
         top: 0 !important;
-        width: 100vw !important;
+        width: calc(100vw / var(--ui-display-scale, 1)) !important;
         min-width: 0 !important;
-        max-width: 100vw !important;
-        height: 100dvh !important;
+        max-width: calc(100vw / var(--ui-display-scale, 1)) !important;
+        height: calc(100dvh / var(--ui-display-scale, 1)) !important;
         min-height: 0 !important;
-        max-height: 100dvh !important;
+        max-height: calc(100dvh / var(--ui-display-scale, 1)) !important;
         border: 0;
         border-radius: 0;
         overflow: hidden;
@@ -2980,11 +2986,7 @@ div#local-settings-container div#menu-bar-container
     }
 }
 
-/* The chat is shown on a touch screen. main.js hides the layout button on a touch screen, and the button
-   with the eye has the class "chat-hidden" while the chat is not shown; the rules start with these two.
-   UI.hide_chat_container() writes "width: 30%" into the channel tree and "width: 100%" into the chat,
-   so the chat was as wide as the screen but started after the tree, and the end of every long line was
-   outside the screen. The page becomes a grid here: the chat gets exactly the width that is left. */
+/* Use a grid while chat is visible on touch screens so the chat fits the space beside the channel list. */
 :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #communication-system-container[style*="display: block"]
 {
     display: grid !important;
@@ -3016,15 +3018,12 @@ div#local-settings-container div#menu-bar-container
     grid-area: 2 / 1 / 3 / 3;
 }
 
-/* A screen narrower than 768px: while the chat is shown, the left column holds only the people of the
-   user's own channel, each with the microphone picture and the name. Channel rows, people of other
-   channels, the idle group, flags and group pictures are not shown; the button with the eye shows the
-   whole channel tree again. The column is a quarter of the screen, at least 76px and at most 110px. */
+/* On narrow screens, show only current channel members beside the chat. */
 @media (max-width: 767px)
 {
     :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden))
     {
-        --mobile-tree-width: clamp(76px, 25vw, 110px);
+        --mobile-tree-width: clamp(76px, calc(25vw / var(--ui-display-scale, 1)), 110px);
     }
 
     :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #space-devider1
@@ -3042,6 +3041,8 @@ div#local-settings-container div#menu-bar-container
         max-height: calc(100% - 72px);
         margin: 0;
         padding-top: 6px;
+        /* the rows start at the left edge of the column */
+        padding-left: 0;
         overflow-x: hidden;
         overflow-y: auto;
         /* the list is moved with a finger; a scroll bar would take 6px of the names */
@@ -3062,15 +3063,11 @@ div#local-settings-container div#menu-bar-container
         box-sizing: border-box;
         min-width: 0;
         min-height: 34px;
-        padding: 4px 4px 4px 3px;
+        padding: 4px 4px 4px 0;
         border-left: 3px solid transparent;
     }
 
-    /* The tree is one flat list: a channel row, then the rows of its people, then the next channel row.
-       The people of the user's own channel are the rows around the user's own row with no channel row
-       between. Not shown: every channel row, every person's row that has a channel row between itself
-       and the user's own row further down, and every person's row after a channel row that follows the
-       user's own row. */
+    /* The channel tree is flat. Hide channel rows and users separated from the local user by a channel row. */
     :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #channel-list-container > .single-channel,
     :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #channel-list-container > .connected-client:has(~ .single-channel ~ .connected-local-client),
     :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #channel-list-container > .connected-local-client ~ .single-channel ~ .connected-client
@@ -3078,10 +3075,26 @@ div#local-settings-container div#menu-bar-container
         display: none !important;
     }
 
-    /* the empty part that moves a row to the right by the depth of its channel, the flag, the name of the played song and the group pictures */
-    :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #channel-list-container > .connected-client > :is(div:first-child, .connected-client-country-flag, .marquee-music-playing-container, .client-groups)
+    /* the empty part that moves a row to the right by the depth of its channel, the flag and the group pictures */
+    :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #channel-list-container > .connected-client > :is(div:first-child, .connected-client-country-flag, .client-groups)
     {
         display: none !important;
+    }
+
+    /* the name of the song a person plays: a second line under the person's name, starting where the name
+       starts (22px: the 18px circle and its 4px distance). layout.style shortens it to the note picture
+       when the line is 60px wide or less */
+    :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #channel-list-container > .connected-client:has(> .marquee-music-playing-container[style*="inline-block"])
+    {
+        flex-wrap: wrap;
+    }
+
+    :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #channel-list-container > .connected-client > .marquee-music-playing-container[style*="inline-block"]
+    {
+        flex: 0 0 calc(100% - 22px);
+        max-width: calc(100% - 22px);
+        margin-left: 22px;
+        font-size: 11px;
     }
 
     :root:has(#layout-edit-button[style*="display: none"]):not(:has(#hide-chat-button.chat-hidden)) #channel-list-container > .connected-client > .client-audio-state
@@ -3154,9 +3167,7 @@ div#local-settings-container div#menu-bar-container
     }
 }
 
-/* This theme is for phones: the button for the admin password is not shown. The buttons to its left take
-   the next place to the right (the rules for a touch screen further up move them one more place, because
-   the layout button is not shown there either). */
+/* Hide the admin password button in this phone theme and close the toolbar gap. */
 #show-admin-password-entry
 {
     display: none !important;
@@ -3187,9 +3198,7 @@ div#local-settings-container div#menu-bar-container
     right: 172px;
 }
 
-/* The open conversations are chosen from a list (<select>) in place of the row of tabs. The bar keeps the
-   place, the height and the black background of that row, and the list has the grey field of the tab of the
-   shown conversation. */
+/* Replace conversation tabs with a selector in the same bar. */
 #chat-window-container > #chat-context-selectors-container
 {
     display: none;
@@ -3238,10 +3247,7 @@ div#local-settings-container div#menu-bar-container
     line-height: 22px;
 }
 
-/* The message field: a pressed-in field with a thin edge, which is blue while the field has the cursor.
-   While the field takes no text (the chat of a channel the user is not in is shown, and ui.js writes the
-   reason into the field), it has slanted stripes, a dashed edge and a lock in front of the reason; the
-   buttons next to it are pale. */
+/* Highlight the message field on focus and dim it when the selected conversation cannot receive text. */
 #space-devider4 #chat-input-container-text-input
 {
     border: 1px solid #ffffff1f;

@@ -6,9 +6,11 @@
 static int64 _client_msg_actions_internal__target(desktop_session_t *session, const desktop_action_t *action);
 
 /**
- * @brief rechecks a captured target on the worker before building any outgoing action.
+ * @brief rechecks a captured target on the worker before building any outgoing action
+ *
  * @param desktop_session_t* session -> worker-owned connection
  * @param const desktop_action_t* action -> copied GUI request
+ *
  * @return int64 -> current client slot, or -1 after a move, disconnect or identity change
  */
 static int64 _client_msg_actions_internal__target(desktop_session_t *session, const desktop_action_t *action)
@@ -25,9 +27,11 @@ static int64 _client_msg_actions_internal__target(desktop_session_t *session, co
 }
 
 /**
- * @brief sends existing server actions without predicting permission rules on the client.
+ * @brief sends existing server actions without predicting permission rules on the client
+ *
  * @param desktop_session_t* session -> authenticated worker-owned connection
  * @param const desktop_action_t* action -> captured target and bounded values
+ *
  * @return void
  */
 void client_msg__actions__send(desktop_session_t *session, const desktop_action_t *action)

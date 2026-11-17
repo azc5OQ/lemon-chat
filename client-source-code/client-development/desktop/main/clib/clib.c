@@ -15,8 +15,8 @@ static int64 clib__strncpy_safe(char *destination, int64 capacity, const char *s
 
 // Target detection lives here. These are detected presence macros, not user
 // options: select the CPU/ISA through the compiler's target flags. Exactly one
-// architecture below is selected; unknown CPUs retain the portable C path.
-// Pointer width is independent of ISA (x32, MIPS n32, etc.); types.h uses
+// architecture below is selected. Unknown CPUs retain the portable C path.
+// Pointer width is independent of ISA (x32, MIPS n32, etc.). Types.h uses
 // the compiler ABI rather than inferring pointer width from the CPU name.
 #if defined(__aarch64__) || defined(_M_ARM64) || defined(_M_ARM64EC)
 #ifndef ARCHITECTURE_ARM64
@@ -72,8 +72,8 @@ static int64 clib__strncpy_safe(char *destination, int64 capacity, const char *s
 #endif
 #endif
 
-// Native address width comes from the target ABI, including 16-bit targets
-// and ILP32 on otherwise 64-bit CPUs. Unsupported widths fail explicitly.
+// Native address width comes from the target ABI, including 16 bit targets
+// and ILP32 on otherwise 64 bit CPUs. Unsupported widths fail explicitly.
 #if defined(__SIZEOF_POINTER__)
 #define ARCHITECTURE_POINTER_BYTES __SIZEOF_POINTER__
 #elif defined(_WIN64)
@@ -87,7 +87,7 @@ static int64 clib__strncpy_safe(char *destination, int64 capacity, const char *s
 #error "Supported native pointer widths are 2, 4 and 8 bytes"
 #endif
 
-// Compiler identity and ABI are separate: clang-cl uses the MSVC ABI.
+// Compiler identity and ABI are separate: clang cl uses the MSVC ABI.
 #if defined(__clang__)
 #define COMPILER_CLANG
 #elif defined(_MSC_VER)
@@ -98,12 +98,12 @@ static int64 clib__strncpy_safe(char *destination, int64 capacity, const char *s
 #if defined(_MSC_VER)
 #define COMPILER_MSVC_ABI
 #endif
-// ARM64EC shares ARM64 instructions but uses different stack-helper symbols.
+// ARM64EC shares ARM64 instructions but uses different stack helper symbols.
 #if defined(__arm64ec__) || defined(_M_ARM64EC)
 #define COMPILER_ARM64EC_ABI
 #endif
 
-// Optional ISA capabilities. ARM32 does not imply NEON; AMD64 implies SSE2
+// Optional ISA capabilities. ARM32 does not imply NEON. AMD64 implies SSE2
 // with the MSVC ABI, while GCC/Clang explicitly advertise enabled features.
 #if (defined(ARCHITECTURE_AMD64) || defined(ARCHITECTURE_I386)) && (defined(__SSE2__) || (defined(COMPILER_MSVC) && (defined(_M_X64) || (defined(_M_IX86_FP) && _M_IX86_FP >= 2))))
 #ifndef ARCHITECTURE_SSE2
@@ -121,12 +121,12 @@ static int64 clib__strncpy_safe(char *destination, int64 capacity, const char *s
 #endif
 #endif
 
-// Enables bounded binary64 arithmetic shortcuts; avoid them on soft-float CPUs.
+// Enables bounded binary64 arithmetic shortcuts. Avoid them on soft float CPUs.
 #if defined(ARCHITECTURE_SSE2) || (defined(__ARM_FP) && (__ARM_FP & 8)) || (defined(__riscv_flen) && __riscv_flen >= 64)
 #define ARCHITECTURE_FAST_DOUBLE
 #endif
 
-// Integer division capabilities. RISC-V can omit the divide extension and
+// Integer division capabilities. RISC V can omit the divide extension and
 // ARM32 can omit hardware division, so do not infer those from pointer width.
 #if defined(ARCHITECTURE_AMD64) || defined(ARCHITECTURE_ARM64) || defined(ARCHITECTURE_MIPS64) || defined(ARCHITECTURE_SPARC64) || defined(ARCHITECTURE_POWERPC64) || (defined(ARCHITECTURE_RISCV64) && defined(__riscv_div))
 #define ARCHITECTURE_NATIVE_DIV64
@@ -139,20 +139,49 @@ static int64 clib__strncpy_safe(char *destination, int64 capacity, const char *s
 
 /* Local byte/ASCII routines. Raw pointers must refer to the stated extent or a terminated string.
  * Allocation, files, networking, environment and threads remain host responsibilities.
- * Formatting supports integers, strings, characters, pointers and fixed-point %f; not %g/%e/%a.
+ * Formatting supports integers, strings, characters, pointers and fixed point %f. Not %g/%e/%a.
+ */
+/**
+ * @brief computes an integer magnitude without signed negation overflow
+ *
+ * @param int value -> signed input
+ *
+ * @return uint -> unsigned magnitude
  */
 uint clib__abs(int value)
 {
     return value < 0 ? 0u - (uint)value : (uint)value;
 }
+/**
+ * @brief reverses the byte order of a 32 bit value
+ *
+ * @param uint value -> value to reverse
+ *
+ * @return uint -> value with reversed bytes
+ */
 uint clib__bswap32(uint value)
 {
     return (value >> 24) | ((value >> 8) & 0x0000ff00u) | ((value << 8) & 0x00ff0000u) | (value << 24);
 }
+/**
+ * @brief reverses the byte order of a 64 bit value
+ *
+ * @param uint64 value -> value to reverse
+ *
+ * @return uint64 -> value with reversed bytes
+ */
 uint64 clib__bswap64(uint64 value)
 {
     return ((uint64)clib__bswap32((uint)value) << 32) | clib__bswap32((uint)(value >> 32));
 }
+/**
+ * @brief computes the unsigned division quotient
+ *
+ * @param uint64 numerator -> value to divide
+ * @param uint64 denominator -> nonzero divisor
+ *
+ * @return uint64 -> quotient
+ */
 uint64 clib__udiv64(uint64 numerator, uint64 denominator)
 {
 #if defined(ARCHITECTURE_NATIVE_DIV64)
@@ -161,6 +190,14 @@ uint64 clib__udiv64(uint64 numerator, uint64 denominator)
     return clib__udivmod64(numerator, denominator, NULL_POINTER);
 #endif
 }
+/**
+ * @brief computes the unsigned division remainder
+ *
+ * @param uint64 numerator -> value to divide
+ * @param uint64 denominator -> nonzero divisor
+ *
+ * @return uint64 -> remainder
+ */
 uint64 clib__urem64(uint64 numerator, uint64 denominator)
 {
 #if defined(ARCHITECTURE_NATIVE_DIV64)
@@ -171,6 +208,15 @@ uint64 clib__urem64(uint64 numerator, uint64 denominator)
     return remainder;
 #endif
 }
+/**
+ * @brief computes the signed division quotient
+ * the signed quotient must be representable
+ *
+ * @param int64 numerator -> value to divide
+ * @param int64 denominator -> nonzero divisor
+ *
+ * @return int64 -> quotient rounded toward zero
+ */
 int64 clib__div64(int64 numerator, int64 denominator)
 {
 #if defined(ARCHITECTURE_NATIVE_DIV64)
@@ -179,6 +225,15 @@ int64 clib__div64(int64 numerator, int64 denominator)
     return clib__divmod64(numerator, denominator, NULL_POINTER);
 #endif
 }
+/**
+ * @brief computes the signed division remainder
+ * the signed quotient must be representable
+ *
+ * @param int64 numerator -> value to divide
+ * @param int64 denominator -> nonzero divisor
+ *
+ * @return int64 -> remainder with the numerator's sign
+ */
 int64 clib__rem64(int64 numerator, int64 denominator)
 {
 #if defined(ARCHITECTURE_NATIVE_DIV64)
@@ -189,6 +244,14 @@ int64 clib__rem64(int64 numerator, int64 denominator)
     return remainder;
 #endif
 }
+/**
+ * @brief selects the smaller value with NaN and signed zero handling
+ *
+ * @param float x -> first value
+ * @param float y -> second value
+ *
+ * @return float -> smaller value, or the other operand when one is NaN
+ */
 float clib__fminf(float x, float y)
 {
     // check for NaN
@@ -216,6 +279,14 @@ float clib__fminf(float x, float y)
     // choose the smaller value
     return x < y ? x : y;
 }
+/**
+ * @brief selects the larger value with NaN and signed zero handling
+ *
+ * @param float x -> first value
+ * @param float y -> second value
+ *
+ * @return float -> larger value, or the other operand when one is NaN
+ */
 float clib__fmaxf(float x, float y)
 {
     // check for NaN
@@ -271,6 +342,16 @@ typedef uint8x16_t _clib_internal_vector;
 #define CLIB_HAS_VECTOR 0
 #endif
 
+/**
+ * @brief copies bytes between nonoverlapping ranges
+ * null pointers or zero length leave the destination unchanged
+ *
+ * @param void * dst -> destination buffer
+ * @param const void * src -> source buffer
+ * @param nuint n -> number of bytes
+ *
+ * @return void * -> destination pointer
+ */
 static CLIB_NO_LIBCALL void *clib__copy_bytes(void *dst, const void *src, nuint n)
 {
     ubyte *d = (ubyte *)dst;
@@ -282,7 +363,7 @@ static CLIB_NO_LIBCALL void *clib__copy_bytes(void *dst, const void *src, nuint 
         return dst;
     }
 #if CLIB_HAS_VECTOR
-    // copy 64-byte blocks
+    // copy 64 byte blocks
     while (n >= 64)
     {
         _clib_internal_vector a = CLIB_VECTOR_LOAD(s);
@@ -298,7 +379,7 @@ static CLIB_NO_LIBCALL void *clib__copy_bytes(void *dst, const void *src, nuint 
         n -= 64;
     }
 
-    // copy 16-byte blocks
+    // copy 16 byte blocks
     while (n >= 16)
     {
         CLIB_VECTOR_STORE(d, CLIB_VECTOR_LOAD(s));
@@ -307,7 +388,7 @@ static CLIB_NO_LIBCALL void *clib__copy_bytes(void *dst, const void *src, nuint 
         n -= 16;
     }
 #endif
-    // MSVC has no per-function no_builtin equivalent. volatile byte accesses
+    // MSVC has no per function no_builtin equivalent. volatile byte accesses
     // keep its scalar fallback from being rewritten to an external call
 #if defined(COMPILER_MSVC)
     volatile ubyte *tail = d;
@@ -325,6 +406,15 @@ static CLIB_NO_LIBCALL void *clib__copy_bytes(void *dst, const void *src, nuint 
     return dst;
 }
 
+/**
+ * @brief fills a byte range with the low byte of a value
+ *
+ * @param void * dst -> destination buffer
+ * @param int value -> value whose low byte is repeated
+ * @param nuint n -> number of bytes
+ *
+ * @return void * -> destination pointer
+ */
 static CLIB_NO_LIBCALL void *clib__fill_bytes(void *dst, int value, nuint n)
 {
     ubyte *d = (ubyte *)dst;
@@ -335,7 +425,7 @@ static CLIB_NO_LIBCALL void *clib__fill_bytes(void *dst, int value, nuint n)
         return dst;
     }
 #if CLIB_HAS_VECTOR
-    // fill 64-byte blocks
+    // fill 64 byte blocks
     _clib_internal_vector v = CLIB_VECTOR_FILL(value);
     while (n >= 64)
     {
@@ -347,7 +437,7 @@ static CLIB_NO_LIBCALL void *clib__fill_bytes(void *dst, int value, nuint n)
         n -= 64;
     }
 
-    // fill 16-byte blocks
+    // fill 16 byte blocks
     while (n >= 16)
     {
         CLIB_VECTOR_STORE(d, v);
@@ -372,6 +462,16 @@ static CLIB_NO_LIBCALL void *clib__fill_bytes(void *dst, int value, nuint n)
     return dst;
 }
 
+/**
+ * @brief copies bytes while allowing overlapping ranges
+ * null pointers or zero length leave the destination unchanged
+ *
+ * @param void * dst -> destination buffer
+ * @param const void * src -> source buffer
+ * @param nuint n -> number of bytes
+ *
+ * @return void * -> destination pointer
+ */
 static CLIB_NO_LIBCALL void *clib__move_bytes(void *dst, const void *src, nuint n)
 {
     ubyte *d = (ubyte *)dst;
@@ -392,7 +492,7 @@ static CLIB_NO_LIBCALL void *clib__move_bytes(void *dst, const void *src, nuint 
     d += n;
     s += n;
 #if CLIB_HAS_VECTOR
-    // copy 16-byte blocks backward
+    // copy 16 byte blocks backward
     while (n >= 16)
     {
         d -= 16;
@@ -410,21 +510,57 @@ static CLIB_NO_LIBCALL void *clib__move_bytes(void *dst, const void *src, nuint 
     return dst;
 }
 
+/**
+ * @brief copies a positive byte count between nonoverlapping ranges
+ *
+ * @param void * dst -> destination buffer
+ * @param const void * src -> source buffer
+ * @param int64 count -> number of bytes
+ *
+ * @return void * -> destination pointer
+ */
 CLIB_NO_LIBCALL void *clib__memcpy(void *dst, const void *src, int64 count)
 {
     return count <= 0 ? dst : clib__copy_bytes(dst, src, (nuint)count);
 }
 
+/**
+ * @brief fills a positive byte count with the low byte of a value
+ *
+ * @param void * dst -> destination buffer
+ * @param int value -> value whose low byte is repeated
+ * @param int64 count -> number of bytes
+ *
+ * @return void * -> destination pointer
+ */
 CLIB_NO_LIBCALL void *clib__memset(void *dst, int value, int64 count)
 {
     return count <= 0 ? dst : clib__fill_bytes(dst, value, (nuint)count);
 }
 
+/**
+ * @brief copies a positive byte count while allowing overlap
+ *
+ * @param void * dst -> destination buffer
+ * @param const void * src -> source buffer
+ * @param int64 count -> number of bytes
+ *
+ * @return void * -> destination pointer
+ */
 CLIB_NO_LIBCALL void *clib__memmove(void *dst, const void *src, int64 count)
 {
     return count <= 0 ? dst : clib__move_bytes(dst, src, (nuint)count);
 }
 
+/**
+ * @brief computes an unsigned quotient and optional remainder
+ *
+ * @param uint64 numerator -> value to divide
+ * @param uint64 denominator -> nonzero divisor
+ * @param uint64 * remainder -> receives the remainder, or NULL_POINTER to discard it
+ *
+ * @return uint64 -> integer quotient
+ */
 uint64 clib__udivmod64(uint64 numerator, uint64 denominator, uint64 *remainder)
 {
 #if defined(ARCHITECTURE_NATIVE_DIV64)
@@ -440,8 +576,8 @@ uint64 clib__udivmod64(uint64 numerator, uint64 denominator, uint64 *remainder)
     uint64 quotient = 0;
     uint64 bit = 1;
     uint64 divisor = denominator;
-    // zero is outside the API contract; keep the normalization loop bounded
-    // even for that invalid input. no platform-specific trap is required
+    // zero is outside the API contract. Keep the normalization loop bounded
+    // even for that invalid input. no platform specific trap is required
     if (!denominator || numerator < denominator)
     {
         if (remainder)
@@ -495,7 +631,7 @@ uint64 clib__udivmod64(uint64 numerator, uint64 denominator, uint64 *remainder)
         return quotient;
     }
 #if defined(ARCHITECTURE_NATIVE_DIV32)
-    // use 32-bit division
+    // use 32 bit division
     if ((numerator >> 32) == 0)
     {
         uint n = (uint)numerator, d = (uint)denominator;
@@ -507,7 +643,7 @@ uint64 clib__udivmod64(uint64 numerator, uint64 denominator, uint64 *remainder)
         return quotient;
     }
 #endif
-    // align only as far as needed. divisor <= numerator/2 prevents overflow;
+    // align only as far as needed. divisor <= numerator/2 prevents overflow.
     // subtracting descending multiples gives quotient and remainder together
     while (divisor <= (numerator >> 1))
     {
@@ -536,6 +672,15 @@ uint64 clib__udivmod64(uint64 numerator, uint64 denominator, uint64 *remainder)
 #endif
 }
 
+/**
+ * @brief computes a signed quotient and optional remainder
+ *
+ * @param int64 numerator -> value to divide
+ * @param int64 denominator -> nonzero divisor producing a representable quotient
+ * @param int64 * remainder -> receives the remainder, or NULL_POINTER to discard it
+ *
+ * @return int64 -> quotient rounded toward zero
+ */
 int64 clib__divmod64(int64 numerator, int64 denominator, int64 *remainder)
 {
 #if defined(ARCHITECTURE_NATIVE_DIV64)
@@ -568,10 +713,10 @@ int64 clib__divmod64(int64 numerator, int64 denominator, int64 *remainder)
 // ===== memory =============================================================
 
 /**
- * @brief zero `count` bytes of `dst`. The call a function makes on its buffers and structs right after declaring them.
+ * @brief zero `count` bytes of `dst`. The call a function makes on its buffers and structs right after declaring them
  *
- * @param void* dst -> destination buffer; NULL is a no-op.
- * @param int64 count -> bytes to clear.
+ * @param void* dst -> destination buffer. NULL is a no op
+ * @param int64 count -> bytes to clear
  *
  * @return void
  */
@@ -584,14 +729,13 @@ void clib__null_memory(void *dst, int64 count)
 }
 
 /**
- * @brief byte-wise compare `count` bytes. Returns 0 on equality, negative if first differing byte in `a` is less than the one in `b`,
- * positive otherwise. Matches memcmp.
+ * @brief compares bytes in order
  *
- * @param const void* a
- * @param const void* b
- * @param int64 count
+ * @param const void* a -> first buffer, or NULL
+ * @param const void* b -> second buffer, or NULL
+ * @param int64 count -> maximum bytes to compare
  *
- * @return int -> void
+ * @return int -> zero for equal bytes, negative when a sorts first, positive when b sorts first. NULL sorts first
  */
 int clib__memcmp(const void *a, const void *b, int64 count)
 {
@@ -635,6 +779,15 @@ int clib__memcmp(const void *a, const void *b, int64 count)
 
 // ===== strings ============================================================
 
+/**
+ * @brief swaps two array elements byte by byte
+ *
+ * @param ubyte * a -> first element
+ * @param ubyte * b -> second element
+ * @param nuint size -> element size in bytes
+ *
+ * @return void
+ */
 static void _clib_internal_sort_swap(ubyte *a, ubyte *b, nuint size)
 {
     // swap each byte
@@ -646,6 +799,17 @@ static void _clib_internal_sort_swap(ubyte *a, ubyte *b, nuint size)
     }
 }
 
+/**
+ * @brief restores the maximum heap below one parent
+ *
+ * @param ubyte * base -> array storage
+ * @param nuint parent -> parent index to sift
+ * @param nuint count -> elements in the heap
+ * @param nuint size -> bytes per element
+ * @param int (*)(const void *, const void *) compare -> comparison callback with negative, zero and positive ordering
+ *
+ * @return void
+ */
 static void _clib_internal_sort_sift(ubyte *base, nuint parent, nuint count, nuint size, int (*compare)(const void *, const void *))
 {
     // parent < count/2 also keeps parent*2+1 from overflowing
@@ -670,6 +834,17 @@ static void _clib_internal_sort_sift(ubyte *base, nuint parent, nuint count, nui
     }
 }
 
+/**
+ * @brief sorts an array in place using a comparison callback
+ * invalid arguments leave the array unchanged
+ *
+ * @param void * base -> array storage
+ * @param nuint count -> element count
+ * @param nuint size -> bytes per element
+ * @param int (*)(const void *, const void *) compare -> comparison callback with negative, zero and positive ordering
+ *
+ * @return void
+ */
 void clib__qsort(void *base, nuint count, nuint size, int (*compare)(const void *, const void *))
 {
     // check arguments
@@ -694,12 +869,11 @@ void clib__qsort(void *base, nuint count, nuint size, int (*compare)(const void 
 }
 
 /**
- * @brief length of a null-terminated C string, NOT counting the terminator. No arbitrary cap (the existing purelib__strlen capped at 1000,
- * which is a silent-truncation hazard this implementation avoids).
+ * @brief counts bytes before a string's terminator
  *
- * @param const char* s -> null-terminated string.
+ * @param const char* s -> terminated string, or NULL
  *
- * @return int64 -> byte count before the terminator.
+ * @return int64 -> byte count, or zero for NULL
  */
 CLIB_NO_LIBCALL int64 clib__strlen(const char *s)
 {
@@ -719,13 +893,12 @@ CLIB_NO_LIBCALL int64 clib__strlen(const char *s)
 }
 
 /**
- * @brief lexicographic compare of two null-terminated strings. Returns 0 on equality, negative if `a < b`, positive if `a > b`. Matches
- * strcmp semantics.
+ * @brief compares two terminated strings in byte order
  *
- * @param const char* a
- * @param const char* b
+ * @param const char* a -> first string, or NULL
+ * @param const char* b -> second string, or NULL
  *
- * @return int -> void
+ * @return int -> zero for equal strings, negative when a sorts first, positive when b sorts first. NULL sorts first
  */
 int clib__strcmp(const char *a, const char *b)
 {
@@ -745,8 +918,8 @@ int clib__strcmp(const char *a, const char *b)
         return 1;
     }
     // cast to ubyte for the subtract so byte values >= 128
-    // don't get sign-extended into a negative when comparing. libc's
-    // strcmp does the same; without this, "abc" vs "\x80bc" would
+    // don't get sign extended into a negative when comparing. libc's
+    // strcmp does the same. Without this, "abc" vs "\x80bc" would
     // wrongly report "abc > ..."
     while (*a != 0 && *a == *b)
     {
@@ -757,13 +930,13 @@ int clib__strcmp(const char *a, const char *b)
 }
 
 /**
- * @brief like strcmp but compares at most `n` bytes. Early-returns 0 if both strings match for their first n bytes (even if longer).
+ * @brief compares at most n bytes of two terminated strings
  *
- * @param const char* a
- * @param const char* b
- * @param int64 n
+ * @param const char* a -> first string, or NULL
+ * @param const char* b -> second string, or NULL
+ * @param int64 n -> maximum bytes to compare
  *
- * @return int -> void
+ * @return int -> zero for equal prefixes, negative when a sorts first, positive when b sorts first. NULL sorts first
  */
 int clib__strncmp(const char *a, const char *b, int64 n)
 {
@@ -806,13 +979,12 @@ int clib__strncmp(const char *a, const char *b, int64 n)
 }
 
 /**
- * @brief find the first occurrence of `needle` inside `haystack`. Returns a pointer to the start of the match, or NULL. Matches strstr.
- * Both arguments must be null-terminated.
+ * @brief finds the first occurrence of a substring
  *
- * @param const char* haystack
- * @param const char* needle
+ * @param const char* haystack -> terminated string to search
+ * @param const char* needle -> terminated substring to find
  *
- * @return const char* -> void
+ * @return const char* -> pointer to the match, or NULL if absent or either input is NULL. An empty needle matches the start
  */
 const char *clib__strstr(const char *haystack, const char *needle)
 {
@@ -822,13 +994,13 @@ const char *clib__strstr(const char *haystack, const char *needle)
         return NULL_POINTER;
     }
     // empty needle conventionally matches at position 0 (libc
-    // strstr behaves this way -- returns `haystack`)
+    // strstr behaves this way. returns `haystack`)
     if (*needle == 0)
     {
         return haystack;
     }
     // O(n*m) naive scan. for the parser use case (looking up short
-    // keywords) this is fine; replace with Boyer-Moore or similar if
+    // keywords) this is fine. Replace with Boyer-Moore or similar if
     // a caller ever hits perf problems
     for (const char *p = haystack; *p != 0; p++)
     {
@@ -851,13 +1023,12 @@ const char *clib__strstr(const char *haystack, const char *needle)
 }
 
 /**
- * @brief find the first occurrence of `ch` in the null-terminated string `s`. Returns a pointer to it or NULL. Matches strchr. The
- * terminator IS matched if you pass `ch = 0`.
+ * @brief finds the first occurrence of a character, including the terminator
  *
- * @param const char* s
- * @param int ch
+ * @param const char* s -> terminated string, or NULL
+ * @param int ch -> character converted to char
  *
- * @return const char* -> void
+ * @return const char* -> pointer to the character, or NULL if absent
  */
 const char *clib__strchr(const char *s, int ch)
 {
@@ -887,22 +1058,19 @@ const char *clib__strchr(const char *s, int ch)
 }
 
 /**
- * @brief copy at most `dst_cap` bytes from `src` into `dst`. Always null-terminates `dst` (provided dst_cap >= 1). Truncates if `src`
- * doesn't fit. Returns the number of source bytes that WOULD have been copied (not including the terminator), so callers can detect
- * truncation: `if (written >= dst_cap) { ... }`. This is the strlcpy contract -- safer than strncpy (which doesn't always terminate) and
- * safer than strcpy (no cap).
+ * @brief copies text and terminates it when the destination has space
  *
- * @param char* dst
- * @param int64 dst_cap -> total bytes in dst (including terminator room).
- * @param const char* src
+ * @param char* dst -> destination buffer, or NULL
+ * @param int64 dst_cap -> buffer capacity including the terminator
+ * @param const char* src -> source string
  *
- * @return int64 -> strlen(src) at time of call.
+ * @return int64 -> source length excluding the terminator. A result at least dst_cap indicates truncation
  */
 static int64 clib__strcpy_safe(char *dst, int64 dst_cap, const char *src)
 {
     // always returns strlen(src) (so the caller can detect truncation
     // via the result). even if dst_cap is 0 we still walk src to get
-    // that length; fast paths are available if the caller doesn't
+    // that length. Fast paths are available if the caller doesn't
     // care about detecting truncation
     int64 src_len = clib__strlen(src);
 
@@ -931,11 +1099,11 @@ static int64 clib__strcpy_safe(char *dst, int64 dst_cap, const char *src)
 // ===== char classifiers ===================================================
 
 /**
- * @brief aSCII whitespace: space, tab, newline, carriage return, form feed, vertical tab. Matches isspace over the 7-bit subset.
+ * @brief ASCII whitespace: space, tab, newline, carriage return, form feed, vertical tab. Matches isspace over the 7 bit subset
  *
- * @param int c -> byte value.
+ * @param int c -> byte value
  *
- * @return int -> non-zero if whitespace.
+ * @return int -> non zero if whitespace
  */
 int clib__isspace(int c)
 {
@@ -943,9 +1111,11 @@ int clib__isspace(int c)
 }
 
 /**
- * @brief aSCII decimal digit. @function clib__isdigit
+ * @brief checks whether a character is an ASCII decimal digit
  *
- * @return int -> void
+ * @param int c -> character value to check
+ *
+ * @return int -> one for a match, otherwise zero
  */
 int clib__isdigit(int c)
 {
@@ -953,9 +1123,11 @@ int clib__isdigit(int c)
 }
 
 /**
- * @brief aSCII hexadecimal digit (0-9, a-f, A-F). @function clib__isxdigit
+ * @brief checks whether a character is an ASCII hexadecimal digit
  *
- * @return int -> void
+ * @param int c -> character value to check
+ *
+ * @return int -> one for a match, otherwise zero
  */
 int clib__isxdigit(int c)
 {
@@ -976,9 +1148,11 @@ int clib__isxdigit(int c)
 }
 
 /**
- * @brief aSCII alphabetic letter. @function clib__isalpha
+ * @brief checks whether a character is an ASCII letter
  *
- * @return int -> void
+ * @param int c -> character value to check
+ *
+ * @return int -> one for a match, otherwise zero
  */
 int clib__isalpha(int c)
 {
@@ -986,9 +1160,11 @@ int clib__isalpha(int c)
 }
 
 /**
- * @brief aSCII alphanumeric. @function clib__isalnum
+ * @brief checks whether a character is an ASCII letter or digit
  *
- * @return int -> void
+ * @param int c -> character value to check
+ *
+ * @return int -> one for a match, otherwise zero
  */
 int clib__isalnum(int c)
 {
@@ -996,9 +1172,11 @@ int clib__isalnum(int c)
 }
 
 /**
- * @brief aSCII lowercase conversion; non-letters pass through. @function clib__tolower
+ * @brief converts an ASCII letter to lowercase
  *
- * @return int -> void
+ * @param int c -> character value to convert
+ *
+ * @return int -> converted character, or the original value if no conversion applies
  */
 int clib__tolower(int c)
 {
@@ -1010,9 +1188,11 @@ int clib__tolower(int c)
 }
 
 /**
- * @brief aSCII uppercase conversion; non-letters pass through. @function clib__toupper
+ * @brief converts an ASCII letter to uppercase
  *
- * @return int -> void
+ * @param int c -> character value to convert
+ *
+ * @return int -> converted character, or the original value if no conversion applies
  */
 int clib__toupper(int c)
 {
@@ -1026,15 +1206,27 @@ int clib__toupper(int c)
 // ===== number parsing =====================================================
 
 /**
- * @brief parse a base-10 integer from `s`, consuming leading whitespace + optional sign + contiguous digits. Matches atoi semantics
- * (including "returns 0 on garbage input" — so prefer `clib__strtol` if you need to distinguish "parsed zero" from "couldn't parse").
+ * @brief parses an integer and clamps overflow to the requested signed range
  *
- * @param const char* s
+ * @param const char* s -> text to parse after optional whitespace and sign
+ * @param char** endptr -> receives the first unconsumed character, or NULL to omit it
+ * @param int base -> radix from 2 through 36, or zero to detect decimal, octal or hexadecimal
+ * @param uint64 maximum -> largest positive result. The negative limit has one extra magnitude value
  *
- * @return int -> void
+ * @return int64 -> parsed value, clamped on overflow, or zero if no number was parsed
  */
 // Parse using an unsigned magnitude so LONG_MIN/INT64_MIN never require
 // overflowing signed arithmetic. Keep consuming digits after saturation.
+/**
+ * @brief parses a signed integer and clamps overflow to the selected range
+ *
+ * @param const char * s -> input text
+ * @param char ** endptr -> receives the first unparsed character, or NULL_POINTER
+ * @param int base -> radix from 2 to 36, or zero to detect it
+ * @param uint64 maximum -> largest positive result
+ *
+ * @return int64 -> parsed value, clamped on overflow, or zero when no conversion is possible
+ */
 static int64 _clib_internal__parse_integer(const char *s, char **endptr, int base, uint64 maximum)
 {
     const char *p = s;
@@ -1126,14 +1318,39 @@ static int64 _clib_internal__parse_integer(const char *s, char **endptr, int bas
     return negative && value ? -(int64)(value - 1) - 1 : (int64)value;
 }
 
+/**
+ * @brief parses a decimal integer within the int range
+ *
+ * @param const char * s -> input text
+ *
+ * @return int -> parsed value clamped to the int range, or zero without digits
+ */
 int clib__atoi(const char *s)
 {
     return (int)_clib_internal__parse_integer(s, NULL_POINTER, 10, INT_MAX);
 }
+/**
+ * @brief parses a signed long and records where conversion stopped
+ *
+ * @param const char * s -> input text
+ * @param char ** endptr -> receives the first unparsed character, or NULL_POINTER
+ * @param int base -> radix from 2 to 36, or zero to detect it
+ *
+ * @return long -> parsed value clamped to the long range, or zero without conversion
+ */
 long clib__strtol(const char *s, char **endptr, int base)
 {
     return (long)_clib_internal__parse_integer(s, endptr, base, LONG_MAX);
 }
+/**
+ * @brief parses a signed 64 bit integer and records where conversion stopped
+ *
+ * @param const char * s -> input text
+ * @param char ** endptr -> receives the first unparsed character, or NULL_POINTER
+ * @param int base -> radix from 2 to 36, or zero to detect it
+ *
+ * @return int64 -> parsed value clamped to the int64 range, or zero without conversion
+ */
 int64 clib__strtoll(const char *s, char **endptr, int base)
 {
     return _clib_internal__parse_integer(s, endptr, base, 0x7fffffffffffffffULL);
@@ -1144,10 +1361,10 @@ int64 clib__strtoll(const char *s, char **endptr, int base)
 // Adapted from selected musl 1.2.5 numerical kernels; no external library.
 // Copyright/license notices are retained below and in clib-math.LICENSE.
 // Configuration is documented at the top of stdlib.h. CPU checks use only
-// architecture.h's normalized feature macros; all integer types are local.
+// architecture.h's normalized feature macros. All integer types are local.
 
-// Private amalgamation: preserves existing stdlib.c-only integration.
-// Names are remapped before inclusion; no host libm is linked.
+// Private amalgamation: preserves existing stdlib.c only integration.
+// Names are remapped before inclusion. No host libm is linked.
 // Private numeric helpers. See clib-math.LICENSE for source licenses.
 #ifndef MEEK_CLIB_MATH_HELPERS_H
 #define MEEK_CLIB_MATH_HELPERS_H
@@ -1172,7 +1389,7 @@ typedef double double_t;
 #undef INFINITY
 #define INFINITY asfloat(0x7f800000u)
 static double _clib_internal_math_scalbn(double, int);
-/* Support non-nearest rounding mode.  */
+/* Support non nearest rounding mode.  */
 #define WANT_ROUNDING 1
 /* Support signaling NaNs.  */
 #define WANT_SNAN 0
@@ -1211,7 +1428,7 @@ static int converttoint(double_t);
 
 /* Evaluate an expression as the specified type. With standard excess
    precision handling a type cast or assignment is enough (with
-   -ffloat-store an assignment is required, in old compilers argument
+   -ffloat store an assignment is required, in old compilers argument
    passing and return statement may not drop excess precision).  */
 
 static inline float eval_as_float(float x)
@@ -1227,7 +1444,7 @@ static inline double eval_as_double(double x)
 }
 
 /* fp_barrier returns its input, but limits code transformations
-   as if it had a side-effect (e.g. observable io) and returned
+   as if it had a side effect (e.g. observable io) and returned
    an arbitrary value.  */
 
 #ifndef fp_barrierf
@@ -1260,8 +1477,8 @@ static inline long double fp_barrierl(long double x)
 /* fp_force_eval ensures that the input value is computed when that's
    otherwise unused.  To prevent the constant folding of the input
    expression, an additional fp_barrier may be needed or a compilation
-   mode that does so (e.g. -frounding-math in gcc). Then it can be
-   used to evaluate an expression for its fenv side-effects only.   */
+   mode that does so (e.g. -frounding math in gcc). Then it can be
+   used to evaluate an expression for its fenv side effects only.   */
 
 #ifndef fp_force_evalf
 #define fp_force_evalf fp_force_evalf
@@ -1425,9 +1642,9 @@ static const struct exp2f_data
 #define N (1 << EXP2F_TABLE_BITS)
 
 static const struct exp2f_data _clib_internal_math__exp2f_data = {
-    /* tab[i] = uint(2^(i/N)) - (i << 52-BITS)
+    /* tab[i] = uint(2^(i/N)) - (i << 52 BITS)
        used for computing 2^(k/N) for an int |k| < 150 N as
-       double(tab[k%N] + (k << 52-BITS)) */
+       double(tab[k%N] + (k << 52 BITS)) */
     .tab =
         {
             0x3ff0000000000000, 0x3fefd9b0d3158574, 0x3fefb5586cf9890f, 0x3fef9301d0125b51, 0x3fef72b83c7d517b, 0x3fef54873168b9aa,
@@ -1573,8 +1790,8 @@ static const struct logf_data _clib_internal_math__logf_data = {.tab =
 #ifndef _SQRT_DATA_H
 #define _SQRT_DATA_H
 
-/* if x in [1,2): i = (int)(64*x);
-   if x in [2,4): i = (int)(32*x-64);
+/* if x in [1,2): i = (int)(64*x).
+   if x in [2,4): i = (int)(32*x-64).
    _clib_internal_math__rsqrt_tab[i]*2^-16 is estimating 1/clib__sqrt(x) with small relative error:
    |_clib_internal_math__rsqrt_tab[i]*0x1p-16*clib__sqrt(x) - 1| < -0x1.fdp-9 < 2^-8 */
 static const ushort _clib_internal_math__rsqrt_tab[128];
@@ -1765,7 +1982,7 @@ double clib__floor(double x)
     {
         y = x + _clib_internal_math_floor_toint - _clib_internal_math_floor_toint - x;
     }
-    /* special case because of non-nearest rounding modes */
+    /* special case because of non nearest rounding modes */
     if (e <= 0x3ff - 1)
     {
         FORCE_EVAL(y);
@@ -1863,7 +2080,7 @@ double clib__ceil(double x)
     {
         y = x + _clib_internal_math_ceil_toint - _clib_internal_math_ceil_toint - x;
     }
-    /* special case because of non-nearest rounding modes */
+    /* special case because of non nearest rounding modes */
     if (e <= 0x3ff - 1)
     {
         FORCE_EVAL(y);
@@ -1910,9 +2127,9 @@ float clib__fmodf(float x, float y)
     }
 
 #if defined(ARCHITECTURE_FAST_DOUBLE)
-    /* meek-ui: for normal operands and quotient < 2^24, a 24-bit
+    /* meek ui: for normal operands and quotient < 2^24, a 24 bit
      * significand times the integer quotient fits exactly in binary64.
-     * The subtraction is exact, avoiding the bit-at-a-time reduction. */
+     * The subtraction is exact, avoiding the bit at a time reduction. */
     if (ex && ey && ex - ey < 24)
     {
         ux.i &= 0x7fffffff;
@@ -2204,11 +2421,11 @@ static float _clib_internal_math__tandf(double x, int odd)
     /*
      * Split up the polynomial into small independent terms to give
      * opportunities for parallel evaluation.  The chosen splitting is
-     * micro-optimized for Athlons (XP, X64).  It costs 2 multiplications
+     * micro optimized for Athlons (XP, X64).  It costs 2 multiplications
      * relative to Horner's method on sequential machines.
      *
      * We add the small terms from lowest degree up for efficiency on
-     * non-sequential machines (the lowest degree terms tend to be ready
+     * non sequential machines (the lowest degree terms tend to be ready
      * earlier).  Apart from this, we don't care about order of
      * operations, and don't need to to care since we have precision to
      * spare.  However, the chosen splitting is good for accuracy too,
@@ -2237,7 +2454,7 @@ static float _clib_internal_math__tandf(double x, int odd)
  */
 /*
  * _clib_internal_math__rem_pio2_large(x,y,e0,nx,prec)
- * double x[],y[]; int e0,nx,prec;
+ * double x[],y[]. Int e0,nx,prec.
  *
  * _clib_internal_math__rem_pio2_large return the last three digits of N with
  *              y = x - N*pi/2
@@ -2249,12 +2466,12 @@ static float _clib_internal_math__tandf(double x, int odd)
  * more accurately, = 0 mod 8 ). Thus the number of operations are
  * independent of the exponent of the input.
  *
- * (2/pi) is represented by an array of 24-bit integers in ipio2[].
+ * (2/pi) is represented by an array of 24 bit integers in ipio2[].
  *
  * Input parameters:
  *      x[]     The input value (must be positive) is broken into nx
- *              pieces of 24-bit integers in double precision format.
- *              x[i] will be the i-th 24 bit of x. The scaled exponent
+ *              pieces of 24 bit integers in double precision format.
+ *              x[i] will be the i th 24 bit of x. The scaled exponent
  *              of x[0] is given in input parameter e0 (i.e., x[0]*2^e0
  *              match x's up to 24 bits.
  *
@@ -2263,23 +2480,23 @@ static float _clib_internal_math__tandf(double x, int odd)
  *                      z  = _clib_internal_math_scalbn(z,-e0)
  *              for i = 0,1,2
  *                      x[i] = clib__floor(z)
- *                      z    = (z-x[i])*2**24
+ *                      z    = (z x[i])*2**24
  *
  *
  *      y[]     ouput result in an array of double precision numbers.
  *              The dimension of y[] is:
- *                      24-bit  precision       1
- *                      53-bit  precision       2
- *                      64-bit  precision       2
- *                      113-bit precision       3
- *              The actual value is the sum of them. Thus for 113-bit
+ *                      24 bit  precision       1
+ *                      53 bit  precision       2
+ *                      64 bit  precision       2
+ *                      113 bit precision       3
+ *              The actual value is the sum of them. Thus for 113 bit
  *              precison, one may have to do something like:
  *
- *              long double t,w,r_head, r_tail;
- *              t = (long double)y[2] + (long double)y[1];
- *              w = (long double)y[0];
- *              r_head = t+w;
- *              r_tail = w - (r_head - t);
+ *              long double t,w,r_head, r_tail.
+ *              t = (long double)y[2] + (long double)y[1].
+ *              w = (long double)y[0].
+ *              r_head = t+w.
+ *              r_tail = w - (r_head - t).
  *
  *      e0      The exponent of x[0]. Must be <= 16360 or you need to
  *              expand the ipio2 table.
@@ -2293,7 +2510,7 @@ static float _clib_internal_math__tandf(double x, int odd)
  *                      3       113 bits (quad)
  *
  * External function:
- *      double _clib_internal_math_scalbn(), clib__floor();
+ *      double _clib_internal_math_scalbn(), clib__floor().
  *
  *
  * Here is the description of some local variables:
@@ -2322,7 +2539,7 @@ static float _clib_internal_math__tandf(double x, int odd)
  *      jp      jp+1 is the number of terms in PIo2[] needed, jp = jk.
  *
  *      q[]     double array with integral value, representing the
- *              24-bits chunk of the product of x and 2/pi.
+ *              24 bits chunk of the product of x and 2/pi.
  *
  *      q0      the corresponding exponent of q[0]. Note that the
  *              exponent for q[i] would be q0-24*i.
@@ -2332,7 +2549,7 @@ static float _clib_internal_math__tandf(double x, int odd)
  *
  *      f[]     ipio2[] in floating point
  *
- *      iq[]    integer array by breaking up q[] in 24-bits chunk.
+ *      iq[]    integer array by breaking up q[] in 24 bits chunk.
  *
  *      fq[]    final product of x*(2/pi) in fq[0],..,fq[jk]
  *
@@ -2463,7 +2680,7 @@ recompute:
         n += 1;
         carry = 0;
         for (i = 0; i < jz; i++)
-        { /* compute 1-q */
+        { /* compute 1 q */
             j = iq[i];
             if (carry == 0)
             {
@@ -2549,7 +2766,7 @@ recompute:
         }
     }
     else
-    { /* break z into 24-bit if necessary */
+    { /* break z into 24 bit if necessary */
         z = _clib_internal_math_scalbn(z, -q0);
         if (z >= 0x1p24)
         {
@@ -2565,7 +2782,7 @@ recompute:
         }
     }
 
-    /* convert integer "bit" chunk to floating-point value */
+    /* convert integer "bit" chunk to floating point value */
     fw = _clib_internal_math_scalbn(1.0, q0);
     for (i = jz; i >= 0; i--)
     {
@@ -3376,7 +3593,7 @@ EXP2F_POLY_ORDER = 3
 ULP error: 0.502 (nearest rounding.)
 Relative error: 1.69 * 2^-34 in [-ln2/64, ln2/64] (before rounding.)
 Wrong count: 170635 (all nearest rounding wrong results with fma.)
-Non-nearest ULP error: 1 (rounded ULP error)
+Non nearest ULP error: 1 (rounded ULP error)
 */
 
 #define N (1 << EXP2F_TABLE_BITS)
@@ -3429,7 +3646,7 @@ float clib__expf(float x)
     z = InvLn2N * xd;
 
     /* Round and convert z to int, the result is in [-150*N, 128*N] and
-       ideally ties-to-even rule is used, otherwise the magnitude of r
+       ideally ties to even rule is used, otherwise the magnitude of r
        can be bigger which gives larger approximation error.  */
 #if _CLIB_INTERNAL_TOINT_INTRINSICS
     kd = roundtoint(z);
@@ -3521,7 +3738,7 @@ float clib__logf(float x)
         ix -= 23 << 23;
     }
 
-    /* x = 2^k z; where z is in range [OFF,2*OFF] and exact.
+    /* x = 2^k z. Where z is in range [OFF,2*OFF] and exact.
        The range is split into N subintervals.
        The ith subinterval contains z and c is near its center.  */
     tmp = ix - OFF;
@@ -3577,7 +3794,7 @@ static inline double_t log2_inline(uint ix)
     uint iz, top, tmp;
     int k, i;
 
-    /* x = 2^k z; where z is in range [OFF,2*OFF] and exact.
+    /* x = 2^k z. Where z is in range [OFF,2*OFF] and exact.
        The range is split into N subintervals.
        The ith subinterval contains z and c is near its center.  */
     tmp = ix - OFF;
@@ -3649,7 +3866,7 @@ static inline float exp2_inline(double_t xd, uint sign_bias)
 }
 
 /* Returns 0 if not int, 1 if odd int, 2 if even int.  The argument is
-   the bit representation of a non-zero finite floating-point value.  */
+   the bit representation of a non zero finite floating point value.  */
 static inline int checkint(uint iy)
 {
     int e = iy >> 23 & 0xff;
@@ -3744,7 +3961,7 @@ float clib__powf(float x, float y)
                thus division by zero exception can be signaled spuriously.  */
             return iy & 0x80000000 ? fp_barrierf(1 / x2) : x2;
         }
-        /* x and y are non-zero finite.  */
+        /* x and y are non zero finite.  */
         if (ix & 0x80000000)
         {
             /* Finite x < 0.  */
@@ -3863,7 +4080,7 @@ float clib__sqrtf(float x)
         ix -= 23 << 23;
     }
 
-    /* x = 4^e m; with int e and m in [1, 4).  */
+    /* x = 4^e m. With int e and m in [1, 4).  */
     even = ix & 0x00800000;
     m1 = (ix << 8) | 0x80000000;
     m0 = (ix << 7) & 0x7fffffff;
@@ -3969,7 +4186,7 @@ double clib__sqrt(double x)
     }
 
     /* argument reduction:
-       x = 4^e m; with integer e, and m in [1, 4)
+       x = 4^e m. With integer e, and m in [1, 4)
        m: fixed point representation [2.62]
        2^e is the exponent part of the result.  */
     int even = top & 1;
@@ -4000,7 +4217,7 @@ double clib__sqrt(double x)
        prec 7bit is needed (or modified iterations). to avoid
        one more iteration >=13bit table would be needed (16k).
 
-       a newton-raphson iteration for r is
+       a newton raphson iteration for r is
          w = r*r
          u = 3 - m*w
          r = r*u/2
@@ -4052,7 +4269,7 @@ double clib__sqrt(double x)
     d = mul32(s, r);
     u = three - d;
     r = mul32(r, u) << 1;
-    /* |r clib__sqrt(m) - 1| < 0x1.3704p-29 (measured worst-case) */
+    /* |r clib__sqrt(m) - 1| < 0x1.3704p-29 (measured worst case) */
     r = r << 32;
     s = mul64(m, r);
     d = mul64(s, r);
@@ -4108,7 +4325,7 @@ double clib__sqrt(double x)
  * @param int64 dst_cap -> capacity of dst in bytes, terminator included
  * @param const char* src -> string to append
  *
- * @return int64 -> the length the joined string would have without truncation; a value >= dst_cap means it was cut
+ * @return int64 -> the length the joined string would have without truncation. A value >= dst_cap means it was cut
  */
 static int64 clib__strcat_safe(char *dst, int64 dst_cap, const char *src)
 {
@@ -4133,7 +4350,7 @@ static int64 clib__strcat_safe(char *dst, int64 dst_cap, const char *src)
     // check the terminator
     if (dst_len >= dst_cap)
     {
-        // dst is not terminated within its capacity; terminate it and report the overflow
+        // dst is not terminated within its capacity. Terminate it and report the overflow
         dst[dst_cap - 1] = 0;
         return dst_cap + src_len;
     }
@@ -4156,13 +4373,12 @@ static int64 clib__strcat_safe(char *dst, int64 dst_cap, const char *src)
 }
 
 /**
- * @brief writes a signed 64-bit integer in decimal
+ * @brief finds the last occurrence of a character, including the terminator
  *
- * @param char* dst -> destination buffer, terminated on return when dst_cap > 0
- * @param int64 dst_cap -> capacity of dst in bytes, terminator included
- * @param int64 value -> the number
+ * @param const char* s -> terminated string, or NULL
+ * @param int ch -> character converted to char
  *
- * @return int64 -> the number of characters the full text has; a value >= dst_cap means it was cut
+ * @return const char* -> pointer to the character, or NULL if absent
  */
 const char *clib__strrchr(const char *s, int ch)
 {
@@ -4173,7 +4389,7 @@ const char *clib__strrchr(const char *s, int ch)
     {
         return NULL_POINTER;
     }
-    // walk to the terminator, remembering the last hit; the terminator
+    // walk to the terminator, remembering the last hit. The terminator
     // itself matches when ch is 0, as strrchr specifies
     while (*s != 0)
     {
@@ -4192,6 +4408,15 @@ const char *clib__strrchr(const char *s, int ch)
     return found;
 }
 
+/**
+ * @brief finds the first matching byte within a bounded range
+ *
+ * @param const void * block -> memory to search
+ * @param int ch -> value whose low byte is matched
+ * @param int64 count -> maximum bytes to inspect
+ *
+ * @return const void * -> matching address or NULL_POINTER when absent or invalid
+ */
 const void *clib__memchr(const void *block, int ch, int64 count)
 {
     const ubyte *bytes = (const ubyte *)block;
@@ -4214,6 +4439,16 @@ const void *clib__memchr(const void *block, int ch, int64 count)
     return NULL_POINTER;
 }
 
+/**
+ * @brief copies a bounded string prefix and adds a terminator
+ *
+ * @param char * dst -> destination buffer
+ * @param int64 dst_cap -> destination capacity including the terminator
+ * @param const char * src -> source string or NULL_POINTER for empty
+ * @param int64 count -> maximum source bytes to copy
+ *
+ * @return int64 -> bytes copied, excluding the terminator
+ */
 static int64 clib__strncpy_safe(char *dst, int64 dst_cap, const char *src, int64 count)
 {
     int64 written = 0;
@@ -4239,8 +4474,8 @@ static int64 clib__strncpy_safe(char *dst, int64 dst_cap, const char *src, int64
     return written;
 }
 
-// Project-local formatter; no runtime or external formatter dependency.
-// Project-local formatting. Included by stdlib.c, with no external library.
+// Project local formatter. No runtime or external formatter dependency.
+// Project local formatting. Included by stdlib.c, with no external library.
 // Supported conversions and limits are documented in stdlib.h.
 typedef struct _clib_internal_format_output
 {
@@ -4249,6 +4484,15 @@ typedef struct _clib_internal_format_output
     int64 at;
 } _clib_internal_format_output;
 
+/**
+ * @brief appends repeated characters while counting the full requested length
+ *
+ * @param _clib_internal_format_output * out -> output buffer and logical position
+ * @param char c -> character to repeat
+ * @param int64 n -> repetition count
+ *
+ * @return void
+ */
 static void _clib_internal_format_repeat(_clib_internal_format_output *out, char c, int64 n)
 {
     // nothing to write
@@ -4268,6 +4512,15 @@ static void _clib_internal_format_repeat(_clib_internal_format_output *out, char
     // advance by full length
     out->at += n;
 }
+/**
+ * @brief appends bounded text while counting the full requested length
+ *
+ * @param _clib_internal_format_output * out -> output buffer and logical position
+ * @param const char * s -> source bytes
+ * @param int64 n -> source byte count
+ *
+ * @return void
+ */
 static void _clib_internal_format_text(_clib_internal_format_output *out, const char *s, int64 n)
 {
     // nothing to write
@@ -4287,6 +4540,22 @@ static void _clib_internal_format_text(_clib_internal_format_output *out, const 
     // advance by full length
     out->at += n;
 }
+/**
+ * @brief formats an integer with its sign, prefix and padding
+ *
+ * @param _clib_internal_format_output * out -> output buffer and logical position
+ * @param uint64 value -> unsigned magnitude
+ * @param int base -> output radix
+ * @param int upper -> whether hexadecimal digits use uppercase
+ * @param char sign -> sign character or zero
+ * @param int alternate -> whether to include the radix prefix
+ * @param int64 width -> minimum field width
+ * @param int64 precision -> minimum digits, or negative for the default
+ * @param int left -> whether to align the field left
+ * @param int zero -> whether to pad with zeros
+ *
+ * @return void
+ */
 static void _clib_internal_format_number(_clib_internal_format_output *out, uint64 value, int base, int upper, char sign, int alternate, int64 width, int64 precision, int left, int zero)
 {
     char digits[64], prefix[3];
@@ -4360,7 +4629,16 @@ static void _clib_internal_format_number(_clib_internal_format_output *out, uint
 // Convert the exact binary64 rational to decimal using base-1e9 limbs. A
 // binary64 needs at most 767 significant decimal digits, including subnormals.
 // Multiplication by 2 or 5 never overflows uint64. Typical UI numbers need only
-// a few limbs; no heap and no float-to-integer conversion of an unchecked value.
+// a few limbs. No heap and no float to integer conversion of an unchecked value.
+/**
+ * @brief expands a finite positive magnitude into decimal digits
+ *
+ * @param double value -> finite magnitude with its sign cleared
+ * @param char * digits -> output buffer for up to 800 digits
+ * @param int * point -> receives the decimal point position relative to the first digit
+ *
+ * @return int -> digit count without a terminator
+ */
 static int _clib_internal_format_decimal(double value, char *digits, int *point)
 {
     union
@@ -4450,6 +4728,21 @@ static int _clib_internal_format_decimal(double value, char *digits, int *point)
     *point = n - scale;
     return n;
 }
+/**
+ * @brief formats a floating value with decimal rounding and padding
+ *
+ * @param _clib_internal_format_output * out -> output buffer and logical position
+ * @param double value -> value to format
+ * @param int upper -> whether NaN and infinity use uppercase
+ * @param char positive_sign -> sign for a nonnegative value, or zero
+ * @param int alternate -> whether to keep the decimal point
+ * @param int64 width -> minimum field width
+ * @param int64 precision -> fractional digits, or negative for six
+ * @param int left -> whether to align the field left
+ * @param int zero -> whether to pad with zeros
+ *
+ * @return void
+ */
 static void _clib_internal_format_float(_clib_internal_format_output *out, double value, int upper, char positive_sign, int alternate, int64 width, int64 precision, int left, int zero)
 {
     union
@@ -4616,6 +4909,16 @@ static void _clib_internal_format_float(_clib_internal_format_output *out, doubl
     }
 }
 
+/**
+ * @brief formats text into the available buffer and measures its full length
+ *
+ * @param char * dst -> destination or NULL_POINTER to measure only
+ * @param int64 cap -> destination capacity including the terminator
+ * @param const char * fmt -> format string or NULL_POINTER for empty
+ * @param va_list args -> format arguments
+ *
+ * @return int64 -> required bytes excluding the terminator, even when truncated
+ */
 static int64 clib__vformat(char *dst, int64 cap, const char *fmt, va_list args)
 {
     _clib_internal_format_output out = { dst, cap > 0 ? cap : 0, 0 };
@@ -4882,6 +5185,15 @@ static int64 clib__vformat(char *dst, int64 cap, const char *fmt, va_list args)
     return out.at;
 }
 
+/**
+ * @brief formats variable arguments into a bounded buffer
+ *
+ * @param char * dst -> destination or NULL_POINTER to measure only
+ * @param int64 dst_cap -> destination capacity including the terminator
+ * @param const char * fmt -> format string
+ *
+ * @return int64 -> required bytes excluding the terminator, even when truncated
+ */
 static int64 clib__format(char *dst, int64 dst_cap, const char *fmt, ...)
 {
     va_list args;
@@ -4894,6 +5206,15 @@ static int64 clib__format(char *dst, int64 dst_cap, const char *fmt, ...)
     return written;
 }
 
+/**
+ * @brief writes an unsigned integer as lowercase hexadecimal
+ *
+ * @param char * dst -> destination buffer
+ * @param int64 dst_cap -> destination capacity including the terminator
+ * @param uint64 value -> value to format
+ *
+ * @return int64 -> digits written or zero when the buffer cannot hold the result
+ */
 static int64 clib__u64toa_hex(char *dst, int64 dst_cap, uint64 value)
 {
     char digits[17];
@@ -4938,12 +5259,28 @@ static int64 clib__u64toa_hex(char *dst, int64 dst_cap, uint64 value)
     return length;
 }
 
+/**
+ * @brief keeps environment lookup disabled for this library
+ *
+ * @param const char * name -> unused variable name
+ *
+ * @return const char * -> NULL_POINTER
+ */
 static const char *clib__getenv(const char *name)
 {
     (void)name;
     return NULL_POINTER;
 }
 
+/**
+ * @brief writes a signed decimal integer and measures its full length
+ *
+ * @param char * dst -> destination or NULL_POINTER to measure only
+ * @param int64 dst_cap -> destination capacity including the terminator
+ * @param int64 value -> value to format
+ *
+ * @return int64 -> required bytes excluding the terminator, even when truncated
+ */
 static int64 clib__i64toa(char *dst, int64 dst_cap, int64 value)
 {
     char reversed[24];
@@ -5007,7 +5344,7 @@ static int64 clib__i64toa(char *dst, int64 dst_cap, int64 value)
  * @brief parses a decimal floating point number: leading whitespace, optional sign, digits, optional fraction, optional e/E exponent
  *
  * @param const char* s -> text to parse
- * @param char** endptr -> receives the first character not consumed, or s itself when nothing was parsed; may be NULL_POINTER
+ * @param char** endptr -> receives the first character not consumed, or s itself when nothing was parsed. May be NULL_POINTER
  *
  * @return double -> the value, 0.0 when nothing was parsed
  */
@@ -5184,7 +5521,7 @@ double clib__strtod(const char *s, char **endptr)
  * @brief single precision clib__strtod
  *
  * @param const char* s -> text to parse
- * @param char** endptr -> receives the first character not consumed, or s when nothing was parsed; may be NULL_POINTER
+ * @param char** endptr -> receives the first character not consumed, or s when nothing was parsed. May be NULL_POINTER
  *
  * @return float -> the value, 0.0f when nothing was parsed
  */
@@ -5212,6 +5549,13 @@ typedef union clib_double_bits_t
     uint64 bits;
 } clib_double_bits_t;
 
+/**
+ * @brief checks the exponent bits for infinity or NaN
+ *
+ * @param double x -> value to inspect
+ *
+ * @return int -> nonzero for a finite value
+ */
 int clib__isfinite(double x)
 {
     clib_double_bits_t v;
@@ -5219,6 +5563,11 @@ int clib__isfinite(double x)
     return (v.bits & 0x7ff0000000000000ULL) != 0x7ff0000000000000ULL;
 }
 
+/**
+ * @brief builds a quiet NaN value
+ *
+ * @return double -> quiet NaN
+ */
 double clib__nan(void)
 {
     clib_double_bits_t v;
@@ -5226,11 +5575,27 @@ double clib__nan(void)
     return v.value;
 }
 
+/**
+ * @brief selects the greater double value
+ *
+ * @param double x -> first value
+ * @param double y -> second value
+ *
+ * @return double -> first value when greater, otherwise the second
+ */
 static double _clib_internal_double_max(double x, double y)
 {
     return x > y ? x : y;
 }
 
+/**
+ * @brief copies the sign bit while preserving the magnitude bits
+ *
+ * @param double magnitude -> value supplying the magnitude
+ * @param double sign -> value supplying the sign
+ *
+ * @return double -> magnitude with the requested sign
+ */
 double clib__copysign(double magnitude, double sign)
 {
     clib_double_bits_t m;
@@ -5243,6 +5608,14 @@ double clib__copysign(double magnitude, double sign)
     return m.value;
 }
 
+/**
+ * @brief computes the hypotenuse using scaled magnitudes
+ *
+ * @param double x -> first coordinate
+ * @param double y -> second coordinate
+ *
+ * @return double -> hypotenuse, infinity if either input is infinite, or NaN for other nonfinite inputs
+ */
 double clib__hypot(double x, double y)
 {
     // take absolute values
@@ -5281,6 +5654,13 @@ double clib__hypot(double x, double y)
     return scale * clib__sqrt(x * x + y * y);
 }
 
+/**
+ * @brief approximates the exponential with range reduction
+ *
+ * @param double x -> exponent
+ *
+ * @return double -> exponential value, zero on underflow or infinity on overflow
+ */
 double clib__exp(double x)
 {
     // check for NaN
@@ -5337,6 +5717,13 @@ double clib__exp(double x)
     return sum * scale.value;
 }
 
+/**
+ * @brief approximates the natural logarithm
+ *
+ * @param double x -> input value
+ *
+ * @return double -> logarithm, negative infinity for zero, or NaN for a negative input
+ */
 double clib__log(double x)
 {
     // negative or NaN argument
@@ -5395,6 +5782,14 @@ double clib__log(double x)
     return exponent * 0.69314718055994530942 + 2.0 * sum;
 }
 
+/**
+ * @brief raises a finite positive base to a finite exponent
+ *
+ * @param double x -> positive finite base
+ * @param double exponent -> finite exponent
+ *
+ * @return double -> power value or NaN when the inputs are outside the supported domain
+ */
 double clib__pow_positive(double x, double exponent)
 {
     if (x <= 0.0 || !clib__isfinite(x) || !clib__isfinite(exponent))
@@ -5404,6 +5799,13 @@ double clib__pow_positive(double x, double exponent)
     return clib__exp(exponent * clib__log(x));
 }
 
+/**
+ * @brief approximates cosine within two pi radians of zero
+ *
+ * @param double x -> finite angle in radians
+ *
+ * @return double -> cosine or NaN outside the supported range
+ */
 double clib__cos_bounded(double x)
 {
     const double pi = 3.14159265358979323846;
@@ -5441,8 +5843,16 @@ double clib__cos_bounded(double x)
     return sign * sum;
 }
 
-/* Caller-owned buffers. Capacity includes the terminator; these functions never allocate. */
+/* Caller owned buffers. Capacity includes the terminator. These functions never allocate. */
 /* -1 means invalid/unterminated. Reads at most capacity bytes. */
+/**
+ * @brief finds a string terminator within the supplied capacity
+ *
+ * @param const char * string -> string to inspect
+ * @param uint64 capacity -> maximum readable bytes
+ *
+ * @return int64 -> byte length or -1 when invalid or unterminated
+ */
 int64 clib__string_length(const char *string, uint64 capacity)
 {
     uint64 i = 0;
@@ -5464,6 +5874,16 @@ int64 clib__string_length(const char *string, uint64 capacity)
     return -1;
 }
 
+/**
+ * @brief copies an exact byte count and appends a terminator
+ *
+ * @param char * destination -> destination buffer
+ * @param uint64 capacity -> destination capacity including the terminator
+ * @param const char * source -> source bytes, which may overlap the destination
+ * @param uint64 length -> bytes to copy
+ *
+ * @return boole -> TRUE when copied, otherwise FALSE with a valid destination cleared
+ */
 boole clib__string_copy_n(char *destination, uint64 capacity, const char *source, uint64 length)
 {
     // check the destination
@@ -5485,7 +5905,16 @@ boole clib__string_copy_n(char *destination, uint64 capacity, const char *source
     return TRUE;
 }
 
-/* Copies are all-or-nothing. Failure clears a writable destination. Overlap is supported. */
+/* Copies are all or nothing. Failure clears a writable destination. Overlap is supported. */
+/**
+ * @brief copies a string only when it fits with its terminator
+ *
+ * @param char * destination -> destination buffer
+ * @param uint64 capacity -> destination capacity including the terminator
+ * @param cstring source -> source string or NULL_POINTER for empty
+ *
+ * @return boole -> TRUE when copied, otherwise FALSE with a valid destination cleared
+ */
 boole clib__string_copy(char *destination, uint64 capacity, cstring source)
 {
     uint64 length = 0;
@@ -5510,6 +5939,15 @@ boole clib__string_copy(char *destination, uint64 capacity, cstring source)
 }
 
 /* Append leaves the existing string unchanged on failure. */
+/**
+ * @brief appends a string only when the complete result fits
+ *
+ * @param char * destination -> terminated destination string
+ * @param uint64 capacity -> total destination capacity
+ * @param cstring source -> source string to append
+ *
+ * @return boole -> TRUE when appended, otherwise FALSE without changing the destination
+ */
 boole clib__string_append(char *destination, uint64 capacity, cstring source)
 {
     int64 length = clib__string_length(destination, capacity);
@@ -5541,6 +5979,17 @@ boole clib__string_append(char *destination, uint64 capacity, cstring source)
     return TRUE;
 }
 
+/**
+ * @brief measures formatted text and writes it only when it fits
+ * an undersized destination is cleared instead of receiving truncated text
+ *
+ * @param char * destination -> destination or NULL_POINTER when capacity is zero
+ * @param uint64 capacity -> destination capacity including the terminator
+ * @param cstring format -> format string
+ * @param va_list arguments -> format arguments
+ *
+ * @return int64 -> required length excluding the terminator, or -1 for invalid arguments
+ */
 int64 clib__string_vformat(char *destination, uint64 capacity, cstring format, va_list arguments)
 {
     int64 required = 0;
@@ -5573,6 +6022,15 @@ int64 clib__string_vformat(char *destination, uint64 capacity, cstring format, v
 }
 
 /* Returns required bytes excluding NUL, or -1 on invalid input. Overflow clears output. */
+/**
+ * @brief formats variable arguments without leaving a truncated string
+ *
+ * @param char * destination -> destination or NULL_POINTER when capacity is zero
+ * @param uint64 capacity -> destination capacity including the terminator
+ * @param cstring format -> format string
+ *
+ * @return int64 -> required length excluding the terminator, or -1 for invalid arguments
+ */
 int64 clib__string_format(char *destination, uint64 capacity, cstring format, ...)
 {
     va_list arguments;
@@ -5585,6 +6043,14 @@ int64 clib__string_format(char *destination, uint64 capacity, cstring format, ..
     return required;
 }
 
+/**
+ * @brief removes a final LF and its optional preceding CR
+ *
+ * @param char * string -> string to trim in place
+ * @param uint64 capacity -> maximum readable bytes
+ *
+ * @return void
+ */
 void clib__string_trim_newline(char *string, uint64 capacity)
 {
     int64 length = clib__string_length(string, capacity);
@@ -5600,7 +6066,18 @@ void clib__string_trim_newline(char *string, uint64 capacity)
     }
 }
 
-/* Compatibility for existing byte-oriented application code, with zero-capacity handling. */
+/* Compatibility for existing byte oriented application code, with zero capacity handling. */
+/**
+ * @brief copies at most the destination capacity while allowing overlap
+ * null pointers or counts beyond the supported address size leave memory unchanged
+ *
+ * @param const void * source -> source bytes
+ * @param void * destination -> destination buffer
+ * @param uint64 length -> requested byte count
+ * @param uint64 capacity -> writable destination bytes
+ *
+ * @return void
+ */
 void clib__copy_memory(const void *source, void *destination, uint64 length, uint64 capacity)
 {
     // check arguments
@@ -5622,6 +6099,15 @@ void clib__copy_memory(const void *source, void *destination, uint64 length, uin
     }
 }
 
+/**
+ * @brief fills a positive byte count when a destination exists
+ *
+ * @param void * destination -> destination buffer
+ * @param int64 length -> number of bytes
+ * @param ubyte value -> byte value to repeat
+ *
+ * @return void
+ */
 void clib__set_memory(void *destination, int64 length, ubyte value)
 {
     if (destination)
@@ -5630,16 +6116,39 @@ void clib__set_memory(void *destination, int64 length, ubyte value)
     }
 }
 
+/**
+ * @brief compares two existing strings for exact equality
+ *
+ * @param cstring first -> first string
+ * @param cstring second -> second string
+ *
+ * @return boole -> TRUE only when both strings exist and match
+ */
 boole clib__is_string_equal(cstring first, cstring second)
 {
     return first && second && clib__strcmp(first, second) == 0;
 }
 
+/**
+ * @brief counts bytes up to the terminator without decoding UTF8
+ *
+ * @param cstring string -> terminated string
+ *
+ * @return uint64 -> byte length
+ */
 uint64 clib__utf8_string_length(cstring string)
 {
     return (uint64)clib__strlen(string);
 }
 
+/**
+ * @brief checks whether a byte string ends within the allowed length
+ *
+ * @param cstring string -> readable string including the possible terminator at maximum
+ * @param int maximum -> maximum accepted byte length
+ *
+ * @return int64 -> byte length or -1 when invalid or too long
+ */
 int64 clib__utf8_string_length_check_max_length(cstring string, int maximum)
 {
     int64 i = 0;
@@ -5661,6 +6170,15 @@ int64 clib__utf8_string_length_check_max_length(cstring string, int maximum)
     return -1;
 }
 
+/**
+ * @brief parses an unsigned long with radix detection and overflow clamping
+ *
+ * @param cstring string -> input text
+ * @param char ** end -> receives the first unparsed character, or NULL_POINTER
+ * @param int base -> radix from 2 to 36, or zero to detect it
+ *
+ * @return unsigned long -> parsed unsigned value, ULONG_MAX on overflow, or zero without conversion
+ */
 unsigned long clib__strtoul(cstring string, char **end, int base)
 {
     cstring start = string;

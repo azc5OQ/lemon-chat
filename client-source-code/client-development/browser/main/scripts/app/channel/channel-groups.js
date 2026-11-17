@@ -1,4 +1,4 @@
-// Channel groups apply only in the channel where the identity was assigned.
+// channel groups apply only in the channel where the identity was assigned
 var channel_groups =
 {
     catalog: [],
@@ -60,8 +60,11 @@ var channel_groups_power_fields =
 ];
 
 /**
- * @brief Returns the icon shared by every display of this channel group.
- * @param group Channel group definition.
+ * @brief returns the icon shared by every display of this channel group
+ *
+ * @param object group -> channel group definition
+ *
+ * @return string -> the icon data URL, or an empty string when unavailable
  */
 function channel_groups__icon(group)
 {
@@ -78,8 +81,11 @@ function channel_groups__icon(group)
 }
 
 /**
- * @brief Finds the group active in the client's current channel.
- * @param client Connected client.
+ * @brief finds the group active in the client's current channel
+ *
+ * @param object client -> connected client
+ *
+ * @return object|null -> the active group definition, or null when unassigned
  */
 function channel_groups__active(client)
 {
@@ -94,7 +100,9 @@ function channel_groups__active(client)
 }
 
 /**
- * @brief Places channel icons before server icons and labels both types.
+ * @brief places channel icons before server icons and labels both types
+ *
+ * @return void
  */
 function channel_groups__refresh_icons()
 {
@@ -109,17 +117,45 @@ function channel_groups__refresh_icons()
         {
             continue;
         }
+
+        // rebuilt rows lose groups
+        let wanted = Array.isArray(client.group_ids) ? client.group_ids : [];
+        let shown = Array.from(holder.querySelectorAll(".single-group:not(.channel-group-icon)")).map(function(icon)
+        {
+            return Number(icon.getAttribute("group-id"));
+        });
+        if (shown.join(",") !== wanted.join(","))
+        {
+            holder.querySelectorAll(".single-group:not(.channel-group-icon)").forEach(function(icon)
+            {
+                icon.remove();
+            });
+            for (let group_id of wanted)
+            {
+                let node = document.createElement("div");
+                node.className = "single-group";
+                node.setAttribute("group-id", group_id);
+                holder.appendChild(node);
+            }
+        }
         for (let icon of holder.querySelectorAll("[group-id]"))
         {
             let group = channel_tree__get_group_by_group_id(Number(icon.getAttribute("group-id")));
             icon.title = "Server groups: " + (group ? group.group_name : "");
             icon.setAttribute("aria-label", icon.title);
+
+            // picture arrived later
+            let picture = (group && group.has_icon) ? channel_tree__get_icon_by_icon_id(group.group_linked_icon_id) : null;
+            if (picture != null && !icon.style.backgroundImage)
+            {
+                icon.style.backgroundImage = "url(" + picture.base64_icon + ")";
+            }
         }
         let group = channel_groups__active(client);
         let source = channel_groups__icon(group);
         let current = holder.querySelector(".channel-group-icon");
 
-        // an unchanged icon stays in place: removing it and adding it again makes the browser draw it again, which is seen as a flash
+        // keep unchanged icons in place to avoid redraw flicker
         if (current && source && current.icon_source === source && current.title === "Channel groups: " + group.name)
         {
             continue;
@@ -147,8 +183,11 @@ function channel_groups__refresh_icons()
 }
 
 /**
- * @brief Separates channel and server memberships in the selected client's details.
- * @param client Selected connected client.
+ * @brief separates channel and server memberships in the selected client's details
+ *
+ * @param client selected connected client
+ *
+ * @return void
  */
 function channel_groups__profile(client)
 {
@@ -198,7 +237,9 @@ function channel_groups__profile(client)
 }
 
 /**
- * @brief Adds channel group management beside server group management.
+ * @brief adds channel group management beside server group management
+ *
+ * @return void
  */
 function channel_groups__setup()
 {
@@ -310,17 +351,24 @@ function channel_groups__setup()
 }
 
 /**
- * @brief Checks the current authority to edit a channel-group definition.
+ * @brief checks permission to create or edit a channel group
+ *
+ * @param object|null group -> existing group, or null when creating one
+ *
+ * @return boolean -> true when the current user can edit the group
  */
 function channel_groups__can_edit(group)
 {
     let protected_flags = group && group.permissions && Object.keys(group.permissions.flags || {}).length > 0;
-    return groups__has_permission(group ? "edit_channel_groups" : "create_channel_groups")
-        && (!group || !!group.permissions) && (g_is_local_client_admin || !protected_flags);
+    return groups__has_permission(group ? "edit_channel_groups" : "create_channel_groups") && (!group || !!group.permissions) && (g_is_local_client_admin || !protected_flags);
 }
 
 /**
- * @brief Marks only this editor's draft; no permission request is sent.
+ * @brief marks the channel group draft as changed without sending it
+ *
+ * @param Event|null event -> optional form change event. view controls do not mark the draft dirty
+ *
+ * @return void
  */
 function channel_groups__mark_dirty(event)
 {
@@ -334,7 +382,9 @@ function channel_groups__mark_dirty(event)
 }
 
 /**
- * @brief Keeps the explicit save action visible and rejects stale drafts.
+ * @brief keeps the explicit save action visible and rejects stale drafts
+ *
+ * @return void
  */
 function channel_groups__update_actions()
 {
@@ -364,16 +414,13 @@ function channel_groups__update_actions()
         channel_groups.form.inert = pending;
         channel_groups.form.setAttribute("aria-busy", String(pending));
     }
-    status.textContent = pending ? "Saving changes…"
-        : !selected && !channel_groups.creating ? "Select a group."
-            : !allowed ? "You cannot edit this group."
-            : conflict ? "This group changed on the server. Discard changes to reload it before editing."
-                : channel_groups.dirty ? "Unsaved changes"
-                    : channel_groups.notice || "Changes apply only when you save.";
+    status.textContent = pending ? "Saving changes…" : !selected && !channel_groups.creating ? "Select a group." : !allowed ? "You cannot edit this group." : conflict ? "This group changed on the server. Discard changes to reload it before editing." : channel_groups.dirty ? "Unsaved changes" : channel_groups.notice || "Changes apply only when you save.";
 }
 
 /**
- * @brief Accepts a channel-group save only after its definition arrives from the server.
+ * @brief completes a pending save after the matching definition arrives from the server
+ *
+ * @return void
  */
 function channel_groups__finish_save()
 {
@@ -384,9 +431,7 @@ function channel_groups__finish_save()
     }
     let saved = channel_groups.catalog.find(function(group)
     {
-        return (pending.action === "create" ? !pending.existing_ids.has(group.group_id) : group.group_id === pending.group_id)
-            && group.name === pending.name && group.icon_id === pending.icon_id
-            && (group.permissions ? groups__permissions_equal(pending.permissions, group.permissions) : pending.action === "create");
+        return (pending.action === "create" ? !pending.existing_ids.has(group.group_id) : group.group_id === pending.group_id) && group.name === pending.name && group.icon_id === pending.icon_id && (group.permissions ? groups__permissions_equal(pending.permissions, group.permissions) : pending.action === "create");
     });
     if (!saved)
     {
@@ -403,7 +448,9 @@ function channel_groups__finish_save()
 }
 
 /**
- * @brief Shows definitions and users without mixing them with server groups.
+ * @brief shows definitions and users without mixing them with server groups
+ *
+ * @return void
  */
 function channel_groups__render()
 {
@@ -425,8 +472,7 @@ function channel_groups__render()
         channel_groups__render_member_controls();
         return;
     }
-    let signature = JSON.stringify([channel_groups.catalog, channel_groups.selected, channel_groups.creating, groups_window.access,
-        g_is_local_client_admin, groups__editing_power()]);
+    let signature = JSON.stringify([channel_groups.catalog, channel_groups.selected, channel_groups.creating, groups_window.access, g_is_local_client_admin, groups__editing_power()]);
     if (signature === channel_groups.signature)
     {
         channel_groups__render_members();
@@ -510,8 +556,7 @@ function channel_groups__render()
     {
         actions.append(moderation__button("+ Add", async function()
         {
-            if (channel_groups.pending || channel_groups.creating || channel_groups.dirty
-                && !await groups__ask("Discard the unsaved changes before creating a channel group?", "Discard"))
+            if (channel_groups.pending || channel_groups.creating || channel_groups.dirty && !await groups__ask("Discard the unsaved changes before creating a channel group?", "Discard"))
             {
                 return;
             }
@@ -527,8 +572,7 @@ function channel_groups__render()
         actions.lastElementChild.disabled = channel_groups.creating;
     }
     let protected_flags = selected && selected.permissions && Object.keys(selected.permissions.flags || {}).length > 0;
-    if (selected && selected.group_id !== 1 && groups__has_permission("delete_channel_groups")
-        && (g_is_local_client_admin || !protected_flags))
+    if (selected && selected.group_id !== 1 && groups__has_permission("delete_channel_groups") && (g_is_local_client_admin || !protected_flags))
     {
         actions.append(moderation__button("Delete group", async function()
         {
@@ -675,6 +719,15 @@ function channel_groups__render()
     table.append(heading);
     let values = selected ? selected.permissions || {} : {};
     let controls = [];
+    /**
+     * @brief builds a permission power control with the current editing restrictions
+     *
+     * @param string key -> permission name
+     * @param string label -> accessible control label
+     * @param number|string value -> selected permission power
+     *
+     * @return HTMLInputElement|HTMLSelectElement -> configured permission control
+     */
     function power_control(key, label, value)
     {
         let control = document.createElement(channel_groups.advanced ? "input" : "select");
@@ -772,21 +825,24 @@ function channel_groups__render()
     {
         event.preventDefault();
     };
+    /**
+     * @brief validates the current draft and permissions before requesting a channel group save
+     *
+     * @return void
+     */
     channel_groups.save = function()
     {
         let current = channel_groups.catalog.find(function(group)
         {
             return group.group_id === channel_groups.selected;
         });
-        if (channel_groups.pending || !channel_groups__can_edit(current)
-            || channel_groups.baseline !== JSON.stringify(current || null))
+        if (channel_groups.pending || !channel_groups__can_edit(current) || channel_groups.baseline !== JSON.stringify(current || null))
         {
             channel_groups__update_actions();
             return;
         }
         let trimmed_name = name.value.trim();
-        name.setCustomValidity(!trimmed_name || new TextEncoder().encode(trimmed_name).length > 31
-            ? "Use a name between 1 and 31 bytes long." : "");
+        name.setCustomValidity(!trimmed_name || new TextEncoder().encode(trimmed_name).length > 31 ? "Use a name between 1 and 31 bytes long." : "");
         if (!can_edit || !form.reportValidity())
         {
             return;
@@ -808,9 +864,7 @@ function channel_groups__render()
                     grants: { [key]: permissions.grants[key] },
                     flags: { [key]: permissions.flags && permissions.flags[key] || {} }
                 };
-                if (!groups__permissions_equal(setting, current.permissions)
-                    && (!groups__can_edit_setting(current.permissions, key)
-                        || !g_is_local_client_admin && groups__required_edit_power(permissions, key) > groups__editing_power()))
+                if (!groups__permissions_equal(setting, current.permissions) && (!groups__can_edit_setting(current.permissions, key) || !g_is_local_client_admin && groups__required_edit_power(permissions, key) > groups__editing_power()))
                 {
                     document.getElementById("channel-groups-edit-status").textContent = "Your editing power no longer permits every change. Review or discard the draft.";
                     return;
@@ -854,7 +908,9 @@ function channel_groups__render()
 }
 
 /**
- * @brief Lists a channel group's visible members in its hover and focus description.
+ * @brief lists a channel group's visible members in its hover and focus description
+ *
+ * @return void
  */
 function channel_groups__render_members()
 {
@@ -888,7 +944,9 @@ function channel_groups__render_members()
 }
 
 /**
- * @brief Creates the member column shared across channel permission editor refreshes.
+ * @brief creates the member column shared across channel permission editor refreshes
+ *
+ * @return Element -> the existing or newly created member panel
  */
 function channel_groups__member_panel()
 {
@@ -939,13 +997,23 @@ function channel_groups__member_panel()
     return panel;
 }
 
-/** @brief Binds a selected row to its identity, channel and current assignment. */
+/**
+ * @brief identifies a membership selection by client, public key, channel and assigned group
+ *
+ * @param object client -> the connected client
+ *
+ * @return string -> serialized selection key
+ */
 function channel_groups__member_key(client)
 {
     return JSON.stringify([Number(client.client_id), client.public_key, Number(client.channel_id), Number(client.channel_group_id) || 0]);
 }
 
-/** @brief Refreshes the inline member list without replacing the permission draft. */
+/**
+ * @brief refreshes the inline member list without replacing the permission draft
+ *
+ * @return void
+ */
 function channel_groups__render_member_controls()
 {
     let panel = channel_groups.members_panel;
@@ -1011,8 +1079,7 @@ function channel_groups__render_member_controls()
         let assigned = Number(client.channel_group_id) === group_id;
         can_add ||= !assigned && groups__can_assign_channel(client) && moderation__can_assign_role(client, group_id);
         let channel = channel_tree__get_channel_by_id(g_channel_list, client.channel_id);
-        let name = client.username + (Number(client.client_id) === Number(g_local_client_id) ? " (you)" : "")
-            + " (" + (channel ? channel.channel_name || channel.name : client.channel_id) + ")";
+        let name = client.username + (Number(client.client_id) === Number(g_local_client_id) ? " (you)" : "") + " (" + (channel ? channel.channel_name || channel.name : client.channel_id) + ")";
         if (assigned === adding || !name.toLowerCase().includes(query))
         {
             continue;
@@ -1046,19 +1113,14 @@ function channel_groups__render_member_controls()
     search.disabled = !allowed;
     panel.querySelector("#channel-groups-member-label").textContent = adding ? "Add a member" : "Members";
     panel.querySelector("#channel-groups-member-cancel").hidden = !adding;
-    panel.querySelector("#channel-groups-member-add").disabled = !allowed || !!channel_groups.member_pending
-        || (adding ? !can_change || !moderation__can_assign_role(selected, group_id) : !can_add);
+    panel.querySelector("#channel-groups-member-add").disabled = !allowed || !!channel_groups.member_pending || (adding ? !can_change || !moderation__can_assign_role(selected, group_id) : !can_add);
     panel.querySelector("#channel-groups-member-remove").disabled = adding || !can_change || !moderation__can_assign_role(selected, 0);
-    panel.querySelector("#channel-groups-member-note").textContent = !allowed ? ""
-        : channel_groups.member_pending ? "Membership change requested."
-            : channel_groups.member_notice || (adding ? "Adding replaces the user's group in the listed channel." : "");
+    panel.querySelector("#channel-groups-member-note").textContent = !allowed ? "" : channel_groups.member_pending ? "Membership change requested." : channel_groups.member_notice || (adding ? "Adding replaces the user's group in the listed channel." : "");
     if (!container.childElementCount)
     {
         let empty = document.createElement("p");
         empty.className = "groups-empty";
-        empty.textContent = !group ? "Select a saved group."
-            : !allowed ? "You do not have permission to view this group's members."
-                : query ? "No matching users." : adding ? "No users available to add." : "No members in this group.";
+        empty.textContent = !group ? "Select a saved group." : !allowed ? "You do not have permission to view this group's members." : query ? "No matching users." : adding ? "No users available to add." : "No members in this group.";
         container.append(empty);
     }
     container.scrollTop = scroll;
@@ -1071,7 +1133,13 @@ function channel_groups__render_member_controls()
     }
 }
 
-/** @brief Rechecks the selected identity and authority before changing its channel membership. */
+/**
+ * @brief rechecks the selected identity and authority before changing its channel membership
+ *
+ * @param boolean add -> true to assign the selected group, false to remove it
+ *
+ * @return void
+ */
 function channel_groups__change_membership(add)
 {
     let group_id = channel_groups.selected;
@@ -1112,9 +1180,12 @@ function channel_groups__change_membership(add)
 }
 
 /**
- * @brief Offers a bounded page of shared icons for a channel group.
- * @param selected Current icon ID.
- * @param accept Called with the chosen icon ID.
+ * @brief offers a bounded page of shared icons for a channel group
+ *
+ * @param selected current icon ID
+ * @param accept called with the chosen icon ID
+ *
+ * @return void
  */
 function channel_groups__choose_icon(selected, accept)
 {
@@ -1139,6 +1210,11 @@ function channel_groups__choose_icon(selected, accept)
         page++;
         render();
     });
+    /**
+     * @brief renders the filtered icon page with default and no icon choices
+     *
+     * @return void
+     */
     function render()
     {
         let icons = g_icons.filter(function(icon)

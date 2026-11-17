@@ -1,12 +1,12 @@
-// This file provides the Linux and macOS connections used for URL previews
+// this file provides the Linux and macOS connections used for URL previews
 // when a client posts a website link in chat. The feature must be enabled in
 // the server settings. It lets the server download the page and preview
-// picture that will be shown below the message.
+// picture that will be shown below the message
 //
-// It uses the operating system's sockets for HTTP and the bundled mbedTLS
+// it uses the operating system's sockets for HTTP and the bundled mbedTLS
 // library for HTTPS. The website name and certificate are checked before the
 // HTTPS request is sent. Each connection keeps its own encryption state and
-// memory for the downloaded bytes, so several pages can be fetched at once.
+// memory for the downloaded bytes, so several pages can be fetched at once
 #include "httpclient_internal.h"
 #include <errno.h>
 #include <fcntl.h>
@@ -31,7 +31,7 @@
 
 struct https_connection_t
 {
-    int socket; // POSIX socket descriptors use int.
+    int socket; // POSIX socket descriptors use int
     boole is_https;
     uint64 deadline;
     httpclient_response_t *response;
@@ -46,15 +46,15 @@ struct https_connection_t
 static uint64 _httpclient_posix_internal__now(void);
 static httpclient_error_t _httpclient_posix_internal__wait(httpclient_connection_t *connection, boole writing);
 
-// These signatures must match the callbacks passed to mbedtls_ssl_set_bio().
+// these signatures must match the callbacks passed to mbedtls_ssl_set_bio()
 static int _httpclient_posix_internal__tls_send(void *context, const ubyte *bytes, size_t size);
 static int _httpclient_posix_internal__tls_receive(void *context, ubyte *bytes, size_t size);
 static boole _httpclient_posix_internal__load_roots(httpclient_connection_t *connection, const char *ca_file);
 
 /**
- * @brief Reads the clock used to measure how long a URL preview connection has been waiting.
+ * @brief reads the clock used to measure how long a URL preview connection has been waiting
  *
- * This clock moves forward independently of changes to the computer's date and time.
+ * this clock moves forward independently of changes to the computer's date and time
  *
  * @return uint64 -> the monotonic clock value in milliseconds
  */
@@ -67,10 +67,10 @@ static uint64 _httpclient_posix_internal__now(void)
 }
 
 /**
- * @brief Waits for a URL preview socket to become ready or reach its existing time limit.
+ * @brief waits for a URL preview socket to become ready or reach its existing time limit
  *
- * The same deadline covers connecting, TLS negotiation and all body reads.
- * A website that keeps sending small pieces does not restart the time limit.
+ * the same deadline covers connecting, TLS negotiation and all body reads
+ * A website that keeps sending small pieces does not restart the time limit
  *
  * @param httpclient_connection_t* connection -> the connection whose socket and deadline are checked
  * @param boole writing -> TRUE to wait for writing, or FALSE to wait for reading
@@ -126,8 +126,8 @@ static httpclient_error_t _httpclient_posix_internal__wait(httpclient_connection
 }
 
 /**
- * @brief Sends bytes on a URL preview socket and reports the result in the form expected by
- *        mbedTLS.
+ * @brief sends bytes on a URL preview socket and reports the result in the form expected by
+ *        mbedTLS
  *
  * @param void* context -> the httpclient_connection_t that owns the socket
  * @param const ubyte* bytes -> the bytes to send
@@ -157,8 +157,8 @@ static int _httpclient_posix_internal__tls_send(void *context, const ubyte *byte
 }
 
 /**
- * @brief Reads bytes from a URL preview socket and reports the result in the form expected by
- *        mbedTLS.
+ * @brief reads bytes from a URL preview socket and reports the result in the form expected by
+ *        mbedTLS
  *
  * @param void* context -> the httpclient_connection_t that owns the socket
  * @param ubyte* bytes -> the buffer that receives the bytes
@@ -188,10 +188,10 @@ static int _httpclient_posix_internal__tls_receive(void *context, ubyte *bytes, 
 }
 
 /**
- * @brief Loads trusted certificates so an HTTPS preview can check the website's certificate.
+ * @brief loads trusted certificates so an HTTPS preview can check the website's certificate
  *
  * A supplied certificate file is used on its own. Otherwise the function reads
- * the certificates trusted by macOS or looks in the usual Linux and Android locations.
+ * the certificates trusted by macOS or looks in the usual Linux and Android locations
  *
  * @param httpclient_connection_t* connection -> the connection whose trusted certificate list is filled
  * @param const char* ca_file -> a certificate file path, or NULL to use the operating system's certificates
@@ -256,9 +256,9 @@ static boole _httpclient_posix_internal__load_roots(httpclient_connection_t *con
 }
 
 /**
- * @brief Opens a connection to a website and prepares TLS when a URL preview uses HTTPS.
+ * @brief opens a connection to a website and prepares TLS when a URL preview uses HTTPS
  *
- * Always close *output, even on failure, to release any partly initialized resources.
+ * always close *output, even on failure, to release any partly initialized resources
  *
  * @param const httpclient_request_t* request -> the timeout, allowed-address policy and other connection options
  * @param const httpclient_url_t* url -> the parsed hostname, port and HTTPS flag
@@ -465,7 +465,7 @@ httpclient_error_t httpclient_transport__open(const httpclient_request_t *reques
 }
 
 /**
- * @brief Sends all request bytes for a URL preview, encrypting them when the connection uses HTTPS.
+ * @brief sends all request bytes for a URL preview, encrypting them when the connection uses HTTPS
  *
  * @param httpclient_connection_t* connection -> the open connection and the time limit shared by the request
  * @param const void* data -> the request bytes, kept alive by the caller until this function returns
@@ -524,10 +524,10 @@ httpclient_error_t httpclient_transport__write(httpclient_connection_t *connecti
 }
 
 /**
- * @brief Reads URL preview response data, decrypts HTTPS data if needed and continues parsing the
- *        response.
+ * @brief reads URL preview response data, decrypts HTTPS data if needed and continues parsing the
+ *        response
  *
- * HTTPS socket closure without a TLS close notification is reported as truncated.
+ * HTTPS socket closure without a TLS close notification is reported as truncated
  *
  * @param httpclient_connection_t* connection -> the open connection and its response object
  * @param http_parser_t* parser -> the reading state and buffers for the HTTP response
@@ -593,7 +593,7 @@ httpclient_error_t httpclient_transport__read(httpclient_connection_t *connectio
 }
 
 /**
- * @brief Closes a Linux or macOS URL preview connection and frees its socket and TLS resources.
+ * @brief closes a Linux or macOS URL preview connection and frees its socket and TLS resources
  *
  * @param httpclient_connection_t* connection -> the connection to release, including one that only partly opened, or NULL
  *

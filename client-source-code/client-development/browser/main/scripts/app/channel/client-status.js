@@ -9,8 +9,11 @@ var client_status =
 };
 
 /**
- * @brief Formats a connection duration using the two largest useful units.
- * @param seconds -> elapsed seconds reported by the server
+ * @brief formats a connection duration using the two largest useful units
+ *
+ * @param number seconds -> elapsed seconds reported by the server
+ *
+ * @return string -> formatted connection duration
  */
 function client_status__format_duration(seconds)
 {
@@ -34,8 +37,11 @@ function client_status__format_duration(seconds)
 }
 
 /**
- * @brief Keeps the profile's connection time compact, without seconds.
- * @param seconds Elapsed seconds reported by the server.
+ * @brief keeps the profile's connection time compact, without seconds
+ *
+ * @param number seconds -> elapsed seconds reported by the server
+ *
+ * @return string -> duration without seconds, or Unavailable for invalid input
  */
 function client_status__format_profile_duration(seconds)
 {
@@ -52,21 +58,22 @@ function client_status__format_profile_duration(seconds)
     let hours = Math.floor(total_minutes / 60) % 24;
     let minutes = total_minutes % 60;
     let prefix = days > 0 ? days + " day" + (days === 1 ? "" : "s") + " " : "";
-    return prefix + hours + ":" + String(minutes).padStart(2, "0")
-        + (hours === 1 && minutes === 0 ? " hour" : " hours");
+    return prefix + hours + ":" + String(minutes).padStart(2, "0") + (hours === 1 && minutes === 0 ? " hour" : " hours");
 }
 
 /**
- * @brief Requests details for the selected client and remembers which view requested them.
+ * @brief requests details for the selected client and remembers which view requested them
+ *
  * @param view -> profile or popup
  * @param client -> selected connected client
+ *
+ * @return void
  */
 function client_status__select(view, client)
 {
     client_status[view] = client;
     client_status.pending.delete(view);
-    let allowed = groups__has_permission("view_client_connection_time")
-        || view === "popup" && groups__has_permission("view_client_details");
+    let allowed = groups__has_permission("view_client_connection_time") || view === "popup" && groups__has_permission("view_client_details");
     if (client && allowed)
     {
         let request = ++client_status.next_request;
@@ -90,8 +97,11 @@ function client_status__select(view, client)
 }
 
 /**
- * @brief Applies a reply only to the client and view that requested it.
+ * @brief applies a reply only to the client and view that requested it
+ *
  * @param message -> client details supplied by the server
+ *
+ * @return void
  */
 function client_status__receive(message)
 {
@@ -106,8 +116,7 @@ function client_status__receive(message)
         {
             continue;
         }
-        if (groups__has_permission("view_client_connection_time")
-            && Number.isFinite(message.connected_seconds) && message.connected_seconds >= 0)
+        if (groups__has_permission("view_client_connection_time") && Number.isFinite(message.connected_seconds) && message.connected_seconds >= 0)
         {
             client_status.samples.set(pending.client,
             {
@@ -118,8 +127,7 @@ function client_status__receive(message)
         {
             document.getElementById("client-info-ip").textContent = message.ip_address || "Not permitted";
             document.getElementById("client-info-country").textContent = message.country_iso_code || "Unknown";
-            document.getElementById("client-info-last-action").textContent = Number.isFinite(message.last_action_seconds_ago)
-                ? client_status__format_duration(message.last_action_seconds_ago) + " ago" : "Unavailable";
+            document.getElementById("client-info-last-action").textContent = Number.isFinite(message.last_action_seconds_ago) ? client_status__format_duration(message.last_action_seconds_ago) + " ago" : "Unavailable";
             document.getElementById("client-info-identity").textContent = message.identity || "Unavailable";
         }
     }
@@ -127,7 +135,9 @@ function client_status__receive(message)
 }
 
 /**
- * @brief Updates visible duration values locally without requesting the server every second.
+ * @brief updates visible duration values locally without requesting the server every second
+ *
+ * @return void
  */
 function client_status__render()
 {
@@ -157,9 +167,7 @@ function client_status__render()
         let sample = client_status.samples.get(client);
         let pending = client_status.pending.get(view);
         let format_duration = view === "profile" ? client_status__format_profile_duration : client_status__format_duration;
-        element.textContent = sample
-            ? format_duration(sample.seconds + (performance.now() - sample.at) / 1000)
-            : pending && performance.now() - pending.at < 10000 ? "Loading…" : "Unavailable";
+        element.textContent = sample ? format_duration(sample.seconds + (performance.now() - sample.at) / 1000) : pending && performance.now() - pending.at < 10000 ? "Loading…" : "Unavailable";
     }
     for (let field of ["ip", "country", "last-action", "identity"])
     {
@@ -169,7 +177,9 @@ function client_status__render()
 }
 
 /**
- * @brief Discards old replies and requests visible details again after permissions change.
+ * @brief discards old replies and requests visible details again after permissions change
+ *
+ * @return void
  */
 function client_status__permissions_changed()
 {
@@ -190,7 +200,9 @@ function client_status__permissions_changed()
 }
 
 /**
- * @brief Clears connection details when leaving a server.
+ * @brief clears connection details when leaving a server
+ *
+ * @return void
  */
 function client_status__reset()
 {

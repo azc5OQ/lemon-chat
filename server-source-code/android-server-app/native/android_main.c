@@ -13,10 +13,9 @@ static void _android_main_internal__print_memory_information(void);
 static boole _android_main_internal__are_settings_valid(void);
 
 /**
- * @brief reports the startup array sizes for this Android ABI without allocating the arrays or
- *        starting any listeners. the app uses this to explain the slot count before starting.
+ * @brief reports startup array sizes for this Android ABI without starting the server
  *
- * @note active connection buffers, threads and optional offline messages need additional memory.
+ * @note connection buffers, threads and offline messages need additional memory
  *
  * @return void
  */
@@ -25,21 +24,20 @@ static void _android_main_internal__print_memory_information(void)
     uint64 bytes_per_slot = 0;
     uint64 fixed_bytes = 0;
 
-    // Include the chat, audio and video sockets reserved for every client.
+    // include the chat, audio and video sockets reserved for every client
     bytes_per_slot = sizeof(client_t) + sizeof(webrtc_peer_t)
         + WEBSOCKET_CONNECTIONS_PER_CLIENT * ws_client_slot_size() + sizeof(int64);
-    fixed_bytes = sizeof(channel_t) * MAX_CHANNELS
-        + sizeof(client_stored_data_t) * MAX_CLIENT_STORED_DATA
+    fixed_bytes = sizeof(client_stored_data_t) * MAX_CLIENT_STORED_DATA
         + sizeof(icon_t) * MAX_ICONS
         + sizeof(group_t) * MAX_GROUPS
         + sizeof(ban_entry_t) * MAX_BANS;
 
-    printf("{\"slot_bytes\":%llu,\"fixed_bytes\":%llu}\n", bytes_per_slot, fixed_bytes);
+    printf("{\"slot_bytes\":%llu,\"fixed_bytes\":%llu,\"channel_bytes\":%llu,\"default_channels\":%d}\n",
+        bytes_per_slot, fixed_bytes, (uint64)sizeof(channel_t), DEFAULT_CHANNEL_COUNT);
 }
 
 /**
- * @brief checks the required startup settings before entering the desktop server. an Android service
- *        has no console for the interactive first-time setup, so a bad file must fail immediately.
+ * @brief Checks startup settings because Android cannot show the console setup prompts.
  *
  * @return boole -> TRUE when the required startup fields are valid
  */
@@ -107,11 +105,10 @@ static boole _android_main_internal__are_settings_valid(void)
 }
 
 /**
- * @brief Android entry point. handles the read-only size/settings queries, ties the child lifetime to
- *        its owning app, and prevents overlapping server processes from using the same settings file.
+ * @brief Handles startup queries and runs one server process owned by the Android app.
  *
- * @param int argument_count -> number of command-line arguments
- * @param char** arguments -> optional --memory-info or --check-settings query
+ * @param int argument_count -> number of command line arguments
+ * @param char** arguments -> optional @c --memory-info or @c --check-settings query
  *
  * @return int -> server exit code, or EXIT_FAILURE when startup is not possible
  */

@@ -6,11 +6,18 @@ plugins
 dependencies
 {
     testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.json:json:20250517'
 }
 
 def serverAbis = providers.gradleProperty('serverAbis').get().split(',').collect
 {
     it.trim()
+}
+def verificationBuild = providers.gradleProperty('verificationBuild').orElse('false').get().toBoolean()
+def verificationSuffix = providers.gradleProperty('verificationSuffix').orElse('checks').get()
+if (!(verificationSuffix in ['checks', 'setupchecks', 'funnelchecks']) || (!verificationBuild && providers.gradleProperty('verificationSuffix').isPresent()))
+{
+    throw new GradleException('verificationSuffix requires verificationBuild and must be checks, setupchecks or funnelchecks')
 }
 if (!serverAbis || serverAbis.any
 {
@@ -33,6 +40,8 @@ android
         targetSdk 36
         versionCode 1
         versionName '1.0'
+        testInstrumentationRunner 'com.lemonchat.server.ServerChecks'
+        manifestPlaceholders.appLabel = 'Lemon Chat Server'
         ndk
         {
             abiFilters.addAll(serverAbis)
@@ -58,6 +67,14 @@ android
     }
     buildTypes
     {
+        debug
+        {
+            if (verificationBuild)
+            {
+                applicationIdSuffix '.' + verificationSuffix
+                manifestPlaceholders.appLabel = verificationSuffix == 'setupchecks' ? 'Lemon Server Setup Checks' : verificationSuffix == 'funnelchecks' ? 'Lemon Funnel Checks' : 'Lemon Server Checks'
+            }
+        }
         release
         {
             minifyEnabled false
@@ -138,7 +155,12 @@ def browserClientDirectory = rootProject.file('../../client-source-code/client-d
 def prepareWebClient = tasks.register('prepareWebClient')
 {
     inputs.property 'clientBuildMode', clientBuildMode
-    inputs.dir new File(browserClientDirectory, 'src')
+    inputs.dir new File(browserClientDirectory, 'main')
+    inputs.dir new File(browserClientDirectory, 'tools')
+    inputs.files fileTree(new File(browserClientDirectory, 'client-webassemblies'))
+    {
+        exclude '**/build/**', '**/zig-out/**', '**/.zig-cache/**', '**/node_modules/**'
+    }
     inputs.file new File(browserClientDirectory, 'build.cjs')
     outputs.file layout.buildDirectory.file('generated/web-client/client.html')
     doLast
@@ -146,12 +168,8 @@ def prepareWebClient = tasks.register('prepareWebClient')
         exec
         {
             commandLine 'node', new File(browserClientDirectory, 'build.cjs'),
-                '--' + clientBuildMode, '--no-server-copy'
-        }
-        copy
-        {
-            from rootProject.file('../../client-source-code/client.html')
-            into layout.buildDirectory.dir('generated/web-client')
+                '--' + clientBuildMode, '--no-server-copy', '--no-download-tools',
+                '--output', layout.buildDirectory.file('generated/web-client/client.html').get().asFile
         }
     }
 }

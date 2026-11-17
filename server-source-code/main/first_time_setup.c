@@ -3,8 +3,8 @@
 #include "util.h"
 #include "crypto/crypto_metadata.h"
 
-// This file asks the server owner how to host and configure Lemon Chat.
-// It saves the answers when no valid server_settings.json exists yet.
+// this file asks the server owner how to host and configure Lemon Chat
+// it saves the answers when no valid server_settings.json exists yet
 
 #include "clib/clib.h"
 #include "../third-party/dave-g-json/cJSON.h"
@@ -59,7 +59,7 @@ static void _first_time_setup_internal__prompt_network_settings(first_time_setup
 static boole _first_time_setup_internal__prompt_media_settings(first_time_setup_hosting_t hosting);
 static boole _first_time_setup_internal__ask_yes_no(const char *question, boole default_answer);
 static boole _first_time_setup_internal__ask_yes_no_with_note(const char *question, const char *note, boole default_answer);
-static void _first_time_setup_internal__ask_admin_password(char *out_plaintext, uint64 out_capacity);
+static boole _first_time_setup_internal__ask_admin_password(char *out_plaintext, uint64 out_capacity);
 static boole _first_time_setup_internal__theme_attribute(const char *tag, const char *end, const char *name, char *out, uint64 capacity);
 static uint64 _first_time_setup_internal__scan_client_themes(const char *client_html_path, char out_themes[][32], uint64 max_themes, boole mobile_only);
 static void _first_time_setup_internal__ask_theme(const char *path, boole mobile, char out_theme[32]);
@@ -71,17 +71,12 @@ static void _first_time_setup_internal__reload_tunnel_settings(void);
 static void _first_time_setup_internal__ask_wireguard_details(char *input, uint64 input_size);
 
 /**
- * @brief asks one yes/no question and returns the answer
+ * @brief asks a yes or no question and repeats invalid answers
  *
- *        every question in the wizard goes through here so they all behave the same way. the
- *        prompt ends in (Y/n) or (y/N) to show which way a bare Enter goes, and "y", "yes", "n"
- *        and "no" are accepted in any capitalisation. anything else repeats the question instead
- *        of being silently counted as a no, which is what the old per-question "y" test did.
+ * @param const char* question -> prompt without its yes or no suffix
+ * @param boole default_answer -> answer used for empty input
  *
- * @param const char* question -> the question text, without the trailing (y/n)
- * @param boole default_answer -> TRUE or FALSE; what a blank line means
- *
- * @return boole -> TRUE or FALSE
+ * @return boole -> TRUE for yes, otherwise FALSE
  */
 static boole _first_time_setup_internal__ask_yes_no(const char *question, boole default_answer)
 {
@@ -93,7 +88,7 @@ static boole _first_time_setup_internal__ask_yes_no(const char *question, boole 
  *
  *        layout: the question on its own line, the note under it, then the (Y/n) or (y/N) hint
  *        where the answer is typed. the note is printed on the first round only. without a note
- *        the question and the hint share one line.
+ *        the question and the hint share one line
  *
  * @param const char* question -> the question text, without the trailing (y/n)
  * @param const char* note -> lines printed under the question, each indented by four spaces and ended by a newline; 0 for none
@@ -161,17 +156,18 @@ static boole _first_time_setup_internal__ask_yes_no_with_note(const char *questi
 }
 
 /**
- * @brief Asks for the admin password twice and checks that both entries match.
+ * @brief asks for the admin password twice and checks that both entries match
  *
  * @param char* out_plaintext -> receives the accepted password
  * @param uint64 out_capacity -> size of out_plaintext in bytes
  *
- * @return void
+ * @return boole -> TRUE after matching entries, FALSE when input ends
  */
-static void _first_time_setup_internal__ask_admin_password(char *out_plaintext, uint64 out_capacity)
+static boole _first_time_setup_internal__ask_admin_password(char *out_plaintext, uint64 out_capacity)
 {
     char first[256] = { 0 };
     char second[256] = { 0 };
+    boole input_ended = FALSE;
 
 #ifndef WIN32
     struct termios terminal_before;
@@ -204,13 +200,16 @@ static void _first_time_setup_internal__ask_admin_password(char *out_plaintext, 
 
         // read the first password
         printf("%s %s", g_mark_ask, "Set the server admin password: ");
-        fgets(first, sizeof(first), stdin);
+        input_ended = fgets(first, sizeof(first), stdin) == NULL_POINTER;
         clib__string_trim_newline(first, sizeof(first));
         printf("\n");
 
         // read the second password
         printf("%s %s", g_mark_ask, "Enter the admin password again: ");
-        fgets(second, sizeof(second), stdin);
+        if (input_ended == FALSE)
+        {
+            input_ended = fgets(second, sizeof(second), stdin) == NULL_POINTER;
+        }
         clib__string_trim_newline(second, sizeof(second));
         printf("\n");
 
@@ -221,6 +220,13 @@ static void _first_time_setup_internal__ask_admin_password(char *out_plaintext, 
             tcsetattr(STDIN_FILENO, TCSAFLUSH, &terminal_before);
         }
 #endif
+
+        if (input_ended == TRUE)
+        {
+            clib__null_memory(first, sizeof(first));
+            clib__null_memory(second, sizeof(second));
+            return FALSE;
+        }
 
         // refuse empty password
         if (first[0] == 0)
@@ -240,13 +246,15 @@ static void _first_time_setup_internal__ask_admin_password(char *out_plaintext, 
         clib__string_copy(out_plaintext, out_capacity, first);
         clib__null_memory(first, sizeof(first));
         clib__null_memory(second, sizeof(second));
-        return;
+        return TRUE;
     }
 }
 
 /**
- * @brief Reads a file length and returns to its beginning before the caller allocates a buffer.
+ * @brief reads a file length and returns to its beginning before the caller allocates a buffer
+ *
  * @param FILE* file -> open file to measure
+ *
  * @return int64 -> file length, or -1 when either seek fails
  */
 static int64 _first_time_setup_internal__file_size(FILE *file)
@@ -280,7 +288,15 @@ static int64 _first_time_setup_internal__file_size(FILE *file)
 }
 
 /**
- * @brief Reads one HTML attribute, accepting either quote style or an unquoted value.
+ * @brief reads one HTML attribute, accepting either quote style or an unquoted value
+ *
+ * @param const char* tag -> opening angle bracket of the HTML tag
+ * @param const char* end -> end of the tag's readable range
+ * @param const char* name -> attribute name to find
+ * @param char* out -> buffer receiving the attribute value and terminator
+ * @param uint64 capacity -> output buffer size in bytes
+ *
+ * @return boole -> TRUE if the complete value was found and copied, otherwise FALSE
  */
 static boole _first_time_setup_internal__theme_attribute(const char *tag, const char *end, const char *name, char *out, uint64 capacity)
 {
@@ -371,7 +387,14 @@ static boole _first_time_setup_internal__theme_attribute(const char *tag, const 
 }
 
 /**
- * @brief Finds theme menu entries in the served page, optionally keeping only mobile themes.
+ * @brief finds theme menu entries in the served page, optionally keeping only mobile themes
+ *
+ * @param const char* client_html_path -> served client HTML file to inspect
+ * @param char* out_themes -> output rows with room for 32 bytes each
+ * @param uint64 max_themes -> maximum number of output rows
+ * @param boole mobile_only -> TRUE keeps only mobile themes, FALSE accepts every theme
+ *
+ * @return uint64 -> number of theme names written, or zero if unavailable
  */
 static uint64 _first_time_setup_internal__scan_client_themes(const char *client_html_path, char out_themes[][32], uint64 max_themes, boole mobile_only)
 {
@@ -536,7 +559,11 @@ static uint64 _first_time_setup_internal__scan_client_themes(const char *client_
 }
 
 /**
- * @brief Offers the available themes for one device type and saves the selection.
+ * @brief offers the available themes for one device type and saves the selection
+ *
+ * @param const char* path -> served client HTML file containing the theme menu
+ * @param boole mobile -> TRUE offers mobile themes, FALSE offers every theme for desktop use
+ * @param char* out_theme -> receives the chosen name. Unchanged when the user keeps the default
  */
 static void _first_time_setup_internal__ask_theme(const char *path, boole mobile, char out_theme[32])
 {
@@ -600,7 +627,7 @@ static void _first_time_setup_internal__ask_theme(const char *path, boole mobile
 }
 
 /**
- * @brief Asks for existing certificate files without requiring a domain name.
+ * @brief asks for existing certificate files without requiring a domain name
  */
 static void _first_time_setup_internal__ask_certificate_paths(void)
 {
@@ -640,7 +667,8 @@ static void _first_time_setup_internal__ask_certificate_paths(void)
 }
 
 /**
- * @brief Sets up WSS for the chosen hosting method.
+ * @brief sets up WSS for the chosen hosting method
+ *
  * @param first_time_setup_hosting_t hosting -> the selected hosting method
  */
 static void _first_time_setup_internal__prompt_stunnel_setup(first_time_setup_hosting_t hosting)
@@ -937,8 +965,9 @@ static void _first_time_setup_internal__prompt_stunnel_setup(first_time_setup_ho
 
 #ifdef WIN32
 /**
- * @brief Finds the WireGuard commands in PATH or their installation directory.
- * @return Whether both WireGuard commands are installed.
+ * @brief finds the WireGuard commands in PATH or their installation directory
+ *
+ * @return Whether both WireGuard commands are installed
  */
 static boole _first_time_setup_internal__has_wireguard(void)
 {
@@ -987,9 +1016,11 @@ static boole _first_time_setup_internal__has_wireguard(void)
 #endif
 
 /**
- * @brief Names a missing hosting tool before the user chooses that option.
- * @param hosting Hosting method being checked.
- * @return Missing tool name or NULL_POINTER when the option is available.
+ * @brief names a missing hosting tool before the user chooses that option
+ *
+ * @param hosting Hosting method being checked
+ *
+ * @return Missing tool name or NULL_POINTER when the option is available
  */
 static cstring _first_time_setup_internal__get_hosting_requirement(first_time_setup_hosting_t hosting)
 {
@@ -1016,8 +1047,9 @@ static cstring _first_time_setup_internal__get_hosting_requirement(first_time_se
 }
 
 /**
- * @brief Shows installed hosting tools and refuses unavailable choices.
- * @return The hosting method selected by the user.
+ * @brief shows installed hosting tools and refuses unavailable choices
+ *
+ * @return The hosting method selected by the user
  */
 static first_time_setup_hosting_t _first_time_setup_internal__ask_hosting(void)
 {
@@ -1072,9 +1104,11 @@ static first_time_setup_hosting_t _first_time_setup_internal__ask_hosting(void)
 }
 
 /**
- * @brief Asks for a port and repeats the question if the answer is not a valid port number.
+ * @brief asks for a port and repeats the question if the answer is not a valid port number
+ *
  * @param const char* question -> the name of the port being configured
  * @param int64 default_port -> the port used when Enter is pressed
+ *
  * @return int64 -> a port from 1 to 65535
  */
 static int64 _first_time_setup_internal__ask_port(const char *question, int64 default_port)
@@ -1113,8 +1147,10 @@ static int64 _first_time_setup_internal__ask_port(const char *question, int64 de
 }
 
 /**
- * @brief Asks only the network questions needed for the chosen hosting method.
+ * @brief asks only the network questions needed for the chosen hosting method
+ *
  * @param first_time_setup_hosting_t hosting -> the selected hosting method
+ *
  * @return void
  */
 static void _first_time_setup_internal__prompt_network_settings(first_time_setup_hosting_t hosting)
@@ -1291,8 +1327,10 @@ static void _first_time_setup_internal__prompt_network_settings(first_time_setup
 }
 
 /**
- * @brief Chooses media features before asking which transports they should use.
+ * @brief chooses media features before asking which transports they should use
+ *
  * @param first_time_setup_hosting_t hosting -> the selected hosting method
+ *
  * @return boole -> TRUE when WireGuard setup should run after saving the settings
  */
 static boole _first_time_setup_internal__prompt_media_settings(first_time_setup_hosting_t hosting)
@@ -1394,7 +1432,11 @@ static boole _first_time_setup_internal__prompt_media_settings(first_time_setup_
     return is_tunnel_setup_requested;
 }
 
-/** @brief Selects a supported cipher without silently replacing an invalid choice. */
+/**
+ * @brief selects a supported cipher without silently replacing an invalid choice
+ *
+ * @return crypto_key_type_t -> chosen cipher, or AES 256 CTR for empty input or end of input
+ */
 static crypto_key_type_t _first_time_setup_internal__cipher(void)
 {
     int64 type = 0;
@@ -1430,8 +1472,9 @@ static crypto_key_type_t _first_time_setup_internal__cipher(void)
 }
 
 /**
- * @brief Asks for hosting, access and chat settings, then saves the answers.
- * @param char plaintext_keys[][256] -> storage for up to 100 connection passwords
+ * @brief asks for hosting, access and chat settings, then saves the answers
+ *
+ * @param char plaintext_keys storage for up to 100 connection passwords
  */
 void first_time_setup__run(char plaintext_keys[][256])
 {
@@ -1602,7 +1645,11 @@ void first_time_setup__run(char plaintext_keys[][256])
     }
 
     // set the admin password
-    _first_time_setup_internal__ask_admin_password(input, sizeof(input));
+    if (_first_time_setup_internal__ask_admin_password(input, sizeof(input)) == FALSE)
+    {
+        fprintf(stderr, "Setup cancelled because input ended before the admin password was confirmed.\n");
+        exit(EXIT_FAILURE);
+    }
     util__hash_password_to_base64(input, &g_server_settings.admin_password[0], ADMIN_PASSWORD_MAX_LENGTH);
     g_server_settings.is_admin_password_initial = TRUE;
 
@@ -1779,14 +1826,9 @@ void first_time_setup__run(char plaintext_keys[][256])
 }
 
 /**
- * @brief tells whether the wizard can start the tunnel setup of selfhosting-tools/wireguard
+ * @brief checks for tunnel scripts and the repository buildresult working directory
  *
- *        two conditions: the setup script is found from the working directory, and the working
- *        directory is the repository's buildresult directory. the scripts update
- *        buildresult/server_settings.json and this server reads the file in its working directory,
- *        so both must be the same file.
- *
- * @return boole -> TRUE when the tunnel setup can be started from here
+ * @return boole -> TRUE when setup will update the settings file used by this server
  */
 static boole _first_time_setup_internal__is_tunnel_setup_available(void)
 {
@@ -1848,13 +1890,9 @@ static boole _first_time_setup_internal__is_tunnel_setup_available(void)
 }
 
 /**
- * @brief starts the tunnel setup, waits until it ended, then reads the values it wrote
- *
- *        Windows: run_setup.bat opens in its own console window. it restarts itself with
- *        administrator rights, so its end cannot be observed and the wizard waits for Enter.
- *        elsewhere: setup.sh runs in this terminal and the wizard waits for its exit.
- *
- * @attention server_settings.json must be written before: the tunnel setup reads the ports from it
+ * @brief runs tunnel setup and reloads its saved settings
+ * @note Windows waits for user confirmation because the elevated script runs separately
+ * @attention save server_settings.json before starting the script
  *
  * @return void
  */
@@ -2017,8 +2055,8 @@ static void _first_time_setup_internal__reload_tunnel_settings(void)
 }
 
 /**
- * @brief Asks for the WireGuard router address and, only with WebRTC enabled, its forwarded UDP
- *        range. Answers are checked before enabling the mode; an empty range keeps the default.
+ * @brief asks for the WireGuard router address and, only with WebRTC enabled, its forwarded UDP
+ *        range. Answers are checked before enabling the mode; an empty range keeps the default
  *
  * @param char* input -> the wizard's input buffer
  * @param uint64 input_size -> its size

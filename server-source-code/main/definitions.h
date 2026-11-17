@@ -1,9 +1,9 @@
 #ifndef MYTYPEDEF_H
 #define MYTYPEDEF_H
 
-// Server-wide limits and data types shared by the main modules.
+// server-wide limits and data types shared by the main modules
 
-// Change this to #define DEBUG_ACTIVE to select the debug switches below.
+// change this to #define DEBUG_ACTIVE to select the debug switches below
 #undef DEBUG_ACTIVE
 
 // --- Includes ---
@@ -18,7 +18,7 @@
 #include <unistd.h>
 
 #ifndef WIN32
-// POSIX timestamps used by util__get_timestamp_ms.
+// POSIX timestamps used by util__get_timestamp_ms
 #include <sys/time.h>
 #endif
 
@@ -30,7 +30,7 @@ typedef unsigned int uint;
 typedef unsigned short ushort;
 typedef unsigned long long uint64;
 typedef signed long long int64;
-// Match the compiled target's address width.
+// match the compiled target's address width
 #if defined(_WIN64) || (defined(__SIZEOF_POINTER__) && __SIZEOF_POINTER__ == 8)
 typedef unsigned long long nuint;
 typedef signed long long nint;
@@ -46,7 +46,7 @@ typedef signed short nint;
 typedef unsigned long long timestamp;
 typedef const char *cstring;
 
-// Wire integers and audio samples have the same widths on every supported target.
+// wire integers and audio samples have the same widths on every supported target
 _Static_assert(CHAR_BIT == 8 && sizeof(ushort) == 2 && sizeof(short) == 2 && sizeof(uint) == 4 && sizeof(int) == 4 && sizeof(uint64) == 8 && sizeof(int64) == 8, "Unsupported integer widths");
 _Static_assert(sizeof(nuint) == sizeof(void *) && sizeof(nint) == sizeof(void *), "Native integers must match pointer width");
 
@@ -76,18 +76,18 @@ typedef union safe_byte_t
 
 #define MATH_PI 3.141592f
 
-// Application WebSocket close codes, also recognized by the clients.
+// application WebSocket close codes, also recognized by the clients
 #define SERVER_CLOSE_KICKED 4001
 #define SERVER_CLOSE_BANNED 4002
 
 // --- Debug and release switches ---
 
-// These blocks are independent so debug and release can enable different logs.
-// Each DBG_* macro is a guard; set it to if (1) to enable that log category.
+// these blocks are independent so debug and release can enable different logs
+// each DBG_* macro is a guard; set it to if (1) to enable that log category
 #define DBG_CONNECTION_PROGRESS if (0)
 
 #ifdef DEBUG_ACTIVE
-// Debug build.
+// debug build
 #define DBG_DLLMAIN if (0)
 #define DBG_CLIENT_MESSAGE if (0)
 #define DBG_CLIENT_MESSAGE_MAIN_FUNCTION if (0)
@@ -121,7 +121,7 @@ typedef union safe_byte_t
 #define DBG_UTIL if (0)
 
 #else
-// Release build.
+// release build
 #define DBG_DLLMAIN if (0)
 #define DBG_CLIENT_MESSAGE if (0)
 #define DBG_CLIENT_MESSAGE_MAIN_FUNCTION if (0)
@@ -161,11 +161,11 @@ typedef union safe_byte_t
 #define AUDIO_CHANNEL_CHECK_IF_RETURN_NEEDED if (0)
 #endif
 
-// Optional debug aids.
-// Allow several music bots in one channel.
+// optional debug aids
+// allow several music bots in one channel
 // #define MUSICBOT_DEBUG_ALLOW_MULTIPLE_BOTS_PER_CHANNEL 1
 
-// Assign a random real ISO country code instead of using GeoIP.
+// assign a random real ISO country code instead of using GeoIP
 // #define DEBUG_ASSIGN_RANDOM_COUNTRY_CODE 1
 
 // --- Server and client capacity ---
@@ -179,7 +179,7 @@ typedef union safe_byte_t
 // --- Channels ---
 
 #define DEFAULT_CHANNEL_COUNT 100
-// Channel IDs travel through signed 32-bit JSON/client fields.
+// channel IDs travel through signed 32-bit JSON/client fields
 #define MAX_CHANNEL_COUNT INT_MAX
 #define ROOT_CHANNEL_ID 0
 #define CHANNEL_NAME_MAX_LENGTH 128
@@ -191,9 +191,9 @@ typedef union safe_byte_t
 #define MAX_CLIENT_STORED_DATA 100
 // base64 of a 32 byte hash is 44 chars + null; 64 is room to spare
 #define IDENTITY_HASH_MAX_LENGTH 64
-// Fits a 300 KB raw image as base64 (~410 KB) plus data-url prefix headroom. The identity
-// store allocates MAX_CLIENT_STORED_DATA entries at startup, each with this buffer inline.
-// At 100 slots the avatar buffers alone reserve ~42 MB; avatars persist with identities.
+// fits a 300 KB raw image as base64 (~410 KB) plus data-url prefix headroom. The identity
+// store allocates MAX_CLIENT_STORED_DATA entries at startup, each with this buffer inline
+// at 100 slots the avatar buffers alone reserve ~42 MB; avatars persist with identities
 #define MAX_CLIENT_AVATAR_LENGTH 420000
 
 // --- Connection keys and login ---
@@ -207,7 +207,7 @@ typedef union safe_byte_t
 // a DH value (shared secret or public mix) is < the modulus; an 8192-bit modulus is 2467 decimal
 // digits, so this must exceed ~2468
 #define SHARED_SECRET_LENGTH 3000
-// Room for multiple DH public mixes, the RSA public key and the surrounding JSON.
+// room for multiple DH public mixes, the RSA public key and the surrounding JSON
 #define UNAUTH_HANDSHAKE_MAX_LENGTH (5 * SHARED_SECRET_LENGTH + MAX_PUBLIC_KEY_LENGTH + 2048)
 #define CHALLENGE_STRING_LENGTH 128
 #define CHALLENGE_STRING_SIZE 100
@@ -253,7 +253,7 @@ typedef union safe_byte_t
 
 // --- Chat attachments ---
 
-// must exceed the base64 of the client musicbot gate: 10*1024*1024 raw -> ~13,981,016 base64 chars.
+// must exceed the base64 of the client musicbot gate: 10*1024*1024 raw -> ~13,981,016 base64 chars
 // the /400 per-part cap (36000) then exceeds the client's ceil(total/400) part size (~34953), so a
 // full 10MiB upload is not rejected
 #define MAX_CLIENT_FILE_UPLOAD_LENGTH 14400000
@@ -281,8 +281,8 @@ typedef union safe_byte_t
 
 // --- Video streams ---
 
-// Video uses a second, reliable and ordered data channel beside audio.
-// A keyframe can span many SCTP fragments; losing one fragment loses the frame.
+// video uses a second, reliable and ordered data channel beside audio
+// A keyframe can span many SCTP fragments; losing one fragment loses the frame
 #define VIDEO_DATACHANNEL_LABEL "video"
 // a viewer whose video channel has this much queued is skipped for the current frame instead of
 // stalling everyone; it notices the gap and asks the streamer for a keyframe
@@ -345,8 +345,8 @@ typedef struct lemon_session_keys
     ubyte server_mac[32];
 } lemon_session_keys;
 
-// Encryption key types use the cipher IDs above.
-// HMAC-SHA256 is an authentication key type, not an encryption cipher.
+// encryption key types use the cipher IDs above
+// HMAC-SHA256 is an authentication key type, not an encryption cipher
 typedef enum crypto_key_type
 {
     CRYPTO_KEY_NONE = 0,
@@ -359,7 +359,7 @@ typedef enum crypto_key_type
     CRYPTO_KEY_TRIVIUM_80 = LEMON_TRIVIUM80
 } crypto_key_type_t;
 
-// The union names refer to the same 32 bytes, not separate keys.
+// the union names refer to the same 32 bytes, not separate keys
 typedef struct crypto_key
 {
     crypto_key_type_t type;
@@ -371,7 +371,7 @@ typedef struct crypto_key
     } material;
 } crypto_key_t;
 
-// Immutable connection-password snapshot, shared only with that socket's queued work.
+// immutable connection-password snapshot, shared only with that socket's queued work
 typedef struct crypto_password_set
 {
     atomic_uint_fast64_t references;
@@ -397,8 +397,8 @@ typedef enum crypto_direction
 
 typedef struct server_settings
 {
-    // Connection and visibility switches.
-    // Voice may use /audio; the admin can change this in "audio connections" at runtime.
+    // connection and visibility switches
+    // voice may use /audio; the admin can change this in "audio connections" at runtime
     boole is_audio_over_websocket_allowed;
 
     // voice may use the webrtc datachannel; both on means the client picks by its own preference
@@ -425,14 +425,14 @@ typedef struct server_settings
     boole is_websocket_ping_active;
     boole is_connection_check_enforced;
 
-    // Channel key reuse.
+    // channel key reuse
     boole is_channel_key_reuse_enabled;
     boole is_channel_key_reuse_on_join_allowed;
     boole is_channel_key_reuse_on_leave_allowed;
     int64 channel_key_reuse_join_min_clients;
     int64 channel_key_reuse_leave_min_clients;
 
-    // Login admission and media features.
+    // login admission and media features
     int64 max_concurrent_logins;
     boole is_blocking_direct_chat_pictures_active;
     boole is_blocking_direct_chat_files_active;
@@ -453,7 +453,7 @@ typedef struct server_settings
     boole is_video_streaming_active;
     boole is_logging_of_failed_attempts_active;
 
-    // Saved identities and client features.
+    // saved identities and client features
     boole is_identity_storage_enabled;
 
     // bake a flag into the served client so it saves/restores the identity passphrase in
@@ -469,7 +469,7 @@ typedef struct server_settings
     boole is_last_seen_enabled;
     boole is_offline_messaging_allowed;
 
-    // clients may tell the people they are writing to that they are typing ("x is typing ...").
+    // clients may tell the people they are writing to that they are typing ("x is typing ...")
     // carries no message content, only who is typing and where; editable in the server settings
     // tab; default off
     boole is_typing_indicator_allowed;
@@ -479,7 +479,7 @@ typedef struct server_settings
     boole is_client_rename_allowed;
     boole is_link_preview_allowed;
 
-    // Image limits and request cooldowns.
+    // image limits and request cooldowns
     // largest accepted raw image size (bytes) for an avatar; larger uploads are silently dropped
     int64 avatar_max_size_bytes;
 
@@ -491,7 +491,7 @@ typedef struct server_settings
     uint64 delete_channel_request_cooldown_milliseconds;
     uint64 create_channel_request_cooldown_milliseconds;
 
-    // Current counts and capacity.
+    // current counts and capacity
     uint64 channel_count;
     _Atomic(uint64) max_channel_count; // allocated slots; resize under clients and channels write locks
 
@@ -503,21 +503,21 @@ typedef struct server_settings
     uint64 keys_count;
     int64 websocket_port;
 
-    // Public WebRTC address and forwarded UDP ports.
-    // In WireGuard mode, a router forwards this server's ports through a tunnel. WebRTC uses
+    // public WebRTC address and forwarded UDP ports
+    // in WireGuard mode, a router forwards this server's ports through a tunnel. WebRTC uses
     // the fixed UDP range below, and host candidates include the public address so clients know
-    // where to send. When disabled, the address and port range below are ignored.
-    // See selfhosting-tools/wireguard/README.md.
+    // where to send. When disabled, the address and port range below are ignored
+    // see selfhosting-tools/wireguard/README.md
     boole is_wireguard_mode_active;
     char webrtc_public_address[64]; // ipv4 as text, the router's public address
     int64 webrtc_port_range_begin;
     int64 webrtc_port_range_end;
 
-    // WebSocket message limits.
+    // WebSocket message limits
     int64 websocket_message_max_length;
     int64 websocket_chat_message_string_max_length;
 
-    // Connection passwords and negotiated session policy.
+    // connection passwords and negotiated session policy
     crypto_key_t keys[100];
     char plaintext_keys[100][256];
     uint64 dh_exchange_count;
@@ -525,15 +525,15 @@ typedef struct server_settings
     crypto_key_type_t session_cipher;
     boole is_random_cipher_layer_enabled;
 
-    // Default name and administrator login.
+    // default name and administrator login
     char default_client_name[30];
     char admin_password[ADMIN_PASSWORD_MAX_LENGTH];
     boole is_admin_password_initial;
 
-    // Process restart.
+    // process restart
     boole is_restart_on_crash_enabled;
 
-    // TLS proxies and served client destination.
+    // TLS proxies and served client destination
     boole is_stunnel_enabled;
     boole is_external_wss_enabled;
     boole is_tailscale_funnel_enabled;
@@ -543,11 +543,11 @@ typedef struct server_settings
     char stunnel_cert_privkey[512];
     char client_html_dest[512];
 
-    // Optional music storage; uploads and playback otherwise remain in RAM.
+    // optional music storage; uploads and playback otherwise remain in RAM
     char music_bot_snapshot_previous[64]; // old snapshot awaiting deletion after an atomic save
     char music_bot_snapshot[64]; // optional snapshot consumed after successful restoration
 
-    // Built-in client web server.
+    // built-in client web server
     boole is_client_http_enabled;
     boole is_client_http_blank_when_disabled;
     int64 http_port;
@@ -555,7 +555,7 @@ typedef struct server_settings
     boole is_https_enabled;
     int64 https_port;
 
-    // Client appearance and published server information.
+    // client appearance and published server information
     char default_theme[32];
     char default_mobile_theme[32];
     char *server_banner;
@@ -565,13 +565,13 @@ typedef struct server_settings
     boole is_server_features_published;
     boole is_client_config_embedded;
 
-    // The served page waits for a click on a connect button before it connects, so the browser allows sound; default off.
+    // the served page waits for a click on a connect button before it connects, so the browser allows sound; default off
     boole is_start_page_connect_button_enabled;
 
     // the served page shows a large import identity button under the connect button; default off
     boole is_start_page_import_identity_button_enabled;
 
-    // Chat delivery and attachment limits.
+    // chat delivery and attachment limits
     // deliver direct text chat to idle clients; their websocket stays open in idle, so delivery
     // works; default on
     boole is_sending_text_to_idle_clients_allowed;
@@ -594,7 +594,7 @@ typedef struct server_settings
     // inline chat pictures; on by default, never a setup question, the upload intents enforce it
     boole is_chat_picture_allowed;
 
-    // Country and RSA admission rules.
+    // country and RSA admission rules
     // refuse joins whose ip resolves to a listed country (per connection, works with flags off);
     // set in the settings tab, never in setup; default off
     boole is_country_blocking_active;
@@ -611,7 +611,7 @@ typedef struct server_settings
     char blocked_countries[MAX_BLOCKED_COUNTRIES][COUNTRY_ISO_CODE_LENGTH];
     uint64 blocked_countries_count;
 
-    // Admin log categories and retention.
+    // admin log categories and retention
     // admin log: record each completed join with username and ip; default off
     boole is_logging_client_joins_enabled;
 
@@ -630,7 +630,7 @@ typedef struct server_settings
     // admin log: record authenticated clients disconnecting; default off
     boole is_logging_client_disconnects_enabled;
 
-    // Record every socket opening and closing, including unauthenticated connections; default off.
+    // record every socket opening and closing, including unauthenticated connections; default off
     boole is_logging_socket_opens_and_closes_enabled;
 
     // admin log: record refused joins (wrong key, banned ip or identity, country, same ip) and
@@ -704,7 +704,7 @@ typedef struct client_file_upload_extension_t
     char intent[31];
 } client_file_upload_extension_t;
 
-// What a client may see of a channel it is not in: the clients inside and the description.
+// what a client may see of a channel it is not in: the clients inside and the description
 typedef struct channel_view_rights_t
 {
     boole is_admin;
@@ -720,13 +720,13 @@ typedef struct channel_view_rights_t
 
 typedef struct client_t
 {
-    // Per-client attachment preferences.
+    // per-client attachment preferences
     boole block_direct_chat_pictures;
     boole block_direct_chat_files;
     boole block_channel_chat_pictures;
     boole block_channel_chat_files;
 
-    // Transport connections.
+    // transport connections
     // the session of this client's /audio socket (audio_websocket.c), NULL_POINTER without one
     struct audio_websocket_session *audio_websocket;
 
@@ -735,10 +735,10 @@ typedef struct client_t
     uint64 timestamp_last_music_bot_key_request;
     ws_cli_conn_t *p_ws_connection;
 
-    // Connection and authentication state.
+    // connection and authentication state
     boole is_existing;
     boole is_authenticated;
-    boole is_disconnect_ban; // Retained until disconnect notification, then cleared with the session.
+    boole is_disconnect_ban; // retained until disconnect notification, then cleared with the session
     boole is_admin;
     boole is_audio_websocket_authenticated;
     boole is_video_websocket_authenticated;
@@ -746,11 +746,11 @@ typedef struct client_t
     boole is_streaming_song;
     boole is_public_key_challenge_sent;
 
-    // Policy captured for this login.
+    // policy captured for this login
     char crypto_policy_nonce[33];
     lemon_session_policy crypto_policy;
 
-    // Admission, idle state and channel placement.
+    // admission, idle state and channel placement
     boole is_waiting_for_login_slot;
     boole is_idle;
     boole is_music_bot;
@@ -763,7 +763,7 @@ typedef struct client_t
     // authorization snapshot, never sent to clients
     char idle_return_channel_password[CHANNEL_PASSWORD_MAX_LENGTH];
 
-    // Effective permissions and moderation.
+    // effective permissions and moderation
     uint64 talk_power;
     uint64 channel_message_power;
     uint64 channel_picture_power;
@@ -771,16 +771,16 @@ typedef struct client_t
     uint64 channel_group_role;
     uint64 muted_until_ms;
 
-    // What this client may see of channels it is not in, calculated from its groups.
+    // what this client may see of channels it is not in, calculated from its groups
     channel_view_rights_t channel_view_rights;
 
-    // The rights used the last time this client was sent the channels of clients and the descriptions.
+    // the rights used the last time this client was sent the channels of clients and the descriptions
     channel_view_rights_t sent_channel_view_rights;
 
-    // Values are defined by audio_state_e.
+    // values are defined by audio_state_e
     int64 audio_state;
 
-    // Activity and channel-key reset voting.
+    // activity and channel-key reset voting
     uint64 timestamp_connected;
     uint64 timestamp_last_action;
     uint64 timestamp_last_url_lookup;
@@ -789,18 +789,18 @@ typedef struct client_t
     uint64 maintainer_reset_vote_channel_id;
     uint64 maintainer_reset_vote_generation;
 
-    // Identity and connection encryption.
+    // identity and connection encryption
     char username[USERNAME_MAX_LENGTH];
 
-    // The name saved with the identity, without the letter added while another client uses the name.
+    // the name saved with the identity, without the letter added while another client uses the name
     char preferred_username[USERNAME_MAX_LENGTH];
     char public_key[MAX_PUBLIC_KEY_LENGTH];
     char dh_shared_secret[SHARED_SECRET_LENGTH];
 
-    // These keys are made from the shared secret when the client connects.
-    // Metadata messages, audio and video all use them. When a new connection
+    // these keys are made from the shared secret when the client connects
+    // metadata messages, audio and video all use them. When a new connection
     // takes over an existing session, transfer the session keys and password
-    // snapshot together so they match the client that just reconnected.
+    // snapshot together so they match the client that just reconnected
     crypto_session_keys_t session_keys;
     crypto_password_set_t *password_keys;
 
@@ -808,16 +808,16 @@ typedef struct client_t
     _Atomic(uint64) media_send_counter;
     char challenge_string[CHALLENGE_STRING_LENGTH];
 
-    // Music, address and avatar.
+    // music, address and avatar
     char song_name[SONG_NAME_MAX_LENGTH];
     char ip_address[INET6_ADDRSTRLEN]; // max size of an ipv6 address
     char country_iso_code[COUNTRY_ISO_CODE_LENGTH];
 
-    // heap-allocated on demand (MEMALLOC_AVATAR), NULL when none; the live avatar served to others.
+    // heap-allocated on demand (MEMALLOC_AVATAR), NULL when none; the live avatar served to others
     // persistent copy lives in the identity store
     char *base64_avatar;
 
-    // Video streaming: this client is the channel's streamer, with the details it announced.
+    // video streaming: this client is the channel's streamer, with the details it announced
     boole is_streaming_video;
     char video_stream_source[VIDEO_STREAM_SOURCE_MAX_LENGTH];
     char video_stream_codec[VIDEO_STREAM_CODEC_MAX_LENGTH];
@@ -830,13 +830,13 @@ typedef struct client_t
     boole is_video_stream_sound_included;
     uint64 timestamp_last_video_keyframe_request_forwarded_ms;
 
-    // Viewer state: the streamer allowed this client to watch (implicit for members present at
+    // viewer state: the streamer allowed this client to watch (implicit for members present at
     // the start, explicit for later joiners), and the client pressed connect. Keep both flags
-    // here: rebuilding a WebRTC peer on a retry or closing its transport must retain that consent.
+    // here: rebuilding a WebRTC peer on a retry or closing its transport must retain that consent
     boole is_video_viewer_allowed;
     boole is_video_viewer_watching;
 
-    // Group membership and optional client extensions.
+    // group membership and optional client extensions
     int *group_ids; // must be int because a function of another library depends on this being int
     music_bot_client_extension_t music_bot_client_extension;
     client_file_upload_extension_t file_upload_extension;
@@ -854,14 +854,14 @@ typedef struct channel_group_member_t
 // channel id is the same as the channel's index in the array
 typedef struct channel
 {
-    // Channel state and access.
+    // channel state and access
     boole is_existing;
     boole is_root_channel;
     boole is_channel_maintainer_present;
     boole is_using_password;
     boole is_audio_enabled;
 
-    // Required powers.
+    // required powers
     uint64 required_talk_power;
     uint64 required_message_power;
     uint64 required_picture_power;
@@ -874,7 +874,7 @@ typedef struct channel
     // power needed to create a channel directly inside this channel
     uint64 required_create_power;
 
-    // Video, music and temporary-channel state.
+    // video, music and temporary-channel state
     // the per-channel video streaming toggle, persisted; only meaningful while the server-wide
     // switch is on. default on, so switching the server on lights every channel up and admins /
     // temp channel owners switch single channels off
@@ -887,21 +887,21 @@ typedef struct channel
     boole is_temp_channel;
     boole is_client_limit_active;
 
-    // Tree position and capacity.
+    // tree position and capacity
     uint64 channel_id;
     uint64 parent_channel_id;
     uint64 current_clients;
     uint64 max_client_count;
     uint64 type;
 
-    // Channel-key maintainer.
+    // channel-key maintainer
     uint64 maintainer_id;
 
     // bumped on EVERY maintainer state change; a reset vote carries the generation it complains
     // about, so a vote fired against a previous maintainer never counts against the new one
     uint64 maintainer_generation;
 
-    // Presentation, password and saved membership.
+    // presentation, password and saved membership
     boole has_channel_icon;
     uint64 icon_id;
     char name[CHANNEL_NAME_MAX_LENGTH];
@@ -1023,7 +1023,7 @@ typedef enum permission_power_t
     PERMISSION_MODERATION_PROTECTION,
     PERMISSION_EDIT_POWER,
 
-    // Each power below is followed by the protection it is compared with.
+    // each power below is followed by the protection it is compared with
     PERMISSION_DIRECT_MESSAGE_POWER,
     PERMISSION_DIRECT_MESSAGE_PROTECTION,
     PERMISSION_DIRECT_PICTURE_POWER,
@@ -1033,7 +1033,7 @@ typedef enum permission_power_t
     PERMISSION_POKE_POWER,
     PERMISSION_POKE_PROTECTION,
 
-    // These powers are compared with a requirement saved in the channel.
+    // these powers are compared with a requirement saved in the channel
     PERMISSION_CHANNEL_FILE_POWER,
     PERMISSION_CHANNEL_VIEW_POWER,
     PERMISSION_CHANNEL_CREATE_POWER,
@@ -1096,8 +1096,8 @@ typedef struct icon_t
 
 // --- Stored identities and offline messages ---
 
-// Saved identity data restored by core/identity_store.c. public_key stores the identity hash;
-// raw_public_key stores the RSA public key used to encrypt messages for an offline identity.
+// saved identity data restored by core/identity_store.c. public_key stores the identity hash;
+// raw_public_key stores the RSA public key used to encrypt messages for an offline identity
 typedef struct client_stored_data_t
 {
     char public_key[MAX_PUBLIC_KEY_LENGTH];

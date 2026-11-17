@@ -1,40 +1,40 @@
 #include "../clib/clib.h"
-// This file helps provide URL previews when a client posts a website link in
+// this file helps provide URL previews when a client posts a website link in
 // chat. The feature must be enabled in the server settings. The server uses
 // this code to request the page and read the website's response, so the preview
-// can show its title, description and picture below the chat message.
+// can show its title, description and picture below the chat message
 //
-// This part prepares HTTP requests and reads the returned headers and body.
-// It is based on the supplied winhttpc implementation. Windows connections
+// this part prepares HTTP requests and reads the returned headers and body
+// it is based on the supplied winhttpc implementation. Windows connections
 // use httpclient_windows.c; Linux and macOS use httpclient_posix.c. Downloaded
-// pages are only read for their preview information; their scripts are not run.
+// pages are only read for their preview information; their scripts are not run
 //
-// Callers fill an httpclient_request_t and pass an empty response object to
+// callers fill an httpclient_request_t and pass an empty response object to
 // httpclient__request(). The URL must use http:// or https://, with an ASCII
 // hostname or IP address. Spaces and non-ASCII path characters must already
 // be written as percent-encoded bytes, such as %20 for a space. A NULL method
-// selects GET; HEAD, POST, PUT, PATCH, DELETE and OPTIONS are also supported.
-// All request and response sizes count bytes.
+// selects GET; HEAD, POST, PUT, PATCH, DELETE and OPTIONS are also supported
+// all request and response sizes count bytes
 //
 // A zero timeout_ms selects 15 seconds for connecting and downloading after
 // the operating system finishes DNS lookup. A zero max_response_bytes selects
 // a 16 MiB body limit. Set public_addresses_only when URLs come from chat users
 // so they cannot make the server contact localhost or private networks. On
 // Linux and macOS, ca_file can name a PEM file containing trusted certificates;
-// leave it NULL to use the system's certificates.
+// leave it NULL to use the system's certificates
 //
-// The response owns its headers and body. Both have an extra trailing zero;
-// body_size excludes that zero and the body may contain other zero bytes.
-// Call httpclient__response_free() before reusing the response object. A 404 or
+// the response owns its headers and body. Both have an extra trailing zero;
+// body_size excludes that zero and the body may contain other zero bytes
+// call httpclient__response_free() before reusing the response object. A 404 or
 // another HTTP error status is still a successfully received response. When
 // connecting or downloading fails, native_error preserves the operating
 // system or TLS library's error number. On Windows, tls_protocol contains
-// Schannel's SP_PROT value for the negotiated TLS version.
+// schannel's SP_PROT value for the negotiated TLS version
 //
 // httpclient_internal.h declares the shared types used by the response parser
 // and both connection implementations. The parser's state records whether it
 // needs headers, body bytes, a chunk length, a chunk ending, trailing headers,
-// or nothing more because the response is complete (state 7).
+// or nothing more because the response is complete (state 7)
 #include "httpclient_internal.h"
 
 // declarations
@@ -48,7 +48,7 @@ static httpclient_error_t _httpclient_internal__headers(http_parser_t *parser, h
 static httpclient_error_t _httpclient_internal__request_head(http_buffer_t *buffer, const httpclient_request_t *request, const char *host, const char *port, const char *target, boole ipv6);
 
 /**
- * @brief Checks whether a resolved address is public before requesting a URL preview.
+ * @brief checks whether a resolved address is public before requesting a URL preview
  *
  * @param const struct sockaddr* address -> the IPv4 or IPv6 address that connect() would use
  *
@@ -81,7 +81,7 @@ boole httpclient_internal__address_allowed(const struct sockaddr *address)
 }
 
 /**
- * @brief Counts the bytes in a string without reading beyond the supplied limit.
+ * @brief counts the bytes in a string without reading beyond the supplied limit
  *
  * @param const char* text -> the string to measure, or NULL for an empty string
  * @param uint64 maximum -> the maximum number of bytes to examine
@@ -107,7 +107,7 @@ static uint64 _httpclient_internal__length(const char *text, uint64 maximum)
 }
 
 /**
- * @brief Compares an HTTP word without treating uppercase and lowercase letters as different.
+ * @brief compares an HTTP word without treating uppercase and lowercase letters as different
  *
  * @param const char* text -> the bytes to compare; they do not need an ending zero byte
  * @param uint64 length -> the number of bytes available in text
@@ -149,7 +149,7 @@ static boole _httpclient_internal__equal(const char *text, uint64 length, const 
 }
 
 /**
- * @brief Checks that a method or header name contains only characters allowed in HTTP names.
+ * @brief checks that a method or header name contains only characters allowed in HTTP names
  *
  * @param const char* text -> the bytes of the name to check
  * @param uint64 size -> the number of bytes in the name
@@ -176,7 +176,7 @@ static boole _httpclient_internal__token(const char *text, uint64 size)
 }
 
 /**
- * @brief Adds bytes to a buffer, growing it only as far as its permitted size.
+ * @brief adds bytes to a buffer, growing it only as far as its permitted size
  *
  * @param http_buffer_t* buffer -> the buffer to grow and update
  * @param const void* data -> the bytes to append, or NULL when size is zero
@@ -229,10 +229,10 @@ httpclient_error_t _httpclient_internal__append(http_buffer_t *buffer, const voi
 }
 
 /**
- * @brief Removes bytes already read by the parser and keeps the unfinished part for the next read.
+ * @brief removes parsed bytes and moves the remaining bytes to the buffer start
  *
- * @param http_buffer_t* buffer -> the buffer whose remaining bytes are moved to the start
- * @param uint64 size -> the number of bytes to remove, which must not exceed buffer->size
+ * @param http_buffer_t* buffer -> buffer containing the parsed and remaining bytes
+ * @param uint64 size -> number of leading bytes to remove, no greater than the current size
  *
  * @return void
  */
@@ -253,7 +253,7 @@ static void _httpclient_internal__consume(http_buffer_t *buffer, uint64 size)
 }
 
 /**
- * @brief Finds the carriage return and line feed that finish a complete HTTP line.
+ * @brief finds the carriage return and line feed that finish a complete HTTP line
  *
  * @param const ubyte* bytes -> the received bytes to inspect
  * @param uint64 size -> the number of bytes available
@@ -276,7 +276,7 @@ static int64 _httpclient_internal__line(const ubyte *bytes, uint64 size)
 }
 
 /**
- * @brief Reads a decimal or hexadecimal number without allowing it to overflow a uint64.
+ * @brief reads a decimal or hexadecimal number without allowing it to overflow a uint64
  *
  * @param const char* text -> the digits to read; no ending zero byte is required
  * @param uint64 length -> the number of digits to read
@@ -312,7 +312,7 @@ static boole _httpclient_internal__number(const char *text, uint64 length, uint6
 }
 
 /**
- * @brief Reads the HTTP status and headers and decides how the response body ends.
+ * @brief reads the HTTP status and headers and decides how the response body ends
  *
  * @param http_parser_t* parser -> holds the complete headers in pending and receives the body-reading state
  * @param httpclient_response_t* response -> receives the final status and an allocated copy of the headers
@@ -480,7 +480,7 @@ static httpclient_error_t _httpclient_internal__headers(http_parser_t *parser, h
 }
 
 /**
- * @brief Reads as much of a URL preview response as the currently received bytes allow.
+ * @brief reads as much of a URL preview response as the currently received bytes allow
  *
  * @param http_parser_t* parser -> the current reading state, unfinished bytes and accumulated response body
  * @param httpclient_response_t* response -> receives the HTTP status and headers
@@ -652,9 +652,9 @@ httpclient_error_t _httpclient_internal__parse(http_parser_t *parser, httpclient
 }
 
 /**
- * @brief Writes the request method, path and headers for a URL preview download.
+ * @brief writes the request method, path and headers for a URL preview download
  *
- * Extra headers cannot replace body-length or connection headers.
+ * extra headers cannot replace body-length or connection headers
  *
  * @param http_buffer_t* buffer -> receives the request line and headers, excluding the body
  * @param const httpclient_request_t* request -> the method, extra headers and body size to validate and write
@@ -779,10 +779,10 @@ static httpclient_error_t _httpclient_internal__request_head(http_buffer_t *buff
 }
 
 /**
- * @brief Splits an HTTP or HTTPS URL into the host, port and request path used for a preview
- *        download.
+ * @brief splits an HTTP or HTTPS URL into the host, port and request path used for a preview
+ *        download
  *
- * Missing ports use 80 for HTTP or 443 for HTTPS. Fragments and credentials are rejected.
+ * missing ports use 80 for HTTP or 443 for HTTPS. Fragments and credentials are rejected
  *
  * @param const char* url -> an absolute ASCII URL; spaces and non-ASCII path bytes must already be percent-encoded
  * @param httpclient_url_t* parsed -> receives the URL parts and HTTPS and IPv6 flags
@@ -916,7 +916,7 @@ httpclient_error_t httpclient__parse_url(const char *url, httpclient_url_t *pars
 }
 
 /**
- * @brief Frees the downloaded HTTP headers and body and clears the response for reuse.
+ * @brief frees the downloaded HTTP headers and body and clears the response for reuse
  *
  * @param httpclient_response_t* response -> the response to clear, or NULL to do nothing
  *
@@ -945,11 +945,11 @@ void httpclient__response_free(httpclient_response_t *response)
 }
 
 /**
- * @brief Downloads one HTTP response for a URL preview using the connection code for this operating
- *        system.
+ * @brief downloads one HTTP response for a URL preview using the connection code for this operating
+ *        system
  *
- * Requests have separate buffers for simultaneous use and do not follow redirects.
- * On failure, only the native error and TLS version remain in the response.
+ * requests have separate buffers for simultaneous use and do not follow redirects
+ * on failure, only the native error and TLS version remain in the response
  *
  * @param const httpclient_request_t* request -> the URL, headers, body and connection limits; the caller keeps these values alive until return
  * @param httpclient_response_t* response -> an empty response that receives owned headers and body; release them with httpclient__response_free()
@@ -1056,7 +1056,7 @@ httpclient_error_t httpclient__request(const httpclient_request_t *request, http
 }
 
 /**
- * @brief Returns a readable explanation of a URL preview HTTP client error.
+ * @brief returns a readable explanation of a URL preview HTTP client error
  *
  * @param httpclient_error_t error -> the error code to describe
  *

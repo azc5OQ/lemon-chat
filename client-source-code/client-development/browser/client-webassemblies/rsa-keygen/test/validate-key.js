@@ -1,8 +1,6 @@
-// mathematical validation for sizes with no golden vectors (the js reference takes
-// hours above 2048): generates a key in the wasm and BigInt-checks every RSA invariant.
-// proves the output is a VALID keypair of the requested size; walk-equality with the js
-// is proven separately by compare-wasm.js at the sizes that have vectors.
-//   node validate-key.js [bits] [passphrase]
+// check the components of a generated RSA key using BigInt
+// compare-wasm.js separately checks equality with saved reference keys
+// run: node validate-key.js [bits] [passphrase]
 let fs = require("fs");
 let crypto = require("crypto");
 
@@ -17,31 +15,57 @@ function modpow(b, e, m)
     b %= m;
     while (e > 0n)
     {
-        if (e & 1n) { r = (r * b) % m; }
+        if (e & 1n)
+        {
+            r = (r * b) % m;
+        }
         b = (b * b) % m;
         e >>= 1n;
     }
     return r;
 }
 
-// miller-rabin with 20 pseudo-random bases; error probability < 4^-20
+/**
+ * @brief runs 20 Miller Rabin rounds on an odd candidate
+ *
+ * @param bigint n -> candidate greater than 3
+ *
+ * @return boolean -> whether all rounds pass
+ */
 function is_probable_prime(n)
 {
-    if (n < 2n || (n & 1n) == 0n) { return false; }
+    if (n < 2n || (n & 1n) == 0n)
+    {
+        return false;
+    }
     let d = n - 1n, s = 0n;
-    while ((d & 1n) == 0n) { d >>= 1n; s++; }
+    while ((d & 1n) == 0n)
+    {
+        d >>= 1n;
+        s++;
+    }
     for (let i = 0; i < 20; i++)
     {
         let a = 2n + BigInt("0x" + crypto.randomBytes(16).toString("hex")) % (n - 3n);
         let x = modpow(a, d, n);
-        if (x == 1n || x == n - 1n) { continue; }
+        if (x == 1n || x == n - 1n)
+        {
+            continue;
+        }
         let ok = false;
         for (let j = 0n; j < s - 1n; j++)
         {
             x = (x * x) % n;
-            if (x == n - 1n) { ok = true; break; }
+            if (x == n - 1n)
+            {
+                ok = true;
+                break;
+            }
         }
-        if (!ok) { return false; }
+        if (!ok)
+        {
+            return false;
+        }
     }
     return true;
 }
@@ -53,13 +77,20 @@ WebAssembly.instantiate(wasm_bytes, {}).then(function(result)
 
     let seed_hex = crypto.createHash("sha256").update(passphrase, "utf8").digest("hex");
     let seed_ptr = wasm.rsa_keygen__get_seed_buffer();
-    for (let j = 0; j < seed_hex.length; j++) { mem[seed_ptr + j] = seed_hex.charCodeAt(j); }
+    for (let j = 0; j < seed_hex.length; j++)
+    {
+        mem[seed_ptr + j] = seed_hex.charCodeAt(j);
+    }
 
     let started = Date.now();
     let ok = wasm.rsa_keygen__generate(bits, seed_hex.length);
     let took = Date.now() - started;
 
-    if (ok != 1) { console.log("generate returned " + ok); process.exit(1); }
+    if (ok != 1)
+    {
+        console.log("generate returned " + ok);
+        process.exit(1);
+    }
 
     let names = ["n", "e", "d", "p", "q", "dmp1", "dmq1", "coeff"];
     let k = {};
@@ -67,13 +98,15 @@ WebAssembly.instantiate(wasm_bytes, {}).then(function(result)
     {
         let ptr = wasm.rsa_keygen__get_result(f);
         let hex = "";
-        for (let b = ptr; mem[b] != 0; b++) { hex += String.fromCharCode(mem[b]); }
+        for (let b = ptr; mem[b] != 0; b++)
+        {
+            hex += String.fromCharCode(mem[b]);
+        }
         k[names[f]] = BigInt("0x" + hex);
     }
 
     let phi = (k.p - 1n) * (k.q - 1n);
-    // jsbn's RSAGenerate only forces each prime's top bit, so n can land one bit short
-    // of the request; both the js and the wasm share that property
+    // setting each prime's top bit can still leave the modulus one bit short
     let n_bits = k.n.toString(2).length;
     let checks = [
         ["n bitlength " + n_bits + " in {" + bits + "," + (bits - 1) + "}", n_bits == bits || n_bits == bits - 1],
@@ -92,7 +125,10 @@ WebAssembly.instantiate(wasm_bytes, {}).then(function(result)
     let failures = 0;
     for (let c = 0; c < checks.length; c++)
     {
-        if (!checks[c][1]) { failures++; }
+        if (!checks[c][1])
+        {
+            failures++;
+        }
         console.log((checks[c][1] ? "  ok   " : "  FAIL ") + checks[c][0]);
     }
     console.log(bits + " bits in " + took + "ms: " + (failures == 0 ? "VALID KEYPAIR" : failures + " FAILED CHECKS"));

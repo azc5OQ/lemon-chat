@@ -1,4 +1,4 @@
-// Application input behavior extends the public widget API without changing Meek UI.
+// application input behavior extends the public widget API without changing Meek UI
 #include "ui/ui_headers.h"
 #include "widget_registry.h"
 #include "ui/ui_input.h"
@@ -17,8 +17,9 @@ static void _ui_input_internal__key(gui_node_t *node, int64 key, boole down);
 static void _ui_input_internal__destroy(gui_node_t *node);
 
 /**
- * @brief bounds editable text to the receiving application buffers after loading or reloading the scene.
- * @return boole -> TRUE when every field accepts its limit; existing drafts are never truncated
+ * @brief bounds editable text to the receiving application buffers after loading or reloading the scene
+ *
+ * @return boole -> TRUE when every field accepts its limit. Existing drafts are never truncated
  */
 boole desktop_ui_input__limits(void)
 {
@@ -46,13 +47,15 @@ boole desktop_ui_input__limits(void)
 }
 
 /**
- * @brief lets the chat composer fill its allocated row width while retaining upstream text editing.
- * @param gui_node_t* node -> scene-owned input control
+ * @brief lets the chat composer fill its allocated row width while retaining upstream text editing
+ *
+ * @param gui_node_t* node -> scene owned input control
  * @param float x -> allocated horizontal position
  * @param float y -> allocated vertical position
  * @param float width -> allocated physical width
  * @param float height -> allocated physical height
  * @param float scale -> current display scale
+ *
  * @return void
  */
 static void _ui_input_internal__layout(gui_node_t *node, float x, float y, float width, float height, float scale)
@@ -76,10 +79,12 @@ static void _ui_input_internal__layout(gui_node_t *node, float x, float y, float
 }
 
 /**
- * @brief submits a composer on Enter; other fields and editing keys retain their existing behavior.
- * @param gui_node_t* node -> focused scene-owned input
- * @param int64 key -> Meek UI's portable virtual key code
+ * @brief submits a composer on Enter. Other fields and editing keys retain their existing behavior
+ *
+ * @param gui_node_t* node -> focused scene owned input
+ * @param int64 key -> meek UI's portable virtual key code
  * @param boole down -> nonzero for a key press
+ *
  * @return void
  */
 static void _ui_input_internal__key(gui_node_t *node, int64 key, boole down)
@@ -102,8 +107,10 @@ static void _ui_input_internal__key(gui_node_t *node, int64 key, boole down)
 }
 
 /**
- * @brief wipes editable storage before the scene releases its owned buffer.
- * @param gui_node_t* node -> scene-owned input being destroyed
+ * @brief wipes editable storage before the scene releases its owned buffer
+ *
+ * @param gui_node_t* node -> scene owned input being destroyed
+ *
  * @return void
  */
 static void _ui_input_internal__destroy(gui_node_t *node)
@@ -119,8 +126,10 @@ static void _ui_input_internal__destroy(gui_node_t *node)
 }
 
 /**
- * @brief installs the application's composer behavior after platform initialization, on the GUI thread.
+ * @brief installs the application's composer behavior after platform initialization, on the GUI thread
+ *
  * @param void (*submit)(void) -> callback retained until GUI shutdown
+ *
  * @return void
  */
 void desktop_ui_input__register(void (*submit)(void))

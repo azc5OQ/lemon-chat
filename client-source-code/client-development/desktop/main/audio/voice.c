@@ -1,6 +1,6 @@
 #include "platform/memory.h"
 #include "clib.h"
-// The session worker owns media authentication and encryption; audio owns devices/codecs.
+// the session worker owns media authentication and encryption. Audio owns devices/codecs
 #include <stdlib.h>
 #include "session/session_internal.h"
 #include "msg/client/client_msg.h"
@@ -58,10 +58,12 @@ static void _voice_internal__receive(desktop_session_t *session, const ubyte *by
 static void _voice_internal__send(desktop_session_t *session);
 
 /**
- * @brief copies the independent enumeration snapshot without using the session worker.
- * @param desktop_voice_t* voice -> GUI-lifetime voice engine
- * @param desktop_devices_view_t* view -> caller-owned snapshot
+ * @brief copies the independent enumeration snapshot without using the session worker
+ *
+ * @param desktop_voice_t* voice -> GUI lifetime voice engine
+ * @param desktop_devices_view_t* view -> caller owned snapshot
  * @param boole refresh -> TRUE to request enumeration
+ *
  * @return boole -> TRUE when the snapshot changed
  */
 boole desktop_voice__devices(desktop_voice_t *voice, desktop_devices_view_t *view, boole refresh)
@@ -70,8 +72,10 @@ boole desktop_voice__devices(desktop_voice_t *voice, desktop_devices_view_t *vie
 }
 
 /**
- * @brief creates independent bounded audio transport and device processing.
- * @param boole devices -> nonzero for native devices; zero for owned protocol/PCM fixtures
+ * @brief creates independent bounded audio transport and device processing
+ *
+ * @param boole devices -> nonzero for native devices. Zero for owned protocol/PCM fixtures
+ *
  * @return desktop_voice_t* -> owned state, or NULL on initialization failure
  */
 desktop_voice_t *desktop_voice__create(boole devices)
@@ -105,8 +109,10 @@ desktop_voice_t *desktop_voice__create(boole devices)
 }
 
 /**
- * @brief stops and joins all callbacks before releasing media state.
+ * @brief stops and joins all callbacks before releasing media state
+ *
  * @param desktop_voice_t* voice -> owned state, or NULL
+ *
  * @return void
  */
 void desktop_voice__destroy(desktop_voice_t *voice)
@@ -124,8 +130,10 @@ void desktop_voice__destroy(desktop_voice_t *voice)
 }
 
 /**
- * @brief closes the current media attachment and schedules a bounded reconnect delay.
- * @param desktop_voice_t* voice -> session-worker-owned media state
+ * @brief closes the current media attachment and schedules a bounded reconnect delay
+ *
+ * @param desktop_voice_t* voice -> session worker-owned media state
+ *
  * @return void
  */
 static void _voice_internal__drop(desktop_voice_t *voice)
@@ -148,8 +156,10 @@ static void _voice_internal__drop(desktop_voice_t *voice)
 }
 
 /**
- * @brief ends voice for a disconnected session and forgets its keys and queued audio.
+ * @brief ends voice for a disconnected session and forgets its keys and queued audio
+ *
  * @param desktop_voice_t* voice -> worker-owned media state, or NULL
+ *
  * @return void
  */
 void desktop_voice__stop(desktop_voice_t *voice)
@@ -188,8 +198,10 @@ void desktop_voice__stop(desktop_voice_t *voice)
 }
 
 /**
- * @brief discards old-channel audio and bot keys without reusing the media frame counter.
+ * @brief discards old channel audio and bot keys without reusing the media frame counter
+ *
  * @param desktop_voice_t* voice -> worker-owned media state
+ *
  * @return void
  */
 void desktop_voice__channel_changed(desktop_voice_t *voice)
@@ -204,10 +216,12 @@ void desktop_voice__channel_changed(desktop_voice_t *voice)
 }
 
 /**
- * @brief sends existing audio control messages through authenticated metadata.
+ * @brief sends existing audio control messages through authenticated metadata
+ *
  * @param desktop_session_t* session -> worker-owned session
  * @param const char* type -> protocol message type
- * @param int64 value -> microphone state or bot ID; -1 omits the field
+ * @param int64 value -> microphone state or bot ID. -1 omits the field
+ *
  * @return boole -> 1 when accepted by transport
  */
 static boole _voice_internal__request(desktop_session_t *session, const char *type, int64 value)
@@ -226,9 +240,11 @@ static boole _voice_internal__request(desktop_session_t *session, const char *ty
 }
 
 /**
- * @brief finds bounded per-bot encryption storage by authenticated client ID.
+ * @brief finds bounded per bot encryption storage by authenticated client ID
+ *
  * @param desktop_voice_t* voice -> worker-owned media state
  * @param uint id -> server client ID
+ *
  * @return voice_bot_t* -> existing or free slot, or NULL when full
  */
 static voice_bot_t *_voice_internal__bot(desktop_voice_t *voice, uint id)
@@ -258,7 +274,14 @@ static voice_bot_t *_voice_internal__bot(desktop_voice_t *voice, uint id)
     return available;
 }
 
-/** @brief Reads the server's decimal counter without rounding or accepting overflow. */
+/**
+ * @brief reads a decimal counter without accepting overflow or trailing characters
+ *
+ * @param const char* text -> counter text
+ * @param uint64* counter -> receives the value on success
+ *
+ * @return boole -> TRUE if the complete value fits uint64
+ */
 static boole _voice_internal__read_counter(const char *text, uint64 *counter)
 {
     uint64 value = 0;
@@ -296,16 +319,25 @@ static boole _voice_internal__read_counter(const char *text, uint64 *counter)
     return TRUE;
 }
 
-/** @brief Rejects delayed music packets that the server already stopped. */
+/**
+ * @brief checks whether a frame follows the discarded sequence
+ *
+ * @param const voice_bot_t* bot -> music bot receive state
+ * @param uint64 counter -> incoming frame counter
+ *
+ * @return boole -> TRUE if the frame is newer or no frames have been discarded
+ */
 static boole _voice_internal__after_discard(const voice_bot_t *bot, uint64 counter)
 {
     return !bot->have_discarded || counter > bot->discarded_through;
 }
 
 /**
- * @brief handles server policy, one-use audio tickets and current-channel music-bot keys.
+ * @brief handles server policy, one use audio tickets and current channel music bot keys
+ *
  * @param desktop_session_t* session -> worker-owned session
  * @param const cJSON* message -> authenticated metadata message
+ *
  * @return void
  */
 void desktop_voice__message(desktop_session_t *session, const cJSON *message)
@@ -431,10 +463,12 @@ void desktop_voice__message(desktop_session_t *session, const cJSON *message)
 }
 
 /**
- * @brief checks media authentication, replay counter and channel membership before decoding audio.
+ * @brief checks media authentication, replay counter and channel membership before decoding audio
+ *
  * @param desktop_session_t* session -> worker-owned session
  * @param const ubyte* bytes -> complete binary frame
  * @param uint64 size -> frame byte count
+ *
  * @return void
  */
 static void _voice_internal__receive(desktop_session_t *session, const ubyte *bytes, uint64 size)
@@ -522,8 +556,10 @@ static void _voice_internal__receive(desktop_session_t *session, const ubyte *by
 }
 
 /**
- * @brief sends a bounded batch of fresh microphone packets with unique media counters.
+ * @brief sends a bounded batch of fresh microphone packets with unique media counters
+ *
  * @param desktop_session_t* session -> worker-owned session with acknowledged talk permission
+ *
  * @return void
  */
 static void _voice_internal__send(desktop_session_t *session)
@@ -578,8 +614,10 @@ static void _voice_internal__send(desktop_session_t *session)
 }
 
 /**
- * @brief advances audio attachment and push-to-talk without doing device work on the session worker.
+ * @brief advances audio attachment and push to talk without doing device work on the session worker
+ *
  * @param desktop_session_t* session -> authenticated worker-owned session
+ *
  * @return void
  */
 void desktop_voice__tick(desktop_session_t *session)
@@ -797,6 +835,14 @@ void desktop_voice__tick(desktop_session_t *session)
     mbedtls_platform_zeroize(proof, sizeof(proof));
 }
 
+/**
+ * @brief plays a notification through the voice audio owner
+ *
+ * @param desktop_voice_t* voice -> voice owner, or null to do nothing
+ * @param desktop_sound_t id -> notification sound to play
+ *
+ * @return void
+ */
 void desktop_voice__sound(desktop_voice_t *voice, desktop_sound_t id)
 {
     if (voice)
@@ -805,6 +851,14 @@ void desktop_voice__sound(desktop_voice_t *voice, desktop_sound_t id)
     }
 }
 
+/**
+ * @brief stops a notification through the voice audio owner
+ *
+ * @param desktop_voice_t* voice -> voice owner, or null to do nothing
+ * @param desktop_sound_t id -> notification sound to stop
+ *
+ * @return void
+ */
 void desktop_voice__stop_sound(desktop_voice_t *voice, desktop_sound_t id)
 {
     if (voice)
@@ -813,6 +867,16 @@ void desktop_voice__stop_sound(desktop_voice_t *voice, desktop_sound_t id)
     }
 }
 
+/**
+ * @brief applies notification playback settings to the voice audio owner
+ *
+ * @param desktop_voice_t* voice -> voice owner, or null to do nothing
+ * @param boole enabled -> whether notification playback is enabled
+ * @param int64 volume -> volume percentage
+ * @param const char* output -> output device name
+ *
+ * @return void
+ */
 void desktop_voice__notifications(desktop_voice_t *voice, boole enabled, int64 volume, const char *output)
 {
     if (voice)

@@ -10,6 +10,8 @@ dom-shim.js), plus all webaudio/wasm/worker files - voice stays in the WebView.
 Paths starting with `node/` resolve next to this script, everything else under ../../browser/main.
 """
 import base64
+import hashlib
+import json
 import os
 import re
 import sys
@@ -36,7 +38,41 @@ def resolve(rel):
     return os.path.join(SRC, rel)
 
 
+def input_paths():
+    paths = {os.path.abspath(__file__), TEMPLATE}
+    for runtime in ["android-main.js", "android-bridge-client.js", "loopback-ui-server.js",
+                    "loopback-transfer.js", "websocket-adapter.js", "transport-limits.js", "load-bundle.js"]:
+        paths.add(os.path.join(HERE, runtime))
+    for line in read_text(TEMPLATE).split("\n"):
+        match = INCLUDE_RE.match(line)
+        if match:
+            source = resolve(match.group(1).strip())
+            paths.add(source)
+            for wasm in WASM_RE.finditer(read_text(source)):
+                paths.add(os.path.join(SRC, wasm.group(1).strip()))
+    lock_path = os.path.join(HERE, "vendor", "ws-lock.json")
+    paths.add(lock_path)
+    lock = json.loads(read_text(lock_path))
+    for relative in lock["files"]:
+        paths.add(os.path.join(HERE, "vendor", "ws", relative))
+    return sorted(os.path.abspath(path) for path in paths)
+
+
+def verify_vendor():
+    lock = json.loads(read_text(os.path.join(HERE, "vendor", "ws-lock.json")))
+    for relative, expected in lock["files"].items():
+        source = os.path.join(HERE, "vendor", "ws", relative)
+        with open(source, "rb") as vendor_file:
+            actual = hashlib.sha256(vendor_file.read()).hexdigest()
+        if actual != expected:
+            raise ValueError("vendored ws checksum mismatch: " + relative)
+
+
 def main():
+    if "--list-inputs" in sys.argv:
+        print("\n".join(input_paths()))
+        return 0
+    verify_vendor()
     print("build-node.py: gluing -> %s" % os.path.relpath(OUT, HERE))
     template = read_text(TEMPLATE)
 

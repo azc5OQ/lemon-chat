@@ -50,7 +50,7 @@ struct desktop_session_t
     desktop_audio_options_t audio_options;
     int64 push_to_talk_key;
     desktop_connection_t connection;
-    desktop_chat_format_t chat_format; // GUI preference, copied into commands under mutex.
+    desktop_chat_format_t chat_format; // GUI preference, copied into commands under mutex
     desktop_session_view_t model;
     desktop_session_view_t published;
     char public_key[1369];

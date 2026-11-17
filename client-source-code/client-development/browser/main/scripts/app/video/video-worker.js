@@ -1,27 +1,13 @@
-// video-worker.js is embedded in template.html along with the other client files
-// it runs inside the "video_worker" web worker only (see worker-entry.js). streamer side: it splits an
-// encoded frame into packets and encrypts each with the channel keys. viewer side: it decrypts and
-// reassembles packets into frames, decodes them with webcodecs and draws them on the popup's canvas,
-// which the main thread handed over as an OffscreenCanvas. the main thread only forwards buffers
-//
-// every packet is encrypted in layers, the same way as a voice frame: first with the channel keys, which
-// only the members of the channel have, then with the server keys, and then a second time with this
-// client's session keys plus an authentication code, so the server can check who sent a packet and nobody
-// on the network path can read or forge one (keys.js, the block "the encryption of audio and video
-// frames", explains the layers and the frame layout; crypto_media.c is the server side). the encryption
-// runs on the browser's own AES and HMAC (crypto.subtle) when they are available and falls back to the
-// pure javascript aes-js and sha256 otherwise; both produce the same bytes, so a viewer on one path
-// decrypts a streamer on the other
-//
-// packet layout inside the encryption (12 byte header, little endian):
-//   [1 B stream epoch][2 B frame number][2 B packet index][2 B packet count][1 B flags][4 B timestamp, low 32 bits of the chunk's microseconds]
-//   flags: bit0 = keyframe, bit1 = last packet of the frame, bit2 = a sound packet
-//
-// a sound packet carries one opus packet of the stream's sound instead of a piece of a picture (video.js explains the
-// sound): its frame number is the sound's own sequence number, it is always a single packet, and on the viewer side it is
-// handed to the main thread for the opus decoder worker instead of the picture decoder. while a stream has sound, every
-// decoded picture is held for a fixed time before it is drawn (picture_hold_ms of the decoder setup), as long as the sound
-// waits in its playback buffer, so the picture does not run ahead of the sound
+// runs packet encryption, video decoding and OffscreenCanvas drawing in the video worker
+// the page forwards encoded frames and received packet buffers
+// channel encryption protects the media body. server and session layers authenticate transport
+// web Crypto and the JavaScript fallback produce compatible AES and HMAC results
+// the plaintext packet header is 12 bytes, with little endian integers:
+// [1 B epoch][2 B frame number][2 B packet index][2 B packet count][1 B flags][4 B timestamp]
+// the timestamp stores the low 32 bits of the encoded chunk time in microseconds
+// flags: bit 0 keyframe, bit 1 final packet, bit 2 sound packet
+// sound carries one complete Opus packet with its own sequence number
+// the page sends it to the Opus worker. picture delay matches the sound playback buffer
 
 var VIDEO_WORKER_HEADER_BYTES = 12;
 var VIDEO_WORKER_MAX_PACKETS_PER_FRAME = 256;
@@ -35,11 +21,11 @@ var VIDEO_WORKER_MAX_DECODER_FRAMES = 32;
 var VIDEO_WORKER_MAX_PENDING_PACKETS = 256;
 
 var video_worker_channel_keys = null;      // the channel's key layers as the main thread holds them (key_bytes, iv_bytes)
-var video_worker_native_keys = null;       // the same keys imported into the browser's AES; null while aes-js is in use
+var video_worker_native_keys = null;       // imported channel keys for Web Crypto. null selects aes-js
 var video_worker_transport = null;         // the keys of the second encryption: { session: { key_bytes, mac_bytes }, server_layers: [{ key_bytes }], local_client_id } (keys.js)
-var video_worker_native_transport = null;  // the same keys imported into the browser's crypto: { server: [CryptoKey], session: CryptoKey, mac: CryptoKey }; null while the javascript fallback is in use
+var video_worker_native_transport = null;  // imported server, session and MAC keys. null selects the JavaScript fallback
 var video_worker_streamer_client_id = -1;  // the viewer side decodes packets of this sender only
-var video_worker_frame_counter = null;     // counts the packets this streamer sent; part of every counter block (keys__counter_create)
+var video_worker_frame_counter = null;     // outgoing packet counter used by keys__counter_create
 var video_worker_keys_generation = 0;      // counts channel key sets, so a late import of a replaced set is discarded
 var video_worker_transport_generation = 0; // the same for the transport keys, which arrive independently of the channel keys
 var video_worker_send_chain = Promise.resolve();     // frames are encrypted and posted in encoder order
@@ -108,12 +94,9 @@ function video_worker__onmessage(e)
 }
 
 /**
- * @brief takes a new set of channel keys: aes-js can use them at once, the browser's AES after the import
+ * @brief replaces channel keys and discards imports belonging to an older key set
  *
- *        the import is asynchronous. a set that is replaced before its import finished is discarded
- *        (generation check). without crypto.subtle, or when an import fails, aes-js stays in use.
- *
- * @param array keys -> the key layers, each with key_bytes and iv_bytes; null clears them
+ * @param array keys -> the key layers, each with key_bytes and iv_bytes. null clears them
  *
  * @return void
  */
@@ -148,10 +131,7 @@ function video_worker__set_channel_keys(keys)
 }
 
 /**
- * @brief takes the keys of the second encryption: the server keys and this client's session keys
- *
- *        the main thread sends them when the stream starts or the viewer connects, and again when they
- *        change. like the channel keys they are imported into the browser's crypto when it is available
+ * @brief installs the current server and session keys for video transport
  *
  * @param object data -> session { key_bytes, mac_bytes } or null, server_layers [{ key_bytes }], local_client_id
  *
@@ -189,10 +169,8 @@ function video_worker__set_transport_keys(data)
 }
 
 /**
- * @brief one AES-CTR layer over some bytes: the browser's AES when the key is imported, aes-js otherwise
- *
- *        both give the same bytes: AES-CTR with the given 16 byte counter block, all 128 bits counting. in
- *        counter mode encrypting and decrypting are the same operation
+ * @brief applies one AES counter layer through Web Crypto or aes-js
+ * encryption and decryption use the same counter operation
  *
  * @param array key_bytes -> the 32 byte key
  * @param CryptoKey native_key -> the imported key, or null for aes-js
@@ -245,9 +223,10 @@ function video_worker__inner_layers(layers, native_keys, sender_id, counter_byte
 }
 
 /**
- * @brief the authentication code of some bytes with the session's checksum key: the browser's HMAC when it is imported, javascript otherwise
+ * @brief calculates the session authentication code through Web Crypto or the JavaScript fallback
  *
  * @param Uint8Array bytes -> the data
+ * @param boolean receiving -> selects the receive key in the JavaScript fallback
  *
  * @return Promise resolves with the 32 byte code as a Uint8Array
  */
@@ -265,11 +244,7 @@ function video_worker__authentication_code(bytes, receiving = false)
 }
 
 /**
- * @brief encrypts one packet of this streamer into a frame ready to send
- *
- *        the packet goes under the channel keys, then the server keys, gets the sender id and the counter in
- *        front, goes under the session key, and gets the authentication code at the end; the layout is in
- *        keys.js. every packet takes the next value of the frame counter
+ * @brief applies channel and transport encryption with a fresh packet counter
  *
  * @param Uint8Array packet -> the packet with its 12 byte header
  *
@@ -312,9 +287,8 @@ function video_worker__encrypt_packet(packet)
 }
 
 /**
- * @brief opens one received frame on the viewer side: the authentication code is checked, the layers come off in reverse order
- *
- *        a frame whose code does not match, or that was not sent by the channel's streamer, gives null
+ * @brief authenticates a frame and removes its encryption layers in reverse order
+ * reject frames from another streamer or with an invalid authentication code
  *
  * @param Uint8Array frame -> the frame
  *
@@ -340,9 +314,7 @@ function video_worker__decrypt_packet(frame)
         {
             return null;
         }
-        let opened = transport.session.layers != null
-            ? Promise.resolve(keys__media_session_crypt(transport.session, keys__media_session_block(frame.subarray(1, MEDIA_FRAME_HEADER), MEDIA_DIRECTION_FROM_SERVER, MEDIA_STREAM_VIDEO), frame.subarray(MEDIA_FRAME_HEADER, code_offset), false))
-            : video_worker__layer(transport.session.key_bytes, native != null ? native.session : null, keys__media_session_block(frame.subarray(1, MEDIA_FRAME_HEADER), MEDIA_DIRECTION_FROM_SERVER, MEDIA_STREAM_VIDEO), frame.subarray(MEDIA_FRAME_HEADER, code_offset));
+        let opened = transport.session.layers != null ? Promise.resolve(keys__media_session_crypt(transport.session, keys__media_session_block(frame.subarray(1, MEDIA_FRAME_HEADER), MEDIA_DIRECTION_FROM_SERVER, MEDIA_STREAM_VIDEO), frame.subarray(MEDIA_FRAME_HEADER, code_offset), false)) : video_worker__layer(transport.session.key_bytes, native != null ? native.session : null, keys__media_session_block(frame.subarray(1, MEDIA_FRAME_HEADER), MEDIA_DIRECTION_FROM_SERVER, MEDIA_STREAM_VIDEO), frame.subarray(MEDIA_FRAME_HEADER, code_offset));
         return opened.then(function(body)
         {
             let sender_id = (body[0] | (body[1] << 8) | (body[2] << 16) | (body[3] << 24)) >>> 0;
@@ -360,7 +332,7 @@ function video_worker__decrypt_packet(frame)
 }
 
 /**
- * @brief splits one encoded frame into packets under the size cap, encrypts each with the channel keys and posts them back for sending
+ * @brief splits an encoded frame into encrypted packets and posts them for sending
  *
  * @param object data -> epoch, frame_number, is_keyframe, timestamp and the frame bytes (ArrayBuffer)
  *
@@ -388,7 +360,7 @@ function video_worker__packetize(data)
         return;
     }
 
-    // a sound packet is one opus packet, a few hundred bytes; it is never split
+    // sound fits in one Opus packet and is not split
     if (is_sound == true && packet_count != 1)
     {
         video_worker__report_dropped_frame(data);
@@ -400,8 +372,7 @@ function video_worker__packetize(data)
         let start = index * piece_size;
         let end = Math.min(bytes.length, start + piece_size);
         let packet = new Uint8Array(VIDEO_WORKER_HEADER_BYTES + (end - start));
-        let flags = is_sound ? VIDEO_WORKER_FLAG_SOUND
-            : ((data.is_keyframe ? VIDEO_WORKER_FLAG_KEYFRAME : 0) | ((index == packet_count - 1) ? VIDEO_WORKER_FLAG_LAST_PACKET : 0));
+        let flags = is_sound ? VIDEO_WORKER_FLAG_SOUND : ((data.is_keyframe ? VIDEO_WORKER_FLAG_KEYFRAME : 0) | ((index == packet_count - 1) ? VIDEO_WORKER_FLAG_LAST_PACKET : 0));
 
         packet[0] = data.epoch & 0xff;
         packet[1] = data.frame_number & 0xff;
@@ -419,7 +390,7 @@ function video_worker__packetize(data)
         packets.push(packet);
     }
 
-    // the encryption is asynchronous on the browser's crypto; the chain keeps the frames in encoder order
+    // chain asynchronous encryption to preserve encoder order
     video_worker_send_chain = video_worker_send_chain.then(function()
     {
         if (performance.timeOrigin + performance.now() > data.expires_at)
@@ -452,8 +423,10 @@ function video_worker__packetize(data)
 }
 
 /**
- * @brief Lets the sender continue after a frame was dropped during encryption.
+ * @brief lets the sender continue after a frame was dropped during encryption
+ *
  * @param object data -> the frame's stream, deadline and sound flag
+ *
  * @return void
  */
 function video_worker__report_dropped_frame(data)
@@ -464,13 +437,14 @@ function video_worker__report_dropped_frame(data)
 }
 
 /**
- * @brief creates the decoder for the announced codec; annex b h.264 and vp8 need no out-of-band description
+ * @brief creates the announced WebCodecs decoder
+ * annex B H.264 and VP8 do not need a separate codec description
  *
  * @param string codec -> the webcodecs codec string
  * @param number width -> coded width
  * @param number height -> coded height
- * @param number streamer_client_id -> the client whose packets are decoded; packets of anybody else are dropped
- * @param number picture_hold_ms -> how long every decoded picture waits before it is drawn; 0 or missing draws at once (set while the stream has sound)
+ * @param number streamer_client_id -> the client whose packets are decoded. packets of anybody else are dropped
+ * @param number picture_hold_ms -> delay before drawing in milliseconds, or zero to draw immediately
  *
  * @return void
  */
@@ -494,7 +468,7 @@ function video_worker__decoder_setup(codec, width, height, streamer_client_id, p
             {
                 global.postMessage({ type: "video_worker__decoder_error", value: error.message });
                 video_worker_waiting_for_keyframe = true;
-                // a broken decoder is rebuilt on the spot so the next keyframe can be decoded; the streamer id and the hold are kept
+                // rebuild a failed decoder while keeping the streamer and picture delay
                 video_worker__decoder_setup(video_worker_decoder_codec, width, height, video_worker_streamer_client_id, video_worker_picture_hold_ms);
             }
         });
@@ -531,7 +505,13 @@ function video_worker__decoder_close()
     video_worker_decoder_config = null;
     if (video_worker_decoder != null)
     {
-        try { video_worker_decoder.close(); } catch (close_error) { }
+        try
+        {
+            video_worker_decoder.close();
+        }
+        catch (close_error)
+        {
+        }
         video_worker_decoder = null;
     }
 
@@ -556,8 +536,8 @@ function video_worker__clear_canvas()
 }
 
 /**
- * @brief a decoded frame: drawn at once, or, while the stream has sound, copied into a bitmap that waits for the picture hold
- *        the copy frees the decoder's frame right away; a decoder has only a few frames to hand out, and holding them would stall it
+ * @brief draws a decoded frame immediately or copies it for delayed playback
+ * release the decoder frame after copying so held pictures cannot stall decoding
  *
  * @param VideoFrame frame -> the frame
  *
@@ -610,7 +590,7 @@ function video_worker__on_decoded_frame(frame)
         frame.close();
     });
 
-    // Release old pictures when drawing or bitmap copying falls behind.
+    // release old pictures when drawing or bitmap copying falls behind
     while (video_worker_held_pictures.length > VIDEO_WORKER_MAX_HELD_PICTURES)
     {
         video_worker__draw_oldest_held_picture(true);
@@ -620,7 +600,7 @@ function video_worker__on_decoded_frame(frame)
 }
 
 /**
- * @brief Draws the newest picture that is due and releases older pictures that were delayed.
+ * @brief draws the newest picture that is due and releases older pictures that were delayed
  *
  * @return void
  */
@@ -756,10 +736,7 @@ function video_worker__ask_for_keyframe()
 }
 
 /**
- * @brief one packet from the datachannel (sender id already stripped): decrypted, then handed to video_worker__process_packet
- *
- *        the decryption is asynchronous on the browser's AES; the chain keeps the packets in arrival
- *        order. a packet that cannot be decrypted counts as a gap
+ * @brief decrypts received video packets in order and reports failures as gaps
  *
  * @param ArrayBuffer buffer -> the encrypted packet
  * @param number received_at -> arrival time, including the page's performance.timeOrigin
@@ -784,8 +761,7 @@ function video_worker__decode_packet(buffer, received_at)
 
     video_worker_receive_chain = video_worker_receive_chain.then(function()
     {
-        if (generation !== video_worker_receive_generation
-            || performance.timeOrigin + performance.now() - received_at > VIDEO_WORKER_FRAME_DEADLINE_MS)
+        if (generation !== video_worker_receive_generation || performance.timeOrigin + performance.now() - received_at > VIDEO_WORKER_FRAME_DEADLINE_MS)
         {
             return null;
         }
@@ -818,9 +794,7 @@ function video_worker__decode_packet(buffer, received_at)
 }
 
 /**
- * @brief one decrypted packet: checked, put into the frame being reassembled; a complete frame goes to the decoder
- *        gaps of any kind (a lost packet, a new frame before the old one completed, a decrypt failure
- *        showing as a nonsense header) drop the frame and wait for the next keyframe
+ * @brief reassembles validated packets and sends complete frames to the decoder
  *
  * @param Uint8Array packet -> the decrypted packet, header first
  * @param number received_at -> packet arrival time in milliseconds
@@ -912,8 +886,7 @@ function video_worker__process_packet(packet, received_at)
         };
     }
 
-    if (video_worker_assembly.packet_count !== packet_count || video_worker_assembly.timestamp !== timestamp
-        || video_worker_assembly.is_keyframe !== is_keyframe)
+    if (video_worker_assembly.packet_count !== packet_count || video_worker_assembly.timestamp !== timestamp || video_worker_assembly.is_keyframe !== is_keyframe)
     {
         video_worker__mark_gap();
         return;
@@ -938,7 +911,7 @@ function video_worker__process_packet(packet, received_at)
     video_worker_assembly = null;
     video_worker_last_frame_number = frame_number;
 
-    // Compare elapsed sender time with arrival time; the two computers need no shared clock.
+    // compare elapsed sender time with arrival time without requiring synchronized clocks
     if (video_worker_last_timestamp === null)
     {
         video_worker_timestamp_ms = 0;
@@ -948,16 +921,15 @@ function video_worker__process_packet(packet, received_at)
         video_worker_timestamp_ms += ((timestamp - video_worker_last_timestamp) | 0) / 1000;
     }
     video_worker_last_timestamp = timestamp;
-    // A full picture can take longer to arrive than the smaller pictures that follow it.
+    // a full picture can take longer to arrive than the smaller pictures that follow it
     arrival_time = is_keyframe ? received_at : assembly.received_at;
     assembly_limit = is_keyframe ? VIDEO_WORKER_KEYFRAME_DEADLINE_MS : VIDEO_WORKER_FRAME_DEADLINE_MS;
 
-    video_worker_clock_offset = Math.min(video_worker_clock_offset === null || is_keyframe ? Infinity : video_worker_clock_offset,
-        arrival_time - video_worker_timestamp_ms);
+    video_worker_clock_offset = Math.min(video_worker_clock_offset === null || is_keyframe ? Infinity : video_worker_clock_offset, arrival_time - video_worker_timestamp_ms);
     let due_ms = video_worker_clock_offset + video_worker_timestamp_ms;
     let now = performance.timeOrigin + performance.now();
 
-    // Some decoders need several inputs before returning a picture. Old deadlines must not stop new input.
+    // some decoders need several inputs before returning a picture. old deadlines must not stop new input
     for (let [frame_timestamp, deadline] of video_worker_decode_deadlines)
     {
         if (now > deadline + VIDEO_WORKER_FRAME_DEADLINE_MS)
@@ -966,10 +938,7 @@ function video_worker__process_packet(packet, received_at)
         }
     }
 
-    if (now - assembly.received_at > assembly_limit || now - received_at > VIDEO_WORKER_FRAME_DEADLINE_MS
-        || now - due_ms > VIDEO_WORKER_FRAME_DEADLINE_MS
-        || (!video_worker_waiting_for_keyframe && (video_worker_decoder.decodeQueueSize >= 3
-            || video_worker_decode_deadlines.size >= VIDEO_WORKER_MAX_DECODER_FRAMES)))
+    if (now - assembly.received_at > assembly_limit || now - received_at > VIDEO_WORKER_FRAME_DEADLINE_MS || now - due_ms > VIDEO_WORKER_FRAME_DEADLINE_MS || (!video_worker_waiting_for_keyframe && (video_worker_decoder.decodeQueueSize >= 3 || video_worker_decode_deadlines.size >= VIDEO_WORKER_MAX_DECODER_FRAMES)))
     {
         video_worker__mark_gap();
         return;
@@ -994,7 +963,7 @@ function video_worker__process_packet(packet, received_at)
     {
         if (video_worker_waiting_for_keyframe && assembly.is_keyframe)
         {
-            // Discard unfinished decoding before starting again from a complete picture.
+            // discard unfinished decoding before starting again from a complete picture
             video_worker_decoder.reset();
             video_worker_decoder.configure(video_worker_decoder_config);
             video_worker_decode_deadlines.clear();
@@ -1023,7 +992,7 @@ function video_worker__process_packet(packet, received_at)
 }
 
 /**
- * @brief something was lost: only a keyframe can restart decoding, so one is requested
+ * @brief requests a keyframe after packet loss or decoding failure
  *
  * @return void
  */

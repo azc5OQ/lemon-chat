@@ -29,9 +29,11 @@ static boole _ui_theme_internal__load(const char *name, const desktop_settings_t
 static void _ui_theme_internal__clear_node_styles(gui_node_t *node);
 
 /**
- * @brief updates the existing conversation rules in place, recreating handles only after a stylesheet reset.
+ * @brief updates the existing conversation rules in place, recreating handles only after a stylesheet reset
+ *
  * @param int64 percent -> bounded chat scale from 75 to 150 percent
- * @return boole -> TRUE when every rule is installed; failed registrations are reported to the caller
+ *
+ * @return boole -> TRUE when every rule is installed. Failed registrations are reported to the caller
  */
 boole desktop_ui_theme__scale(int64 percent)
 {
@@ -83,8 +85,10 @@ boole desktop_ui_theme__scale(int64 percent)
 }
 
 /**
- * @brief removes the old theme's cached colours, gradients and geometry while retaining widget contents and state.
- * @param gui_node_t* node -> scene-owned node; this application does not store runtime overrides in node->style
+ * @brief removes the old theme's cached colours, gradients and geometry while retaining widget contents and state
+ *
+ * @param gui_node_t* node -> style
+ *
  * @return void
  */
 static void _ui_theme_internal__clear_node_styles(gui_node_t *node)
@@ -106,7 +110,8 @@ static void _ui_theme_internal__clear_node_styles(gui_node_t *node)
 }
 
 /**
- * @brief registers native UI font aliases, falling back to bundled fonts on unavailable systems.
+ * @brief registers native UI font aliases, falling back to bundled fonts on unavailable systems
+ *
  * @return void
  */
 void desktop_ui_theme__fonts(void)
@@ -133,7 +138,8 @@ void desktop_ui_theme__fonts(void)
 }
 
 /**
- * @brief replaces stylesheet rules from the last valid theme without rereading files on each frame.
+ * @brief replaces stylesheet rules from the last valid theme without rereading files on each frame
+ *
  * @return void
  */
 void desktop_ui_theme__apply(void)
@@ -151,10 +157,12 @@ void desktop_ui_theme__apply(void)
 }
 
 /**
- * @brief loads a bounded local stylesheet, retaining the previous theme when reading or parsing fails.
- * @param const char* name -> CSS filename under assets/themes; empty chooses classic.css
+ * @brief loads a bounded local stylesheet, retaining the previous theme when reading or parsing fails
+ *
+ * @param const char* name -> CSS filename under assets/themes. Empty chooses classic.css
  * @param const desktop_settings_t* settings -> optional preferences to save before committing the theme
- * @return boole -> TRUE when the new rules were loaded; FALSE without changing the cached theme
+ *
+ * @return boole -> TRUE when the new rules were loaded. FALSE without changing the cached theme
  */
 static boole _ui_theme_internal__load(const char *name, const desktop_settings_t *settings)
 {
@@ -220,8 +228,10 @@ static boole _ui_theme_internal__load(const char *name, const desktop_settings_t
 }
 
 /**
- * @brief selects a stylesheet without changing saved preferences.
+ * @brief selects a stylesheet without changing saved preferences
+ *
  * @param const char* name -> bounded local CSS filename
+ *
  * @return boole -> TRUE after a successful load
  */
 boole desktop_ui_theme__load(const char *name)
@@ -230,8 +240,10 @@ boole desktop_ui_theme__load(const char *name)
 }
 
 /**
- * @brief commits a validated theme only after the corresponding settings were saved.
+ * @brief commits a validated theme only after the corresponding settings were saved
+ *
  * @param const desktop_settings_t* settings -> candidate preferences
+ *
  * @return boole -> TRUE when both theme parsing and the settings write succeeded
  */
 boole desktop_ui_theme__save(const desktop_settings_t *settings)
@@ -240,7 +252,8 @@ boole desktop_ui_theme__save(const desktop_settings_t *settings)
 }
 
 /**
- * @brief clears application-owned theme storage after the GUI has stopped using the rules.
+ * @brief clears application owned theme storage after the GUI has stopped using the rules
+ *
  * @return void
  */
 void desktop_ui_theme__shutdown(void)

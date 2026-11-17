@@ -3,7 +3,7 @@
 
 #include "../definitions.h"
 
-// Sizes of the parts of the version 2 frame described in crypto_media.c.
+// sizes of the parts of the version 2 frame described in crypto_media.c
 #define MEDIA_FRAME_VERSION 2
 #define MEDIA_FRAME_HEADER 9 // 1 byte version + 8 bytes frame counter
 #define MEDIA_BODY_HEADER 12 // 4 bytes sender id + 8 bytes sender counter, inside the encrypted part

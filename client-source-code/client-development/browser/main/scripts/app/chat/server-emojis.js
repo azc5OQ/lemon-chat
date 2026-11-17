@@ -1,6 +1,6 @@
-// This file lets admins upload server emojis and loads their pictures when clients need them.
+// this file lets admins upload server emojis and loads their pictures when clients need them
 
-// Standard aliases match the built-in Unicode emoji names offered by the server.
+// standard aliases use the Unicode emoji names supplied by the server
 var server_emoji_unicode_aliases = Object.freeze(
 {
     like: "\ud83d\udc4d",
@@ -56,7 +56,7 @@ var server_emojis =
 };
 
 /**
- * @brief Connects the emoji settings controls and clears pictures after disconnection.
+ * @brief connects the emoji settings controls and clears pictures after disconnection
  */
 function server_emojis__setup()
 {
@@ -123,7 +123,7 @@ function server_emojis__setup()
 }
 
 /**
- * @brief Starts a fresh emoji list for the authenticated server connection.
+ * @brief starts a fresh emoji list for the authenticated server connection
  */
 function server_emojis__connected()
 {
@@ -136,13 +136,13 @@ function server_emojis__connected()
     server_emojis.generation = g_worker_connection_generation;
     if (typeof g_loopback_port === "number" && g_loopback_port > 0)
     {
-        // The background client may have received the list before this browser connected.
+        // the background client may have received the list before this browser connected
         connection__send_message_object({ message: { type: "load_server_emojis" } });
     }
 }
 
 /**
- * @brief Removes cached pictures and unfinished requests from the previous connection.
+ * @brief removes cached pictures and unfinished requests from the previous connection
  */
 function server_emojis__reset()
 {
@@ -173,7 +173,8 @@ function server_emojis__reset()
 }
 
 /**
- * @brief Returns available server emojis in name order without downloading pictures.
+ * @brief returns available server emojis in name order without downloading pictures
+ *
  * @return Array -> emoji identifiers and names
  */
 function server_emojis__get_entries()
@@ -185,8 +186,10 @@ function server_emojis__get_entries()
 }
 
 /**
- * @brief Finds the current name of an emoji on this server.
+ * @brief finds the current name of an emoji on this server
+ *
  * @param id -> server emoji identifier
+ *
  * @return string -> current name or null when unavailable
  */
 function server_emojis__name(id)
@@ -196,7 +199,8 @@ function server_emojis__name(id)
 }
 
 /**
- * @brief Shows a cached emoji or its name and waits until it is visible before loading it.
+ * @brief shows a cached emoji or its name and waits until it is visible before loading it
+ *
  * @param element -> destination for the picture
  * @param id -> server emoji identifier
  * @param fallback_name -> name kept in the encrypted reaction
@@ -243,7 +247,8 @@ function server_emojis__render_image(element, id, fallback_name)
 }
 
 /**
- * @brief Stops watching emoji placeholders before their controls are removed.
+ * @brief stops watching emoji placeholders before their controls are removed
+ *
  * @param container -> controls that are about to be removed
  */
 function server_emojis__forget_images(container)
@@ -263,13 +268,13 @@ function server_emojis__forget_images(container)
 }
 
 /**
- * @brief Fetches a visible emoji once while its image is missing.
+ * @brief fetches a visible emoji once while its image is missing
+ *
  * @param id -> server emoji identifier
  */
 function server_emojis__request_image(id)
 {
-    if (!g_is_authenticated || !server_emojis.entries.has(id) || server_emojis.entries.get(id).unicode || server_emojis.images.has(id)
-        || server_emojis.requested.has(id) || server_emojis.failed.has(id))
+    if (!g_is_authenticated || !server_emojis.entries.has(id) || server_emojis.entries.get(id).unicode || server_emojis.images.has(id) || server_emojis.requested.has(id) || server_emojis.failed.has(id))
     {
         return;
     }
@@ -278,7 +283,8 @@ function server_emojis__request_image(id)
 }
 
 /**
- * @brief Replaces visible placeholders after an image arrives or an emoji is removed.
+ * @brief replaces visible placeholders after an image arrives or an emoji is removed
+ *
  * @param id -> one changed emoji, or null for every displayed emoji
  */
 function server_emojis__refresh_images(id = null)
@@ -297,7 +303,7 @@ function server_emojis__refresh_images(id = null)
 }
 
 /**
- * @brief Refreshes reaction choices after the server's emoji list changes.
+ * @brief refreshes reaction choices after the server's emoji list changes
  */
 function server_emojis__notify_reactions()
 {
@@ -309,13 +315,13 @@ function server_emojis__notify_reactions()
 }
 
 /**
- * @brief Applies emoji lists, pictures and changes announced by the server.
+ * @brief applies emoji lists, pictures and changes announced by the server
+ *
  * @param message -> decrypted server message
  */
 function server_emojis__receive(message)
 {
-    if (!G_HAS_DOM || !g_is_authenticated || !server_emojis.connected
-        || server_emojis.generation !== g_worker_connection_generation)
+    if (!G_HAS_DOM || !g_is_authenticated || !server_emojis.connected || server_emojis.generation !== g_worker_connection_generation)
     {
         return;
     }
@@ -334,10 +340,7 @@ function server_emojis__receive(message)
         let entries = new Map();
         for (let entry of Array.isArray(message.emojis) ? message.emojis.slice(0, 256) : [])
         {
-            if (entry && typeof entry.id === "string" && typeof entry.name === "string"
-                && /^[a-f0-9]{32}$/.test(entry.id) && /^[a-z0-9_]{1,32}$/.test(entry.name)
-                && (entry.unicode == null || (typeof entry.unicode === "string" && entry.unicode.length > 0
-                    && entry.unicode.length <= 32 && !/[\u0000-\u001f\u007f]/.test(entry.unicode))))
+            if (entry && typeof entry.id === "string" && typeof entry.name === "string" && /^[a-f0-9]{32}$/.test(entry.id) && /^[a-z0-9_]{1,32}$/.test(entry.name) && (entry.unicode == null || (typeof entry.unicode === "string" && entry.unicode.length > 0 && entry.unicode.length <= 32 && !/[\u0000-\u001f\u007f]/.test(entry.unicode))))
             {
                 entries.set(entry.id, { id: entry.id, name: entry.name, unicode: entry.unicode || null });
             }
@@ -365,8 +368,7 @@ function server_emojis__receive(message)
             return;
         }
         server_emojis.requested.delete(id);
-        if (typeof message.base64 !== "string" || message.base64.length > 349558
-            || !/^data:image\/(png|jpeg|gif);base64,[A-Za-z0-9+/]+={0,2}$/.test(message.base64))
+        if (typeof message.base64 !== "string" || message.base64.length > 349558 || !/^data:image\/(png|jpeg|gif);base64,[A-Za-z0-9+/]+={0,2}$/.test(message.base64))
         {
             server_emojis.failed.add(id);
             return;
@@ -399,11 +401,7 @@ function server_emojis__receive(message)
     }
     else if (message.type === "server_emoji_added")
     {
-        if (typeof message.id !== "string" || typeof message.name !== "string"
-            || !/^[a-f0-9]{32}$/.test(message.id) || !/^[a-z0-9_]{1,32}$/.test(message.name)
-            || (message.unicode != null && (typeof message.unicode !== "string" || !message.unicode.length
-                || message.unicode.length > 32 || /[\u0000-\u001f\u007f]/.test(message.unicode)))
-            || (server_emojis.entries.size >= 256 && !server_emojis.entries.has(message.id)))
+        if (typeof message.id !== "string" || typeof message.name !== "string" || !/^[a-f0-9]{32}$/.test(message.id) || !/^[a-z0-9_]{1,32}$/.test(message.name) || (message.unicode != null && (typeof message.unicode !== "string" || !message.unicode.length || message.unicode.length > 32 || /[\u0000-\u001f\u007f]/.test(message.unicode))) || (server_emojis.entries.size >= 256 && !server_emojis.entries.has(message.id)))
         {
             return;
         }
@@ -452,7 +450,7 @@ function server_emojis__receive(message)
 }
 
 /**
- * @brief Opens the admin's emoji page without downloading pictures from other pages.
+ * @brief opens the admin's emoji page without downloading pictures from other pages
  */
 function server_emojis__open_admin()
 {
@@ -463,7 +461,7 @@ function server_emojis__open_admin()
 }
 
 /**
- * @brief Shows one page of uploaded emojis and the controls available to the admin.
+ * @brief shows one page of uploaded emojis and the controls available to the admin
  */
 function server_emojis__render_admin()
 {
@@ -492,8 +490,7 @@ function server_emojis__render_admin()
         server_emojis.saving = false;
     }
     document.getElementById("server-emojis-upload").disabled = !groups__has_permission("upload_emojis") || server_emojis.upload_name != null;
-    document.getElementById("server-emojis-save").disabled = !admin || server_settings_tab__save_pending()
-        || server_emojis.upload_name != null || server_emojis.deleting.size > 0;
+    document.getElementById("server-emojis-save").disabled = !admin || server_settings_tab__save_pending() || server_emojis.upload_name != null || server_emojis.deleting.size > 0;
     document.getElementById("server-emojis-previous").disabled = server_emojis.page === 0;
     document.getElementById("server-emojis-next").disabled = server_emojis.page >= pages - 1;
     document.getElementById("server-emojis-page").textContent = (server_emojis.page + 1) + " / " + pages;
@@ -552,7 +549,8 @@ function server_emojis__render_admin()
 }
 
 /**
- * @brief Checks the GIF header and rejects images larger than the emoji dimensions.
+ * @brief checks the GIF header and rejects images larger than the emoji dimensions
+ *
  * @param bytes -> complete GIF file
  */
 function server_emojis__check_gif(bytes)
@@ -571,8 +569,10 @@ function server_emojis__check_gif(bytes)
 }
 
 /**
- * @brief Prepares an emoji in a separate thread and keeps GIF animation intact.
+ * @brief prepares an emoji in a separate thread and keeps GIF animation intact
+ *
  * @param file -> selected image file
+ *
  * @return Promise -> image data URL within the server's emoji limits
  */
 async function server_emojis__prepare_image(file)
@@ -581,7 +581,8 @@ async function server_emojis__prepare_image(file)
 }
 
 /**
- * @brief Sends a named emoji after checking the image and the current admin connection.
+ * @brief sends a named emoji after checking the image and the current admin connection
+ *
  * @param event -> submission of the upload form
  */
 async function server_emojis__upload(event)
@@ -610,8 +611,7 @@ async function server_emojis__upload(event)
     try
     {
         let base64 = await server_emojis__prepare_image(file);
-        if (!g_is_authenticated || !groups__has_permission("upload_emojis") || generation !== g_worker_connection_generation
-            || server_emojis.upload_sequence !== sequence || server_emojis.upload_name !== name)
+        if (!g_is_authenticated || !groups__has_permission("upload_emojis") || generation !== g_worker_connection_generation || server_emojis.upload_sequence !== sequence || server_emojis.upload_name !== name)
         {
             return;
         }
@@ -630,9 +630,11 @@ async function server_emojis__upload(event)
 }
 
 /**
- * @brief Resolves named emoji in ordinary text, leaving URLs, code and escapes alone.
- * @param text Plain message text, never HTML.
- * @return Text and known emoji tokens in their original order.
+ * @brief resolves named emoji in ordinary text, leaving URLs, code and escapes alone
+ *
+ * @param text plain message text, never HTML
+ *
+ * @return text and known emoji tokens in their original order
  */
 function server_emojis__tokenize_message(text)
 {
@@ -678,8 +680,9 @@ function server_emojis__tokenize_message(text)
 }
 
 /**
- * @brief Decorates only text nodes in a message, without reparsing generated markup.
- * @param paragraph Message body or quoted text preview.
+ * @brief decorates only text nodes in a message, without reparsing generated markup
+ *
+ * @param paragraph message body or quoted text preview
  */
 function server_emojis__render_message(paragraph)
 {
@@ -706,9 +709,7 @@ function server_emojis__render_message(paragraph)
     {
         acceptNode: function(node)
         {
-            return node.nodeValue.includes(":") && node.parentElement
-                && !node.parentElement.closest("a, code, pre, script, style, textarea, [data-server-emoji-id], [contenteditable=true]")
-                ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+            return node.nodeValue.includes(":") && node.parentElement && !node.parentElement.closest("a, code, pre, script, style, textarea, [data-server-emoji-id], [contenteditable=true]") ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
         }
     });
     let nodes = [];
@@ -752,8 +753,9 @@ function server_emojis__render_message(paragraph)
 }
 
 /**
- * @brief Restores literal custom shortcodes before the message becomes editable.
- * @param paragraph Own message about to enter edit mode.
+ * @brief restores literal custom shortcodes before the message becomes editable
+ *
+ * @param paragraph own message about to enter edit mode
  */
 function server_emojis__prepare_message_edit(paragraph)
 {
@@ -765,7 +767,7 @@ function server_emojis__prepare_message_edit(paragraph)
 }
 
 /**
- * @brief Parses new messages and edits in one batch, independently of reactions or previews.
+ * @brief parses new messages and edits in one batch, independently of reactions or previews
  */
 function server_emojis__setup_chat()
 {
@@ -838,7 +840,7 @@ function server_emojis__setup_chat()
 }
 
 /**
- * @brief Resolves aliases when a newly received catalog makes earlier placeholders known.
+ * @brief resolves aliases when a newly received catalog makes earlier placeholders known
  */
 function server_emojis__refresh_messages()
 {

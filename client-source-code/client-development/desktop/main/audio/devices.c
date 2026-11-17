@@ -24,11 +24,13 @@ static void _devices_internal__worker(void *context);
 static void _devices_internal__append(desktop_device_catalog_t *catalog, ma_backend backend, const ma_device_info *info, boole capture);
 
 /**
- * @brief encodes only the active native ID field, excluding union padding and device display names.
+ * @brief encodes only the active native ID field, excluding union padding and device display names
+ *
  * @param ma_backend backend -> backend that supplied the ID
  * @param const ma_device_id* id -> borrowed native device ID
- * @param char* key -> destination; empty on failure
+ * @param char* key -> destination. Empty on failure
  * @param uint64 capacity -> actual destination capacity
+ *
  * @return boole -> TRUE for a supported, complete key
  */
 boole desktop_device_key__make(ma_backend backend, const ma_device_id *id, char *key, uint64 capacity)
@@ -169,11 +171,13 @@ boole desktop_device_key__make(ma_backend backend, const ma_device_id *id, char 
 }
 
 /**
- * @brief copies a bounded device record while enumeration storage is still valid.
+ * @brief copies a bounded device record while enumeration storage is still valid
+ *
  * @param desktop_device_catalog_t* catalog -> unpublished worker-owned catalog
  * @param ma_backend backend -> enumeration backend
  * @param const ma_device_info* info -> borrowed basic device information
  * @param boole capture -> TRUE for a microphone, FALSE for an output
+ *
  * @return void
  */
 static void _devices_internal__append(desktop_device_catalog_t *catalog, ma_backend backend, const ma_device_info *info, boole capture)
@@ -215,8 +219,10 @@ static void _devices_internal__append(desktop_device_catalog_t *catalog, ma_back
 }
 
 /**
- * @brief enumerates on a separate worker without opening recording or playback streams.
+ * @brief enumerates on a separate worker without opening recording or playback streams
+ *
  * @param void* context -> manager retained until this worker joins
+ *
  * @return void
  */
 static void _devices_internal__worker(void *context)
@@ -325,8 +331,10 @@ static void _devices_internal__worker(void *context)
 }
 
 /**
- * @brief creates a lazy device-enumeration worker; FALSE never accesses native audio APIs.
+ * @brief creates a lazy device enumeration worker. FALSE never accesses native audio APIs
+ *
  * @param boole native -> TRUE to allow native enumeration on request
+ *
  * @return desktop_devices_t* -> owned manager, or NULL
  */
 desktop_devices_t *desktop_devices__create(boole native)
@@ -362,8 +370,10 @@ desktop_devices_t *desktop_devices__create(boole native)
 }
 
 /**
- * @brief joins enumeration before freeing its catalog; callers must finish resolving devices first.
+ * @brief joins enumeration before freeing its catalog. Callers must finish resolving devices first
+ *
  * @param desktop_devices_t* devices -> owned manager, or NULL
+ *
  * @return void
  */
 void desktop_devices__destroy(desktop_devices_t *devices)
@@ -393,10 +403,12 @@ void desktop_devices__destroy(desktop_devices_t *devices)
 }
 
 /**
- * @brief copies a changed catalog and optionally requests an asynchronous refresh.
+ * @brief copies a changed catalog and optionally requests an asynchronous refresh
+ *
  * @param desktop_devices_t* devices -> live manager
- * @param desktop_devices_view_t* view -> caller-owned snapshot, or NULL to request only
- * @param boole refresh -> TRUE to refresh; concurrent requests coalesce
+ * @param desktop_devices_view_t* view -> caller owned snapshot, or NULL to request only
+ * @param boole refresh -> TRUE to refresh. Concurrent requests coalesce
+ *
  * @return boole -> TRUE when the snapshot changed
  */
 boole desktop_devices__view(desktop_devices_t *devices, desktop_devices_view_t *view, boole refresh)
@@ -424,12 +436,14 @@ boole desktop_devices__view(desktop_devices_t *devices, desktop_devices_view_t *
 }
 
 /**
- * @brief resolves a saved key only against devices actually enumerated in the requested direction.
+ * @brief resolves a saved key only against devices actually enumerated in the requested direction
+ *
  * @param desktop_devices_t* devices -> live manager
- * @param const char* key -> terminated saved key; never interpreted as a native path
+ * @param const char* key -> terminated saved key. Never interpreted as a native path
  * @param boole capture -> TRUE for input, FALSE for output
  * @param desktop_device_selection_t* selection -> native ID copied before releasing the catalog lock
- * @return boole -> TRUE for an exact match; missing devices never fall back silently
+ *
+ * @return boole -> TRUE for an exact match. Missing devices never fall back silently
  */
 boole desktop_devices__resolve(desktop_devices_t *devices, const char *key, boole capture, desktop_device_selection_t *selection)
 {

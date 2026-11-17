@@ -1,5 +1,5 @@
 #include "platform/memory.h"
-// Linux/macOS TCP WebSockets. One worker owns every libcurl operation for a connection.
+// Linux/macOS TCP WebSockets. One worker owns every libcurl operation for a connection
 #define _POSIX_C_SOURCE 200809L
 #include <curl/curl.h>
 #include <pthread.h>
@@ -36,7 +36,8 @@ static void *_transport_internal__worker(void *context);
 static boole _transport_internal__send(desktop_transport_t *transport, const char *bytes, uint64 size, boole binary, uint64 expires);
 
 /**
- * @brief initializes libcurl once and verifies that this build supports WebSockets.
+ * @brief initializes libcurl once and verifies that this build supports WebSockets
+ *
  * @return void
  */
 static void _transport_internal__initialize(void)
@@ -68,10 +69,12 @@ static void _transport_internal__initialize(void)
 }
 
 /**
- * @brief updates the visible connection state under the transport lock.
+ * @brief updates the visible connection state under the transport lock
+ *
  * @param desktop_transport_t* transport -> owned transport
  * @param desktop_transport_state_t state -> new state
  * @param const char* detail -> bounded status description
+ *
  * @return void
  */
 static void _transport_internal__status(desktop_transport_t *transport, desktop_transport_state_t state, const char *detail)
@@ -84,8 +87,10 @@ static void _transport_internal__status(desktop_transport_t *transport, desktop_
 }
 
 /**
- * @brief reads cancellation without exposing the worker's libcurl handle to another thread.
+ * @brief reads cancellation without exposing the worker's libcurl handle to another thread
+ *
  * @param desktop_transport_t* transport -> owned transport
+ *
  * @return boole -> nonzero when cancellation was requested
  */
 static boole _transport_internal__stopping(desktop_transport_t *transport)
@@ -100,12 +105,14 @@ static boole _transport_internal__stopping(desktop_transport_t *transport)
 }
 
 /**
- * @brief lets the connection handshake observe cancellation.
+ * @brief lets the connection handshake observe cancellation
+ *
  * @param void* context -> transport passed to libcurl
  * @param curl_off_t total_down -> unused transfer size
  * @param curl_off_t down -> unused transfer progress
  * @param curl_off_t total_up -> unused upload size
  * @param curl_off_t up -> unused upload progress
+ *
  * @return int -> nonzero to cancel the handshake
  */
 static int _transport_internal__progress(void *context, curl_off_t total_down, curl_off_t down, curl_off_t total_up, curl_off_t up)
@@ -121,8 +128,10 @@ static int _transport_internal__progress(void *context, curl_off_t total_down, c
 }
 
 /**
- * @brief connects, reassembles bounded messages and sends queued frames on one worker.
+ * @brief connects, reassembles bounded messages and sends queued frames on one worker
+ *
  * @param void* context -> transport that owns this worker
+ *
  * @return void* -> NULL after cleanup
  */
 static void *_transport_internal__worker(void *context)
@@ -318,7 +327,7 @@ static void *_transport_internal__worker(void *context)
                 result = CURLE_OK;
                 break;
             }
-            // control frames can occur between data fragments; they never enter message storage
+            // control frames can occur between data fragments. They never enter message storage
             if (frame->flags & (CURLWS_TEXT | CURLWS_BINARY))
             {
                 // check the message limit
@@ -391,7 +400,8 @@ label_finished:
 }
 
 /**
- * @brief creates a transport with bounded pending-message storage.
+ * @brief creates a transport with bounded pending message storage
+ *
  * @return desktop_transport_t* -> owned transport, or NULL on allocation/lock failure
  */
 desktop_transport_t *desktop_transport__create(void)
@@ -422,11 +432,20 @@ desktop_transport_t *desktop_transport__create(void)
 }
 
 /**
- * @brief requests cancellation without accessing libcurl from the calling thread.
+ * @brief requests cancellation without accessing libcurl from the calling thread
+ *
  * @param desktop_transport_t* transport -> owned transport
+ *
  * @return void
  */
 /* Requests cancellation without waiting. Destroy joins before releasing storage. */
+/**
+ * @brief requests that the connection worker stop
+ *
+ * @param desktop_transport_t* transport -> transport to stop, or null
+ *
+ * @return void
+ */
 void desktop_transport__disconnect(desktop_transport_t *transport)
 {
     // nothing to disconnect
@@ -442,8 +461,10 @@ void desktop_transport__disconnect(desktop_transport_t *transport)
 }
 
 /**
- * @brief cancels and joins the worker before releasing its buffers and lock.
+ * @brief cancels and joins the worker before releasing its buffers and lock
+ *
  * @param desktop_transport_t* transport -> owned transport
+ *
  * @return void
  */
 void desktop_transport__destroy(desktop_transport_t *transport)
@@ -470,12 +491,22 @@ void desktop_transport__destroy(desktop_transport_t *transport)
 }
 
 /**
- * @brief starts a validated TCP WebSocket connection when no worker is still running.
- * @param desktop_transport_t* transport -> owned transport; one caller controls connect/destroy
+ * @brief starts a validated TCP WebSocket connection when no worker is still running
+ *
+ * @param desktop_transport_t* transport -> owned transport. One caller controls connect/destroy
  * @param const char* url -> ws:// or wss:// endpoint
- * @return boole -> 1 when started; 0 on invalid input or a startup failure
+ *
+ * @return boole -> 1 when started. 0 on invalid input or a startup failure
  */
-/* Starts a worker; the GUI thread never performs a connection or receive. */
+/* Starts a worker. The GUI thread never performs a connection or receive. */
+/**
+ * @brief validates the address and starts a connection worker
+ *
+ * @param desktop_transport_t* transport -> transport with no active worker
+ * @param const char* url -> ws or wss address
+ *
+ * @return boole -> true when the worker starts, before connection success is known
+ */
 boole desktop_transport__connect(desktop_transport_t *transport, const char *url)
 {
     desktop_endpoint_t endpoint = { 0 };
@@ -538,9 +569,11 @@ boole desktop_transport__connect(desktop_transport_t *transport, const char *url
 }
 
 /**
- * @brief copies the current status under the transport lock.
+ * @brief copies the current status under the transport lock
+ *
  * @param desktop_transport_t* transport -> owned transport
  * @param desktop_transport_status_t* status -> destination status
+ *
  * @return void
  */
 void desktop_transport__status(desktop_transport_t *transport, desktop_transport_status_t *status)
@@ -553,23 +586,36 @@ void desktop_transport__status(desktop_transport_t *transport, desktop_transport
 }
 
 /**
- * @brief queues one bounded text message for the connection worker.
+ * @brief queues one bounded text message for the connection worker
+ *
  * @param desktop_transport_t* transport -> owned transport
  * @param const char* bytes -> message bytes
  * @param uint64 size -> message length
- * @return boole -> 1 when queued; 0 if disconnected, invalid or the queue is full
+ *
+ * @return boole -> 1 when queued. 0 if disconnected, invalid or the queue is full
  */
 /* Copies into a bounded queue. The connection worker owns all network operations. */
+/**
+ * @brief queues a text frame for the connection worker
+ *
+ * @param desktop_transport_t* transport -> transport that owns the output queue
+ * @param const char* bytes -> frame bytes to copy
+ * @param uint64 size -> frame byte count
+ *
+ * @return boole -> true when the queue accepts the frame
+ */
 boole desktop_transport__send(desktop_transport_t *transport, const char *bytes, uint64 size)
 {
     return _transport_internal__send(transport, bytes, size, FALSE, 0);
 }
 
 /**
- * @brief queues a binary media frame or empty keepalive for the sole socket worker.
+ * @brief queues a binary media frame or empty keepalive for the sole socket worker
+ *
  * @param desktop_transport_t* transport -> owned transport
- * @param const ubyte* bytes -> readable bytes; may be NULL for an empty frame
+ * @param const ubyte* bytes -> readable bytes. May be NULL for an empty frame
  * @param uint64 size -> bounded byte count
+ *
  * @return boole -> 1 when queued
  */
 boole desktop_transport__send_binary(desktop_transport_t *transport, const ubyte *bytes, uint64 size)
@@ -578,12 +624,14 @@ boole desktop_transport__send_binary(desktop_transport_t *transport, const ubyte
 }
 
 /**
- * @brief copies a complete message into the bounded outgoing queue.
+ * @brief copies a complete message into the bounded outgoing queue
+ *
  * @param desktop_transport_t* transport -> owned transport
  * @param const char* bytes -> readable message data, or NULL for an empty binary frame
  * @param uint64 size -> byte count
  * @param boole binary -> nonzero for binary framing
  * @param uint64 expires -> monotonic expiry, or zero for reliable delivery
+ *
  * @return boole -> 1 when the queue accepted the message
  */
 static boole _transport_internal__send(desktop_transport_t *transport, const char *bytes, uint64 size, boole binary, uint64 expires)
@@ -609,11 +657,13 @@ static boole _transport_internal__send(desktop_transport_t *transport, const cha
 }
 
 /**
- * @brief queues one live frame with a deadline shared with the Windows transport.
+ * @brief queues one live frame with a deadline shared with the Windows transport
+ *
  * @param desktop_transport_t* transport -> connected audio transport
  * @param const ubyte* bytes -> encrypted voice frame
  * @param uint64 size -> frame size
  * @param uint64 expires -> nonzero monotonic expiry
+ *
  * @return boole -> TRUE when queued
  */
 boole desktop_transport__send_media(desktop_transport_t *transport, const ubyte *bytes, uint64 size, uint64 expires)
@@ -622,8 +672,10 @@ boole desktop_transport__send_media(desktop_transport_t *transport, const ubyte 
 }
 
 /**
- * @brief drops unsent live frames while retaining reliable attachment messages.
+ * @brief drops unsent live frames while retaining reliable attachment messages
+ *
  * @param desktop_transport_t* transport -> owned audio transport
+ *
  * @return void
  */
 void desktop_transport__discard_media(desktop_transport_t *transport)
@@ -635,9 +687,11 @@ void desktop_transport__discard_media(desktop_transport_t *transport)
 }
 
 /**
- * @brief transfers the next received message to the protocol worker.
+ * @brief transfers the next received message to the protocol worker
+ *
  * @param desktop_transport_t* transport -> connected transport
- * @param desktop_message_t* message -> caller-owned output, released with desktop_message__release
+ * @param desktop_message_t* message -> caller owned output, released with desktop_message__release
+ *
  * @return boole -> 1 when available
  */
 boole desktop_transport__receive(desktop_transport_t *transport, desktop_message_t *message)

@@ -1,10 +1,10 @@
 // the shared part of the audio relay. a client's voice arrives over one of two connections, its
 // audio websocket (audio_websocket.c) or its webrtc data channel (audio_webrtc.c), and leaves over
-// whichever connection each receiver has: the websocket when one is attached, else the data channel.
+// whichever connection each receiver has: the websocket when one is attached, else the data channel
 // the music bot uses the same route. every frame is encrypted a second time on its way between a client
 // and the server, with that client's own keys (crypto_media.c explains why and how): here the sender's
 // encryption comes off, and every receiver gets the frame encrypted with the receiver's keys. the policy
-// helpers read the two "audio connections" settings, which govern the video websocket as well.
+// helpers read the two "audio connections" settings, which govern the video websocket as well
 #include "../definitions.h"
 #include <string.h>
 #include "../crypto/crypto_metadata.h"
@@ -31,9 +31,9 @@
 static void _audio_channel_internal__relay(uint64 sender_id, uint64 channel_id, const ubyte *body, uint64 body_size, boole is_music);
 
 /**
- * @brief Returns the connection choice shown in the server settings.
+ * @brief returns the connection choice shown in the server settings
  *
- * @return const char* -> static text: "both", "websocket", "webrtc", or "none"; do not free it.
+ * @return const char* -> static text: "both", "websocket", "webrtc", or "none"; do not free it
  */
 const char *audio_channel__policy_value(void)
 {
@@ -60,9 +60,9 @@ const char *audio_channel__policy_value(void)
 }
 
 /**
- * @brief Applies the allowed audio connections setting to connected clients.
+ * @brief applies the allowed audio connections setting to connected clients
  *
- * @details Closes disabled websocket connections. Clients with no allowed connection are marked as having audio disabled; the following policy broadcast lets them reconnect.
+ * @details Closes disabled websocket connections. Clients with no allowed connection are marked as having audio disabled; the following policy broadcast lets them reconnect
  *
  * @attention takes the clients write lock and the peers read lock
  *
@@ -119,8 +119,8 @@ void audio_channel__apply_policy_change(void)
 }
 
 /**
- * @brief Encrypts an audio body separately for each listener and sends it through their audio
- *        connection.
+ * @brief encrypts an audio body separately for each listener and sends it through their audio
+ *        connection
  *
  * @param uint64 sender_id -> original sender, excluded from the receivers
  * @param uint64 channel_id -> channel whose clients may receive the audio
@@ -128,7 +128,7 @@ void audio_channel__apply_policy_change(void)
  * @param uint64 body_size -> number of bytes in body
  * @param boole is_music -> TRUE for music-bot audio, FALSE for voice
  *
- * @attention The caller holds the clients, WebRTC peers, and channels read locks.
+ * @attention the caller holds the clients, WebRTC peers, and channels read locks
  *
  * @return void
  */
@@ -170,10 +170,10 @@ static void _audio_channel_internal__relay(uint64 sender_id, uint64 channel_id, 
 }
 
 /**
- * @brief Checks a voice frame's authentication, removes the sender's encryption, and relays it to
- *        the channel.
+ * @brief checks a voice frame's authentication, removes the sender's encryption, and relays it to
+ *        the channel
  *
- * @details Accepts either current audio connection. Frames from replaced sockets or data channels are dropped, including when the client slot has been reused.
+ * @details Accepts either current audio connection. Frames from replaced sockets or data channels are dropped, including when the client slot has been reused
  *
  * @param uint64 sender_id -> slot of the sending client
  * @param ws_cli_conn_t* socket -> the audio websocket the frame arrived on, or NULL_POINTER
@@ -249,8 +249,8 @@ done:
 }
 
 /**
- * @brief Stops clients whose talk power no longer meets their channel's requirement.
- * @attention The caller holds only the clients write lock.
+ * @brief stops clients whose talk power no longer meets their channel's requirement
+ * @attention the caller holds only the clients write lock
  */
 void audio_channel__apply_permission_changes(void)
 {
@@ -360,18 +360,16 @@ void audio_channel__process_client_disconnect(client_t *client)
 }
 
 /**
- * @brief Encrypts and relays a music bot Opus frame to clients in its channel. The server music
- *        setting and channel audio setting must both allow it.
+ * @brief encrypts and relays a frame from the current music bot song
  *
- * @details The body is [4B bot id][8B counter][2B sequence, little endian][Opus]. The sequence and Opus bytes use the bot and server key layers; their counter blocks use the bot id and packet counter. Each receiver gets its own encrypted copy.
- *
- * @param uint64 sender_music_bot_client_id -> client id of the music bot the frame came from, written into the frame header so a receiver can feed each bot its own decoder
- * @param uint64 channel_id -> the channel whose peers receive the frame
- * @param uint64 sequence_number -> frame counter, only its low 16 bits are sent, letting receivers reorder frames that the unordered datachannel scrambled and detect losses
- * @param ubyte* data -> the opus payload to relay
- * @param uint64 data_length -> length of the opus payload in bytes
- *
- * @note takes the clients, peers and channels read locks for the whole relay loop
+ * @param uint64 sender_music_bot_client_id -> bot whose keys encrypt the frame
+ * @param uint64 channel_id -> channel receiving the frame
+ * @param uint64 sequence_number -> frame sequence whose low 16 bits are sent
+ * @param ubyte* data -> Opus payload to relay
+ * @param uint64 data_length -> payload length in bytes
+ * @param uint64 song_index -> playlist slot that produced the frame
+ * @param uint64 song_generation -> slot generation used to reject removed or replaced songs
+ * @note holds the clients, peers and channels read locks during relay
  *
  * @return void
  */
@@ -395,7 +393,7 @@ void audio_channel__send_music_bot_data(uint64 sender_music_bot_client_id, uint6
     clib__read_lock(&g_webrtc_peers_rwlock_guard);
     clib__read_lock(&g_channels_global_rwlock_guard);
 
-    // a queued music frame can retain an old channel id across a live shrink.
+    // a queued music frame can retain an old channel id across a live shrink
     // check the current array bound while the resize locks keep it stable
     if (channel_id < g_server_settings.max_channel_count && g_server_settings.is_music_bot_audio_active == TRUE && g_channel_array[channel_id].is_existing == TRUE && g_channel_array[channel_id].is_audio_enabled == TRUE && g_clients_array[sender_music_bot_client_id].is_existing == TRUE && g_clients_array[sender_music_bot_client_id].is_music_bot == TRUE && song_index < MUSIC_BOT_MAX_FILE_COUNT && g_clients_array[sender_music_bot_client_id].music_bot_client_extension.songs[song_index].is_existing && g_clients_array[sender_music_bot_client_id].music_bot_client_extension.songs[song_index].generation == song_generation && g_clients_array[sender_music_bot_client_id].channel_id == channel_id)
     {

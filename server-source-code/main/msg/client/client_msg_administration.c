@@ -1,5 +1,5 @@
 #include "../../clib/clib_vector.h"
-// This file checks administrator requests for passwords, bans, groups, icons, identities and logs.
+// this file checks administrator requests for passwords, bans, groups, icons, identities and logs
 #include "client_msg.h"
 #include "../../core/permissions.h"
 #include "../../core/audio_channel.h"
@@ -27,7 +27,8 @@ static boole _client_msg_administration_internal__is_kick_ban_request_valid(cJSO
 static void _client_msg_administration_internal__refresh_guest_membership(client_t *client);
 
 /**
- * @brief Updates Guest membership and tells connected clients when it changes.
+ * @brief updates Guest membership and tells connected clients when it changes
+ *
  * @param client -> client being updated with the clients and groups locks held
  */
 static void _client_msg_administration_internal__refresh_guest_membership(client_t *client)
@@ -69,8 +70,10 @@ static void _client_msg_administration_internal__refresh_guest_membership(client
 }
 
 /**
- * @brief Checks that an admin-password request contains a nonempty password within the size limit.
+ * @brief checks that an admin-password request contains a nonempty password within the size limit
+ *
  * @param cJSON* json_root -> parsed client request
+ *
  * @return boole -> TRUE when the password field is valid; this does not check the password itself
  */
 static boole _client_msg_administration_internal__is_admin_password_message_valid(cJSON *json_root)
@@ -379,7 +382,7 @@ static boole _client_msg_administration_internal__is_add_group_to_client_valid(c
 }
 
 /**
- * @brief Checks permission and adds a group to a connected client.
+ * @brief checks permission and adds a group to a connected client
  *
  * @param cJSON* json_root -> the parsed client request
  * @param uint64 sender_client_id -> id of the client that sent the request
@@ -424,7 +427,7 @@ void client_msg__administration__process_add_group_to_client_message(cJSON *json
     // lock the groups
     clib__read_lock(&g_groups_global_rwlock_guard);
 
-    // check if the client that sent the message is valid: connected and existing.
+    // check if the client that sent the message is valid: connected and existing
     // this was checked before but not within write lock like here
     client = &g_clients_array[sender_client_id];
 
@@ -483,11 +486,7 @@ void client_msg__administration__process_add_group_to_client_message(cJSON *json
         goto label_client_msg__process_add_group_to_client_message_end;
     }
 
-    // at this point following is clear
-    // - client has a permission to add this group id
-    // - receiving client exists and doesn't have that group id yet
-    // - group id is valid (exists)
-    // - all that is left is to add that group id to the client, and make the client admin if the group id happens to be admin
+    // apply the validated group assignment
     if (!clib__int_vector_push(&client_to_add_group_to->group_ids, json_group_id->valueint))
     {
         goto label_client_msg__process_add_group_to_client_message_end;
@@ -592,7 +591,7 @@ static boole _client_msg_administration_internal__is_remove_group_from_client_va
 }
 
 /**
- * @brief Checks permission and removes a group from a connected client.
+ * @brief checks permission and removes a group from a connected client
  *
  * @param cJSON* json_root -> the parsed client request
  * @param uint64 sender_client_id -> id of the client that sent the request
@@ -638,7 +637,7 @@ void client_msg__administration__process_remove_group_from_client_message(cJSON 
     // lock the groups
     clib__read_lock(&g_groups_global_rwlock_guard);
 
-    // check if the client that sent the message is valid: connected and existing.
+    // check if the client that sent the message is valid: connected and existing
     // this was checked before but not within write lock like here
     client = &g_clients_array[sender_client_id];
 
@@ -697,11 +696,7 @@ void client_msg__administration__process_remove_group_from_client_message(cJSON 
         goto label_client_msg__process_remove_group_from_client_message_end;
     }
 
-    // at this point following is clear
-    // - client has a permission to remove this group id
-    // - receiving client exists and has that group id
-    // - group id is valid (exists)
-    // - all that is left is to remove that group id from client, and revoke admin if group id happens to be admin
+    // remove the validated group assignment
     group_id_index = server_admin__get_index_of_group_id_of_client(json_client_id_to_remove_group_id_from->valueint, json_group_id->valueint);
 
     if (group_id_index != -1)
@@ -781,7 +776,7 @@ static boole _client_msg_administration_internal__is_process_server_settings_ico
     // read the icon length
     base64_icon_length = clib__utf8_string_length(base64_icon_value->valuestring);
 
-    // the raw-bytes setting caps the upload: base64 is ~4/3 of raw plus a small data-url prefix.
+    // the raw-bytes setting caps the upload: base64 is ~4/3 of raw plus a small data-url prefix
     // the store buffer ceiling stays as the hard limit behind it
     max_base64_length = (uint64)((g_server_settings.icon_max_size_bytes * 4) / 3) + 64;
     if (base64_icon_length >= ICON_MAX_LENGTH || base64_icon_length > max_base64_length || base64_icon_length < 64)
@@ -794,7 +789,7 @@ static boole _client_msg_administration_internal__is_process_server_settings_ico
 }
 
 /**
- * @brief Checks permission and stores a new server icon.
+ * @brief checks permission and stores a new server icon
  *
  * @param cJSON* json_root -> the parsed client request
  * @param uint64 sender_client_id -> id of the client that sent the request
@@ -859,7 +854,7 @@ void client_msg__administration__process_icon_upload(cJSON *json_root, uint64 se
         goto label_client_msg__process_server_settings_icon_upload_end;
     }
 
-    // sender has necessary permission to upload new icon.
+    // sender has necessary permission to upload new icon
     // find out if there is free slot for icon in the array
     for (icon_index = 0; icon_index < MAX_ICONS; icon_index++)
     {
@@ -956,7 +951,7 @@ static boole _client_msg_administration_internal__is_process_server_settings_add
 }
 
 /**
- * @brief Creates a group using the selected permission preset.
+ * @brief creates a group using the selected permission preset
  *
  * @param cJSON* json_root -> the parsed client request
  * @param uint64 sender_client_id -> id of the client that sent the request
@@ -1063,9 +1058,7 @@ void client_msg__administration__process_add_group(cJSON *json_root, uint64 send
         goto label_client_msg__process_server_settings_add_new_group_end;
     }
 
-    // at this point client is verified, icon id is correct, newly_added_group length is correct
-    // start at index 1: id 0 is ADMIN_GROUP_ID (reserved for the admin group). a user group at id 0 would collide
-    // with it - adding it would grant admin, and adding/removing it would add/remove the admin group
+    // start above ADMIN_GROUP_ID so a new group cannot grant admin rights
     for (group_index = 1; group_index < MAX_GROUPS; group_index++)
     {
         group_in_loop = &g_groups_array[group_index];
@@ -1119,9 +1112,8 @@ label_client_msg__process_server_settings_add_new_group_end:
 }
 
 /**
- * @brief Checks permission to delete a group from the server's group pool. the group is stripped
- *        from every client that currently holds it, its pool slot is freed, and all clients are
- *        told to remove it. the admin group (ADMIN_GROUP_ID) can never be deleted this way.
+ * @brief checks permission, removes the group and its live memberships, then broadcasts deletion
+ *        the reserved admin group cannot be deleted
  *
  * @param cJSON* json_root -> the parsed client request
  * @param uint64 sender_client_id -> id of the client that sent the request
@@ -1244,7 +1236,7 @@ label_client_msg__process_set_server_settings_delete_group_end:
 
 /**
  * @brief admin asks for the identity-management list; replies with every stored identity (hash, its
- *        groups, and whether it is currently online). Requires permission to view group members.
+ *        groups, and whether it is currently online). Requires permission to view group members
  *
  * @param cJSON* json_root -> the parsed request (no fields needed beyond type)
  * @param uint64 sender_client_id -> the requesting client
@@ -1283,12 +1275,8 @@ label_client_msg__process_request_identity_list_end:
 }
 
 /**
- * @brief admin-only, deletes one stored identity addressed by its public-key hash
- *
- *        the identity leaves the RAM store. if its holder is connected right now, their groups are
- *        stripped and admin is revoked on the live client, and each removal is broadcast one event
- *        at a time because there is no multi-group-removal event. the on-disk copy is only dropped on
- *        the next "save server settings". the requesting admin then gets a refreshed identity list.
+ * @brief deletes a stored identity and revokes its live groups and admin status
+ *        only admins may request this. Disk removal waits for the next settings save
  *
  * @param cJSON* json_root -> the parsed request; message.public_key_hash identifies the identity
  * @param uint64 sender_client_id -> the requesting client
@@ -1431,12 +1419,8 @@ label_client_msg__process_delete_identity_end:
 }
 
 /**
- * @brief Checks permission to add or remove a group from a saved identity, working on offline
- *        identities too
- *
- *        the store is updated, and if the identity's holder is connected right now the group is
- *        added or removed live on them and broadcast. persistence to disk waits for the next
- *        "save server settings". the requesting admin then gets a refreshed identity list.
+ * @brief checks permission and updates a saved identity's group, including any live holder
+ *        disk persistence waits for the next settings save
  *
  * @param cJSON* json_root -> message.public_key_hash, message.group_id, message.add (bool)
  * @param uint64 sender_client_id -> the requesting client
@@ -1627,8 +1611,8 @@ label_modify_identity_group_end:
 }
 
 /**
- * @brief Checks permission to delete an icon from the server's icon pool. groups that still
- *        reference the deleted icon keep their icon_id, but their image no longer resolves.
+ * @brief checks permission to delete an icon from the server's icon pool. groups that still
+ *        reference the deleted icon keep their icon_id, but their image no longer resolves
  *
  * @param cJSON* json_root -> the parsed client request
  * @param uint64 sender_client_id -> id of the client that sent the request
@@ -1705,9 +1689,7 @@ label_client_msg__process_set_server_settings_delete_icon_end:
 }
 
 /**
- * @brief Checks permission to change a group's icon. an icon_id in the message assigns that icon
- *        (it must exist); an absent icon_id clears the group's icon. the change is broadcast to all
- *        clients.
+ * @brief checks permission and broadcasts a group icon change. Omitted icon_id clears it
  *
  * @param cJSON* json_root -> the parsed client request
  * @param uint64 sender_client_id -> id of the client that sent the request
@@ -1819,7 +1801,7 @@ label_client_msg__process_set_server_settings_set_group_icon_end:
 }
 
 /**
- * @brief Checks permission to read the server log and replies with every stored line, oldest first.
+ * @brief checks permission to read the server log and replies with every stored line, oldest first
  *        only an authenticated admin gets a reply - anyone else is silently ignored
  *
  * @param cJSON* json_root -> the parsed client request
@@ -1862,10 +1844,7 @@ void client_msg__administration__process_admin_log_request(cJSON *json_root, uin
 }
 
 /**
- * @brief processes an admin request to clear the admin log. the clearing itself becomes the first
- *        line of the fresh log, so with several admins it stays visible who emptied it. the
- *        refreshed log is sent back right away. Other clients receive an insufficient permissions
- *        alert
+ * @brief clears the admin log, records who cleared it, and returns the new log to the admin
  *
  * @param cJSON* json_root -> the parsed client request
  * @param uint64 sender_client_id -> id of the client that sent the request
@@ -1943,7 +1922,7 @@ static boole _client_msg_administration_internal__is_kick_ban_request_valid(cJSO
 }
 
 /**
- * @brief Checks kick permission and protection before disconnecting a client.
+ * @brief checks kick permission and protection before disconnecting a client
  *
  * @param cJSON* json_root -> the parsed client request
  * @param uint64 sender_client_id -> id of the client that sent the request
@@ -1978,7 +1957,7 @@ void client_msg__administration__process_kick_request(cJSON *json_root, uint64 s
         return;
     }
 
-    // check if the client that sent the message is valid: connected and existing.
+    // check if the client that sent the message is valid: connected and existing
     // this was checked before but not within write lock like here
     admin = &g_clients_array[sender_client_id];
 
@@ -2013,7 +1992,7 @@ label_client_msg__process_kick_request_end:
 }
 
 /**
- * @brief Checks ban permission and protection before banning a client.
+ * @brief checks ban permission and protection before banning a client
  *
  * @param cJSON* json_root -> the parsed client request
  * @param uint64 sender_client_id -> id of the client that sent the request
@@ -2051,7 +2030,7 @@ void client_msg__administration__process_ban_request(cJSON *json_root, uint64 se
         return;
     }
 
-    // check if the client that sent the message is valid: connected and existing.
+    // check if the client that sent the message is valid: connected and existing
     // this was checked before but not within write lock like here
     admin = &g_clients_array[sender_client_id];
 
@@ -2115,7 +2094,7 @@ label_client_msg__process_ban_request_end:
 }
 
 /**
- * @brief Removes all bans for an IP address only when the changed list can be persisted.
+ * @brief removes all bans for an IP address only when the changed list can be persisted
  *
  * @param cJSON* json_root -> the parsed client request
  * @param uint64 sender_client_id -> id of the client that sent the request
@@ -2211,7 +2190,7 @@ void client_msg__administration__process_remove_ban_request(cJSON *json_root, ui
 }
 
 /**
- * @brief Sends connection details only when the sender has permission to view them.
+ * @brief sends connection details only when the sender has permission to view them
  *
  * @param cJSON* json_root -> the parsed client request
  * @param uint64 sender_client_id -> id of the client that sent the request
@@ -2271,7 +2250,8 @@ label_client_msg__process_get_client_info_request_end:
 }
 
 /**
- * @brief Checks and applies permission changes to an existing group.
+ * @brief checks and applies permission changes to an existing group
+ *
  * @param json_root -> request containing the group and all permission values
  * @param sender_client_id -> client requesting the change
  */
@@ -2367,7 +2347,8 @@ void client_msg__administration__process_set_group_permissions(cJSON *json_root,
 }
 
 /**
- * @brief Changes a group's display name after checking its protection.
+ * @brief changes a group's display name after checking its protection
+ *
  * @param json_root -> request containing group_id and group_name
  * @param sender_client_id -> client requesting the change
  */
@@ -2433,7 +2414,8 @@ label_rename_group_end:
 }
 
 /**
- * @brief Saves current group changes without accepting changes to server settings.
+ * @brief saves current group changes without accepting changes to server settings
+ *
  * @param json_root -> request with no additional fields
  * @param sender_client_id -> client requesting the save
  */

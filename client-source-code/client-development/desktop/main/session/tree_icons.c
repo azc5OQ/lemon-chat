@@ -12,7 +12,7 @@ typedef struct desktop_svg_allocation_t
     uint64 capacity;
 } desktop_svg_allocation_t;
 
-// Each decoder thread has a bounded, short-lived allocation ledger for NanoSVG.
+// each decoder thread has a bounded, short lived allocation ledger for NanoSVG
 #ifdef _MSC_VER
 #define DESKTOP_TREE_LOCAL __declspec(thread)
 #else
@@ -31,7 +31,7 @@ static void _tree_icons_internal__release(void *pointer);
 static void *_tree_icons_internal__resize(void *pointer, uint64 capacity);
 static boole _tree_icons_internal__svg(char *source, ubyte *pixels);
 
-// Private copies of the unchanged Meek decoders; no callbacks, scripts or external resources.
+// private copies of the unchanged Meek decoders. No callbacks, scripts or external resources
 #define nuint meek_ui_nuint
 #define nint meek_ui_nint
 #define NSVG_MALLOC _tree_icons_internal__allocate
@@ -51,7 +51,8 @@ static boole _tree_icons_internal__svg(char *source, ubyte *pixels);
 #undef nuint
 
 /**
- * @brief stops the private decoder before it can use a failed allocation.
+ * @brief stops the private decoder before it can use a failed allocation
+ *
  * @return void
  */
 static void _tree_icons_internal__abort(void)
@@ -64,8 +65,10 @@ static void _tree_icons_internal__abort(void)
 }
 
 /**
- * @brief bounds temporary SVG allocations and records their complete capacity for erasure.
+ * @brief bounds temporary SVG allocations and records their complete capacity for erasure
+ *
  * @param uint64 capacity -> requested bytes from the vendor decoder
+ *
  * @return void* -> cleared allocation, or NULL when the 8 MiB budget is exhausted
  */
 static void *_tree_icons_internal__allocate(uint64 capacity)
@@ -103,8 +106,10 @@ static void *_tree_icons_internal__allocate(uint64 capacity)
 }
 
 /**
- * @brief wipes one tracked vendor allocation before releasing it.
+ * @brief wipes one tracked vendor allocation before releasing it
+ *
  * @param void* pointer -> owned pointer, or NULL
+ *
  * @return void
  */
 static void _tree_icons_internal__release(void *pointer)
@@ -132,10 +137,12 @@ static void _tree_icons_internal__release(void *pointer)
 }
 
 /**
- * @brief grows a vendor buffer without leaving the old capacity unwiped.
+ * @brief grows a vendor buffer without leaving the old capacity unwiped
+ *
  * @param void* pointer -> tracked old allocation, or NULL
  * @param uint64 capacity -> new capacity
- * @return void* -> replacement on success; old allocation remains owned on failure
+ *
+ * @return void* -> replacement on success. Old allocation remains owned on failure
  */
 static void *_tree_icons_internal__resize(void *pointer, uint64 capacity)
 {
@@ -169,9 +176,11 @@ static void *_tree_icons_internal__resize(void *pointer, uint64 capacity)
 }
 
 /**
- * @brief rasterizes a bounded vector icon into a fixed transparent 32-pixel square.
+ * @brief rasterizes a bounded vector icon into a fixed transparent 32 pixel square
+ *
  * @param char* source -> mutable, terminated source no larger than 64 KiB
- * @param ubyte* pixels -> cleared 4096-byte output
+ * @param ubyte* pixels -> cleared 4096 byte output
+ *
  * @return boole -> TRUE when dimensions, geometry and resource budgets were accepted
  */
 static boole _tree_icons_internal__svg(char *source, ubyte *pixels)
@@ -261,11 +270,13 @@ label_finished:
 }
 
 /**
- * @brief decodes only inline server icons, with byte, geometry and allocation limits.
+ * @brief decodes only inline server icons, with byte, geometry and allocation limits
+ *
  * @param const char* data -> borrowed data URI from the authenticated server
- * @param ubyte* pixels -> caller-owned 32x32 RGBA output
+ * @param ubyte* pixels -> caller owned 32x32 RGBA output
  * @param uint64 capacity -> actual output capacity
- * @return boole -> TRUE on complete decoding; no network or filesystem access occurs
+ *
+ * @return boole -> TRUE on complete decoding. No network or filesystem access occurs
  */
 boole desktop_tree_icons__decode(const char *data, ubyte *pixels, uint64 capacity)
 {
@@ -343,10 +354,12 @@ label_finished:
 }
 
 /**
- * @brief loads one packaged country flag; a country code cannot select an arbitrary path.
+ * @brief loads one packaged country flag. A country code cannot select an arbitrary path
+ *
  * @param const char* country -> exactly two lowercase ASCII letters
- * @param ubyte* pixels -> caller-owned RGBA output
+ * @param ubyte* pixels -> caller owned RGBA output
  * @param uint64 capacity -> output capacity, at least 4096 bytes
+ *
  * @return boole -> TRUE when the bundled flag was rasterized
  */
 boole desktop_tree_icons__flag(const char *country, ubyte *pixels, uint64 capacity)

@@ -1,5 +1,5 @@
 #include "../clib/clib.h"
-// This file stores the server emojis that users can choose as chat reactions.
+// this file stores the server emojis that users can choose as chat reactions
 #include "emojis.h"
 #include "../util.h"
 #include <mbedtls/base64.h>
@@ -38,8 +38,11 @@ static cstring _emojis_internal__store(cstring name, cstring base64, cstring uni
 static cJSON *_emojis_internal__array(boole include_images);
 
 /**
- * @brief Checks the lowercase name used to find an emoji.
- * @param name Name containing one to 32 letters, digits or underscores.
+ * @brief checks the lowercase name used to find an emoji
+ *
+ * @param name Name containing one to 32 letters, digits or underscores
+ *
+ * @return boole -> TRUE if the name meets the character and length limits, otherwise FALSE
  */
 static boole _emojis_internal__name_valid(cstring name)
 {
@@ -65,8 +68,11 @@ static boole _emojis_internal__name_valid(cstring name)
 }
 
 /**
- * @brief Checks an emoji identifier before looking it up.
- * @param id Identifier containing exactly 32 lowercase hexadecimal characters.
+ * @brief checks an emoji identifier before looking it up
+ *
+ * @param id Identifier containing exactly 32 lowercase hexadecimal characters
+ *
+ * @return boole -> TRUE for exactly 32 lowercase hexadecimal characters, otherwise FALSE
  */
 boole emojis__is_id_valid(cstring id)
 {
@@ -92,8 +98,11 @@ boole emojis__is_id_valid(cstring id)
 }
 
 /**
- * @brief Reads four image header bytes as an unsigned number.
- * @param bytes Four bytes stored with the largest part first.
+ * @brief reads four image header bytes as an unsigned number
+ *
+ * @param bytes Four bytes stored with the largest part first
+ *
+ * @return uint64 -> unsigned value represented by the four bytes
  */
 static uint64 _emojis_internal__read_be32(const ubyte *bytes)
 {
@@ -101,9 +110,12 @@ static uint64 _emojis_internal__read_be32(const ubyte *bytes)
 }
 
 /**
- * @brief Checks PNG dimensions, chunk lengths and checksums and rejects animation.
- * @param bytes Decoded PNG file.
- * @param length Number of bytes available.
+ * @brief checks PNG dimensions, chunk lengths and checksums and rejects animation
+ *
+ * @param bytes Decoded PNG file
+ * @param length Number of bytes available
+ *
+ * @return boole -> TRUE if the static PNG passes these structural checks, otherwise FALSE
  */
 static boole _emojis_internal__png_valid(const ubyte *bytes, uint64 length)
 {
@@ -208,9 +220,12 @@ static boole _emojis_internal__png_valid(const ubyte *bytes, uint64 length)
 }
 
 /**
- * @brief Checks JPEG frame dimensions and complete segment boundaries before image data.
- * @param bytes Decoded JPEG file.
- * @param length Number of bytes available.
+ * @brief checks JPEG frame dimensions and complete segment boundaries before image data
+ *
+ * @param bytes Decoded JPEG file
+ * @param length Number of bytes available
+ *
+ * @return boole -> TRUE if the JPEG headers and dimensions pass these checks, otherwise FALSE
  */
 static boole _emojis_internal__jpeg_valid(const ubyte *bytes, uint64 length)
 {
@@ -289,10 +304,13 @@ static boole _emojis_internal__jpeg_valid(const ubyte *bytes, uint64 length)
 }
 
 /**
- * @brief Checks that every GIF data block fits inside the file.
- * @param bytes Decoded GIF file.
- * @param length Number of bytes available.
- * @param offset First block size on entry and position after the last block on return.
+ * @brief checks that every GIF data block fits inside the file
+ *
+ * @param bytes Decoded GIF file
+ * @param length Number of bytes available
+ * @param offset First block size on entry and position after the last block on return
+ *
+ * @return boole -> TRUE after a complete block terminator, otherwise FALSE
  */
 static boole _emojis_internal__gif_blocks_valid(const ubyte *bytes, uint64 length, uint64 *offset)
 {
@@ -316,9 +334,12 @@ static boole _emojis_internal__gif_blocks_valid(const ubyte *bytes, uint64 lengt
 }
 
 /**
- * @brief Checks GIF dimensions, frame count and block lengths without changing its animation.
- * @param bytes Decoded GIF file.
- * @param length Number of bytes available.
+ * @brief checks GIF dimensions, frame count and block lengths without changing its animation
+ *
+ * @param bytes Decoded GIF file
+ * @param length Number of bytes available
+ *
+ * @return boole -> TRUE if the GIF structure and frame limits pass these checks, otherwise FALSE
  */
 static boole _emojis_internal__gif_valid(const ubyte *bytes, uint64 length)
 {
@@ -464,8 +485,11 @@ static boole _emojis_internal__gif_valid(const ubyte *bytes, uint64 length)
 }
 
 /**
- * @brief Checks the image data URL, decoded size and file structure before storing it.
- * @param base64 Image data URL supplied by an administrator or saved settings.
+ * @brief checks the image data URL, decoded size and file structure before storing it
+ *
+ * @param base64 Image data URL supplied by an administrator or saved settings
+ *
+ * @return boole -> TRUE if the supported image passes validation, otherwise FALSE
  */
 static boole _emojis_internal__image_valid(cstring base64)
 {
@@ -581,8 +605,11 @@ static boole _emojis_internal__image_valid(cstring base64)
 }
 
 /**
- * @brief Checks whether saved text is one of the supplied default emojis.
- * @param unicode Emoji text read from saved settings.
+ * @brief checks whether saved text is one of the supplied default emojis
+ *
+ * @param unicode Emoji text read from saved settings
+ *
+ * @return boole -> TRUE if the text matches a supplied default emoji, otherwise FALSE
  */
 static boole _emojis_internal__unicode_valid(cstring unicode)
 {
@@ -606,8 +633,11 @@ static boole _emojis_internal__unicode_valid(cstring unicode)
 }
 
 /**
- * @brief Creates an identifier that stays with the emoji when settings are saved.
- * @param id Output buffer with room for 33 characters.
+ * @brief creates an identifier that stays with the emoji when settings are saved
+ *
+ * @param id Output buffer with room for 33 characters
+ *
+ * @return boole -> TRUE after writing the identifier, otherwise FALSE if random generation fails
  */
 static boole _emojis_internal__new_id(char *id)
 {
@@ -632,13 +662,15 @@ static boole _emojis_internal__new_id(char *id)
 }
 
 /**
- * @brief Stores an emoji under a unique name and identifier.
- * @param name Emoji name.
- * @param base64 Image data URL or NULL for a text emoji.
- * @param unicode Default emoji text or NULL for an image.
- * @param id Stable identifier that will be saved with the emoji.
- * @param enforce_budget New uploads obey the aggregate budget; existing saved images still restore.
- * @return Error description or NULL on success.
+ * @brief stores an emoji under a unique name and identifier
+ *
+ * @param name Emoji name
+ * @param base64 Image data URL or NULL for a text emoji
+ * @param unicode Default emoji text or NULL for an image
+ * @param id Stable identifier that will be saved with the emoji
+ * @param enforce_budget New uploads obey the aggregate budget; existing saved images still restore
+ *
+ * @return Error description or NULL on success
  */
 static cstring _emojis_internal__store(cstring name, cstring base64, cstring unicode, cstring id, boole enforce_budget)
 {
@@ -740,11 +772,13 @@ static cstring _emojis_internal__store(cstring name, cstring base64, cstring uni
 }
 
 /**
- * @brief Creates a stable random identifier and adds an uploaded emoji.
- * @param name Unique lowercase emoji name.
- * @param base64 PNG, JPEG or GIF data URL.
- * @param id Output buffer with room for 33 characters.
- * @return Error description or NULL on success.
+ * @brief creates a stable random identifier and adds an uploaded emoji
+ *
+ * @param name Unique lowercase emoji name
+ * @param base64 PNG, JPEG or GIF data URL
+ * @param id Output buffer with room for 33 characters
+ *
+ * @return Error description or NULL on success
  */
 cstring emojis__add(cstring name, cstring base64, char *id)
 {
@@ -759,8 +793,11 @@ cstring emojis__add(cstring name, cstring base64, char *id)
 }
 
 /**
- * @brief Deletes one emoji without changing other emoji identifiers.
- * @param id Identifier supplied by the administrator.
+ * @brief deletes one emoji without changing other emoji identifiers
+ *
+ * @param id Identifier supplied by the administrator
+ *
+ * @return boole -> TRUE if a matching emoji was removed, otherwise FALSE
  */
 boole emojis__remove(cstring id)
 {
@@ -794,8 +831,11 @@ boole emojis__remove(cstring id)
 }
 
 /**
- * @brief Copies the emoji list for a message or saved settings.
- * @param include_images TRUE includes image data for saving.
+ * @brief copies the emoji list for a message or saved settings
+ *
+ * @param include_images TRUE includes image data for saving
+ *
+ * @return cJSON* -> new array for the caller to free, or NULL if the array cannot be allocated
  */
 static cJSON *_emojis_internal__array(boole include_images)
 {
@@ -833,21 +873,32 @@ static cJSON *_emojis_internal__array(boole include_images)
     return array;
 }
 
-/** @brief Copies the names and text emojis without sending uploaded images at login. */
+/**
+ * @brief copies the names and text emojis without sending uploaded images at login
+ *
+ * @return cJSON* -> new catalog array for the caller to free, or NULL on allocation failure
+ */
 cJSON *emojis__catalogue(void)
 {
     return _emojis_internal__array(FALSE);
 }
 
-/** @brief Copies complete emoji records for server_settings.json. */
+/**
+ * @brief copies complete emoji records for server_settings.json
+ *
+ * @return cJSON* -> new array for the caller to free, or NULL on allocation failure
+ */
 cJSON *emojis__write(void)
 {
     return _emojis_internal__array(TRUE);
 }
 
 /**
- * @brief Copies a requested image so sending it does not hold the emoji mutex.
- * @param id Identifier requested by a connected client.
+ * @brief copies a requested image so sending it does not hold the emoji mutex
+ *
+ * @param id Identifier requested by a connected client
+ *
+ * @return cJSON* -> copied image record for the caller to free, or NULL if unavailable
  */
 cJSON *emojis__image(cstring id)
 {
@@ -880,8 +931,9 @@ cJSON *emojis__image(cstring id)
 }
 
 /**
- * @brief Restores saved emojis or adds the defaults when no list has been saved.
- * @param array Saved emoji list or NULL when the settings have no emojis member.
+ * @brief restores saved emojis or adds the defaults when no list has been saved
+ *
+ * @param array Saved emoji list or NULL when the settings have no emojis member
  */
 void emojis__load(cJSON *array)
 {

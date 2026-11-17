@@ -1,4 +1,4 @@
-# lemon-chat selfhosting-tools/wireguard/common.ps1 - shared by setup.ps1, status.ps1 and teardown.ps1 (dot-sourced, not run directly).
+# Shared host helpers. Dot source this file from setup, status or teardown.
 # paths, the saved answers, the ssh helpers and the server_settings.json access. Windows PowerShell 5.1 and PowerShell 7.
 
 $script:WgHere = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -14,7 +14,7 @@ $script:WgInstallDir = "C:\Program Files\WireGuard"
 $script:WgExe = Join-Path $script:WgInstallDir "wg.exe"
 $script:WireGuardExe = Join-Path $script:WgInstallDir "wireguard.exe"
 
-# native tools write progress to stderr; that must not become a terminating error
+# native tools write progress to stderr. That must not become a terminating error
 $ErrorActionPreference = "Continue"
 $OutputEncoding = New-Object System.Text.UTF8Encoding($false)
 
@@ -24,7 +24,7 @@ function Write-Warn([string]$text) { Write-Host "[lemon-wg] $text" -ForegroundCo
 function Write-Fail([string]$text) { Write-Host "[lemon-wg] $text" -ForegroundColor Red }
 
 function Ask([string]$prompt, [string]$default) {
-    # one question with its default in brackets; Enter takes the default
+    # one question with its default in brackets. Enter takes the default
     if ($default -ne $null -and $default -ne "") {
         $answer = Read-Host "$prompt [$default]"
         if ($answer -eq "") { return $default }
@@ -189,7 +189,7 @@ function Get-SshArgs($answers) {
 }
 
 function Invoke-Ssh($answers, [string]$remoteCommand, [bool]$terminal = $false) {
-    # runs one command on the router; returns its stdout lines, sets $global:LemonSshExit
+    # runs one command on the router. Returns its stdout lines, sets $global:LemonSshExit
     $ssh = Find-Ssh
     $sshArgs = Get-SshArgs $answers
     if ($terminal) { $sshArgs = @("-tt") + $sshArgs }

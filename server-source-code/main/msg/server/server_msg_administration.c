@@ -1,4 +1,4 @@
-// This file sends admin replies, client details, server logs, icons and groups.
+// this file sends admin replies, client details, server logs, icons and groups
 #include "../../core/permissions.h"
 #include "../../core/channel_groups.h"
 
@@ -12,7 +12,7 @@
 #include "../../core/server_logs.h"
 
 /**
- * @brief Replies with the client details that the receiver has permission to view.
+ * @brief replies with the client details that the receiver has permission to view
  *
  * @param client_t* receiver -> client requesting the details
  * @param client_t* subject -> the client the info is about
@@ -76,8 +76,8 @@ void server_msg__administration__send_client_info_to_single_client(client_t *rec
 }
 
 /**
- * @brief This function sends icon list to single client. Called when client sents
- *        challenge_response message to server during authentication process.
+ * @brief this function sends icon list to single client. Called when client sents
+ *        challenge_response message to server during authentication process
  *
  * @param client_t* receiver -> the client that receives it
  *
@@ -133,7 +133,7 @@ void server_msg__administration__send_icon_list_to_single_client(client_t *recei
 }
 
 /**
- * @brief Sends the available groups to a client after login.
+ * @brief sends the available groups to a client after login
  *
  * @param client_t* receiver -> the client that receives it
  *
@@ -202,14 +202,12 @@ void server_msg__administration__send_group_list_to_single_client(client_t *rece
 }
 
 /**
- * @brief sends the admin identity-management list: every stored identity as { public_key_hash,
- *        group_ids[], is_online }. is_online is TRUE when a currently-connected authenticated
- *        client hashes to the same identity. admin-only; the caller checks that and holds the
- *        clients lock.
+ * @brief sends stored identity hashes, groups and online status
+ *        the caller must check admin access and hold the clients lock
  *
  * @param client_t* receiver -> the client that receives it
  *
- * @note the caller must hold the clients read lock (g_clients_array is read for online status). the identity store is guarded by g_client_stored_data_mutex, taken here.
+ * @note the caller must hold the clients read lock (g_clients_array is read for online status). the identity store is guarded by g_client_stored_data_mutex, taken here
  *
  * @return void
  */
@@ -380,8 +378,8 @@ void server_msg__administration__send_access_denied_to_single_client(client_t *r
 }
 
 /**
- * @brief Tells a client that a request was refused and names the permission or power that
- *        refused it, so the client can show it in its log.
+ * @brief tells a client that a request was refused and names the permission or power that
+ *        refused it, so the client can show it in its log
  *
  * @param client_t* receiver -> client whose request was refused
  * @param cstring permission -> wire name of the permission or power, such as "send_pokes" or "poke_power"
@@ -420,7 +418,7 @@ void server_msg__administration__send_permission_denied_to_single_client(client_
 }
 
 /**
- * @brief Sends log entries after the caller checks permission to view server logs.
+ * @brief sends log entries after the caller checks permission to view server logs
  *
  * @param client_t* receiver -> the client to reply to
  *
@@ -677,7 +675,8 @@ void server_msg__administration__send_create_new_group_event_to_all_clients(uint
 }
 
 /**
- * @brief Tells connected clients that a group's permissions changed.
+ * @brief tells connected clients that a group's permissions changed
+ *
  * @param group_id -> changed group, with the clients and groups locks already held
  */
 void server_msg__administration__send_group_permissions_changed(uint64 group_id)
@@ -704,7 +703,8 @@ void server_msg__administration__send_group_permissions_changed(uint64 group_id)
 }
 
 /**
- * @brief Tells a client whether it currently has admin access, even when groups are disabled.
+ * @brief tells a client whether it currently has admin access, even when groups are disabled
+ *
  * @param receiver -> authenticated client receiving its own status
  */
 void server_msg__administration__send_admin_status_to_single_client(client_t *receiver)
@@ -722,7 +722,8 @@ void server_msg__administration__send_admin_status_to_single_client(client_t *re
 }
 
 /**
- * @brief Refreshes group controls and current rights after a membership change.
+ * @brief refreshes group controls and current rights after a membership change
+ *
  * @param receiver -> client being updated while the caller holds only the clients lock
  */
 void server_msg__administration__send_permission_update_to_single_client(client_t *receiver)
@@ -741,8 +742,8 @@ void server_msg__administration__send_permission_update_to_single_client(client_
 }
 
 /**
- * @brief Refreshes connected users after group permissions change. The caller holds only the
- *        clients lock.
+ * @brief refreshes connected users after group permissions change. The caller holds only the
+ *        clients lock
  */
 void server_msg__administration__send_permission_updates_to_all_clients(void)
 {

@@ -2,7 +2,14 @@
 #include "platform/memory.h"
 #include <stdlib.h>
 
-/** @brief Reserves channel records without changing count or losing existing data on failure. */
+/**
+ * @brief reserves channel storage while retaining existing records on failure
+ *
+ * @param desktop_session_view_t* view -> view whose channel array may grow
+ * @param int64 count -> required channel capacity
+ *
+ * @return boole -> TRUE if the capacity is available
+ */
 boole desktop_session__reserve_channels(desktop_session_view_t *view, int64 count)
 {
     uint64 limit = SIZE_MAX / sizeof(desktop_channel_t);
@@ -55,7 +62,13 @@ boole desktop_session__reserve_channels(desktop_session_view_t *view, int64 coun
     return TRUE;
 }
 
-/** @brief Releases only a view's owned channel storage; safe to call repeatedly. */
+/**
+ * @brief erases and frees a view's channel storage
+ *
+ * @param desktop_session_view_t* view -> view to clear, or NULL. Repeated calls are safe
+ *
+ * @return void
+ */
 void desktop_session__view_release(desktop_session_view_t *view)
 {
     // erase and free channels
@@ -69,7 +82,14 @@ void desktop_session__view_release(desktop_session_view_t *view)
     }
 }
 
-/** @brief Deep-copies into a zero-initialized or previously owned view; failure retains the old view. */
+/**
+ * @brief copies a view and its channel records, retaining the destination on failure
+ *
+ * @param desktop_session_view_t* destination -> zero initialized or previously owned view
+ * @param const desktop_session_view_t* source -> view to copy
+ *
+ * @return boole -> TRUE if the copy succeeded
+ */
 boole desktop_session__view_copy(desktop_session_view_t *destination, const desktop_session_view_t *source)
 {
     desktop_channel_t *channels = NULL_POINTER;
@@ -112,7 +132,14 @@ boole desktop_session__view_copy(desktop_session_view_t *destination, const desk
     return TRUE;
 }
 
-/** @brief Compares snapshot values and active channel records without comparing allocation addresses. */
+/**
+ * @brief compares snapshot values and active channel records
+ *
+ * @param const desktop_session_view_t* left -> first initialized view
+ * @param const desktop_session_view_t* right -> second initialized view
+ *
+ * @return boole -> TRUE if the values match, regardless of allocation addresses
+ */
 boole desktop_session__view_equal(const desktop_session_view_t *left, const desktop_session_view_t *right)
 {
     return clib__memcmp(left, right, offsetof(desktop_session_view_t, channels)) == 0 && (left->channel_count == 0 || clib__memcmp(left->channels, right->channels, left->channel_count * sizeof(*left->channels)) == 0);

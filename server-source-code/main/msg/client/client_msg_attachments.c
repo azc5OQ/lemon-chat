@@ -1,4 +1,4 @@
-// This file checks uploaded file pieces, completed uploads and attachment receive preferences.
+// this file checks uploaded file pieces, completed uploads and attachment receive preferences
 #include "client_msg.h"
 #include "../../core/attachments.h"
 #include "../../core/permissions.h"
@@ -31,10 +31,12 @@ typedef struct
 } attachment_completion_t;
 
 /**
- * @brief Remembers which new attachments this client does not want to receive.
+ * @brief remembers which new attachments this client does not want to receive
+ *
  * @param cJSON* json_root -> request with all four boolean receive preferences
  * @param uint64 sender_client_id -> client changing its own preferences
  * @param ws_cli_conn_t* socket -> connection that sent the request
+ *
  * @return void
  */
 void client_msg__attachments__process_attachment_receive_preferences(cJSON *json_root, uint64 sender_client_id, ws_cli_conn_t *socket)
@@ -75,7 +77,11 @@ void client_msg__attachments__process_attachment_receive_preferences(cJSON *json
 }
 
 /**
- * @brief Recognizes every supported upload intent independently of server policy.
+ * @brief recognizes every supported upload intent independently of server policy
+ *
+ * @param cstring intent -> upload type name
+ *
+ * @return attachment_intent_t -> matching type, or ATTACHMENT_INTENT_INVALID
  */
 static attachment_intent_t _client_msg_attachments_internal__read_intent(cstring intent)
 {
@@ -110,7 +116,12 @@ static attachment_intent_t _client_msg_attachments_internal__read_intent(cstring
 }
 
 /**
- * @brief Returns the current policy rejection, while the caller holds the clients lock.
+ * @brief returns the current policy rejection, while the caller holds the clients lock
+ *
+ * @param attachment_intent_t intent -> upload type to check
+ * @param uint64 length -> declared upload length in bytes
+ *
+ * @return char* -> static error name, or NULL_POINTER if the upload is allowed
  */
 static char *_client_msg_attachments_internal__policy_error(attachment_intent_t intent, uint64 length)
 {
@@ -155,8 +166,10 @@ static char *_client_msg_attachments_internal__policy_error(attachment_intent_t 
 }
 
 /**
- * @brief Releases the current upload and clears its routing and length state.
- * @attention The caller holds the clients write lock.
+ * @brief releases the current upload and clears its routing and length state
+ * @attention the caller holds the clients write lock
+ *
+ * @param client_t* client -> client whose upload is discarded
  */
 static void _client_msg_attachments_internal__discard_upload(client_t *client)
 {
@@ -170,6 +183,11 @@ static void _client_msg_attachments_internal__discard_upload(client_t *client)
     clib__null_memory(&client->file_upload_extension, sizeof(client->file_upload_extension));
 }
 
+/**
+ * @brief reads the monotonic clock for upload deadlines
+ *
+ * @return uint64 -> milliseconds or zero when the clock cannot be read
+ */
 static uint64 _client_msg_attachments_internal__upload_time(void)
 {
     uint64 now = 0;
@@ -178,7 +196,15 @@ static uint64 _client_msg_attachments_internal__upload_time(void)
     return now;
 }
 
-// Caller holds the clients write lock; expiry is independent of keepalive traffic.
+// caller holds the clients write lock; expiry is independent of keepalive traffic
+/**
+ * @brief discards an upload after its progress or total duration deadline
+ *
+ * @param client_t * client -> client whose upload may be released
+ * @param uint64 now -> current monotonic milliseconds, or zero to discard immediately
+ *
+ * @return void
+ */
 void client_msg__attachments__expire_upload(client_t *client, uint64 now)
 {
     if (client->file_upload_extension.file_upload_buffer != NULL_POINTER && (now == 0 || now - client->file_upload_extension.last_progress_ms >= 30000 || now - client->file_upload_extension.started_ms >= 300000))
@@ -188,8 +214,10 @@ void client_msg__attachments__expire_upload(client_t *client, uint64 now)
 }
 
 /**
- * @brief Receives a bounded file chunk after validating its numeric length and current upload
- *        policy.
+ * @brief validates and stores one upload chunk
+ *
+ * @param cJSON* json_root -> parsed client request
+ * @param uint64 sender_client_id -> client sending the chunk
  */
 void client_msg__attachments__process_file_send_request(cJSON *json_root, uint64 sender_client_id)
 {
@@ -204,7 +232,7 @@ void client_msg__attachments__process_file_send_request(cJSON *json_root, uint64
     uint64 maximum_chunk_length = 0;
     int64 data_length = 0;
 
-    // require a valid chunk and a positive whole-number upload length
+    // validate the chunk fields and upload length
     if (cJSON_IsObject(message) == FALSE ||
         cJSON_IsBool(new_file) == FALSE ||
         data == NULL_POINTER ||
@@ -233,7 +261,7 @@ void client_msg__attachments__process_file_send_request(cJSON *json_root, uint64
         goto end;
     }
 
-    // read the upload type once; later chunks use the stored type
+    // use the saved type for later chunks
     intent_name = cJSON_IsTrue(new_file) ? cJSON_GetStringValue(cJSON_GetObjectItemCaseSensitive(message, "file_send_intent")) : sender->file_upload_extension.intent;
     intent = _client_msg_attachments_internal__read_intent(intent_name);
 
@@ -324,9 +352,13 @@ end:
 }
 
 /**
- * @brief Validates every required completion field before routing, even when its feature is
- *        disabled.
- * @attention The caller holds the clients lock and owns the JSON throughout delivery.
+ * @brief validates the upload completion fields before delivery
+ * @attention the caller holds the clients lock and owns the JSON throughout delivery
+ *
+ * @param cJSON* json_root -> parsed completion request
+ * @param attachment_completion_t* completion -> receives the fields. Text points into json_root
+ *
+ * @return boole -> TRUE if all required fields are valid
  */
 static boole _client_msg_attachments_internal__read_completion(cJSON *json_root, attachment_completion_t *completion)
 {
@@ -395,7 +427,10 @@ static boole _client_msg_attachments_internal__read_completion(cJSON *json_root,
 }
 
 /**
- * @brief Routes a completed upload only after validating metadata and rechecking current policy.
+ * @brief routes a completed upload only after validating metadata and rechecking current policy
+ *
+ * @param cJSON* json_root -> parsed completion request
+ * @param uint64 sender_client_id -> client completing the upload
  */
 void client_msg__attachments__process_file_send_completed_request(cJSON *json_root, uint64 sender_client_id)
 {
@@ -456,7 +491,7 @@ void client_msg__attachments__process_file_send_completed_request(cJSON *json_ro
         goto discard;
     }
 
-    // the receiver is named only in this last request, so the receiver's protection is checked here
+    // the completion request supplies the receiver to check
     if ((completion.intent == ATTACHMENT_INTENT_DIRECT_PICTURE || completion.intent == ATTACHMENT_INTENT_DIRECT_FILE) && completion.receiver_id < g_server_settings.max_client_count)
     {
         refusal = permissions__contact_refusal(sender, &g_clients_array[completion.receiver_id], completion.intent == ATTACHMENT_INTENT_DIRECT_PICTURE ? PERMISSION_SEND_DIRECT_PICTURES : PERMISSION_SEND_DIRECT_FILES);

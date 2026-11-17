@@ -37,7 +37,14 @@ static void _ui_connection_internal__settings_open(gui_event_t *event);
 static void _ui_connection_internal__settings_close(gui_event_t *event);
 static void _ui_connection_internal__settings_save(gui_event_t *event);
 
-/** @brief offers Disconnect only for a live connection, or Cancel for a pending attempt. */
+/**
+ * @brief updates Connect, Disconnect and Cancel controls
+ *
+ * @param boole connected -> A connection is established
+ * @param boole busy -> A connection attempt is active
+ *
+ * @return void
+ */
 void desktop_ui_connection__state(boole connected, boole busy)
 {
     gui_node_t *disconnect = scene__find_by_id("connection-disconnect");
@@ -67,7 +74,9 @@ void desktop_ui_connection__state(boole connected, boole busy)
     }
 }
 
-/** @brief restores the saved identity, preserving older valid RSA sizes in the selector. */
+/**
+ * @brief restores the saved identity, preserving older valid RSA sizes in the selector
+ */
 void desktop_ui_connection__apply_identity(void)
 {
     gui_node_t *select = scene__find_by_id("identity-bits");
@@ -104,7 +113,7 @@ void desktop_ui_connection__apply_identity(void)
         }
         index++;
     }
-    // existing identities can use any multiple of 256 in the supported range.
+    // existing identities can use any multiple of 256 in the supported range
     // changing that size would derive a different public key
     option = scene__node_new(GUI_NODE_TYPE__OPTION);
     if (option)
@@ -115,6 +124,13 @@ void desktop_ui_connection__apply_identity(void)
     }
 }
 
+/**
+ * @brief opens identity settings with the saved values
+ *
+ * @param gui_event_t* event -> unused UI event
+ *
+ * @return void
+ */
 static void _ui_connection_internal__settings_open(gui_event_t *event)
 {
     (void)event;
@@ -125,6 +141,13 @@ static void _ui_connection_internal__settings_open(gui_event_t *event)
     _ui_connection_internal__panel("identity-panel", TRUE);
 }
 
+/**
+ * @brief closes identity settings and restores the saved values
+ *
+ * @param gui_event_t* event -> unused UI event
+ *
+ * @return void
+ */
 static void _ui_connection_internal__settings_close(gui_event_t *event)
 {
     (void)event;
@@ -137,6 +160,13 @@ static void _ui_connection_internal__settings_close(gui_event_t *event)
     desktop_ui_connection__apply_identity();
 }
 
+/**
+ * @brief validates and saves the identity for the next connection
+ *
+ * @param gui_event_t* event -> unused UI event
+ *
+ * @return void
+ */
 static void _ui_connection_internal__settings_save(gui_event_t *event)
 {
     gui_node_t *identity = scene__find_by_id("identity-string");
@@ -204,9 +234,11 @@ static void _ui_connection_internal__settings_save(gui_event_t *event)
 }
 
 /**
- * @brief copies plain text into a connection control.
+ * @brief copies plain text into a connection control
+ *
  * @param const char* id -> existing control ID
  * @param const char* text -> copied text
+ *
  * @return void
  */
 static void _ui_connection_internal__text(const char *id, const char *text)
@@ -219,9 +251,11 @@ static void _ui_connection_internal__text(const char *id, const char *text)
 }
 
 /**
- * @brief shows or hides the identity file window without blocking the chat.
+ * @brief shows or hides the identity file window without blocking the chat
+ *
  * @param const char* id -> panel ID
  * @param boole visible -> desired visibility
+ *
  * @return void
  */
 static void _ui_connection_internal__panel(const char *id, boole visible)
@@ -240,9 +274,11 @@ static void _ui_connection_internal__panel(const char *id, boole visible)
 }
 
 /**
- * @brief finds one scene-owned key control without retaining pointers across hot reload.
+ * @brief finds one scene owned key control without retaining pointers across hot reload
+ *
  * @param const char* prefix -> control ID prefix
  * @param int64 index -> bounded key slot
+ *
  * @return gui_node_t* -> borrowed node, or NULL
  */
 static gui_node_t *_ui_connection_internal__node(const char *prefix, int64 index)
@@ -253,8 +289,10 @@ static gui_node_t *_ui_connection_internal__node(const char *prefix, int64 index
 }
 
 /**
- * @brief reports a form validation problem without discarding its draft.
- * @param const char* text -> nonsecret user-facing explanation
+ * @brief reports a form validation problem without discarding its draft
+ *
+ * @param const char* text -> nonsecret user facing explanation
+ *
  * @return void
  */
 static void _ui_connection_internal__result(const char *text)
@@ -267,9 +305,11 @@ static void _ui_connection_internal__result(const char *text)
 }
 
 /**
- * @brief checks the identity string format shared by browser and desktop clients.
+ * @brief checks the identity string format shared by browser and desktop clients
+ *
  * @param const char* identity -> terminated identity string
- * @return boole -> TRUE for a browser-compatible printable ASCII identity that fits desktop storage
+ *
+ * @return boole -> TRUE for a browser compatible printable ASCII identity that fits desktop storage
  */
 boole desktop_ui_connection__identity_valid(const char *identity)
 {
@@ -294,8 +334,10 @@ boole desktop_ui_connection__identity_valid(const char *identity)
 }
 
 /**
- * @brief checks the stricter length accepted by the browser .lmn file importer.
+ * @brief checks the stricter length accepted by the browser .lmn file importer
+ *
  * @param const char* identity -> already decoded identity string
+ *
  * @return boole -> TRUE for a portable 199 or 200 byte identity file
  */
 static boole _ui_connection_internal__identity_file_valid(const char *identity)
@@ -305,11 +347,13 @@ static boole _ui_connection_internal__identity_file_valid(const char *identity)
 }
 
 /**
- * @brief decodes the browser .lmn format without changing the selected identity on failure.
+ * @brief decodes the browser .lmn format without changing the selected identity on failure
+ *
  * @param const ubyte* bytes -> exact file bytes
  * @param uint64 size -> file size
  * @param char* identity -> cleared destination
  * @param uint64 capacity -> destination capacity including NUL
+ *
  * @return boole -> TRUE when the trimmed raw identity is compatible with both clients
  */
 boole desktop_ui_connection__identity_decode(const ubyte *bytes, uint64 size, char *identity, uint64 capacity)
@@ -352,7 +396,8 @@ boole desktop_ui_connection__identity_decode(const ubyte *bytes, uint64 size, ch
 }
 
 /**
- * @brief restores row visibility and byte limits after loading the editable layout.
+ * @brief restores row visibility and byte limits after loading the editable layout
+ *
  * @return boole -> TRUE when all controls exist and accept their limits
  */
 boole desktop_ui_connection__refresh(void)
@@ -400,8 +445,10 @@ boole desktop_ui_connection__refresh(void)
 }
 
 /**
- * @brief appends one empty key row without changing saved connection details.
- * @param gui_event_t* event -> unused add-button event
+ * @brief appends one empty key row without changing saved connection details
+ *
+ * @param gui_event_t* event -> unused add button event
+ *
  * @return void
  */
 static void _ui_connection_internal__add(gui_event_t *event)
@@ -429,8 +476,10 @@ static void _ui_connection_internal__add(gui_event_t *event)
 }
 
 /**
- * @brief removes a key and preserves the order of the remaining encryption layers.
- * @param gui_event_t* event -> row remove-button event
+ * @brief removes a key and preserves the order of the remaining encryption layers
+ *
+ * @param gui_event_t* event -> row remove button event
+ *
  * @return void
  */
 static void _ui_connection_internal__remove(gui_event_t *event)
@@ -494,7 +543,8 @@ static void _ui_connection_internal__remove(gui_event_t *event)
 }
 
 /**
- * @brief wipes unsaved keys when switching to a different bookmarked server.
+ * @brief wipes unsaved keys when switching to a different bookmarked server
+ *
  * @return void
  */
 void desktop_ui_connection__clear_keys(void)
@@ -519,9 +569,11 @@ void desktop_ui_connection__clear_keys(void)
 }
 
 /**
- * @brief restores saved encryption layers after validating every row and its capacity.
- * @param const char* keys -> borrowed newline-separated key strings; never modified
- * @return boole -> TRUE on success; malformed row boundaries preserve the current rows
+ * @brief restores saved encryption layers after validating every row and its capacity
+ *
+ * @param const char* keys -> borrowed newline separated key strings. Never modified
+ *
+ * @return boole -> TRUE on success. Malformed row boundaries preserve the current rows
  */
 boole desktop_ui_connection__load_keys(const char *keys)
 {
@@ -624,9 +676,11 @@ boole desktop_ui_connection__load_keys(const char *keys)
 }
 
 /**
- * @brief serializes ordered typed key rows into the protocol input, even when hidden.
- * @param char* output -> caller-owned buffer, cleared on failure
+ * @brief serializes ordered typed key rows into the protocol input, even when hidden
+ *
+ * @param char* output -> caller owned buffer, cleared on failure
  * @param uint64 capacity -> buffer capacity including NUL
+ *
  * @return boole -> TRUE for valid nonempty rows within the total byte limit
  */
 boole desktop_ui_connection__keys(char *output, uint64 capacity)
@@ -687,9 +741,11 @@ boole desktop_ui_connection__keys(char *output, uint64 capacity)
 }
 
 /**
- * @brief combines the hostname and port fields for the transport.
- * @param char* output -> caller-owned URL buffer
+ * @brief combines the hostname and port fields for the transport
+ *
+ * @param char* output -> caller owned URL buffer
  * @param uint64 capacity -> output capacity including NUL
+ *
  * @return boole -> TRUE when the hostname and port are valid
  */
 boole desktop_ui_connection__address(char *output, uint64 capacity)
@@ -700,8 +756,10 @@ boole desktop_ui_connection__address(char *output, uint64 capacity)
 }
 
 /**
- * @brief loads the hostname and port from an existing saved URL.
+ * @brief loads the hostname and port from an existing saved URL
+ *
  * @param const char* address -> existing ws/wss URL
+ *
  * @return boole -> TRUE when all fields were populated
  */
 boole desktop_ui_connection__load_address(const char *address)
@@ -732,8 +790,10 @@ boole desktop_ui_connection__load_address(const char *address)
 }
 
 /**
- * @brief reveals the identity on request, enabling normal selected-text copying.
- * @param gui_event_t* event -> show-identity checkbox event
+ * @brief reveals the identity on request, enabling normal selected text copying
+ *
+ * @param gui_event_t* event -> show identity checkbox event
+ *
  * @return void
  */
 static void _ui_connection_internal__reveal(gui_event_t *event)
@@ -745,7 +805,13 @@ static void _ui_connection_internal__reveal(gui_event_t *event)
     }
 }
 
-/** @brief shows the key editor without changing the keys used for login. */
+/**
+ * @brief shows or hides advanced connection settings
+ *
+ * @param gui_event_t* event -> toggle event supplying the selected value
+ *
+ * @return void
+ */
 static void _ui_connection_internal__advanced(gui_event_t *event)
 {
     gui_node_t *section = scene__find_by_id("connection-advanced");
@@ -756,8 +822,10 @@ static void _ui_connection_internal__advanced(gui_event_t *event)
 }
 
 /**
- * @brief opens import or export controls for the browser-compatible raw .lmn file.
- * @param gui_event_t* event -> Import or Export button event
+ * @brief opens import or export controls for the browser compatible raw .lmn file
+ *
+ * @param gui_event_t* event -> import or Export button event
+ *
  * @return void
  */
 static void _ui_connection_internal__identity_open(gui_event_t *event)
@@ -807,8 +875,10 @@ static void _ui_connection_internal__identity_open(gui_event_t *event)
 }
 
 /**
- * @brief closes the identity file controls and clears the selected path.
+ * @brief closes the identity file controls and clears the selected path
+ *
  * @param gui_event_t* event -> unused close event
+ *
  * @return void
  */
 static void _ui_connection_internal__identity_close(gui_event_t *event)
@@ -824,8 +894,10 @@ static void _ui_connection_internal__identity_close(gui_event_t *event)
 }
 
 /**
- * @brief retains the selected import path only while the identity window is open.
- * @param gui_event_t* event -> file-picker selection event
+ * @brief retains the selected import path only while the identity window is open
+ *
+ * @param gui_event_t* event -> file picker selection event
+ *
  * @return void
  */
 static void _ui_connection_internal__identity_pick(gui_event_t *event)
@@ -858,8 +930,10 @@ static void _ui_connection_internal__identity_pick(gui_event_t *event)
 }
 
 /**
- * @brief imports or exports the same raw identity bytes used by browser .lmn files.
+ * @brief imports or exports the same raw identity bytes used by browser .lmn files
+ *
  * @param gui_event_t* event -> unused submit event
+ *
  * @return void
  */
 static void _ui_connection_internal__identity_submit(gui_event_t *event)
@@ -952,7 +1026,10 @@ label_finished:
 }
 
 /**
- * @brief registers local connection editor handlers before parsing the scene.
+ * @brief keeps settings and registers connection panel handlers
+ *
+ * @param desktop_settings_t* settings -> settings retained for the lifetime of the panel
+ *
  * @return void
  */
 void desktop_ui_connection__initialize(desktop_settings_t *settings)
@@ -975,7 +1052,8 @@ void desktop_ui_connection__initialize(desktop_settings_t *settings)
 }
 
 /**
- * @brief wipes editable secrets before the scene releases its buffers, including revealed identities.
+ * @brief wipes editable secrets before the scene releases its buffers, including revealed identities
+ *
  * @return void
  */
 void desktop_ui_connection__shutdown(void)

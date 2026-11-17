@@ -1,7 +1,15 @@
 #include "session/session_internal.h"
 #include "msg/server/server_msg.h"
 
-// Read the old channel/group state before the normal handlers update it.
+// read the old channel/group state before the normal handlers update it
+/**
+ * @brief plays the notification for an accepted server event
+ *
+ * @param desktop_session_t* session -> session and current client state
+ * @param const cJSON* message -> server message fields
+ *
+ * @return void
+ */
 void server_msg__sounds__receive(desktop_session_t *session, const cJSON *message)
 {
     const char *type = server_msg__read_string(message, "type");

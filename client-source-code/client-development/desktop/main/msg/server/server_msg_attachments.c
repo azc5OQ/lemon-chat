@@ -11,10 +11,12 @@ static void _server_attachments_internal__append(desktop_session_t *session, des
 static boole _server_attachments_internal__blocked(const desktop_chat_preferences_t *preferences, boole direct, boole picture);
 
 /**
- * @brief applies local receiving choices even when the server cannot avoid sending the payload.
+ * @brief applies local receiving choices even when the server cannot avoid sending the payload
+ *
  * @param const desktop_chat_preferences_t* preferences -> locked local choices
  * @param boole direct -> private transfer
  * @param boole picture -> image rather than arbitrary file
+ *
  * @return boole -> TRUE when locally blocked
  */
 static boole _server_attachments_internal__blocked(const desktop_chat_preferences_t *preferences, boole direct, boole picture)
@@ -23,10 +25,12 @@ static boole _server_attachments_internal__blocked(const desktop_chat_preference
 }
 
 /**
- * @brief creates one chat row referencing a stable record ID rather than a payload pointer.
+ * @brief creates one chat row referencing a stable record ID rather than a payload pointer
+ *
  * @param desktop_session_t* session -> protocol worker
  * @param desktop_attachment_record_t* record -> locked record
  * @param int64 slot -> validated sender slot
+ *
  * @return void
  */
 static void _server_attachments_internal__append(desktop_session_t *session, desktop_attachment_record_t *record, int64 slot)
@@ -46,9 +50,11 @@ static void _server_attachments_internal__append(desktop_session_t *session, des
 }
 
 /**
- * @brief validates direct-offer routing and queues private decryption before enabling Accept.
+ * @brief validates direct offer routing and queues private decryption before enabling Accept
+ *
  * @param desktop_session_t* session -> sole protocol worker
  * @param const cJSON* message -> borrowed server message
+ *
  * @return void
  */
 static void _server_attachments_internal__offer(desktop_session_t *session, const cJSON *message)
@@ -159,11 +165,13 @@ static void _server_attachments_internal__offer(desktop_session_t *session, cons
 }
 
 /**
- * @brief bounds total encrypted storage and captures keys before accepting incoming chunks.
+ * @brief bounds total encrypted storage and captures keys before accepting incoming chunks
+ *
  * @param desktop_session_t* session -> protocol worker
  * @param const cJSON* message -> borrowed metadata
  * @param boole direct -> private destination
  * @param boole picture -> image payload
+ *
  * @return void
  */
 static void _server_attachments_internal__metadata(desktop_session_t *session, const cJSON *message, boole direct, boole picture)
@@ -273,9 +281,11 @@ static void _server_attachments_internal__metadata(desktop_session_t *session, c
 }
 
 /**
- * @brief consumes only announced, length-checked transfers and matching upload acknowledgements.
+ * @brief consumes only announced, length checked transfers and matching upload acknowledgements
+ *
  * @param desktop_session_t* session -> authenticated protocol worker
  * @param const cJSON* message -> borrowed server message
+ *
  * @return void
  */
 void server_msg__attachments__receive(desktop_session_t *session, const cJSON *message)

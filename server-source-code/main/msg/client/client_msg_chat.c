@@ -1,4 +1,4 @@
-// This file checks incoming chat messages, edits, typing notifications, pokes and URL preview requests.
+// this file checks incoming chat messages, edits, typing notifications, pokes and URL preview requests
 #include "client_msg.h"
 #include "../../core/permissions.h"
 #include <string.h>
@@ -12,7 +12,7 @@
 #include "../../../third-party/rxi-log/log.h"
 #include "../../../third-party/zhicheng/base64.h"
 
-// The purposes a direct message can name in its "purpose" field.
+// the purposes a direct message can name in its "purpose" field
 #define DIRECT_MESSAGE_PURPOSE_CONVERSATION "conversation"
 #define DIRECT_MESSAGE_PURPOSE_CHANNEL_KEYS "channel_keys"
 #define DIRECT_MESSAGE_PURPOSE_SEEN_RECEIPT "seen_receipt"
@@ -70,10 +70,8 @@ static boole _client_msg_chat_internal__is_json_chat_message_format_valid(cJSON 
         return FALSE;
     }
 
-    // reject an oversized value loudly. the server re-encrypts the forwarded message, and if its base64 output
-    // would exceed the websocket frame limit, base__encrypt returns NULL and the send loop silently skips every
-    // recipient while the sender still gets a delivery ack. base64 grows ~4/3; leave 2KB for the added sender
-    // fields + envelope overhead. derived from the frame limit so it tracks the websocket_message_max_length setting
+    // reserve space for base64 expansion, sender fields and the transport envelope
+    // reject values that would exceed the configured WebSocket frame limit
     if (clib__utf8_string_length_check_max_length(json_chat_message_value->valuestring, (int64)((g_server_settings.websocket_message_max_length * 3) / 4 - 2048)) == -1)
     {
         DBG_CLIENT_MESSAGE log_info("%s %llu %s", "client : ", client_id, " chat message value too large \n");
@@ -100,21 +98,10 @@ static boole _client_msg_chat_internal__is_json_chat_message_format_valid(cJSON 
 }
 
 /**
- * @brief Reads what a direct message is for, as named by its sender.
- *
- *        The content of a direct message is encrypted for the receiver, so the server cannot
- *        tell what two clients say to each other from the channel keys that a channel's
- *        maintainer hands out, or from a "message seen" receipt. The sender names the purpose
- *        in the request. The server applies the rules of that purpose and passes the purpose on
- *        with the message. The receiving client reads the content only as what the purpose
- *        says, so a text message sent as "channel_keys" is not shown as text.
- *
- *        "conversation" covers everything that belongs to a conversation between two clients:
- *        text, edits, reactions and the notice that one side closed the conversation's window.
- *        The server cannot tell these apart and does not need to.
- *
- *        The purpose tells the server which kind of direct message it relays. That is the price
- *        of being able to refuse direct texts by permission and power; the content stays unreadable.
+ * @brief reads the sender's declared purpose for permission checks
+ *        direct message content remains encrypted for the receiver and unreadable here
+ *        the receiver checks that decrypted content matches the declared purpose
+ *        the conversation purpose covers text, edits, reactions and closing a conversation
  *
  * @param cJSON* json_message_object -> the "message" object of the request
  *
@@ -143,7 +130,7 @@ static cstring _client_msg_chat_internal__read_direct_message_purpose(cJSON *jso
 }
 
 /**
- * @brief This function processes direct chat message
+ * @brief this function processes direct chat message
  *
  * @param cJSON* json_root -> the parsed client request
  * @param uint64 sender_client_id -> id of the client that sent the request
@@ -167,9 +154,8 @@ void client_msg__chat__process_direct_chat_message(cJSON *json_root, uint64 send
     cstring refusal = NULL_POINTER;
     uint64 server_chat_message_id = 0;
 
-    // because maintainer of channel sends out channel keys to each client individually,
-    // and a maintainer needs to do that as quickly as possible, repeatedly, possibly for a hundred clients when everyone is in the maintainer's channel
-    // spam prevention cannot be placed here like in other places, needs to be improved
+    // channel key distribution can send many direct messages at once
+    // the ordinary request rate limit is therefore not applied here
     is_message_valid = _client_msg_chat_internal__is_json_chat_message_format_valid(json_root, sender_client_id);
 
     if (is_message_valid == FALSE)
@@ -284,7 +270,7 @@ void client_msg__chat__process_direct_chat_message(cJSON *json_root, uint64 send
 }
 
 /**
- * @brief Checks whether a client may send or edit text in the channel it is in.
+ * @brief checks whether a client may send or edit text in the channel it is in
  *
  * @param client_t* sender -> client making the request, with the clients lock held
  * @param channel_t* channel -> the sender's channel, with the channels lock held
@@ -308,7 +294,7 @@ static cstring _client_msg_chat_internal__channel_message_refusal(client_t *send
 }
 
 /**
- * @brief This function processes a channel chat message, broadcasting it to clients in the sender's
+ * @brief this function processes a channel chat message, broadcasting it to clients in the sender's
  *        channel
  *
  * @param cJSON* json_root -> the parsed client request
@@ -394,14 +380,8 @@ channel_message_done:
 }
 
 /**
- * @brief shared worker for delete/edit chat message requests, it rate-limits, stamps the
- *        requester's identity and rebroadcasts the action to the right audience
- *
- *        the client sends only the target message id (plus the new value for an edit) and the
- *        receiver context. the server keeps no message state, so the action goes back out either
- *        to the sender's channel, or to the private counterpart plus the requester. each receiving
- *        client then decides for itself whether to honour it, based on the requester's public key
- *        and admin flag.
+ * @brief validates and forwards a message action with the requester's identity and admin status
+ *        recipients decide whether the requester may change their stored message
  *
  * @param cJSON* json_root -> the parsed client request
  * @param uint64 sender_client_id -> id of the client that sent the request
@@ -499,7 +479,7 @@ static void _client_msg_chat_internal__process_chat_message_action(cJSON *json_r
             // check the receiver state
             if (g_clients_array[receiver_id].is_existing == TRUE && g_clients_array[receiver_id].is_authenticated == TRUE && g_clients_array[receiver_id].is_music_bot == FALSE)
             {
-                // an edit carries new content and follows the same delivery policy as a new message.
+                // an edit carries new content and follows the same delivery policy as a new message
                 // deletion remains available when sending new private content has been disabled
                 if (is_edit == TRUE && (g_server_settings.is_private_messaging_allowed == FALSE || (g_clients_array[receiver_id].is_idle == TRUE && (g_server_settings.is_sending_text_to_idle_clients_allowed == FALSE || permissions__is_allowed(&g_clients_array[sender_client_id], PERMISSION_MESSAGE_IDLE_CLIENTS) == FALSE))))
                 {
@@ -635,7 +615,7 @@ static boole _client_msg_chat_internal__is_json_poke_client_request_format_valid
 }
 
 /**
- * @brief This function processes a poke-client request, forwarding the poke message to the target
+ * @brief this function processes a poke-client request, forwarding the poke message to the target
  *        client
  *
  * @param cJSON* json_root -> the parsed client request
@@ -698,9 +678,7 @@ void client_msg__chat__process_poke_client_request(cJSON *json_root, uint64 send
 }
 
 /**
- * @brief passes on "this client is typing" to the conversation the client is writing to. the
- *        request carries no message content and nothing is stored - it is forwarded to whoever is
- *        on the other side and forgotten. the whole feature is off unless the server allows it.
+ * @brief forwards typing metadata when enabled. No message content is sent or stored
  *
  * @param cJSON* json_root -> the parsed client request
  * @param uint64 sender_client_id -> id of the client that is typing
@@ -792,8 +770,11 @@ label_client_msg__process_typing_indicator_request_end:
 }
 
 /**
- * @brief Checks the saved recipient identity and encrypted offline message.
- * @param json_root Parsed request.
+ * @brief checks the saved recipient identity and encrypted offline message
+ *
+ * @param json_root Parsed request
+ *
+ * @return TRUE if the recipient hash and encrypted message have valid types and lengths
  */
 static boole _client_msg_chat_internal__is_offline_chat_message_valid(cJSON *json_root)
 {
@@ -842,10 +823,11 @@ static boole _client_msg_chat_internal__is_offline_chat_message_valid(cJSON *jso
 }
 
 /**
- * @brief Stores an encrypted message when the sender and saved recipient have the required
- *        permissions.
- * @param json_root Request containing the recipient identity and encrypted message.
- * @param sender_client_id Client sending the message.
+ * @brief stores an encrypted message when the sender and saved recipient have the required
+ *        permissions
+ *
+ * @param json_root Request containing the recipient identity and encrypted message
+ * @param sender_client_id Client sending the message
  */
 void client_msg__chat__process_offline_chat_message(cJSON *json_root, uint64 sender_client_id)
 {
@@ -972,7 +954,7 @@ void client_msg__chat__process_call_idle_client_message(cJSON *json_root, uint64
     // lock the clients
     clib__write_lock(&g_clients_global_rwlock_guard);
 
-    // check if the client that sent the message is valid: connected and existing.
+    // check if the client that sent the message is valid: connected and existing
     // this was checked before but not within write lock like here
     caller = &g_clients_array[sender_client_id];
 
@@ -1009,7 +991,8 @@ label_client_msg__process_call_idle_client_message_end:
 }
 
 /**
- * @brief Checks a URL preview request and asks the HTTP client to look up the page.
+ * @brief checks a URL preview request and asks the HTTP client to look up the page
+ *
  * @param cJSON* json_root -> message containing the URL and request ID
  * @param uint64 client_id -> client requesting the preview
  * @param ws_cli_conn_t* socket -> connection that sent the request

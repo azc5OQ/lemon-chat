@@ -1,22 +1,18 @@
-// voice.js is embedded in template.html along with the other client files
-// it is the voice side of the page: the microphone (push-to-talk, always-on), the webrtc datachannel
-// to the server that carries audio both ways, and the music bot mp3 stream
-// audio.js owns the sound graph and the workers; dispatch.js and ui.js call in here
+// controls microphone capture, the server WebRTC connection and MP3 streaming
+// audio.js owns the sound graph. dispatch.js and ui.js call this module
 
 // state private to this file
 // set once the udp-capability probe has run (after the first failed datachannel attempt window)
 var webrtc_udp_probe_done = false;
 
-// push-to-talk release hangover: capture keeps running this long after the key is let go, so word
-// tails ("hello" not "hell") ship before the mic-off message stops the relay
+// continue capture briefly after key release so the final word reaches the server
 var PTT_RELEASE_HANGOVER_MS = 250;
 
 var ptt_pending_stop_timer = null;
 
 /**
- * @brief the one writer of g_is_microphone_always_on
- *        the side effects (mic, android bridge, repaint) stay in ui.js, so a headless runtime can
- *        own the flag without touching the microphone
+ * @brief sets the microphone mode without starting capture
+ * UI code applies microphone and Android side effects
  *
  * @param boolean is_active -> the new value
  *
@@ -26,8 +22,7 @@ function voice__set_microphone_always_on(is_active)
 {
     g_is_microphone_always_on = (is_active == true);
 
-    // the android settings radio maps onto the new tap-to-toggle mode; a choice made in
-    // the local settings panel (localStorage) outranks it
+    // keep a saved local continuous mode preference ahead of the Android setting
     let has_local_choice = false;
     has_local_choice = (utils__storage_get("lemon_continuous_mic") != null);
 
@@ -64,9 +59,8 @@ function voice__datachannel_retry_sleep(ms)
 }
 
 /**
- * @brief push-to-talk press: enables the mic track, connects the recorder chain and reports microphone_usage=1 to the server
- *        no-op when the mic is off, forbidden or already sending; a re-press inside the release
- *        hangover cancels the pending stop
+ * @brief starts microphone capture and reports transmission when permitted
+ * a new press during the release delay cancels the pending stop
  *
  * @return void
  */
@@ -78,8 +72,7 @@ function voice__process_start_sending_audio()
         return;
     }
 
-    // a re-press inside the release hangover cancels the pending stop: the mic never
-    // went down, so the early-outs below just keep the running capture untouched
+    // cancel the pending stop when a new press continues the same transmission
     if (ptt_pending_stop_timer != null)
     {
         clearTimeout(ptt_pending_stop_timer);
@@ -109,8 +102,7 @@ function voice__process_start_sending_audio()
         return;
     }
 
-    // spurt-start marker: receivers scrub this sender's decoder on the jump, pairing with
-    // the encoder reset that the capture-start clear below performs
+    // jump the sequence with the encoder reset so receivers reset their decoders
     g_voice_send_sequence_number = (g_voice_send_sequence_number + G_OPUS_SPURT_BOUNDARY_SEQUENCE_JUMP) & 0xffff;
 
     audio__set_microphone_capture_active(true);
@@ -138,7 +130,7 @@ function voice__process_start_sending_audio()
 }
 
 /**
- * @brief Shows transmission on push-to-talk controls; the enable toggle keeps its own state.
+ * @brief shows transmission on talk controls without changing the enable toggle
  *
  * @param boolean is_transmitting -> true while audio is going out
  *
@@ -167,7 +159,7 @@ function voice__set_mic_transmitting_visual(is_transmitting)
 }
 
 /**
- * @brief push-to-talk release: keeps capturing for a short hangover so the tail of the last word ships (and the mic-off message cannot outrun the final audio frames), then stops
+ * @brief schedules capture to stop after the final audio frames have been sent
  *
  * @return void
  */
@@ -192,7 +184,7 @@ function voice__process_stop_sending_audio()
  */
 function voice__process_stop_sending_audio_now()
 {
-    // audio capture only exists in the webview; node crashed here on a missing symbol
+    // capture exists only in the WebView
     if (typeof audio__set_microphone_capture_active !== "function")
     {
         return;
@@ -224,8 +216,8 @@ function voice__process_stop_sending_audio_now()
 
     g_local_audio_stream.getTracks()[0].enabled = false;
 
-    // no edge of the capture graph may ever be disconnected: an unpulled mic source freezes stale
-    // speech in chromium's stream fifo, and the next press replays it. the worklet gate mutes alone
+    // keep the capture graph connected so Chromium cannot replay buffered speech
+    // the worklet gate controls transmission
 
     g_is_microphone_active = false;
     let message_object = {
@@ -238,15 +230,12 @@ function voice__process_stop_sending_audio_now()
     connection__send_message_object(message_object);
     g_last_sent_value_microphone_usage = 2;
 
-    // drop the encoder's half-filled frame, otherwise its stale samples lead the NEXT
-    // transmission (a piece of the previous sentence replayed on the new press)
+    // discard partial encoder input before the next transmission
     g_opus_encoder_worker.postMessage({ type: "clear_opus_encoder_buffer" });
 }
 
 /**
- * @brief the udp probe, run once after a datachannel attempt failed
- *        a browser under the "disable non-proxied udp" policy yields no udp ice candidates at all,
- *        which the page cannot read but can infer, and then says so
+ * @brief probes UDP support after a failed data channel attempt and reports missing candidates
  *
  * @return void
  */
@@ -272,7 +261,10 @@ function voice__probe_webrtc_udp_and_warn()
         };
 
         probe_pc.createDataChannel("udp-probe");
-        probe_pc.createOffer().then(function(offer) { return probe_pc.setLocalDescription(offer); });
+        probe_pc.createOffer().then(function(offer)
+        {
+            return probe_pc.setLocalDescription(offer);
+        });
 
         window.setTimeout(function()
         {
@@ -294,9 +286,7 @@ function voice__probe_webrtc_udp_and_warn()
 }
 
 /**
- * @brief the datachannel loop: whenever voice is allowed, the channel is down and the client is not idle, it creates a fresh peer connection and asks the server for a new datachannel, then sleeps and looks again
- *        an unordered, unreliable channel between this client and the server only, never between
- *        clients; node has no webrtc and leaves at once
+ * @brief retries the server peer connection while voice is allowed and the client is active
  *
  * @param boolean is_this_reconnect -> true when a previous channel existed
  *
@@ -312,16 +302,14 @@ async function voice__webrtc_datachannel_connection_check(is_this_reconnect = fa
         return;
     }
 
-    // voice runs in the webview only; node has no webrtc and must never enter this.
-    // the caller set the running flag, so it must be dropped here too
+    // Node has no WebRTC capture. release the running flag before returning
     if (typeof RTCPeerConnection === "undefined")
     {
         g_is_webrtc_datachannel_check_running = false;
         return;
     }
 
-    // an unordered, unreliable datachannel (maxRetransmits 0): a udp-like connection between this client
-    // and the server only, never between clients, so nothing here is peer to peer
+    // use an unordered data channel without retransmission, connected only to the server
 
     while (true)
     {
@@ -334,8 +322,7 @@ async function voice__webrtc_datachannel_connection_check(is_this_reconnect = fa
 
         if (g_is_voice_chat_allowed_by_server == true && g_is_webrtc_datachannel_connected == false && g_is_deep_idle == false)
         {
-            // one exception here must not end the loop: a stopped loop leaves the running flag
-            // stranded true, which blocks every future re-create until the app restarts
+            // keep retrying after setup exceptions instead of leaving the running flag stuck
             try
             {
                 voice__create_new_peer_connection_object_for_use(is_this_reconnect);
@@ -350,14 +337,12 @@ async function voice__webrtc_datachannel_connection_check(is_this_reconnect = fa
             }
             catch (datachannel_attempt_error)
             {
-                console.error("webrtc datachannel attempt failed: "
-                    + (datachannel_attempt_error != null && datachannel_attempt_error.stack ? datachannel_attempt_error.stack : datachannel_attempt_error));
+                console.error("webrtc datachannel attempt failed: " + (datachannel_attempt_error != null && datachannel_attempt_error.stack ? datachannel_attempt_error.stack : datachannel_attempt_error));
             }
 
             await voice__datachannel_retry_sleep(10000);
 
-            // a full attempt window passed and the channel is still down: find out
-            // whether the browser is even capable of direct udp before retrying forever
+            // after the first failed attempt, check whether UDP candidates are available
             if (g_is_webrtc_datachannel_connected == false && g_is_deep_idle == false)
             {
                 // with a websocket as the fallback the warning about blocked udp is not needed
@@ -367,8 +352,7 @@ async function voice__webrtc_datachannel_connection_check(is_this_reconnect = fa
                 }
             }
 
-            // the server refused for a while (10 attempts never connected): wait it out here instead
-            // of asking every 10 s; a new login resolves the sleep and the server counts afresh
+            // after repeated refusals, wait for a new login before trying again
             if (g_is_webrtc_datachannel_connected == false && g_webrtc_datachannel_cooldown_until_ms > new Date().valueOf())
             {
                 let remaining_ms = g_webrtc_datachannel_cooldown_until_ms - new Date().valueOf();
@@ -401,15 +385,12 @@ function voice__send_sdp_answer_to_server(value)
         }
     };
 
-    console.log(message_object);
 
     connection__send_message_object(message_object);
 }
 
 /**
- * @brief replaces g_peer_connection_with_server with a new RTCPeerConnection with the webrtc handlers attached
- *        the replaced one is closed, since an abandoned but open pc kept its ice agent alive and
- *        overwrote the state with events of the replaced connection; g_iceconfig carries the TURN server exactly once
+ * @brief replaces the old peer connection and installs handlers on its successor
  *
  * @param boolean is_this_reconnect -> true when a previous channel existed
  *
@@ -417,9 +398,7 @@ function voice__send_sdp_answer_to_server(value)
  */
 function voice__create_new_peer_connection_object_for_use(is_this_reconnect = false)
 {
-    // close the replaced pc: an abandoned but open pc kept its ice agent and its
-    // 'datachannel' listener alive, overwriting the state with events of the replaced connection and slowly
-    // eating into the browser's peer connection cap
+    // close the replaced peer connection so its callbacks cannot overwrite the new state
     if (g_peer_connection_with_server != null)
     {
         try
@@ -438,16 +417,14 @@ function voice__create_new_peer_connection_object_for_use(is_this_reconnect = fa
     g_is_video_datachannel_connected = false;
     g_peer_connection_with_server = null;
 
-    // added when missing rather than keyed on is_this_reconnect: the audio_enabled handler
-    // rebuilds g_iceconfig without it, and retries used to push a duplicate every 10s
+    // add the constraint only when absent because audio_enabled may rebuild the ICE configuration
     let is_turn_server_present = false;
 
     for (let i = 0; i < g_iceconfig.iceServers.length; i++)
     {
         let ice_server_urls = g_iceconfig.iceServers[i].urls;
 
-        if ((typeof ice_server_urls === "string" && ice_server_urls.indexOf("turn:") == 0)
-            || (Array.isArray(ice_server_urls) && ice_server_urls.length > 0 && String(ice_server_urls[0]).indexOf("turn:") == 0))
+        if ((typeof ice_server_urls === "string" && ice_server_urls.indexOf("turn:") == 0) || (Array.isArray(ice_server_urls) && ice_server_urls.length > 0 && String(ice_server_urls[0]).indexOf("turn:") == 0))
         {
             is_turn_server_present = true;
             break;
@@ -479,14 +456,14 @@ function voice__create_new_peer_connection_object_for_use(is_this_reconnect = fa
 }
 
 /**
- * @brief applies the Mobile-only visibility preference and shows the floating touch control only while connected and allowed by local settings
+ * @brief shows the floating microphone control when connected and allowed by local settings
+ * the visibility preference applies to the Mobile theme only
  *
  * @return void
  */
 function voice__update_microphone_button()
 {
-    let hide_in_mobile_theme = connection__current_theme_name() === "default-mobile"
-        && g_hide_mobile_microphone_button;
+    let hide_in_mobile_theme = connection__current_theme_name() === "default-mobile" && g_hide_mobile_microphone_button;
     document.body.classList.toggle("hide-mobile-microphone-button", hide_in_mobile_theme);
 
     let button = document.getElementById("microphone-push-to-talk-button-touch-device");
@@ -502,7 +479,7 @@ function voice__update_microphone_button()
         return;
     }
 
-    // without a connection there is nobody to talk to, so the mic has no business floating over the connect form or the bare page
+    // hide the microphone while disconnected
     if (g_is_authenticated != true)
     {
         button.style.display = "none";
@@ -514,15 +491,13 @@ function voice__update_microphone_button()
 }
 
 /**
- * @brief requests getUserMedia (with a plain-http explainer when unavailable), builds the mic capture chain once, and reports microphone_usage=2 (enabled, not sending) to the server
- *        a chosen input device is requested as "ideal", so an unplugged device falls back to the default instead of failing
+ * @brief requests microphone access, builds capture and reports readiness to the server
  *
  * @return void
  */
 function voice__activate_microphone()
 {
-    // getUserMedia exists only in a secure context (https, localhost or a file:// page); over plain
-    // http from a remote host navigator.mediaDevices is undefined, so say so instead of throwing
+    // report unavailable microphone APIs before calling getUserMedia
     if (navigator.mediaDevices == null || typeof navigator.mediaDevices.getUserMedia != "function")
     {
         utils__custom_alert("the microphone needs a secure connection: open the client over HTTPS, from localhost, or as a local file. you are most likely loading it over plain HTTP.");
@@ -531,8 +506,7 @@ function voice__activate_microphone()
 
     let microphone_constraints = { audio: true };
 
-    // a chosen input device is requested as "ideal", because "exact" would fail the whole mic
-    // activation when that device is unplugged - the browser then falls back to its default
+    // request the device as ideal so an unplugged device can fall back to the default
     if (g_selected_microphone_device_id != "")
     {
         microphone_constraints = { audio: { deviceId: { ideal: g_selected_microphone_device_id } } };
@@ -571,8 +545,8 @@ function voice__activate_microphone()
                 g_audio_input = g_audio_context.createMediaStreamSource(stream);
                 g_audio_recorder_gain_node = g_audio_context.createGain();
 
-                // AudioWorkletNode capture when the worklet module is available, ScriptProcessorNode
-                // otherwise; also wires mic -> gain -> capture node -> destination
+                // create worklet capture when available, otherwise use ScriptProcessorNode
+                // connect microphone, gain, capture and destination
                 audio__create_microphone_capture_node();
 
                 const audioTracks = stream.getAudioTracks();
@@ -612,11 +586,9 @@ function voice__activate_microphone()
                 g_is_microphone_enabled_on_touch_device = true;
             }
 
-            // legacy always-on used to hide the button and open the mic right here;
-            // continuous mode is a tap-toggle now, so the button stays and stays quiet
+            // continuous mode still requires a tap before transmission starts
 
-            // desktop continuous mode set the flag before getUserMedia resolved, so the
-            // start call found g_is_microphone_enabled false and returned silently
+            // apply a pending continuous transmission request after microphone permission succeeds
             if (g_is_continuous_transmission_active == true)
             {
                 voice__process_start_sending_audio();
@@ -638,7 +610,7 @@ function voice__activate_microphone()
 }
 
 /**
- * @brief applies a client's new audio state: swaps the mic-state css class on their tree row, toggles the local push-to-talk controls, and shows the song marquee when streaming
+ * @brief updates a client audio indicator, local talk controls and any song marquee
  *
  * @param object client -> the client_id and audio_state from the server
  *
@@ -649,8 +621,7 @@ function voice__process_audio_state_of_single_client(client)
 
     let target_element = document.getElementById("client-audio-state-" + client.client_id);
 
-    // an audio state can arrive for a client this runtime has not listed yet; the lookup
-    // returns -1 and g_client_list[-1] is undefined, which threw out of the handler
+    // ignore audio state for a client that is not listed yet
     let client_index = channel_tree__get_client_index_in_array_by_client_id(client.client_id);
 
     if (client_index == -1 || target_element == null)
@@ -779,8 +750,7 @@ function voice__process_audio_state_of_single_client(client)
                 g_is_webrtc_datachannel_connected = false;
                 if (g_is_webrtc_datachannel_check_running == false)
                 {
-                    // claim the flag like every other starter - without this the loop ran
-                    // unregistered and later triggers stacked concurrent loops on top of it
+                    // claim the running flag before starting the retry loop
                     g_is_webrtc_datachannel_check_running = true;
                     voice__webrtc_datachannel_connection_check(true);
                 }
@@ -803,45 +773,49 @@ function voice__process_audio_state_of_single_client(client)
     }
 }
 
+// samples sent to the encoder per step of the song stream
+const VOICE_SONG_CHUNK_SAMPLES = 4096;
+
 /**
- * @brief paces the song's mp3 chunks into the opus encoder worker
- *        bails out early when the server sends stop_song_stream, otherwise announces the song end after the last chunk
+ * @brief paces the samples of a song through the encoder until the song ends or the server stops it. Each chunk
+ * is converted to floating point just before it is sent, so the song is held in memory once, as 16 bit samples
  *
- * @param array data_chunks -> the mp3 chunks
+ * @param Int16Array pcm -> the song, one channel
  * @param number mp3_sample_rate -> the song's sample rate
  *
  * @return promise resolves when the song ended or was stopped
  */
-async function voice__stream_local_mp3_file_to_other_clients(data_chunks, mp3_sample_rate)
+async function voice__stream_local_mp3_file_to_other_clients(pcm, mp3_sample_rate)
 {
-    // a song stream is a fresh spurt like a press: reset the encoder and mark the
-    // boundary, so receivers scrub this sender's decoder before the first music frame
+    // reset the encoder and sequence at song start so receivers discard old decoder state
     g_opus_encoder_worker.postMessage({ type: "clear_opus_encoder_buffer" });
     g_voice_send_sequence_number = (g_voice_send_sequence_number + G_OPUS_SPURT_BOUNDARY_SEQUENCE_JUMP) & 0xffff;
 
-    for (var i = 0; i < data_chunks.length; i++)
+    for (let start = 0; start < pcm.length; start += VOICE_SONG_CHUNK_SAMPLES)
     {
-        let message = {
-            type: "encode_mp3_chunk",
-            value: data_chunks[i],
-            mp3_sample_rate: mp3_sample_rate
-        };
+        // convert one chunk
+        let chunk = new Float32Array(VOICE_SONG_CHUNK_SAMPLES);
+        let end = Math.min(pcm.length, start + VOICE_SONG_CHUNK_SAMPLES);
+        for (let i = start; i < end; i++)
+        {
+            chunk[i - start] = (pcm[i] + 0.5) / 32767.5;
+        }
 
-        g_opus_encoder_worker.postMessage(message);
+        // send to encoder
+        g_opus_encoder_worker.postMessage({
+            type: "encode_mp3_chunk",
+            value: chunk,
+            mp3_sample_rate: mp3_sample_rate
+        }, [chunk.buffer]);
 
         if (g_stop_song_stream_message_received)
         {
             g_stop_song_stream_message_received = false;
 
-            // a song stream ends three ways: the pause button, the microphone being switched off, or
-            // all bytes sent; each is handled a little differently
+            // pause or microphone shutdown arrives as stop_song_stream while this loop waits
+            // handle that stop separately from reaching the end of the song
 
-            // the first two cases arrive as the server's stop_song_stream message, which sets
-            // g_stop_song_stream_message_received while this loop awaits its sleep
-
-            // if condition is met only if user clicked "pause song" button located near file image select button
-            // if user clicks de-activate microphone button, audio_state is set to 3 (deactivated), not checking audio_state
-            // would cause the state go from 3 to 2 again..
+            // keep a disabled microphone disabled when pausing the song
 
             if (g_client_list[channel_tree__get_client_index_in_array_by_client_id(g_local_client_id)].audio_state == G_AUDIO_STATE.PUSH_TO_TALK_ACTIVE)
             {
@@ -862,11 +836,7 @@ async function voice__stream_local_mp3_file_to_other_clients(data_chunks, mp3_sa
             return;
         }
 
-        // the loop finishes sending before the others finish playing, so the mic-off request goes
-        // out while the song is still audible on their side
-
-        // also works with 60
-        // 100 - starts lagging
+        // sending finishes before remote playback, so the microphone may stop while listeners hear the buffered tail
         await utils__sleep(80);
     }
 
@@ -900,31 +870,21 @@ async function voice__stream_local_mp3_file_to_other_clients(data_chunks, mp3_sa
 }
 
 /**
- * @brief wav ArrayBuffer -> chunks of float samples: skips the 44-byte header and converts the 16-bit signed samples to floats
+ * @brief tells whether file data starts like an MP3 file: with an ID3 tag or with the header of an MPEG audio
+ * frame (11 set bits, the frame sync). The file name is not used: a file named .m4a can hold MP3 data and the reverse
  *
- * @param ArrayBuffer arrayBuffer -> the wav file
- * @param number chunkLength -> samples per chunk
+ * @param Uint8Array bytes -> the first bytes of the file, at least 3
  *
- * @return array the Float32Array chunks
+ * @return boolean true for MP3 data
  */
-function voice__chunk_buffers(arrayBuffer, chunkLength)
+function voice__is_mp3_data(bytes)
 {
-    var chunkedBuffers = [];
-
-    var totalFile = new Int16Array(arrayBuffer);
-    // Skip wave header; 44 bytes
-    for (i = 22; i < totalFile.length; i += chunkLength)
+    // id3 tag
+    if (bytes.length >= 3 && bytes[0] == 0x49 && bytes[1] == 0x44 && bytes[2] == 0x33)
     {
+        return true;
+    }
 
-        // Convert 16 bit signed int to 32bit float
-        var bufferChunk = new Float32Array(chunkLength);
-        for (j = 0; j < chunkLength; j++)
-        {
-            bufferChunk[j] = (totalFile[i + j] + 0.5) / 32767.5;
-        }
-
-        chunkedBuffers.push(bufferChunk);
-    };
-
-    return chunkedBuffers;
+    // frame sync
+    return bytes.length >= 2 && bytes[0] == 0xff && (bytes[1] & 0xe0) == 0xe0;
 }

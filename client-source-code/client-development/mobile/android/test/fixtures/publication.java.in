@@ -1,0 +1,134 @@
+import java.io.*;
+import java.util.*;
+class Log
+{
+    static void w(String tag, String text)
+    {
+    }
+}
+class Uri
+{
+}
+class MediaStore
+{
+    static class Downloads
+    {
+        static final String DISPLAY_NAME = "name";
+        static final String MIME_TYPE = "mime";
+        static final String IS_PENDING = "pending";
+        static final Uri EXTERNAL_CONTENT_URI = new Uri();
+    }
+}
+class ContentValues extends HashMap<String, Object>
+{
+}
+class ContentResolver
+{
+    boolean pending;
+    boolean failInsert;
+    boolean failOpen;
+    boolean failWrite;
+    boolean failUpdate;
+    boolean failDelete;
+    int updateRows = 1;
+    int deleteCalls;
+    Uri insert(Uri location, ContentValues values)
+    {
+        if (this.failInsert)
+        {
+            throw new IllegalStateException("synthetic insert failure");
+        }
+        this.pending = true;
+        return new Uri();
+    }
+    OutputStream openOutputStream(Uri uri) throws IOException
+    {
+        if (this.failOpen)
+        {
+            throw new SecurityException("synthetic open failure");
+        }
+        if (this.failWrite)
+        {
+            throw new IOException("synthetic write failure");
+        }
+        return new ByteArrayOutputStream();
+    }
+    int update(Uri uri, ContentValues values, String where, String[] arguments)
+    {
+        if (this.failUpdate)
+        {
+            throw new IllegalStateException("synthetic publication failure");
+        }
+        if (this.updateRows == 1)
+        {
+            this.pending = false;
+        }
+        return this.updateRows;
+    }
+    int delete(Uri uri, String where, String[] arguments)
+    {
+        this.deleteCalls++;
+        if (this.failDelete)
+        {
+            throw new IllegalStateException("synthetic cleanup failure");
+        }
+        this.pending = false;
+        return 1;
+    }
+}
+class Context
+{
+    ContentResolver resolver = new ContentResolver();
+    ContentResolver getContentResolver()
+    {
+        return this.resolver;
+    }
+}
+class JavascriptJavaBridge
+{
+    Context mContext = new Context();
+    List<String> toasts = new ArrayList<String>();
+    void showToastOnMainThread(String text)
+    {
+        this.toasts.add(text);
+    }
+    void save()
+    {
+        this.saveToMediaStoreDownloads("synthetic.lmn", "application/octet-stream", new byte[] { 1, 2, 3 });
+    }
+    __SAVE_METHOD__
+}
+
+public class PublicationRegression
+{
+    static void check(boolean result, String message)
+    {
+        if (!result)
+        {
+            throw new AssertionError(message);
+        }
+    }
+    public static void main(String[] args)
+    {
+        JavascriptJavaBridge saved = new JavascriptJavaBridge();
+        saved.save();
+        check(!saved.mContext.resolver.pending && saved.toasts.get(0).startsWith("Saved"), "Success did not publish");
+        for (int mode = 0; mode < 6; mode++)
+        {
+            JavascriptJavaBridge failed = new JavascriptJavaBridge();
+            failed.mContext.resolver.updateRows = mode == 0 ? 0 : 1;
+            failed.mContext.resolver.failInsert = mode == 1;
+            failed.mContext.resolver.failOpen = mode == 2;
+            failed.mContext.resolver.failUpdate = mode == 3;
+            failed.mContext.resolver.failWrite = mode == 4 || mode == 5;
+            failed.mContext.resolver.failDelete = mode == 5;
+            failed.save();
+            check(failed.toasts.size() == 1 && failed.toasts.get(0).startsWith("Could not"), "Failure lacked terminal feedback: " + mode);
+            if (mode != 1 && mode != 5)
+            {
+                check(!failed.mContext.resolver.pending && failed.mContext.resolver.deleteCalls == 1, "Unfinished row not removed: " + mode);
+            }
+        }
+        System.out.println("PASS: successful publication; zero-row update, insert/open/update/write exceptions, cleanup exception all report failure without escaping");
+    }
+}

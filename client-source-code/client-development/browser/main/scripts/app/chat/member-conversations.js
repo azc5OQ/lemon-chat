@@ -1,5 +1,5 @@
-// Conversation-list features reuse the member mirror and chat contexts. No separate message store or
-// network requests: previews describe only messages already retained in this client.
+// builds conversation previews from messages already retained in this client
+// reuses existing member lists and chat contexts without extra network requests
 var member_conversations =
 {
     active: false,
@@ -12,9 +12,14 @@ var member_conversations =
     participant_focus: null
 };
 
+/**
+ * @brief applies the theme's conversation layout and starts or stops its list observer
+ *
+ * @return void
+ */
 function member_conversations__apply_theme()
 {
-    // Themes opt in through CSS; no theme names or palettes are coupled to this module.
+    // CSS enables these features without coupling the module to particular themes
     let style = getComputedStyle(document.documentElement);
     member_conversations.active = style.getPropertyValue("--member-conversations").trim() === "1";
     member_conversations.auto_open = style.getPropertyValue("--member-conversations-auto-open").trim() === "1";
@@ -82,7 +87,7 @@ function member_conversations__apply_theme()
     {
         childList: true
     });
-    // the tab of a conversation is created when the conversation is opened; it gets its picture and its line then
+    // initialize the picture and preview when a conversation tab is created
     member_conversations.observer.observe(document.getElementById("chat-context-selectors-container"),
     {
         childList: true
@@ -90,8 +95,13 @@ function member_conversations__apply_theme()
     member_conversations__schedule_refresh();
 }
 
-// Keep the existing connection actions and disconnect confirmation, but put them in Settings
-// for the conversation-list themes. Restore the original toolbar position when leaving them.
+// place existing connection actions in Settings for conversation list themes
+// restore their toolbar position when leaving those themes
+/**
+ * @brief moves connection controls into settings for room lists and restores their toolbar position otherwise
+ *
+ * @return void
+ */
 function member_conversations__place_connection_menu()
 {
     let menu = document.getElementById("connections-menu");
@@ -129,6 +139,11 @@ function member_conversations__place_connection_menu()
     }
 }
 
+/**
+ * @brief queues one conversation list refresh for the next animation frame
+ *
+ * @return void
+ */
 function member_conversations__schedule_refresh()
 {
     if (!member_conversations.active || member_conversations.pending)
@@ -143,6 +158,11 @@ function member_conversations__schedule_refresh()
     });
 }
 
+/**
+ * @brief refreshes profile, message previews, channel participants and conversation list filtering
+ *
+ * @return void
+ */
 function member_conversations__refresh_people()
 {
     if (!member_conversations.active)
@@ -152,12 +172,13 @@ function member_conversations__refresh_people()
     let body = document.getElementById("member-list-body");
     let profile = document.getElementById("member-conversations-profile");
     let local = body.querySelector(".connected-local-client");
-    let current_channel = g_channel_list.find(function(channel) { return Number(channel.channel_id) === Number(g_current_channel_id); });
+    let current_channel = g_channel_list.find(function(channel)
+    {
+        return Number(channel.channel_id) === Number(g_current_channel_id);
+    });
 
     // the screen chosen in the bar decides whether the chat is shown
-    if (member_conversations.is_tab_bar_shown
-        && ((document.body.dataset.conversationTab == "chat") == g_is_chat_hidden)
-        && document.body.dataset.conversationTab != "people")
+    if (member_conversations.is_tab_bar_shown && ((document.body.dataset.conversationTab == "chat") == g_is_chat_hidden) && document.body.dataset.conversationTab != "people")
     {
         UI.hide_chat_container();
     }
@@ -196,10 +217,8 @@ function member_conversations__refresh_people()
     // mark new messages
     member_conversations__mark_messages();
 
-    // Conversation-list layouts use the channel icon as a picker; tabbed layouts keep the header shortcut.
-    document.getElementById("member-list-header").innerHTML = member_conversations.is_room_list_shown
-        ? "Chats"
-        : "People &amp; chats<button type='button' id='pocket-channel-switch' aria-haspopup='menu'>Switch channel</button>";
+    // conversation lists use the channel icon as a picker. tabbed layouts keep the header shortcut
+    document.getElementById("member-list-header").innerHTML = member_conversations.is_room_list_shown ? "Chats" : "People &amp; chats<button type='button' id='pocket-channel-switch' aria-haspopup='menu'>Switch channel</button>";
     for (let row of body.querySelectorAll(".member-list-client, .member-list-channel"))
     {
         let context_id = "";
@@ -264,14 +283,13 @@ function member_conversations__refresh_people()
         {
             let channel = row.querySelector(".member-list-client-channel");
             let presence = row.querySelector(".member-list-presence");
-            status = !row.classList.contains("in-current-channel") && channel != null && channel.textContent.trim() != ""
-                ? "In " + channel.textContent : presence != null ? presence.textContent : "";
+            status = !row.classList.contains("in-current-channel") && channel != null && channel.textContent.trim() != "" ? "In " + channel.textContent : presence != null ? presence.textContent : "";
         }
 
         // mark the title
         member_conversations__mark_title(row, context_id, status);
 
-        // Keep user text as text, including when it resembles markup.
+        // keep user text as text, including when it resembles markup
         let empty_preview = row.classList.contains("member-list-channel") ? status : "No messages yet";
         if (row.classList.contains("music-bot-client"))
         {
@@ -291,7 +309,7 @@ function member_conversations__refresh_people()
             member_conversations__render_participants(row, row.getAttribute("data-member-list-channel-id"), preview);
         }
     }
-    // Update every open channel tab, including an older channel whose chat is still being read.
+    // update every open channel tab, including an older channel whose chat is still being read
     for (let tab of document.querySelectorAll('.chat-context-selector[data-chat-context-selector-type="channel"]'))
     {
         let channel_id = tab.dataset.chatContextSelectorId.replace("channel-", "");
@@ -304,8 +322,7 @@ function member_conversations__refresh_people()
 }
 
 /**
- * @brief Shows or hides the bar with the four screens (people, chat, channels, me), for a theme that
- *        sets --member-conversations-tabs to 1. The bar is created the first time it is needed.
+ * @brief creates and toggles the four screen buttons when --member-conversations-tabs is enabled
  *
  * @return void
  */
@@ -344,10 +361,11 @@ function member_conversations__apply_tab_bar()
     if (member_conversations.is_tab_bar_shown == false)
     {
         delete document.body.dataset.conversationTab;
+        member_conversations__set_action_labels(false);
         return;
     }
 
-    // Open Chat initially, regardless of its position in the bar.
+    // open Chat initially, regardless of its position in the bar
     if (document.body.dataset.conversationTab == null)
     {
         member_conversations__mark_tab("chat");
@@ -355,7 +373,7 @@ function member_conversations__apply_tab_bar()
 }
 
 /**
- * @brief Stores which screen of the bar is shown and marks its button as pressed.
+ * @brief stores which screen of the bar is shown and marks its button as pressed
  *
  * @param string name -> "chat", "people", "channels" or "me"
  *
@@ -365,6 +383,7 @@ function member_conversations__mark_tab(name)
 {
     // remember the screen
     document.body.dataset.conversationTab = name;
+    member_conversations__set_action_labels(name === "me");
 
     // mark its button
     for (let button of document.querySelectorAll("#member-conversations-tabs > button"))
@@ -374,8 +393,30 @@ function member_conversations__mark_tab(name)
 }
 
 /**
- * @brief Shows one screen of the bar. The chat screen shows the chat of the user's channel; the other
- *        screens are shown in place of the chat.
+ * @brief uses full labels on the profile actions and restores compact toolbar labels elsewhere
+ *
+ * @param boolean profile_is_shown -> whether the profile screen is open
+ *
+ * @return void
+ */
+function member_conversations__set_action_labels(profile_is_shown)
+{
+    for (let [id, label] of [["choose-theme-button", "Appearance"], ["local-settings-button", "Settings"]])
+    {
+        let button = document.getElementById(id);
+        if (button != null)
+        {
+            if (button.dataset.toolbarLabel == null)
+            {
+                button.dataset.toolbarLabel = button.value;
+            }
+            button.value = profile_is_shown ? label : button.dataset.toolbarLabel;
+        }
+    }
+}
+
+/**
+ * @brief shows the selected screen, opening the user's channel when Chat is chosen
  *
  * @param string name -> "chat", "people", "channels" or "me"
  *
@@ -402,7 +443,7 @@ function member_conversations__show_tab(name)
 }
 
 /**
- * @brief A press on a button of the bar shows its screen.
+ * @brief shows the screen selected in the navigation bar
  *
  * @param object event -> the click event
  *
@@ -421,12 +462,7 @@ function member_conversations__tab_onclick(event)
 }
 
 /**
- * @brief A press in the channel tree while the bar is shown: a channel row gets the Join button, a press
- *        on that button joins the channel, and a person's row shows the conversation with that person.
- *        A press on a channel row alone does not move the user, so looking around joins nothing.
- *        The function is registered for the capture phase
- *        (it runs before the handlers of the pressed element), because the tree's own handlers stop
- *        the event. Those handlers select the conversation; this function shows it after they ran.
+ * @brief selects a conversation or shows a channel's Join control
  *
  * @param object event -> the click event
  *
@@ -483,8 +519,7 @@ function member_conversations__tree_onclick(event)
 }
 
 /**
- * @brief Shows the Join button on one channel row and removes it from every other row. The row of the
- *        user's own channel gets no button, and a second press on a row that has the button removes it.
+ * @brief toggles the Join button for a channel other than the current channel
  *
  * @param object channel -> the channel row (.single-channel), or null to remove the button everywhere
  *
@@ -516,8 +551,11 @@ function member_conversations__ask_join(channel)
 }
 
 /**
- * @brief Collects the people and music bots currently in a channel, with the local user first.
- *        Idle clients are not present in the channel.
+ * @brief collects people and music bots in a channel, with the local user first
+ *
+ * @param number|string channel_id -> channel to inspect
+ *
+ * @return array -> participants excluding idle clients
  */
 function member_conversations__channel_participants(channel_id)
 {
@@ -541,9 +579,10 @@ function member_conversations__channel_participants(channel_id)
 }
 
 /**
- * @brief Returns the names of people and music bots in a channel as one line of text.
+ * @brief returns the names of people and music bots in a channel as one line of text
  *
  * @param string channel_id -> id of the channel
+ * @param array|undefined participants -> optional participant list, otherwise collected from the channel
  *
  * @return string -> for example "Only you are here", "You, anna, peter" or "You, anna, peter, tom and 2 more"
  */
@@ -582,9 +621,13 @@ function member_conversations__channel_people_text(channel_id, participants)
 }
 
 /**
- * @brief Shows a bounded row of circular participant pictures beside the channel's names.
- *        Names stay as text; uploaded pictures follow the existing server avatar policy.
- *        These are previews, not additional buttons inside the channel's navigation control.
+ * @brief shows a bounded row of participant avatars beside the channel names
+ *
+ * @param Element container -> channel header or conversation row
+ * @param number|string channel_id -> channel whose participants are shown
+ * @param Element|null before -> insert before this child, or append when absent
+ *
+ * @return void
  */
 function member_conversations__render_participants(container, channel_id, before)
 {
@@ -634,6 +677,13 @@ function member_conversations__render_participants(container, channel_id, before
     summary.replaceChildren(avatars, names);
 }
 
+/**
+ * @brief builds a participant avatar with an allowed image, initials or a music bot symbol
+ *
+ * @param object client -> channel participant record
+ *
+ * @return HTMLSpanElement -> decorative participant avatar
+ */
 function member_conversations__participant_avatar(client)
 {
     let name = String(client.username || "");
@@ -642,8 +692,7 @@ function member_conversations__participant_avatar(client)
     avatar.dataset.clientId = client.client_id;
     avatar.title = name + (Number(client.client_id) === Number(g_local_client_id) ? " (you)" : client.is_music_bot == true ? " (music bot)" : "");
     avatar.setAttribute("aria-hidden", "true");
-    let image = g_server_policy.is_avatar_upload_allowed == true && typeof client.base64_avatar === "string"
-        ? client.base64_avatar : "";
+    let image = g_server_policy.is_avatar_upload_allowed == true && typeof client.base64_avatar === "string" ? client.base64_avatar : "";
     if (image)
     {
         avatar.style.backgroundImage = "url(" + JSON.stringify(image) + ")";
@@ -655,6 +704,11 @@ function member_conversations__participant_avatar(client)
     return avatar;
 }
 
+/**
+ * @brief makes channel headers accessible participant buttons only in supported layouts
+ *
+ * @return void
+ */
 function member_conversations__update_participant_triggers()
 {
     for (let tab of document.querySelectorAll('.chat-context-selector[data-chat-context-selector-type="channel"]'))
@@ -680,6 +734,11 @@ function member_conversations__update_participant_triggers()
     }
 }
 
+/**
+ * @brief binds participant dialog gestures once on the channel header container
+ *
+ * @return void
+ */
 function member_conversations__bind_participant_events()
 {
     let tabs = document.getElementById("chat-context-selectors-container");
@@ -688,9 +747,16 @@ function member_conversations__bind_participant_events()
         return;
     }
     member_conversations.participant_events_bound = true;
+    /**
+     * @brief opens participants from a trusted click or activation key on the active channel header
+     *
+     * @param MouseEvent|KeyboardEvent event -> channel header interaction
+     *
+     * @return void
+     */
     function open_from_header(event)
     {
-        // Programmatic tab.click() still opens the conversation from the chat list.
+        // programmatic tab.click() still opens the conversation from the chat list
         if (!event.isTrusted || (!member_conversations.is_room_list_shown && !member_conversations.is_tab_bar_shown) || g_is_chat_hidden)
         {
             return;
@@ -713,8 +779,12 @@ function member_conversations__bind_participant_events()
 }
 
 /**
- * @brief Opens everyone in the selected channel without changing channels or starting a private chat.
- *        The native modal supplies focus containment and Escape; the original header regains focus.
+ * @brief opens the participant list without changing the current channel or conversation
+ *
+ * @param number|string channel_id -> channel to list
+ * @param Element trigger -> control to focus when the dialog closes
+ *
+ * @return void
  */
 function member_conversations__open_participants(channel_id, trigger)
 {
@@ -725,12 +795,7 @@ function member_conversations__open_participants(channel_id, trigger)
         dialog.id = "channel-participants-dialog";
         dialog.setAttribute("aria-labelledby", "channel-participants-title");
         dialog.setAttribute("aria-describedby", "channel-participants-count");
-        dialog.innerHTML = '<div class="channel-participants-heading"><h2 id="channel-participants-title"></h2>'
-            + '<button type="button" id="channel-participants-close" aria-label="Close participants">×</button></div>'
-            + '<p id="channel-participants-count"></p>'
-            + '<input type="search" id="channel-participants-search" placeholder="Search participants" aria-label="Search participants" autocomplete="off">'
-            + '<ul id="channel-participants-list" tabindex="0" aria-label="Channel participants"></ul>'
-            + '<p id="channel-participants-empty" role="status" hidden></p>';
+        dialog.innerHTML = '<div class="channel-participants-heading"><h2 id="channel-participants-title"></h2>' + '<button type="button" id="channel-participants-close" aria-label="Close participants">×</button></div>' + '<p id="channel-participants-count"></p>' + '<input type="search" id="channel-participants-search" placeholder="Search participants" aria-label="Search participants" autocomplete="off">' + '<ul id="channel-participants-list" tabindex="0" aria-label="Channel participants"></ul>' + '<p id="channel-participants-empty" role="status" hidden></p>';
         document.body.appendChild(dialog);
         document.getElementById("channel-participants-close").addEventListener("click", function()
         {
@@ -740,8 +805,7 @@ function member_conversations__open_participants(channel_id, trigger)
         dialog.addEventListener("click", function(event)
         {
             let bounds = dialog.getBoundingClientRect();
-            if (event.target === dialog && (event.clientX < bounds.left || event.clientX > bounds.right
-                || event.clientY < bounds.top || event.clientY > bounds.bottom))
+            if (event.target === dialog && (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom))
             {
                 dialog.close();
             }
@@ -765,10 +829,15 @@ function member_conversations__open_participants(channel_id, trigger)
         dialog.showModal();
     }
     member_conversations__refresh_participant_dialog();
-    // Focus Close initially so opening the list does not raise the phone keyboard.
+    // focus Close initially so opening the list does not raise the phone keyboard
     document.getElementById("channel-participants-close").focus({ preventScroll: true });
 }
 
+/**
+ * @brief refreshes an open participant dialog while preserving its scroll position and search
+ *
+ * @return void
+ */
 function member_conversations__refresh_participant_dialog()
 {
     let dialog = document.getElementById("channel-participants-dialog");
@@ -803,8 +872,7 @@ function member_conversations__refresh_participant_dialog()
         name.textContent = String(client.username || "");
         let description = document.createElement("span");
         description.className = "channel-participant-description";
-        description.textContent = Number(client.client_id) === Number(g_local_client_id) ? "You"
-            : client.is_music_bot == true ? "Music bot" : "In this channel";
+        description.textContent = Number(client.client_id) === Number(g_local_client_id) ? "You" : client.is_music_bot == true ? "Music bot" : "In this channel";
         row.hidden = !(name.textContent + " " + description.textContent).toLocaleLowerCase().includes(query);
         if (!row.hidden)
         {
@@ -821,12 +889,7 @@ function member_conversations__refresh_participant_dialog()
 }
 
 /**
- * @brief Writes the picture and one line of text of a conversation onto the tab of that conversation.
- *        The top bar of the phone layout shows the tab of the open conversation as its title and
- *        draws these marks: data-conversation-status holds the line (the people in a channel, or
- *        where a person is; the row of a conversation without a message shows the same line),
- *        data-conversation-initials the letters of the round picture ("#" for a channel), and the
- *        style value --conversation-picture the uploaded picture when there is one.
+ * @brief updates the conversation tab's status, initials and avatar for the phone header
  *
  * @param object row -> the row of the conversation in the list
  * @param string context_id -> id of the conversation's chat context, for example chat-context-pm-3
@@ -862,8 +925,10 @@ function member_conversations__mark_title(row, context_id, status)
 }
 
 /**
- * @brief Makes the channel picture a visible, keyboard-accessible channel picker.
- *        The rest of the row opens the conversation; its existing hold gesture also opens the picker.
+ * @brief makes channel icons accessible channel pickers
+ * the remaining row opens the conversation. holding the row also opens the picker
+ *
+ * @return void
  */
 function member_conversations__refresh_rooms()
 {
@@ -902,10 +967,7 @@ function member_conversations__refresh_rooms()
 }
 
 /**
- * @brief Writes two marks into the messages of every conversation, for the message bubbles of the phone
- *        layout: the time without seconds into data-short-time of the time line, and the class
- *        chat-message-same-sender onto a message that follows a message of the same sender.
- *        A message that has its marks is skipped.
+ * @brief adds short timestamps and repeated sender marks to phone message bubbles
  *
  * @return void
  */
@@ -930,8 +992,8 @@ function member_conversations__mark_messages()
 }
 
 /**
- * @brief Shows the chat of a channel, the same way as a press on its conversation tab.
- *        A tab that was just written into the page has no handler yet and gets the standard one.
+ * @brief shows the chat of a channel, the same way as a press on its conversation tab
+ *        A tab that was just written into the page has no handler yet and gets the standard one
  *
  * @param number channel_id -> id of the channel whose chat is shown
  *
@@ -959,8 +1021,7 @@ function member_conversations__open_channel_chat(channel_id)
 }
 
 /**
- * @brief Joins a channel the same way as a double click on it in the channel tree: that code skips the
- *        channel the user is already in and asks for the password of a locked channel.
+ * @brief joins a channel through the existing tree handler, including its password prompt
  *
  * @param number channel_id -> id of the channel to join
  *
@@ -971,10 +1032,17 @@ function member_conversations__join_channel(channel_id)
     let name_element = document.querySelector('#channel-list-container .single-channel[data-channel-id="' + channel_id + '"] [data-channel-name-id]');
     if (name_element != null)
     {
-        UI.single_channel_doubleclick_join({ stopPropagation: function() {}, target: name_element });
+        UI.single_channel_doubleclick_join({ stopPropagation: function()
+        {
+        }, target: name_element });
     }
 }
 
+/**
+ * @brief filters conversation rows by name or channel and updates the empty result message
+ *
+ * @return void
+ */
 function member_conversations__filter_people()
 {
     if (!member_conversations.active)
@@ -999,6 +1067,11 @@ function member_conversations__filter_people()
     document.getElementById("member-conversations-search-empty").hidden = matches !== 0 || query === "";
 }
 
+/**
+ * @brief shows and focuses the selected conversation without opening the mobile keyboard
+ *
+ * @return void
+ */
 function member_conversations__show_selected_chat()
 {
     // only a theme with the conversation list switches from the list to the chat
@@ -1011,7 +1084,7 @@ function member_conversations__show_selected_chat()
         UI.hide_chat_container();
     }
     document.getElementById("member-conversations-search-input").blur();
-    // Focus the conversation without raising the phone keyboard until the user types.
+    // focus the conversation without raising the phone keyboard until the user types
     let conversation = document.getElementById(g_current_chat_context_id);
     if (conversation != null)
     {

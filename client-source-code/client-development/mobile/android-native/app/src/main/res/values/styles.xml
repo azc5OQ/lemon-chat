@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="AppTheme" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:windowBackground">#17262c</item>
+        <item name="android:colorAccent">#05a3ff</item>
+        <item name="android:windowSoftInputMode">adjustResize</item>
+    </style>
+    <style name="NativeLight" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:windowSoftInputMode">adjustResize</item>
+        <item name="android:colorAccent">#19191c</item>
+    </style>
+    <style name="NativeDark" parent="AppTheme">
+        <item name="android:colorAccent">#f2f2f3</item>
+    </style>
+    <style name="NativeMobileLight" parent="NativeLight">
+        <item name="android:colorAccent">#087ebd</item>
+    </style>
+    <style name="NativeMobileDark" parent="NativeDark">
+        <item name="android:colorAccent">#05a3ff</item>
+    </style>
+    <style name="NativeMobile2Light" parent="NativeLight">
+        <item name="android:colorAccent">#6956dc</item>
+    </style>
+    <style name="NativeMobile2Dark" parent="NativeDark">
+        <item name="android:colorAccent">#8475ff</item>
+    </style>
+    <style name="NativePocketLight" parent="NativeLight">
+        <item name="android:colorAccent">#3d444c</item>
+    </style>
+    <style name="NativePocketDark" parent="NativeDark">
+        <item name="android:colorAccent">#dbe2e8</item>
+    </style>
+    <style name="NativeSimpleLight" parent="NativeLight">
+        <item name="android:colorAccent">#8b6b00</item>
+    </style>
+    <style name="NativeSimpleDark" parent="NativeDark">
+        <item name="android:colorAccent">#ffd83d</item>
+    </style>
+    <style name="NativeBluebellLight" parent="NativeLight">
+        <item name="android:colorAccent">#735bd5</item>
+    </style>
+    <style name="NativeBluebellDark" parent="NativeDark">
+        <item name="android:colorAccent">#7b6cf6</item>
+    </style>
+</resources>

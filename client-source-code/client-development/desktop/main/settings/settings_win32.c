@@ -1,4 +1,4 @@
-// Loads and saves local overlay preferences; changes apply only after an explicit save.
+// loads and saves local overlay preferences. Changes apply only after an explicit save
 #include <windows.h>
 #include <wchar.h>
 #include <shlobj.h>
@@ -10,13 +10,13 @@
 static boole _settings_internal__path(wchar_t *path, uint64 capacity, const wchar_t *filename);
 
 /**
- * @brief creates the local settings directory and builds a bounded path inside it.
+ * @brief creates the local settings directory and builds a bounded path inside it
  *
- * @param wchar_t* path -> caller-owned path buffer
+ * @param wchar_t* path -> caller owned path buffer
  * @param uint64 capacity -> destination capacity including its terminator
  * @param const wchar_t* filename -> settings filename suffix
  *
- * @return boole -> 1 on success; 0 on a path or filesystem error
+ * @return boole -> 1 on success. 0 on a path or filesystem error
  */
 static boole _settings_internal__path(wchar_t *path, uint64 capacity, const wchar_t *filename)
 {
@@ -72,11 +72,13 @@ static boole _settings_internal__path(wchar_t *path, uint64 capacity, const wcha
 }
 
 /**
- * @brief reads one bounded settings file through the Windows filesystem API.
- * @param char* bytes -> caller-owned buffer, cleared before use
+ * @brief reads one bounded settings file through the Windows filesystem API
+ *
+ * @param char* bytes -> caller owned buffer, cleared before use
  * @param uint64 capacity -> buffer capacity including its terminator
  * @param uint64* length -> receives the number of file bytes
- * @return boole -> 1 on success; 0 if missing, too large or unreadable
+ *
+ * @return boole -> 1 on success. 0 if missing, too large or unreadable
  */
 boole desktop_settings_file__read(char *bytes, uint64 capacity, uint64 *length)
 {
@@ -116,10 +118,12 @@ boole desktop_settings_file__read(char *bytes, uint64 capacity, uint64 *length)
 }
 
 /**
- * @brief replaces saved settings only after a complete write and flush.
+ * @brief replaces saved settings only after a complete write and flush
+ *
  * @param const char* bytes -> serialized settings
  * @param uint64 length -> byte count
- * @return boole -> 1 when saved; 0 on a filesystem error
+ *
+ * @return boole -> 1 when saved. 0 on a filesystem error
  */
 boole desktop_settings_file__write(const char *bytes, uint64 length)
 {

@@ -1,4 +1,4 @@
-// This file displays server groups and the controls each user has permission to use.
+// this file displays server groups and the controls each user has permission to use
 
 var groups_window =
 {
@@ -34,13 +34,13 @@ var groups_window =
 var groups_last_channel_power_warning = 0;
 
 /**
- * @brief Opens the group list or the groups assigned to a selected client.
+ * @brief opens the group list or the groups assigned to a selected client
+ *
  * @param number client_id -> optional connected client to select
  */
 function groups__open(client_id)
 {
-    if (!g_is_authenticated || !g_server_policy.is_permission_system_enabled
-        || (document.body.classList.contains("server-groups-admin-only") && !g_is_local_client_admin))
+    if (!g_is_authenticated || !g_server_policy.is_permission_system_enabled || (document.body.classList.contains("server-groups-admin-only") && !g_is_local_client_admin))
     {
         return;
     }
@@ -63,7 +63,7 @@ function groups__open(client_id)
 }
 
 /**
- * @brief Refreshes an open window after related server messages have been handled.
+ * @brief refreshes an open window after related server messages have been handled
  */
 function groups__schedule_refresh()
 {
@@ -77,8 +77,7 @@ function groups__schedule_refresh()
         channel_groups__refresh_icons();
         channel_groups__render();
         let client = channel_tree__get_client_by_client_id(g_local_client_id);
-        let allowed = g_is_client_list_retrieved && !g_fast_reconnect.resumed
-            && g_server_policy.is_stored_client_list_allowed && groups__is_allowed(client, "view_stored_users");
+        let allowed = g_is_client_list_retrieved && !g_fast_reconnect.resumed && g_server_policy.is_stored_client_list_allowed && groups__is_allowed(client, "view_stored_users");
         if (allowed !== groups_window.stored_users_allowed)
         {
             groups_window.stored_users_allowed = allowed;
@@ -104,17 +103,18 @@ function groups__schedule_refresh()
 }
 
 /**
- * @brief Checks the current connection before allowing changes to groups.
+ * @brief checks the current connection before allowing changes to groups
+ *
  * @return boolean -> true when at least one group management action is allowed
  */
 function groups__can_manage()
 {
-    return g_server_policy.is_permission_system_enabled && ["create_groups", "edit_groups", "delete_groups",
-        "assign_groups", "remove_groups", "edit_group_permissions", "upload_icons", "delete_icons"].some(groups__has_permission);
+    return g_server_policy.is_permission_system_enabled && ["create_groups", "edit_groups", "delete_groups", "assign_groups", "remove_groups", "edit_group_permissions", "upload_icons", "delete_icons"].some(groups__has_permission);
 }
 
 /**
- * @brief Adds a group's server supplied icon and name to a row.
+ * @brief adds a group's server supplied icon and name to a row
+ *
  * @param Element row -> destination row
  * @param object group -> server group
  */
@@ -138,7 +138,7 @@ function groups__label(row, group)
 }
 
 /**
- * @brief Shows the selected group's permissions, icon and members.
+ * @brief shows the selected group's permissions, icon and members
  */
 function groups__refresh()
 {
@@ -187,8 +187,7 @@ function groups__refresh()
         button.className = "groups-list-entry";
         button.dataset.groupsEntry = String(entry.group_id);
         button.setAttribute("aria-pressed", String(groups_window.selected === entry.group_id));
-        button.title = entry.group_name + " (group " + entry.group_id + ")"
-            + (entry.is_default_guest ? ". Assigned automatically to users without another group." : "");
+        button.title = entry.group_name + " (group " + entry.group_id + ")" + (entry.is_default_guest ? ". Assigned automatically to users without another group." : "");
         groups__label(button, entry);
         let id = document.createElement("small");
         id.textContent = String(entry.group_id);
@@ -199,8 +198,7 @@ function groups__refresh()
             {
                 return;
             }
-            if (groups_window.selected !== entry.group_id && groups_window.dirty
-                && !await groups__ask("Discard the permission changes for this group?", "Discard"))
+            if (groups_window.selected !== entry.group_id && groups_window.dirty && !await groups__ask("Discard the permission changes for this group?", "Discard"))
             {
                 return;
             }
@@ -242,7 +240,8 @@ function groups__refresh()
 }
 
 /**
- * @brief Lists members when the user has permission to view them.
+ * @brief lists members when the user has permission to view them
+ *
  * @param object selected -> selected group
  * @param Array entries -> connected users and stored identities
  * @param boolean admin -> whether editing is allowed
@@ -277,15 +276,13 @@ function groups__render_members(selected, entries, admin)
     document.getElementById("groups-member-cancel").hidden = !adding;
     document.getElementById("groups-member-add").disabled = !admin || !groups__can_change_group("assign_groups", selected);
     document.getElementById("groups-member-remove").disabled = true;
-    document.getElementById("groups-member-note").textContent = selected && selected.is_default_guest
-        ? "Users without another group belong here automatically. Adding another group removes this membership. Removing their last group restores it." : "";
+    document.getElementById("groups-member-note").textContent = selected && selected.is_default_guest ? "Users without another group belong here automatically. Adding another group removes this membership. Removing their last group restores it." : "";
     document.getElementById("groups-member-label").textContent = adding ? "Add a member" : "Members";
     if (admin && selected)
     {
         visible_members = entries.filter(function(client)
         {
-            let name = client.client_id == null ? client.username || "Stored identity"
-                : channel_tree__get_display_name_by_client_id(client.client_id, client.username);
+            let name = client.client_id == null ? client.username || "Stored identity" : channel_tree__get_display_name_by_client_id(client.client_id, client.username);
             return (adding ? !client.group_ids.includes(selected.group_id) : client.group_ids.includes(selected.group_id)) && name.toLowerCase().includes(query);
         });
     }
@@ -309,8 +306,7 @@ function groups__render_members(selected, entries, admin)
         button.title = assigned ? "Member of this group" : "Not in this group";
         let label = document.createElement("span");
         label.className = "groups-member-name";
-        label.textContent = offline ? client.username || "Stored identity"
-            : channel_tree__get_display_name_by_client_id(client.client_id, client.username);
+        label.textContent = offline ? client.username || "Stored identity" : channel_tree__get_display_name_by_client_id(client.client_id, client.username);
         if (!offline && Number(client.client_id) === Number(g_local_client_id))
         {
             label.textContent += " (you)";
@@ -334,16 +330,14 @@ function groups__render_members(selected, entries, admin)
     if (selected_client)
     {
         let assigned = selected_client.group_ids.includes(selected.group_id);
-        document.getElementById("groups-member-add").disabled = adding
-            ? !groups__can_change_member(selected_client, selected, true) : !groups__can_change_group("assign_groups", selected);
+        document.getElementById("groups-member-add").disabled = adding ? !groups__can_change_member(selected_client, selected, true) : !groups__can_change_group("assign_groups", selected);
         document.getElementById("groups-member-remove").disabled = !assigned || !groups__can_change_member(selected_client, selected, false);
     }
     if (!container.childElementCount)
     {
         let empty = document.createElement("p");
         empty.className = "groups-empty";
-        empty.textContent = !admin ? "You do not have permission to view this group's members."
-            : "No matching users.";
+        empty.textContent = !admin ? "You do not have permission to view this group's members." : "No matching users.";
         container.appendChild(empty);
     }
     container.scrollTop = previous_scroll;
@@ -361,7 +355,7 @@ function groups__render_members(selected, entries, admin)
 }
 
 /**
- * @brief Connects group browsing and administration controls.
+ * @brief connects group browsing and administration controls
  */
 function groups__setup()
 {
@@ -517,9 +511,7 @@ function groups__setup()
     };
     document.getElementById("groups-delete").onclick = async function()
     {
-        if (!groups_window.save_pending && groups__can_change_group("delete_groups")
-            && await groups__ask("Delete the selected server group and remove it from all users? This does not delete its icon.", "Delete group")
-            && !groups_window.save_pending && groups__can_change_group("delete_groups"))
+        if (!groups_window.save_pending && groups__can_change_group("delete_groups") && await groups__ask("Delete the selected server group and remove it from all users? This does not delete its icon.", "Delete group") && !groups_window.save_pending && groups__can_change_group("delete_groups"))
         {
             UI.send_delete_group_request(groups_window.selected);
         }
@@ -573,9 +565,7 @@ function groups__setup()
         {
             return String(entry.id) === selection;
         });
-        if (icon && groups__has_permission("delete_icons")
-            && await groups__ask("Delete icon " + icon.id + " from the server? Groups and channels using it will lose the image.", "Delete icon")
-            && groups__has_permission("delete_icons") && g_icons.includes(icon) && groups_window.icon_selection === selection)
+        if (icon && groups__has_permission("delete_icons") && await groups__ask("Delete icon " + icon.id + " from the server? Groups and channels using it will lose the image.", "Delete icon") && groups__has_permission("delete_icons") && g_icons.includes(icon) && groups_window.icon_selection === selection)
         {
             UI.send_delete_icon_request(icon.id);
         }
@@ -742,9 +732,12 @@ var groups_power_fields =
 ];
 
 /**
- * @brief Resolves a legacy action value using the server's fallback for that action.
- * @param permission Action name.
- * @param value Saved grant, deny or legacy default value.
+ * @brief resolves a legacy action value using the server's fallback for that action
+ *
+ * @param permission action name
+ * @param value saved grant, deny or legacy default value
+ *
+ * @return string -> grant or deny after applying the action default
  */
 function groups__action_value(permission, value)
 {
@@ -752,15 +745,18 @@ function groups__action_value(permission, value)
     {
         return value;
     }
-    let allowed = ["view_server_info", "view_client_connection_time", "create_temp_channel",
-        "message_idle_clients", "call_idle_clients", "send_direct_pictures", "send_direct_files",
-        "send_channel_pictures", "send_channel_files", "send_direct_messages", "send_channel_messages",
-        "send_pokes", "view_channel_members", "view_channel_descriptions"].includes(permission);
+    let allowed = ["view_server_info", "view_client_connection_time", "create_temp_channel", "message_idle_clients", "call_idle_clients", "send_direct_pictures", "send_direct_files", "send_channel_pictures", "send_channel_files", "send_direct_messages", "send_channel_messages", "send_pokes", "view_channel_members", "view_channel_descriptions"].includes(permission);
     return allowed ? "grant" : "deny";
 }
 
 /**
- * @brief Combines group values using the same optional Negate rule as the server.
+ * @brief combines group values using the same optional Negate rule as the server
+ *
+ * @param client -> client whose server groups are combined
+ * @param name -> action or power name
+ * @param numeric -> true for a numeric power
+ *
+ * @return number -> power value, or action state 0 default, 1 deny, 2 grant
  */
 function groups__combined_value(client, name, numeric)
 {
@@ -774,8 +770,7 @@ function groups__combined_value(client, name, numeric)
             return numeric ? 0 : 1;
         }
         let permissions = group && group.permissions || {};
-        let value = numeric ? Number(permissions[name]) || 0
-            : permissions[name] === "grant" ? 2 : permissions[name] === "deny" ? 1 : 0;
+        let value = numeric ? Number(permissions[name]) || 0 : permissions[name] === "grant" ? 2 : permissions[name] === "deny" ? 1 : 0;
         let flag = !!(permissions.flags && permissions.flags[name] && permissions.flags[name].negate);
         if (flag)
         {
@@ -791,28 +786,34 @@ function groups__combined_value(client, name, numeric)
 }
 
 /**
- * @brief Identifies server permissions that have a channel-scoped counterpart.
+ * @brief checks whether a server permission also has channel group values
+ *
+ * @param name -> server permission name
+ *
+ * @return boolean -> true when channel values can be skipped
  */
 function groups__supports_skip(name)
 {
-    return ["bypass_channel_password", "edit_channel_name", "edit_channel_description", "edit_channel_password", "edit_channel_powers",
-        "edit_channel_options", "delete_channel", "assign_channel_groups", "kick_from_channel", "mute_clients",
-        "stop_client_streams", "group_management_power", "group_protection", "talk_power", "channel_message_power",
-        "channel_picture_power", "stream_power", "move_power", "move_protection", "moderation_power", "moderation_protection",
-        "channel_file_power", "channel_create_power"].includes(name);
+    return ["bypass_channel_password", "edit_channel_name", "edit_channel_description", "edit_channel_password", "edit_channel_powers", "edit_channel_options", "delete_channel", "assign_channel_groups", "kick_from_channel", "mute_clients", "stop_client_streams", "group_management_power", "group_protection", "talk_power", "channel_message_power", "channel_picture_power", "stream_power", "move_power", "move_protection", "moderation_power", "moderation_protection", "channel_file_power", "channel_create_power"].includes(name);
 }
 
 /**
- * @brief Reads the server-wide power used to edit individual group settings.
+ * @brief reads the server group power used to edit permission settings
+ *
+ * @return number -> local permission editing power, or 1000 for an admin
  */
 function groups__editing_power()
 {
-    return g_is_local_client_admin ? 1000
-        : groups__power(channel_tree__get_client_by_client_id(g_local_client_id), "permission_edit_power");
+    return g_is_local_client_admin ? 1000 : groups__power(channel_tree__get_client_by_client_id(g_local_client_id), "permission_edit_power");
 }
 
 /**
- * @brief Missing Grant fields use the same safe default as the server.
+ * @brief missing Grant fields use the same safe default as the server
+ *
+ * @param permissions -> saved permission values
+ * @param name -> permission being edited
+ *
+ * @return number -> required Grant value, or 1000 when absent or invalid
  */
 function groups__required_edit_power(permissions, name)
 {
@@ -820,20 +821,35 @@ function groups__required_edit_power(permissions, name)
     return Number.isInteger(value) && value >= 0 && value <= 1000 ? value : 1000;
 }
 
+/**
+ * @brief checks whether admin status or editing power permits changing this saved setting
+ *
+ * @param object permissions -> saved permission values and grant requirements
+ * @param string name -> permission setting name
+ *
+ * @return boolean -> true when the setting can be edited
+ */
 function groups__can_edit_setting(permissions, name)
 {
     return g_is_local_client_admin || groups__editing_power() >= groups__required_edit_power(permissions, name);
 }
 
+/**
+ * @brief explains insufficient editing power or an active Negate or Skip rule
+ *
+ * @param object|null permissions -> saved permission values and flags
+ * @param string name -> permission setting name
+ * @param boolean editable -> whether this row is currently editable
+ *
+ * @return string -> help text or an empty string when no hint applies
+ */
 function groups__setting_hint(permissions, name, editable)
 {
     if (!editable && !groups__can_edit_setting(permissions, name))
     {
-        return "Requires editing power " + groups__required_edit_power(permissions, name)
-            + "; yours is " + groups__editing_power() + ".";
+        return "Requires editing power " + groups__required_edit_power(permissions, name) + "; yours is " + groups__editing_power() + ".";
     }
-    else if (permissions && permissions.flags && permissions.flags[name]
-        && (permissions.flags[name].negate || permissions.flags[name].skip))
+    else if (permissions && permissions.flags && permissions.flags[name] && (permissions.flags[name].negate || permissions.flags[name].skip))
     {
         return "Advanced rule active. Switch to Advanced to inspect Negate and Skip.";
     }
@@ -841,7 +857,15 @@ function groups__setting_hint(permissions, name, editable)
 }
 
 /**
- * @brief Builds the shared server/channel Grant control. Authorization uses the saved value.
+ * @brief builds the shared server/channel Grant control. authorization uses the saved value
+ *
+ * @param name -> permission name
+ * @param label -> visible permission label
+ * @param permissions -> saved values used for authorization
+ * @param draft -> optional unsaved values to display
+ * @param editable -> whether editing is allowed
+ *
+ * @return HTMLTableCellElement -> cell containing the Grant input
  */
 function groups__grant_cell(name, label, permissions, draft, editable)
 {
@@ -859,13 +883,20 @@ function groups__grant_cell(name, label, permissions, draft, editable)
     control.value = String(draft ? groups__required_edit_power(draft, name) : saved);
     control.disabled = !editable;
     control.setAttribute("aria-label", label + ": Grant (required edit power)");
-    control.title = "Required permission editing power: " + saved + ". Your power: " + groups__editing_power()
-        + ". Group editing and protection checks also apply. See Permission help.";
+    control.title = "Required permission editing power: " + saved + ". Your power: " + groups__editing_power() + ". Group editing and protection checks also apply. See Permission help.";
     control.oninput = groups__mark_dirty;
     cell.append(control);
     return cell;
 }
 
+/**
+ * @brief copies each permission grant control into a fresh grants map
+ *
+ * @param Element container -> element containing the grant inputs
+ * @param object values -> permission draft receiving the grants map
+ *
+ * @return void
+ */
 function groups__read_grant_controls(container, values)
 {
     values.grants = {};
@@ -876,7 +907,16 @@ function groups__read_grant_controls(container, values)
 }
 
 /**
- * @brief Builds an accessible flag control with its original value for reset and filtering.
+ * @brief builds an accessible flag control with its original value for reset and filtering
+ *
+ * @param name -> permission name
+ * @param label -> visible permission label
+ * @param flag -> negate or skip
+ * @param checked -> current flag value
+ * @param saved -> original value used for reset
+ * @param editable -> whether the permission can be edited
+ *
+ * @return HTMLTableCellElement -> cell containing the flag checkbox
  */
 function groups__flag_cell(name, label, flag, checked, saved, editable)
 {
@@ -890,15 +930,19 @@ function groups__flag_cell(name, label, flag, checked, saved, editable)
     control.checked = !!checked;
     control.disabled = !editable || !g_is_local_client_admin;
     control.setAttribute("aria-label", label + ": " + (flag === "negate" ? "Negate" : "Skip"));
-    control.title = flag === "negate" ? "The lowest Negate value wins over ordinary values. Disable + Negate blocks an action."
-        : "Ignore channel-group values for this permission. Server-group values still combine normally.";
+    control.title = flag === "negate" ? "The lowest Negate value wins over ordinary values. Disable + Negate blocks an action." : "Ignore channel-group values for this permission. Server-group values still combine normally.";
     control.oninput = groups__mark_dirty;
     cell.append(control);
     return cell;
 }
 
 /**
- * @brief Includes active flags in a permission update without inventing implicit values.
+ * @brief includes active flags in a permission update without inventing implicit values
+ *
+ * @param container -> element containing the flag controls
+ * @param values -> outgoing permission object to update
+ *
+ * @return void
  */
 function groups__read_flag_controls(container, values)
 {
@@ -919,9 +963,12 @@ function groups__read_flag_controls(container, values)
 }
 
 /**
- * @brief Checks group permissions for browser controls. The server checks requests separately.
+ * @brief checks group permissions for browser controls. the server checks requests separately
+ *
  * @param client -> client whose groups are checked
  * @param permission -> action name
+ *
+ * @return boolean -> whether the client may perform this action
  */
 function groups__is_allowed(client, permission)
 {
@@ -929,8 +976,7 @@ function groups__is_allowed(client, permission)
     {
         return false;
     }
-    if (client.client_id === g_local_client_id ? g_is_local_client_admin
-        : g_server_policy.is_permission_system_enabled && client.group_ids.includes(0))
+    if (client.client_id === g_local_client_id ? g_is_local_client_admin : g_server_policy.is_permission_system_enabled && client.group_ids.includes(0))
     {
         return true;
     }
@@ -947,9 +993,12 @@ function groups__is_allowed(client, permission)
 }
 
 /**
- * @brief Reads the highest power supplied by a client's groups.
+ * @brief reads the client's effective power after group rules are applied
+ *
  * @param client -> client to check
  * @param name -> power or protection name
+ *
+ * @return number -> effective power, or zero when unavailable
  */
 function groups__power(client, name)
 {
@@ -961,9 +1010,11 @@ function groups__power(client, name)
 }
 
 /**
- * @brief Checks whether the local user's power reaches the channel's requirement.
+ * @brief checks whether the local user's power reaches the channel's requirement
+ *
  * @param action -> talk, stream, message or picture
  * @param channel_id -> channel receiving the audio or message
+ *
  * @return boolean -> whether the user may send
  */
 function groups__can_send_to_channel(action, channel_id)
@@ -995,8 +1046,10 @@ function groups__can_send_to_channel(action, channel_id)
 }
 
 /**
- * @brief Explains which channel requirement prevents sending.
+ * @brief explains which channel requirement prevents sending
+ *
  * @param action -> talk, stream, message or picture
+ *
  * @return string -> explanation for the current channel
  */
 function groups__channel_power_message(action)
@@ -1007,7 +1060,8 @@ function groups__channel_power_message(action)
 }
 
 /**
- * @brief Explains a denied send and plays the permission warning sound.
+ * @brief explains a denied send and plays the permission warning sound
+ *
  * @param action -> talk, stream, message or picture
  */
 function groups__notify_channel_power_denied(action)
@@ -1022,7 +1076,7 @@ function groups__notify_channel_power_denied(action)
 }
 
 /**
- * @brief Updates sending controls when channel requirements or group powers change.
+ * @brief updates sending controls when channel requirements or group powers change
  */
 function groups__refresh_channel_controls()
 {
@@ -1032,8 +1086,7 @@ function groups__refresh_channel_controls()
     }
     let input = document.getElementById("chat-input-container-text-input");
     let picture = document.getElementById("choose_image_input");
-    let channel_chat = g_is_authenticated && typeof g_current_chat_context_id === "string"
-        && g_current_chat_context_id.startsWith("chat-context-channel-");
+    let channel_chat = g_is_authenticated && typeof g_current_chat_context_id === "string" && g_current_chat_context_id.startsWith("chat-context-channel-");
     let message_blocked = channel_chat && !groups__can_send_to_channel("message", g_current_channel_id);
     let picture_blocked = channel_chat && !groups__can_send_to_channel("picture", g_current_channel_id);
     let talk_blocked = g_is_authenticated && !groups__can_send_to_channel("talk", g_current_channel_id);
@@ -1057,10 +1110,8 @@ function groups__refresh_channel_controls()
         input.readOnly = message_blocked;
 
         // say why
-        input.placeholder = input.disabled ? CHANNEL_CONTEXT_SEND_WARNING
-            : message_blocked ? groups__channel_power_message("message") : input.dataset.channelPowerPlaceholder;
-        input.title = input.disabled ? CHANNEL_CONTEXT_SEND_WARNING
-            : message_blocked ? groups__channel_power_message("message") : "";
+        input.placeholder = input.disabled ? CHANNEL_CONTEXT_SEND_WARNING : message_blocked ? groups__channel_power_message("message") : input.dataset.channelPowerPlaceholder;
+        input.title = input.disabled ? CHANNEL_CONTEXT_SEND_WARNING : message_blocked ? groups__channel_power_message("message") : "";
     }
     if (picture && input)
     {
@@ -1085,8 +1136,7 @@ function groups__refresh_channel_controls()
             button.setAttribute("aria-disabled", String(talk_blocked));
         }
     }
-    if (talk_blocked && typeof g_is_microphone_active !== "undefined" && g_is_microphone_active
-        && typeof voice__process_stop_sending_audio_now === "function")
+    if (talk_blocked && typeof g_is_microphone_active !== "undefined" && g_is_microphone_active && typeof voice__process_stop_sending_audio_now === "function")
     {
         voice__process_stop_sending_audio_now();
     }
@@ -1097,22 +1147,27 @@ function groups__refresh_channel_controls()
 }
 
 /**
- * @brief Checks whether to offer kick or ban for the selected user.
+ * @brief checks whether to offer kick or ban for the selected user
+ *
  * @param target -> selected client
  * @param action -> kick or ban
+ *
+ * @return boolean -> whether the action passes permission and protection checks
  */
 function groups__can_moderate(target, action)
 {
     let sender = channel_tree__get_client_by_client_id(g_local_client_id);
-    return !!target && groups__is_allowed(sender, action)
-        && (g_is_local_client_admin || (!target.group_ids.includes(0)
-            && groups__power(sender, action + "_power") >= groups__power(target, action + "_protection")));
+    return !!target && groups__is_allowed(sender, action) && (g_is_local_client_admin || (!target.group_ids.includes(0) && groups__power(sender, action + "_power") >= groups__power(target, action + "_protection")));
 }
 
 /**
- * @brief Builds the permission table and preserves edits when only membership changes.
+ * @brief builds the permission table while retaining an editable draft
+ *
  * @param group -> selected group
  * @param admin -> whether the user may edit
+ * @param values -> optional draft values to display
+ *
+ * @return void
  */
 function groups__render_permissions(group, admin, values)
 {
@@ -1149,9 +1204,20 @@ function groups__render_permissions(group, admin, values)
     groups__set_edit_status(groups_window.edit_status);
     document.getElementById("groups-value-heading").textContent = groups_window.advanced ? "Value" : "Setting";
     document.getElementById("groups-help-title").textContent = "Permissions";
-    document.getElementById("groups-description").textContent = !group ? "Connect to a server to view its groups."
-        : group.group_id === 0 ? "The admin group has full access. Its permissions cannot be changed."
-        : "Grant is the editing power required to change each setting. Enable and the highest power normally win. See Permission help for Grant, Negate and Skip examples.";
+    let description;
+    if (!group)
+    {
+        description = "Connect to a server to view its groups.";
+    }
+    else if (group.group_id === 0)
+    {
+        description = "The admin group has full access. Its permissions cannot be changed.";
+    }
+    else
+    {
+        description = "Grant is the editing power required to change each setting. Enable and the highest power normally win. See Permission help for Grant, Negate and Skip examples.";
+    }
+    document.getElementById("groups-description").textContent = description;
     if (!group || !groups__has_permission("view_group_permissions"))
     {
         if (group)
@@ -1204,9 +1270,40 @@ function groups__render_permissions(group, admin, values)
                 return entry[0] === name;
             });
             let numeric = field.length === 2;
-            let saved_value = group.group_id === 0 ? numeric ? 1000 : "grant"
-                : group.permissions && group.permissions[name] != null ? group.permissions[name] : numeric ? 0 : "default";
-            let value = values && values[name] != null ? values[name] : saved_value;
+            let saved_value;
+            if (group.group_id === 0)
+            {
+                if (numeric)
+                {
+                    saved_value = 1000;
+                }
+                else
+                {
+                    saved_value = "grant";
+                }
+            }
+            else if (group.permissions && group.permissions[name] != null)
+            {
+                saved_value = group.permissions[name];
+            }
+            else if (numeric)
+            {
+                saved_value = 0;
+            }
+            else
+            {
+                saved_value = "default";
+            }
+
+            let value;
+            if (values && values[name] != null)
+            {
+                value = values[name];
+            }
+            else
+            {
+                value = saved_value;
+            }
             if (!numeric)
             {
                 saved_value = groups__action_value(name, saved_value);
@@ -1237,7 +1334,7 @@ function groups__render_permissions(group, admin, values)
             control.dataset.savedValue = String(saved_value);
             control.disabled = !row_editable;
             control.setAttribute("aria-labelledby", label.id);
-            // powers that are compared with a requirement saved in a channel, and what each one is needed for
+            // channel requirements and the actions each power controls
             let channel_power_uses =
             {
                 talk_power: "send audio",
@@ -1250,12 +1347,9 @@ function groups__render_permissions(group, admin, values)
             };
             let channel_power = Object.prototype.hasOwnProperty.call(channel_power_uses, name);
 
-            // powers and protections for content sent to one user
-            let contact_power = ["direct_message_power", "direct_message_protection", "direct_picture_power", "direct_picture_protection",
-                "direct_file_power", "direct_file_protection", "poke_power", "poke_protection"].includes(name);
-            control.title = channel_power ? "Your highest group power must reach the power required by the channel."
-                : numeric ? "Power is compared with protection. Higher values give more power or protection."
-                : "Enable permits the action. Disable + Negate overrides ordinary Enable values. See Permission help for examples.";
+            // powers and protections for direct contact
+            let contact_power = ["direct_message_power", "direct_message_protection", "direct_picture_power", "direct_picture_protection", "direct_file_power", "direct_file_protection", "poke_power", "poke_protection"].includes(name);
+            control.title = channel_power ? "Your highest group power must reach the power required by the channel." : numeric ? "Power is compared with protection. Higher values give more power or protection." : "Enable permits the action. Disable + Negate overrides ordinary Enable values. See Permission help for examples.";
             if (setting_hint)
             {
                 control.title = setting_hint + " " + control.title;
@@ -1288,6 +1382,11 @@ function groups__render_permissions(group, admin, values)
             }
             control.value = String(value);
             control.oninput = groups__mark_dirty;
+            /**
+             * @brief selects the permission row and displays its rule, editing hint and reset availability
+             *
+             * @return void
+             */
             let describe = function()
             {
                 groups_window.permission = name;
@@ -1296,21 +1395,45 @@ function groups__render_permissions(group, admin, values)
                     sibling.setAttribute("aria-selected", String(sibling === row));
                 }
                 document.getElementById("groups-help-title").textContent = field[1];
-                document.getElementById("groups-description").textContent = channel_power
-                    ? "Your highest group power must reach the channel's requirement to " + channel_power_uses[name]
-                        + (name === "channel_view_power" ? ". Channel groups do not change this power. Users always see the members of the channel they are in."
-                            : name === "channel_create_power" ? ". The requirement is the one of the parent channel."
-                            : ". This does not restrict receiving. Channel owners start with power 1000 from Channel Admin; Negate can restrict it.")
-                        + " None is 0, Low 25, Normal 50, High 75, Very high 100 and Admin 1000. Advanced accepts whole numbers from 0 to 1000."
-                    : contact_power
-                    ? "The sender's power must be at least the receiver's protection for this kind of content. Protection 0 lets everybody reach this user whose action is enabled. Full server admins get their protection from their groups like other users, so add a group with protection to an admin who should not be messaged by everybody. None is 0, Low 25, Normal 50, High 75, Very high 100 and Admin 1000. Advanced accepts whole numbers from 0 to 1000."
-                    : name === "permission_edit_power"
-                    ? "Authority to edit individual permission settings. It must reach the saved Grant on each changed row, alongside group editing and management rights. New Admin: 1000, Moderator: 50, Normal: 25, Guest: 0. Any custom group can use any value from 0 to 1000. This power is server-wide and channel groups cannot supply it."
-                    : name === "group_management_power" || name === "group_protection"
-                    ? "Management power must reach the protection of both the group and the affected user. The action also needs its own permission. Values range from 0 to 1000. Admins cannot be managed by other users."
-                    : numeric
-                    ? "The sender's power must be at least the other user's protection. None is 0, Low 25, Normal 50, High 75, Very high 100 and Admin 1000. Advanced lets you enter any whole number from 0 to 1000. Admins are always protected from nonadmins."
-                    : field[2];
+                let permission_description;
+                if (channel_power)
+                {
+                    permission_description = "Your highest group power must reach the channel's requirement to " + channel_power_uses[name];
+                    if (name === "channel_view_power")
+                    {
+                        permission_description += ". Channel groups do not change this power. Users always see the members of the channel they are in.";
+                    }
+                    else if (name === "channel_create_power")
+                    {
+                        permission_description += ". The requirement is the one of the parent channel.";
+                    }
+                    else
+                    {
+                        permission_description += ". This does not restrict receiving. Channel owners start with power 1000 from Channel Admin; Negate can restrict it.";
+                    }
+                    permission_description += " None is 0, Low 25, Normal 50, High 75, Very high 100 and Admin 1000. Advanced accepts whole numbers from 0 to 1000.";
+                }
+                else if (contact_power)
+                {
+                    permission_description = "The sender's power must be at least the receiver's protection for this kind of content. Protection 0 lets everybody reach this user whose action is enabled. Full server admins get their protection from their groups like other users, so add a group with protection to an admin who should not be messaged by everybody. None is 0, Low 25, Normal 50, High 75, Very high 100 and Admin 1000. Advanced accepts whole numbers from 0 to 1000.";
+                }
+                else if (name === "permission_edit_power")
+                {
+                    permission_description = "Authority to edit individual permission settings. It must reach the saved Grant on each changed row, alongside group editing and management rights. New Admin: 1000, Moderator: 50, Normal: 25, Guest: 0. Any custom group can use any value from 0 to 1000. This power is server-wide and channel groups cannot supply it.";
+                }
+                else if (name === "group_management_power" || name === "group_protection")
+                {
+                    permission_description = "Management power must reach the protection of both the group and the affected user. The action also needs its own permission. Values range from 0 to 1000. Admins cannot be managed by other users.";
+                }
+                else if (numeric)
+                {
+                    permission_description = "The sender's power must be at least the other user's protection. None is 0, Low 25, Normal 50, High 75, Very high 100 and Admin 1000. Advanced lets you enter any whole number from 0 to 1000. Admins are always protected from nonadmins.";
+                }
+                else
+                {
+                    permission_description = field[2];
+                }
+                document.getElementById("groups-description").textContent = permission_description;
                 if (setting_hint)
                 {
                     document.getElementById("groups-description").textContent += " " + setting_hint;
@@ -1351,9 +1474,12 @@ function groups__render_permissions(group, admin, values)
 }
 
 /**
- * @brief Compares the supplied permission snapshot with a server response.
- * @param expected Draft values, including all its Grant and flag settings.
- * @param actual Server values; omitted Grant defaults to 1000, flags to false.
+ * @brief compares the supplied permission snapshot with a server response
+ *
+ * @param expected draft values, including all its Grant and flag settings
+ * @param actual server values. missing Grant uses 1000 and missing flags use false
+ *
+ * @return boolean -> whether every supplied draft setting matches
  */
 function groups__permissions_equal(expected, actual)
 {
@@ -1372,8 +1498,7 @@ function groups__permissions_equal(expected, actual)
         if (Object.prototype.hasOwnProperty.call(expected, name))
         {
             let numeric = typeof expected[name] === "number";
-            let equal = numeric ? expected[name] === (Number(actual[name]) || 0)
-                : groups__action_value(name, expected[name]) === groups__action_value(name, actual[name]);
+            let equal = numeric ? expected[name] === (Number(actual[name]) || 0) : groups__action_value(name, expected[name]) === groups__action_value(name, actual[name]);
             if (!equal)
             {
                 return false;
@@ -1397,7 +1522,11 @@ function groups__permissions_equal(expected, actual)
 }
 
 /**
- * @brief Keeps status text across ordinary membership and permission refreshes.
+ * @brief keeps status text across ordinary membership and permission refreshes
+ *
+ * @param text -> status to retain and display
+ *
+ * @return void
  */
 function groups__set_edit_status(text)
 {
@@ -1406,7 +1535,11 @@ function groups__set_edit_status(text)
 }
 
 /**
- * @brief Stages server permission edits; shared channel controls use their own form handler.
+ * @brief stages permission edits for the current server group
+ *
+ * @param event -> input event from a permission control
+ *
+ * @return void
  */
 function groups__mark_dirty(event)
 {
@@ -1418,14 +1551,13 @@ function groups__mark_dirty(event)
     {
         return entry.group_id === groups_window.selected;
     });
-    groups_window.dirty = !!group && (!document.getElementById("groups-permission-form").checkValidity()
-        || !groups__permissions_equal(groups__permission_values(), group.permissions));
+    groups_window.dirty = !!group && (!document.getElementById("groups-permission-form").checkValidity() || !groups__permissions_equal(groups__permission_values(), group.permissions));
     groups__set_edit_status(groups_window.dirty ? "Unsaved changes" : "");
     groups__update_save_controls();
 }
 
 /**
- * @brief Locks only the pending draft, without changing individual permission authorization.
+ * @brief locks only the pending draft, without changing individual permission authorization
  */
 function groups__update_save_controls()
 {
@@ -1440,7 +1572,11 @@ function groups__update_save_controls()
 }
 
 /**
- * @brief Ends a pending save and leaves its draft available after a failed confirmation.
+ * @brief ends a pending save and leaves its draft available after a failed confirmation
+ *
+ * @param status -> completion or failure text
+ *
+ * @return void
  */
 function groups__finish_save(status)
 {
@@ -1456,7 +1592,7 @@ function groups__finish_save(status)
 }
 
 /**
- * @brief Sends a draft only when the explicit Save changes button is activated.
+ * @brief sends a draft only when the explicit Save changes button is activated
  */
 function groups__save_changes()
 {
@@ -1473,8 +1609,7 @@ function groups__save_changes()
         return entry.group_id === groups_window.selected;
     });
     let values = groups__permission_values();
-    let changed = !!group && group.group_id !== 0 && groups_window.dirty
-        && !groups__permissions_equal(values, group.permissions);
+    let changed = !!group && group.group_id !== 0 && groups_window.dirty && !groups__permissions_equal(values, group.permissions);
     if (!changed)
     {
         connection__send_message_object({ message: { type: "save_groups" } });
@@ -1513,9 +1648,7 @@ function groups__save_changes()
                 [name]: values.flags && values.flags[name] || {}
             }
         };
-        if (!groups__permissions_equal(setting, group.permissions)
-            && (!groups__can_edit_setting(group.permissions, name)
-                || !g_is_local_client_admin && groups__required_edit_power(values, name) > groups__editing_power()))
+        if (!groups__permissions_equal(setting, group.permissions) && (!groups__can_edit_setting(group.permissions, name) || !g_is_local_client_admin && groups__required_edit_power(values, name) > groups__editing_power()))
         {
             groups__set_edit_status("Your editing power no longer permits every change. Review or reset the changed rows.");
             return;
@@ -1544,7 +1677,12 @@ function groups__save_changes()
 }
 
 /**
- * @brief Requests disk persistence only after the server accepts the exact saved draft.
+ * @brief requests disk persistence only after the server accepts the exact saved draft
+ *
+ * @param group_id -> group confirmed by the server
+ * @param permissions -> accepted permission values
+ *
+ * @return void
  */
 function groups__permissions_saved(group_id, permissions)
 {
@@ -1564,7 +1702,8 @@ function groups__permissions_saved(group_id, permissions)
 }
 
 /**
- * @brief Reads every permission, including rows hidden by the filter.
+ * @brief reads every permission, including rows hidden by the filter
+ *
  * @return object -> values to send to the server
  */
 function groups__permission_values()
@@ -1585,7 +1724,8 @@ function groups__permission_values()
 }
 
 /**
- * @brief Shows invalid values before asking the browser to focus them.
+ * @brief shows invalid values before asking the browser to focus them
+ *
  * @return boolean -> whether all entered values are valid
  */
 function groups__validate_permissions()
@@ -1604,7 +1744,7 @@ function groups__validate_permissions()
 }
 
 /**
- * @brief Filters the table without changing permission values.
+ * @brief filters the table without changing permission values
  */
 function groups__filter_permissions()
 {
@@ -1629,8 +1769,7 @@ function groups__filter_permissions()
             });
             let grant = row.querySelector("[data-permission-grant]");
             changed = changed || !!grant && grant.value !== grant.dataset.savedValue;
-            let matches = (row.dataset.permission + " " + row.firstChild.textContent + " " + row.dataset.category).toLowerCase().includes(query)
-                && (!modified || changed);
+            let matches = (row.dataset.permission + " " + row.firstChild.textContent + " " + row.dataset.category).toLowerCase().includes(query) && (!modified || changed);
             row.hidden = !matches || !expanded;
             found = found || matches;
         }
@@ -1642,7 +1781,8 @@ function groups__filter_permissions()
 }
 
 /**
- * @brief Shows the actual icons available on this server.
+ * @brief shows the actual icons available on this server
+ *
  * @param group -> selected group
  * @param admin -> whether icons may be changed
  */
@@ -1672,7 +1812,7 @@ function groups__render_icons(group, admin)
 }
 
 /**
- * @brief Draws one page of icons so large server collections do not fill the page with images.
+ * @brief draws one page of icons so large server collections do not fill the page with images
  */
 function groups__render_icon_page()
 {
@@ -1734,8 +1874,7 @@ function groups__render_icon_page()
         }
         button.onclick = function()
         {
-            if (groups_window.selected === group.group_id
-                && (groups__can_change_group("edit_groups", group) || groups__has_permission("upload_icons")))
+            if (groups_window.selected === group.group_id && (groups__can_change_group("edit_groups", group) || groups__has_permission("upload_icons")))
             {
                 groups_window.icon_selection = icon ? String(icon.id) : "none";
                 groups__render_icon_page();
@@ -1761,8 +1900,7 @@ function groups__render_icon_page()
     }
     document.getElementById("groups-icon-previous").disabled = groups_window.icon_page === 0;
     document.getElementById("groups-icon-next").disabled = groups_window.icon_page + 1 >= pages;
-    document.getElementById("groups-icon-page").textContent = "Page " + (groups_window.icon_page + 1) + " of " + pages
-        + " · " + icons.length + (query ? " matches" : " icons");
+    document.getElementById("groups-icon-page").textContent = "Page " + (groups_window.icon_page + 1) + " of " + pages + " · " + icons.length + (query ? " matches" : " icons");
     let preview = document.getElementById("groups-icon-selected-preview");
     preview.replaceChildren();
     if (selection && /^data:image\/(png|jpeg|gif|webp|svg\+xml);base64,/i.test(selection.base64_icon))
@@ -1777,8 +1915,7 @@ function groups__render_icon_page()
     document.getElementById("groups-icon-delete-selected").disabled = !selection || !can_manage;
     document.getElementById("groups-icon-delete-selected").hidden = !can_manage;
     document.getElementById("groups-icon-use").disabled = !admin || !group;
-    document.getElementById("groups-icon-note").textContent = g_icons.length ? "Choose an icon, then Use icon. Choose None to remove the group's icon."
-        : "No icons yet. Use Upload to add PNG, JPEG or WebP images.";
+    document.getElementById("groups-icon-note").textContent = g_icons.length ? "Choose an icon, then Use icon. Choose None to remove the group's icon." : "No icons yet. Use Upload to add PNG, JPEG or WebP images.";
     if (g_icons.length && !icons.length)
     {
         document.getElementById("groups-icon-note").textContent = "No icons match this ID. Clear the search to see all icons.";
@@ -1786,7 +1923,7 @@ function groups__render_icon_page()
 }
 
 /**
- * @brief Opens the server icons in a separate window for the selected group.
+ * @brief opens the server icons in a separate window for the selected group
  */
 function groups__open_icon_picker()
 {
@@ -1794,8 +1931,7 @@ function groups__open_icon_picker()
     {
         return entry.group_id === groups_window.selected;
     });
-    if (!g_is_authenticated || !g_server_policy.is_permission_system_enabled || !group
-        || (!groups__can_change_group("edit_groups", group) && !groups__has_permission("upload_icons") && !groups__has_permission("delete_icons")))
+    if (!g_is_authenticated || !g_server_policy.is_permission_system_enabled || !group || (!groups__can_change_group("edit_groups", group) && !groups__has_permission("upload_icons") && !groups__has_permission("delete_icons")))
     {
         return;
     }
@@ -1832,7 +1968,8 @@ function groups__open_icon_picker()
 }
 
 /**
- * @brief Resizes selected icons in a separate thread before adding them to the upload queue.
+ * @brief resizes selected icons in a separate thread before adding them to the upload queue
+ *
  * @param event -> selected files from the Groups window
  */
 async function groups__upload_icons(event)
@@ -1877,7 +2014,7 @@ async function groups__upload_icons(event)
 }
 
 /**
- * @brief Counts an icon only after the server confirms its upload.
+ * @brief counts an icon only after the server confirms its upload
  */
 function groups__icon_uploaded()
 {
@@ -1886,7 +2023,7 @@ function groups__icon_uploaded()
 }
 
 /**
- * @brief Shows upload progress and any file errors beside the icon controls.
+ * @brief shows upload progress and any file errors beside the icon controls
  */
 function groups__icon_upload_status()
 {
@@ -1900,8 +2037,11 @@ function groups__icon_upload_status()
 }
 
 /**
- * @brief Identifies a connected user or a stored identity in the member list.
+ * @brief identifies a connected user or a stored identity in the member list
+ *
  * @param client -> connected user or stored identity
+ *
+ * @return string -> saved or computed identity hash, or empty without a public key
  */
 function groups__member_identity_hash(client)
 {
@@ -1921,6 +2061,13 @@ function groups__member_identity_hash(client)
     return client.groups_identity_hash;
 }
 
+/**
+ * @brief builds a membership key using a stable identity hash when available
+ *
+ * @param object client -> client record used for membership lookup
+ *
+ * @return string -> identity key or live client ID key
+ */
 function groups__member_id(client)
 {
     let hash = groups__member_identity_hash(client);
@@ -1928,7 +2075,8 @@ function groups__member_id(client)
 }
 
 /**
- * @brief Adds or removes the selected user from the selected group.
+ * @brief adds or removes the selected user from the selected group
+ *
  * @param add -> true to assign the group, false to remove it
  */
 function groups__change_membership(add)
@@ -1959,7 +2107,7 @@ function groups__change_membership(add)
 }
 
 /**
- * @brief Hides server group controls until connected to a server that enables them.
+ * @brief hides server group controls until connected to a server that enables them
  */
 function groups__apply_server_mode()
 {
@@ -1967,13 +2115,20 @@ function groups__apply_server_mode()
     {
         return;
     }
+
+    // clear information from the disconnected session
     if (!g_is_authenticated)
     {
         groups_window.identities = [];
         document.getElementById("groups-log-text").value = "";
         document.getElementById("server-settings-log-textarea").value = "";
-        document.getElementById("groups-log-dialog").close();
+        const log_dialog = document.getElementById("groups-log-dialog");
+        if (log_dialog && typeof log_dialog.close === "function")
+        {
+            log_dialog.close();
+        }
     }
+    // apply the server's permission mode to the settings controls
     let disabled = !g_is_authenticated || !g_server_policy.is_permission_system_enabled;
     let groups_option = document.getElementById("server-settings-groups-option");
     groups_option.hidden = disabled;
@@ -1983,15 +2138,20 @@ function groups__apply_server_mode()
     document.getElementById("server-settings-general-temp-channels-groups-note").style.display = g_server_policy.is_permission_system_enabled ? "" : "none";
     if (disabled)
     {
+        // close controls that are no longer available
         groups__finish_save("Connection closed. Changes were not confirmed saved.");
         if (typeof UI !== "undefined" && typeof UI.select_channel_properties_tab === "function")
         {
             UI.select_channel_properties_tab("channel", false);
         }
         groups__finish_question(null);
-        document.getElementById("groups-icon-picker").close();
+        const icon_picker = document.getElementById("groups-icon-picker");
+        if (icon_picker && typeof icon_picker.close === "function")
+        {
+            icon_picker.close();
+        }
         let dialog = document.getElementById("groups-dialog");
-        if (dialog.open)
+        if (dialog.open && typeof dialog.close === "function")
         {
             dialog.close();
         }
@@ -2001,15 +2161,18 @@ function groups__apply_server_mode()
         {
             document.querySelector('.server-settings-tab-li[data-action="2"]').click();
         }
+        // cancel pending icon uploads
         g_icon_upload_queue.length = 0;
         g_icon_upload_in_flight_base64 = null;
     }
+    // refresh the remaining channel and group controls
     groups__refresh_channel_controls();
     groups__schedule_refresh();
 }
 
 /**
- * @brief Shows admin controls according to the server's decision, independently of groups.
+ * @brief shows admin controls according to the server's decision, independently of groups
+ *
  * @param is_admin -> whether the current connection has admin access
  */
 function groups__apply_admin_status(is_admin)
@@ -2045,8 +2208,11 @@ function groups__apply_admin_status(is_admin)
 }
 
 /**
- * @brief Checks a right for the current connection.
+ * @brief checks a right for the current connection
+ *
  * @param permission -> permission name
+ *
+ * @return boolean -> whether the current connection has this right
  */
 function groups__has_permission(permission)
 {
@@ -2062,9 +2228,12 @@ function groups__has_permission(permission)
 }
 
 /**
- * @brief Checks the controls the server enabled for this group.
+ * @brief checks the controls the server enabled for this group
+ *
  * @param permission -> group action
  * @param group -> group to check, or the selected group
+ *
+ * @return boolean -> whether the action is allowed for this group
  */
 function groups__can_change_group(permission, group)
 {
@@ -2075,29 +2244,30 @@ function groups__can_change_group(permission, group)
             return entry.group_id === groups_window.selected;
         });
     }
-    if (group && ((permission === "delete_groups" && (group.group_id === 0 || group.is_default_guest))
-        || (group.is_default_guest && (permission === "assign_groups" || permission === "remove_groups"))))
+    if (group && ((permission === "delete_groups" && (group.group_id === 0 || group.is_default_guest)) || (group.is_default_guest && (permission === "assign_groups" || permission === "remove_groups"))))
     {
         return false;
     }
-    return !!group && g_server_policy.is_permission_system_enabled && groups__has_permission(permission)
-        && (g_is_local_client_admin || !!(group.access && group.access[permission]));
+    return !!group && g_server_policy.is_permission_system_enabled && groups__has_permission(permission) && (g_is_local_client_admin || !!(group.access && group.access[permission]));
 }
 
 /**
- * @brief Prevents offering membership changes to oneself or to an admin.
+ * @brief checks membership rights and protects oneself and admins from nonadmin changes
+ *
  * @param client -> selected connected user or stored identity
  * @param group -> selected group
  * @param add -> true to assign, false to remove
+ *
+ * @return boolean -> whether this membership change is allowed
  */
 function groups__can_change_member(client, group, add)
 {
-    return !!client && groups__can_change_group(add ? "assign_groups" : "remove_groups", group)
-        && (g_is_local_client_admin || (client.client_id !== g_local_client_id && !client.group_ids.includes(0)));
+    return !!client && groups__can_change_group(add ? "assign_groups" : "remove_groups", group) && (g_is_local_client_admin || (client.client_id !== g_local_client_id && !client.group_ids.includes(0)));
 }
 
 /**
- * @brief Applies current server permissions and removes information the user may no longer view.
+ * @brief applies current server permissions and removes information the user may no longer view
+ *
  * @param access -> permissions for this connection
  */
 function groups__apply_access(access)
@@ -2152,7 +2322,7 @@ function groups__apply_access(access)
 }
 
 /**
- * @brief Renames the selected group without changing its permissions.
+ * @brief renames the selected group without changing its permissions
  */
 async function groups__rename()
 {
@@ -2173,10 +2343,12 @@ async function groups__rename()
 }
 
 /**
- * @brief Asks for confirmation inside the current window while messages keep processing.
+ * @brief asks for confirmation inside the current window while messages keep processing
+ *
  * @param question -> text describing the action
  * @param action -> label for the confirmation button
  * @param name -> current group name for a rename, or null for confirmation only
+ *
  * @return Promise -> confirmed name, true for confirmation, or null for cancellation
  */
 function groups__ask(question, action, name = null)
@@ -2287,7 +2459,8 @@ function groups__ask(question, action, name = null)
 }
 
 /**
- * @brief Removes a pending question and rejects answers from an old connection or selection.
+ * @brief removes a pending question and rejects answers from an old connection or selection
+ *
  * @param value -> confirmed name, true for confirmation, or null for cancellation
  */
 function groups__finish_question(value)
@@ -2298,9 +2471,7 @@ function groups__finish_question(value)
         return;
     }
     groups_window.question = null;
-    if (!g_is_authenticated || !g_server_policy.is_permission_system_enabled || !question.dialog.open
-        || question.generation !== g_worker_connection_generation || question.group_id !== groups_window.selected
-        || !g_groups.includes(question.group))
+    if (!g_is_authenticated || !g_server_policy.is_permission_system_enabled || !question.dialog.open || question.generation !== g_worker_connection_generation || question.group_id !== groups_window.selected || !g_groups.includes(question.group))
     {
         value = null;
     }
@@ -2317,7 +2488,8 @@ function groups__finish_question(value)
 }
 
 /**
- * @brief Keeps public group controls in Hybrid themes and closes them elsewhere for nonadmins.
+ * @brief keeps public group controls in Hybrid themes and closes them elsewhere for nonadmins
+ *
  * @param themename -> selected theme name
  */
 function groups__apply_theme_access(themename)
@@ -2333,7 +2505,7 @@ function groups__apply_theme_access(themename)
 }
 
 /**
- * @brief Opens a log viewer without exposing server settings controls.
+ * @brief opens a log viewer without exposing server settings controls
  */
 function groups__show_logs()
 {
@@ -2350,13 +2522,11 @@ function groups__show_logs()
 }
 
 /**
- * @brief Requests one saved user list when several related updates arrive together.
+ * @brief requests one saved user list when several related updates arrive together
  */
 function groups__schedule_stored_users_refresh()
 {
-    if (groups_window.stored_users_timer != null || !g_is_authenticated
-        || !g_server_policy.is_stored_client_list_allowed
-        || !groups__is_allowed(channel_tree__get_client_by_client_id(g_local_client_id), "view_stored_users"))
+    if (groups_window.stored_users_timer != null || !g_is_authenticated || !g_server_policy.is_stored_client_list_allowed || !groups__is_allowed(channel_tree__get_client_by_client_id(g_local_client_id), "view_stored_users"))
     {
         return;
     }
@@ -2367,7 +2537,14 @@ function groups__schedule_stored_users_refresh()
     }, 500);
 }
 
-/** Adds direct membership submenus without opening the group editor. */
+/**
+ * @brief adds direct membership submenus without opening the group editor
+ *
+ * @param menu -> client context menu
+ * @param client -> client represented by the menu
+ *
+ * @return void
+ */
 function groups__attach_assignment_menu(menu, client)
 {
     if (!menu || !client || client.is_music_bot || !g_server_policy.is_permission_system_enabled)
@@ -2385,9 +2562,7 @@ function groups__attach_assignment_menu(menu, client)
         icon.setAttribute("class", "group-assignment-parent-icon");
         icon.setAttribute("aria-hidden", "true");
         let icon_path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-        icon_path.setAttribute("d", scope === "server"
-            ? "M7 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM1.5 17v-2a5.5 5.5 0 0 1 11 0v2M13 3a3 3 0 0 1 0 6M15 11a4.5 4.5 0 0 1 3.5 4.4V17"
-            : "M6 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM1 17v-2a5 5 0 0 1 8-4M13 3a3 3 0 0 1 0 6M14 11l-1 7M18 11l-1 7M11 13h8M10.5 16h8");
+        icon_path.setAttribute("d", scope === "server" ? "M7 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM1.5 17v-2a5.5 5.5 0 0 1 11 0v2M13 3a3 3 0 0 1 0 6M15 11a4.5 4.5 0 0 1 3.5 4.4V17" : "M6 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM1 17v-2a5 5 0 0 1 8-4M13 3a3 3 0 0 1 0 6M14 11l-1 7M18 11l-1 7M11 13h8M10.5 16h8");
         icon.append(icon_path);
         item.append(icon, document.createTextNode(scope === "server" ? "server groups" : "channel groups"));
         item.dataset.groupScope = scope;
@@ -2428,14 +2603,19 @@ function groups__attach_assignment_menu(menu, client)
         item.addEventListener("mouseenter", groups__close_assignment_menu);
     }
     let box = menu.getBoundingClientRect();
-    menu.style.left = Math.max(8, Math.min(box.left, window.innerWidth - box.width - 8)) + "px";
-    menu.style.top = Math.max(8, Math.min(box.top, window.innerHeight - box.height - 8)) + "px";
+    menu.style.left = utils__position_px(Math.max(8, Math.min(box.left, utils__viewport_width() - box.width - 8)));
+    menu.style.top = utils__position_px(Math.max(8, Math.min(box.top, utils__viewport_height() - box.height - 8)));
     if (!client.is_idle && Number(client.channel_id) >= 0)
     {
         moderation__request_client_access(client);
     }
 }
 
+/**
+ * @brief removes the group submenu and clears expanded states on its parent items
+ *
+ * @return void
+ */
 function groups__close_assignment_menu()
 {
     document.getElementById("group-assignment-menu")?.remove();
@@ -2445,30 +2625,44 @@ function groups__close_assignment_menu()
     }
 }
 
-/** Resolve the original identity and channel again before sending an assignment. */
+/**
+ * @brief resolve the original identity and channel again before sending an assignment
+ *
+ * @param item -> menu entry holding the captured identity and channel
+ *
+ * @return object|null -> matching current client, or null after it changes
+ */
 function groups__assignment_target(item)
 {
     let target = channel_tree__get_client_by_client_id(Number(item.dataset.clientId));
-    if (!g_is_authenticated || !g_server_policy.is_permission_system_enabled || !target || target.is_music_bot
-        || (target.public_key || "") !== item.dataset.identity)
+    if (!g_is_authenticated || !g_server_policy.is_permission_system_enabled || !target || target.is_music_bot || (target.public_key || "") !== item.dataset.identity)
     {
         return null;
     }
-    if (item.dataset.groupScope === "channel" && (target.is_idle
-        || Number(target.channel_id) !== Number(item.dataset.channelId)))
+    if (item.dataset.groupScope === "channel" && (target.is_idle || Number(target.channel_id) !== Number(item.dataset.channelId)))
     {
         return null;
     }
     return target;
 }
 
+/**
+ * @brief checks channel group assignment rights for a connected target
+ *
+ * @param object|null target -> client receiving the channel group
+ *
+ * @return boolean -> true when the channel permission and target restrictions allow assignment
+ */
 function groups__can_assign_channel(target)
 {
-    return !!target && !target.is_idle && Number(target.channel_id) >= 0
-        && moderation__allows(target.channel_id, "assign_channel_groups")
-        && (g_is_local_client_admin || (target.client_id !== g_local_client_id && !target.group_ids.includes(0)));
+    return !!target && !target.is_idle && Number(target.channel_id) >= 0 && moderation__allows(target.channel_id, "assign_channel_groups") && (g_is_local_client_admin || (target.client_id !== g_local_client_id && !target.group_ids.includes(0)));
 }
 
+/**
+ * @brief rebuilds the open group submenu using the latest target and permissions
+ *
+ * @return void
+ */
 function groups__refresh_assignment_menu()
 {
     if (!G_HAS_DOM)
@@ -2482,7 +2676,13 @@ function groups__refresh_assignment_menu()
     }
 }
 
-/** Builds the same background and themed rows as the parent context menu. */
+/**
+ * @brief builds the same background and themed rows as the parent context menu
+ *
+ * @param item -> parent menu entry
+ *
+ * @return HTMLElement -> detached submenu with keyboard handlers
+ */
 function groups__create_submenu(item)
 {
     let menu = document.createElement("div");
@@ -2526,7 +2726,14 @@ function groups__create_submenu(item)
     return menu;
 }
 
-/** Places every submenu beside its parent and inside the viewport. */
+/**
+ * @brief places every submenu beside its parent and inside the viewport
+ *
+ * @param menu -> submenu to attach
+ * @param item -> parent entry used for positioning
+ *
+ * @return void
+ */
 function groups__show_submenu(menu, item)
 {
     document.getElementById("contextmenus-container").append(menu);
@@ -2536,14 +2743,21 @@ function groups__show_submenu(menu, item)
         parent = item.closest(".channel-list-context-menu-items").getBoundingClientRect();
     }
     let left = parent.right;
-    if (left + menu.offsetWidth > window.innerWidth - 8)
+    if (left + menu.offsetWidth * g_position_scale > utils__viewport_width() - 8)
     {
-        left = parent.left - menu.offsetWidth;
+        left = parent.left - menu.offsetWidth * g_position_scale;
     }
-    menu.style.left = Math.max(8, Math.min(left, window.innerWidth - menu.offsetWidth - 8)) + "px";
-    menu.style.top = Math.max(8, Math.min(item.getBoundingClientRect().top, window.innerHeight - menu.offsetHeight - 8)) + "px";
+    menu.style.left = utils__position_px(Math.max(8, Math.min(left, utils__viewport_width() - menu.offsetWidth * g_position_scale - 8)));
+    menu.style.top = utils__position_px(Math.max(8, Math.min(item.getBoundingClientRect().top, utils__viewport_height() - menu.offsetHeight * g_position_scale - 8)));
 }
 
+/**
+ * @brief shows server or channel group choices and rechecks membership rights when a choice is activated
+ *
+ * @param HTMLElement item -> parent menu item carrying the group scope and target
+ *
+ * @return void
+ */
 function groups__open_assignment_menu(item)
 {
     groups__close_assignment_menu();
@@ -2570,10 +2784,7 @@ function groups__open_assignment_menu(item)
         moderation__set_menu_access(button, allowed);
         button.setAttribute("role", "menuitemcheckbox");
         button.setAttribute("aria-checked", String(checked));
-        button.title = !target ? "This client or channel changed. Open the menu again."
-            : !allowed ? "Your permissions do not allow changing this membership."
-            : channel ? checked ? "Remove this channel group" : "Assign only in this channel"
-            : checked ? "Remove this server group" : "Add this server group";
+        button.title = !target ? "This client or channel changed. Open the menu again." : !allowed ? "Your permissions do not allow changing this membership." : channel ? checked ? "Remove this channel group" : "Assign only in this channel" : checked ? "Remove this server group" : "Add this server group";
         let mark = document.createElement("span");
         mark.className = "group-assignment-check";
         mark.textContent = checked ? "\u2713" : "";

@@ -1,37 +1,182 @@
-// android-host.js is embedded in template.html along with the other client files, and in the node bundle
-// it holds the client's two android sides: the headless node runtime of the background service (the
-// workers are replaced by in-process functions, and the functions the java host calls), the webview
-// bridge (the implementations behind the JavascriptJavaBridge__* functions of android-bridge.js), and
-// the deep idle mode both of them use
-// a desktop or website client uses none of it; dispatch.js calls the idle side
+// connects the shared client to Android's Node owner and WebView
 
-// state private to this file
-// pending AudioContext.suspend() from idle entry; exit waits for it before resuming, so a
-// suspend that completes late can never run after the resume and silence the audio graph
+// wait for audio suspension before resuming playback
+
 var audio_suspend_promise = null;
 
-// the "leaving idle" request that is running: it keeps a late idle request from putting the client back to sleep
+// defers idle entry while a return from idle is pending
 var is_come_from_idle_in_flight = false;
 
 var come_from_idle_in_flight_timer = null;
 
-// call-accept presence grace: gentle idle waits this long after an accept before re-deciding,
-// so the accept transition's blink of invisibility cannot idle the user out of the call
+// keeps presence active briefly after accepting a call
+
 var CALL_ACCEPT_PRESENCE_GRACE_MS = 5000;
 
 var presence_grace_until_timestamp = 0;
 
 var presence_grace_recheck_timer = null;
-
-// ---- headless node runtime ----
+var pending_deep_idle_forced = false;
+var node_dispatch_generation = null;
+var node_dispatch_frames = null;
+var node_unread_listeners = [];
+var node_session_id = "";
+var node_notification_listener = null;
+var node_notification_sequence = 0;
+var node_current_call = null;
+var node_last_call_action = null;
+var node_identity_blocked = false;
+var node_ui_forced_idle = false;
 
 /**
- * @brief whether this runtime only renders: the android webview draws the ui while node owns the connection over the loopback
- *        a ui-only runtime must not answer the protocol (keys, votes, transport encryption) or the
- *        client gets kicked; the workers have no Android object, so they key on the loopback port
- *        the main thread hands them
+ * @brief creates a random identifier for a session or call
  *
- * @return boolean true for the webview and for a worker of it
+ * @return a 32 character hexadecimal identifier
+ */
+function android_host__new_scope_id()
+{
+    const bytes = new Uint8Array(16);
+    global.crypto.getRandomValues(bytes);
+    return Array.from(bytes, function(value)
+    {
+        return value.toString(16).padStart(2, "0");
+    }).join("");
+}
+
+/**
+ * @brief starts a session and clears previous call and notification state
+ */
+function android_host__begin_session()
+{
+    node_session_id = android_host__new_scope_id();
+    node_current_call = null;
+    node_last_call_action = null;
+    node_notification_sequence = 0;
+}
+
+/**
+ * @brief publishes an event with its session and sequence identifiers
+ *
+ * @param event notification event to publish
+ */
+function android_host__notify(event)
+{
+    if (typeof process === "undefined" || node_notification_listener == null)
+    {
+        return;
+    }
+    node_notification_listener(Object.assign({}, event,
+    {
+        session_id: node_session_id,
+        event_id: ++node_notification_sequence
+    }));
+}
+
+/**
+ * @brief stores a current call and notifies the native listener
+ *
+ * @param username caller display name
+ * @param channel_id channel entered when the call is accepted
+ */
+function android_host__incoming_call(username, channel_id)
+{
+    node_current_call =
+    {
+        call_id: android_host__new_scope_id(),
+        session_id: node_session_id,
+        expires_at: Date.now() + 60000,
+        caller_username: username,
+        channel_id: channel_id
+    };
+    if (g_node_incoming_call_listener != null)
+    {
+        g_node_incoming_call_listener(username, channel_id, Object.assign({}, node_current_call));
+    }
+}
+
+/**
+ * @brief applies an accept or decline action for the current call
+ *
+ * @param action accept or decline command
+ * @param record call and session identifiers
+ *
+ * @return true when the action was applied or had already succeeded
+ */
+function android_host__handle_call_action(action, record)
+{
+    if (!record || !g_is_authenticated || record.session_id !== node_session_id)
+    {
+        return false;
+    }
+    if (node_last_call_action && node_last_call_action.expires_at > Date.now() && node_last_call_action.call_id === record.call_id && node_last_call_action.action === action && node_last_call_action.session_id === record.session_id)
+    {
+        if (action === "accept_call")
+        {
+            const was_idle = g_is_deep_idle;
+            node_ui_forced_idle = false;
+            android_host__mark_call_accept_presence_grace();
+            android_host__exit_deep_idle();
+            if (was_idle)
+            {
+                // restore presence if native recovery replayed an older idle state
+                client_msg.send_come_from_idle_mode_request(node_last_call_action.channel_id);
+            }
+        }
+        return true;
+    }
+    if (!node_current_call || node_current_call.expires_at <= Date.now() || record.session_id !== node_session_id || record.call_id !== node_current_call.call_id)
+    {
+        return false;
+    }
+    if (action !== "accept_call" && action !== "decline_call")
+    {
+        return false;
+    }
+    const call = node_current_call;
+    node_current_call = null;
+    node_last_call_action =
+    {
+        call_id: call.call_id, session_id: call.session_id, expires_at: call.expires_at,
+        channel_id: call.channel_id, action: action
+    };
+    if (action === "accept_call")
+    {
+        node_ui_forced_idle = false;
+        android_host__mark_call_accept_presence_grace();
+        android_host__exit_deep_idle();
+        client_msg.send_come_from_idle_mode_request(call.channel_id);
+    }
+    return true;
+}
+
+/**
+ * @brief normalizes metadata keys for change detection
+ *
+ * @param values metadata key entries to validate
+ *
+ * @return serialized key entries. throws when an entry is invalid
+ */
+function android_host__metadata_keys_signature(values)
+{
+    if (!Array.isArray(values))
+    {
+        throw new Error("invalid metadata keys");
+    }
+    return JSON.stringify(values.map(function(value)
+    {
+        const entry = connection_crypto__password_entry(value);
+        if (entry == null)
+        {
+            throw new Error("invalid metadata key");
+        }
+        return [entry.type, entry.password];
+    }));
+}
+
+/**
+ * @brief checks whether this runtime renders a connection owned by Node
+ *
+ * @return boolean true for a WebView or worker using the local Node connection
  */
 function android_host__is_ui_only_runtime()
 {
@@ -39,24 +184,26 @@ function android_host__is_ui_only_runtime()
 }
 
 /**
- * @brief a stand-in for the workers that genuinely do not exist headless; everything posted to it is dropped
+ * @brief creates a worker placeholder that discards messages
  *
- * @return object an object with postMessage and terminate that do nothing
+ * @return object worker placeholder with postMessage and terminate methods
  */
 function android_host__make_discarding_worker()
 {
     return {
-        postMessage: function() {},
-        terminate: function() {}
+        postMessage: function()
+        {
+        },
+        terminate: function()
+        {
+        }
     };
 }
 
 /**
- * @brief whether a person is in front of this client
- *        a browser or the webview always has somebody in front of it; headless node only does
- *        while a ui is attached. typeof process is how this codebase tells node from a page
+ * @brief checks whether this runtime may infer that chat is being read
  *
- * @return boolean true when somebody is looking
+ * @return boolean false in Node, where page read commands are required
  */
 function android_host__is_someone_watching_the_ui()
 {
@@ -65,13 +212,12 @@ function android_host__is_someone_watching_the_ui()
         return true;
     }
 
-    return g_node_has_attached_ui;
+    // Node waits for an explicit page read before clearing unread state
+    return false;
 }
 
 /**
- * @brief node with no ui is an idle client: present on the server so it can be called and messaged, but not standing in a channel as if somebody were there
- *        a ui attaching means the user arrived, so the client comes back out of idle; a page
- *        manages its own idle through the activity lifecycle and leaves at once
+ * @brief applies Node idle state from the current page attachment
  *
  * @return void
  */
@@ -79,16 +225,20 @@ function android_host__node_apply_idle_for_ui_state()
 {
     if (typeof process === "undefined")
     {
-        return; // a page manages its own idle through the activity lifecycle
+        return; // the page receives idle changes from the activity lifecycle
     }
 
-    // android_host__enter_deep_idle and android_host__exit_deep_idle own g_is_deep_idle and are both idempotent, so this
-    // can run on every attach and detach without tracking state here
+    // apply the current attachment state through the shared idle handlers
+
     try
     {
         if (g_node_has_attached_ui == true)
         {
-            // rejoin the channel that was open, or root, because the server drops a null channel id
+            if (!g_is_deep_idle)
+            {
+                return;
+            }
+            // rejoin the previous channel or use root when none is known
             let channel_to_rejoin = (typeof g_current_channel_id === "number") ? g_current_channel_id : 0;
 
             console.log("connect-path: ui attached, leaving idle into channel " + channel_to_rejoin);
@@ -98,7 +248,7 @@ function android_host__node_apply_idle_for_ui_state()
         else
         {
             console.log("connect-path: no ui attached, going idle");
-            android_host__enter_deep_idle();
+            android_host__enter_deep_idle(node_ui_forced_idle);
         }
     }
     catch (idle_switch_failed)
@@ -112,10 +262,16 @@ g_show_message_avatars = (utils__storage_get("lemon_show_message_avatars") === "
 g_use_theme_chat_formatting = (utils__storage_get("lemon_use_theme_chat_formatting") === "1");
 
 let stored_audio_connection = utils__storage_get("lemon_audio_connection", "");
-if (["webrtc", "websocket"].indexOf(stored_audio_connection) >= 0) { g_audio_connection_preference = stored_audio_connection; }
+if (["webrtc", "websocket"].indexOf(stored_audio_connection) >= 0)
+{
+    g_audio_connection_preference = stored_audio_connection;
+}
 
 let stored_rsa_key_bits = parseInt(utils__storage_get("lemon_rsa_key_bits", ""));
-if (G_ALLOWED_RSA_KEY_BITS.indexOf(stored_rsa_key_bits) >= 0) { g_rsa_key_bits = stored_rsa_key_bits; }
+if (G_ALLOWED_RSA_KEY_BITS.indexOf(stored_rsa_key_bits) >= 0)
+{
+    g_rsa_key_bits = stored_rsa_key_bits;
+}
 
 g_show_seen_indicator = (utils__storage_get("lemon_seen_indicator") !== "0");
 
@@ -135,13 +291,22 @@ g_is_push_to_talk_disabled_while_typing = (utils__storage_get("lemon_ptt_disable
 
 let stored_key_code = parseInt(utils__storage_get("lemon_ptt_key_code"));
 let stored_key_label = utils__storage_get("lemon_ptt_key_label");
-if (stored_key_code > 0) { g_push_to_talk_key_code = stored_key_code; }
-if (stored_key_label) { g_push_to_talk_key_label = stored_key_label; }
+if (stored_key_code > 0)
+{
+    g_push_to_talk_key_code = stored_key_code;
+}
+if (stored_key_label)
+{
+    g_push_to_talk_key_label = stored_key_label;
+}
 
 /**
- * @brief Builds the sender name and an optional picture or initials circle.
- * @param sender_client_id Sender ID, or null for an untagged header.
- * @param display_name_html Escaped display name.
+ * @brief builds a message sender header with an optional avatar
+ *
+ * @param sender_client_id sender ID or null for an untagged header
+ * @param display_name_html escaped display name
+ *
+ * @return escaped sender header HTML
  */
 function android_host__generate_message_sender_html(sender_client_id, display_name_html)
 {
@@ -168,8 +333,10 @@ function android_host__generate_message_sender_html(sender_client_id, display_na
 }
 
 /**
- * @brief Updates message avatars after an image arrives or the display setting changes.
- * @param number|undefined sender_client_id -> The sender to update, or all senders when omitted.
+ * @brief updates message avatars after image or display changes
+ *
+ * @param number|undefined sender_client_id -> sender to update or all senders when omitted
+ *
  * @return void
  */
 function android_host__refresh_message_avatars(sender_client_id)
@@ -241,10 +408,10 @@ function android_host__refresh_message_avatars(sender_client_id)
 }
 
 /**
- * @brief renames every already-rendered message header of one sender, after a rename
+ * @brief updates rendered message headers after a sender is renamed
  *
- * @param number sender_client_id -> the sender
- * @param string display_name -> the new name
+ * @param number sender_client_id -> sender whose headers should change
+ * @param string display_name -> new display name
  *
  * @return void
  */
@@ -260,10 +427,9 @@ function android_host__retag_rendered_messages_of_sender(sender_client_id, displ
 }
 
 /**
- * @brief the host's flag for keeping the connection closed on purpose: with false the socket closes and the connect loop waits instead of connecting again, with true the connect loop may connect again right away
- *        after the flag returns to true, the new attempt is started by the settings push, connection__request_connect("settings"); this function only sets the flag and closes the socket
+ * @brief sets whether Node should keep a remote connection
  *
- * @param boolean is_wanted -> whether node should hold a connection
+ * @param boolean is_wanted -> true when Node should keep a connection
  *
  * @return void
  */
@@ -273,25 +439,38 @@ function android_host__node_set_connection_wanted(is_wanted)
 
     if (g_node_connection_wanted == false && g_websocket_worker != null)
     {
+        connection__invalidate_pending_attempts();
         g_websocket_worker.postMessage({ type: "close" });
     }
 
-    // a new attempt after the flag returns to true is started by the settings push, connection__request_connect("settings")
-    // this function only sets the flag and closes the socket
+    // the caller requests any new connection separately
+
 }
 
 /**
- * @brief runs a handler on one message and contains any exception, because the loopback workers run in-process and node cannot be restarted once it has stopped; one malformed message must not end the runtime
- *        the message listeners are told afterwards, with whether the handler failed
+ * @brief dispatches a current worker message and reports handler failures
  *
- * @param function handler -> the worker entry point to call
- * @param object message -> the message, handed over as { data: message }
- * @param string source_name -> which worker it stands for, for the log
+ * @param function handler -> worker message handler
+ * @param object message -> message passed in the data property
+ * @param string source_name -> worker name used in error logs
  *
  * @return void
  */
 function android_host__dispatch_safely(handler, message, source_name)
 {
+    if (message == null || typeof message !== "object")
+    {
+        return;
+    }
+    if (message.connection_generation != null && message.connection_generation !== g_worker_connection_generation)
+    {
+        return;
+    }
+    const previous_generation = node_dispatch_generation;
+    const previous_frames = node_dispatch_frames;
+    const frames = [];
+    node_dispatch_frames = frames;
+    node_dispatch_generation = message.connection_generation == null ? null : message.connection_generation;
     let caught_error = null;
 
     try
@@ -301,13 +480,37 @@ function android_host__dispatch_safely(handler, message, source_name)
     catch (dispatch_error)
     {
         caught_error = dispatch_error;
-        console.error("handler failed for '" + ((message != null && message.type) ? message.type : "?")
-            + "' via " + source_name + ": "
-            + (dispatch_error != null && dispatch_error.stack ? dispatch_error.stack : dispatch_error));
+        console.error("bridge handler failed via " + source_name);
+    }
+    finally
+    {
+        node_dispatch_generation = previous_generation;
+        node_dispatch_frames = previous_frames;
     }
 
-    // this runs once per transfer between the in-process workers, so several times per server message. it only means state
-    // may have changed; the host side debounces
+    if (caught_error == null && frames.length > 0)
+    {
+        const generation = message.connection_generation == null ? g_worker_connection_generation : message.connection_generation;
+        // publish only after queued handlers have updated chat state
+
+        setTimeout(function()
+        {
+            if (generation !== g_worker_connection_generation || g_worker_connection_ended)
+            {
+                return;
+            }
+            for (const frame of frames)
+            {
+                if (g_node_frame_listener != null)
+                {
+                    g_node_frame_listener(null, {release_delivery: frame});
+                }
+            }
+        }, 0);
+    }
+
+    // notify the owner that message processing finished
+
     for (let i = 0; i < g_node_message_listeners.length; i++)
     {
         try
@@ -316,55 +519,69 @@ function android_host__dispatch_safely(handler, message, source_name)
         }
         catch (callback_error)
         {
-            console.error("message listener failed: " + callback_error);
+            console.error("bridge message listener failed");
         }
     }
 }
 
 /**
- * @brief a stand-in for a real webworker: the entry points are plain functions in this scope, so node runs them in-process
- *        the reply is async on purpose, like a real worker's message queue
+ * @brief creates an asynchronous adapter for a shared worker handler
  *
- * @param function handler -> the worker entry point
- * @param string worker_name -> the name, for the log
+ * @param function handler -> worker message handler
+ * @param string worker_name -> worker name used in error logs
  *
- * @return object an object with postMessage and terminate
+ * @return object adapter with postMessage and terminate methods
  */
 function android_host__make_loopback_worker(handler, worker_name)
 {
     return {
         postMessage: function(message)
         {
-            setTimeout(function() { android_host__dispatch_safely(handler, message, worker_name); }, 0);
+            setTimeout(function()
+            {
+                android_host__dispatch_safely(handler, message, worker_name);
+            }, 0);
         },
-        terminate: function() {}
+        terminate: function()
+        {
+        }
     };
 }
 
 /**
- * @brief wires the headless runtime the way main__window_onload does for the browser, minus everything that needs a dom
- *        it is defined inside the factory function because code outside cannot assign the factory's local variables
+ * @brief initializes workers, heartbeat checks and identity state in Node
  *
- * @param string|null identity_passphrase_string -> the passphrase the identity is derived from, null for a random one
+ * @param string|null identity_passphrase_string -> saved passphrase or null when settings will supply it
  *
  * @return void
  */
 function android_host__init_node_runtime(identity_passphrase_string)
 {
-    // every outgoing message goes through utils__custom_log, which falls back to global.postMessage
-    // when this is null. the stand-in element's .value is "", so the append and the 50kb truncation
-    // both work harmlessly and main.js needs no change
+    // use the log element provided by the DOM shim
+
     g_textarea_log = document.getElementById("textarea-log");
 
-    // the entry points reply with global.postMessage; here global is the stand-in window object, so the reply
-    // is routed to the same dispatcher a browser uses, contained so a handler that throws cannot end node
+    // route worker replies through the shared dispatcher
+
     global.postMessage = function(message)
     {
-        // raw frames go to the frame listener only, not into the dispatcher
+        if (message == null || typeof message !== "object")
+        {
+            return;
+        }
+        if (message.connection_generation == null && node_dispatch_generation != null)
+        {
+            message = Object.assign({}, message, {connection_generation: node_dispatch_generation});
+        }
+        if (message.connection_generation != null && message.connection_generation !== g_worker_connection_generation)
+        {
+            return;
+        }
+        // forward decrypted frames separately from worker messages
         if (message != null && message.type === "decrypted_frame")
         {
-            // the cheap indexOf check runs first and the real parse only on a hit, so a chat
-            // message containing the literal can not overwrite the cached frame
+            // parse matching frames before caching authentication data
+
             if (message.value.indexOf("\"authentication_status\"") !== -1)
             {
                 try
@@ -374,38 +591,59 @@ function android_host__init_node_runtime(identity_passphrase_string)
                         g_node_cached_auth_frame = message.value;
                     }
                 }
-                catch (e) { }
+                catch (e)
+                {
+                }
             }
 
-            if (g_node_frame_listener != null)
+            if (node_dispatch_frames != null)
             {
-                try { g_node_frame_listener(message.value); }
-                catch (listener_error) { console.error("frame listener failed: " + listener_error); }
+                if (g_node_frame_listener != null)
+                {
+                    const reservation = g_node_frame_listener(message.value, {defer_delivery: true});
+                    if (typeof reservation === "string")
+                    {
+                        node_dispatch_frames.push(reservation);
+                    }
+                }
+            }
+            else if (g_node_frame_listener != null)
+            {
+                try
+                {
+                    g_node_frame_listener(message.value);
+                }
+                catch (listener_error)
+                {
+                    console.error("frame listener failed: " + listener_error);
+                }
             }
             return;
         }
 
-        setTimeout(function() { android_host__dispatch_safely(dispatch__mainthread_onmessage, message, "mainthread"); }, 0);
+        setTimeout(function()
+        {
+            android_host__dispatch_safely(dispatch__mainthread_onmessage, message, "mainthread");
+        }, 0);
     };
 
-    // workers__websocket_worker_onmessage does `new WebSocket(...)`, which node has natively, so the
-    // transport needs no replacement, only somewhere to run
+    // run the shared socket and data workers through the local adapter
+
     g_websocket_worker = android_host__make_loopback_worker(workers__websocket_worker_onmessage, "websocket_worker");
     g_data_processing_worker = android_host__make_loopback_worker(workers__data_processing_worker_onmessage, "data_processing_worker");
 
-    // every decrypted frame also reaches the frame listener, for the ui replay
+    // forward decrypted frames for page replay
     g_data_processing_worker.postMessage({ type: "mainthread__set_frame_forwarding", value: true });
 
-    // the last safety check. the heartbeat loss loop is an async while loop and one uncaught
-    // exception can end it silently; a setInterval survives its own exceptions, so this check always runs
+    // check heartbeat expiry independently of the main heartbeat loop
+
     setInterval(function()
     {
         try
         {
             let heartbeat_age = new Date().valueOf() - g_connection_check.last_response_timestamp;
 
-            if (g_is_authenticated == true
-                && connection__has_keepalive_timed_out(new Date().valueOf(), 15000))
+            if (g_is_authenticated == true && connection__has_keepalive_timed_out(new Date().valueOf(), 15000))
             {
                 console.error("watchdog: heartbeat response " + heartbeat_age + "ms old, forcing reset + reconnect");
                 g_is_authenticated = false;
@@ -418,27 +656,27 @@ function android_host__init_node_runtime(identity_passphrase_string)
         }
     }, 15000);
 
-    // logs one searchable line per minute, so a night in which the connection stopped can be reconstructed from logcat
+    // log connection state once per minute
     setInterval(function()
     {
         try
         {
-            let heartbeat_age = (g_connection_check.last_response_timestamp > 0)
-                ? (new Date().valueOf() - g_connection_check.last_response_timestamp) : -1;
-            console.log("conn: auth=" + g_is_authenticated + " ws=" + g_is_websocket_connected
-                + " hb_age_ms=" + heartbeat_age + " checker=" + g_should_connection_check_be_running);
+            let heartbeat_age = (g_connection_check.last_response_timestamp > 0) ? (new Date().valueOf() - g_connection_check.last_response_timestamp) : -1;
+            console.log("conn: auth=" + g_is_authenticated + " ws=" + g_is_websocket_connected + " hb_age_ms=" + heartbeat_age + " checker=" + g_should_connection_check_be_running);
         }
-        catch (log_error) { }
+        catch (log_error)
+        {
+        }
     }, 60000);
 
-    // opus and minimp3 are not in this bundle, but shared code posts to them unconditionally; a
-    // discarding stand-in keeps those call sites working, messages to it go nowhere on purpose
+    // discard audio codec work in the headless runtime
+
     g_opus_decoder_worker = android_host__make_discarding_worker();
     g_opus_encoder_worker = android_host__make_discarding_worker();
     g_minimp3_worker = android_host__make_discarding_worker();
 
-    // a persisted identity can start generating right away; otherwise the settings push
-    // supplies the seed. the connect loop waits on the identity slot either way
+    // start a supplied identity before waiting for connection settings
+
     if (typeof identity_passphrase_string === "string" && identity_passphrase_string.length >= 199)
     {
         connection__request_identity(identity_passphrase_string);
@@ -447,43 +685,90 @@ function android_host__init_node_runtime(identity_passphrase_string)
     connection__connect_loop();
 }
 
-// ---- webview bridge ----
+/**
+ * @brief updates the controls shown for Android settings
+ *
+ * @param object settings_from_android -> the current native settings
+ *
+ * @return void
+ */
+function android_host__apply_settings_presentation(settings_from_android)
+{
+    if (!G_HAS_DOM)
+    {
+        return;
+    }
+
+    // hide the log panel when logging is disabled
+
+    if (settings_from_android.is_app_log_enabled == true)
+    {
+        document.getElementById("show-hide-log-button").style.display = "";
+    }
+    else
+    {
+        document.getElementById("show-hide-log-button").style.display = "none";
+        document.getElementById("textarea-log").style.display = "none";
+    }
+
+    // use native settings for the server address
+
+    document.getElementById("connect-form-grid").style.display = "none";
+    document.getElementById("add-key-button").style.display = "none";
+
+    // hide bookmarks because server settings are native
+    document.getElementById("server-bookmarks-container").style.display = "none";
+
+    if (g_is_autoconnect_without_user_action_active == false)
+    {
+        document.getElementById("another-buttons-sub-container").style.display = "";
+        document.getElementById("another-buttons-sub-loading-container").style.display = "none";
+        // show Connect when autoconnect is disabled
+
+        document.getElementById("connect-button").style.visibility = "visible";
+        document.getElementById("import-identity-button").style.display = "none";
+
+        // reveal the connect page in manual mode
+        connection__reveal_connect_page();
+    }
+
+    if (g_are_sound_effects_enabled == true)
+    {
+        document.getElementById("sound-effects-button").style.backgroundImage = "url(data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiIHN0YW5kYWxvbmU9Im5vIj8+PCFET0NUWVBFIHN2ZyBQVUJMSUMgIi0vL1czQy8vRFREIFNWRyAxLjEvL0VOIiAiaHR0cDovL3d3dy53My5vcmcvR3JhcGhpY3MvU1ZHLzEuMS9EVEQvc3ZnMTEuZHRkIj48c3ZnIHdpZHRoPSIxODJweCIgaGVpZ2h0PSIxNjBweCIgdmVyc2lvbj0iMS4xIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnhsaW5rPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hsaW5rIiB4bWw6c3BhY2U9InByZXNlcnZlIiB4bWxuczpzZXJpZj0iaHR0cDovL3d3dy5zZXJpZi5jb20vIiBzdHlsZT0iZmlsbC1ydWxlOmV2ZW5vZGQ7Y2xpcC1ydWxlOmV2ZW5vZGQ7c3Ryb2tlLWxpbmVqb2luOnJvdW5kO3N0cm9rZS1taXRlcmxpbWl0OjI7Ij48ZyB0cmFuc2Zvcm09Im1hdHJpeCgwLjI0LDAsMCwwLjI0LC01MTguMDg4MjEyLC01NDIuNDU0NDM4KSI+PGc+PGcgdHJhbnNmb3JtPSJtYXRyaXgoMSwwLDAsMSwyMTIwLjkxNDAwNCwyMTUwLjU1MzYwNSkiPjxwYXRoIGQ9Ik00NDIsMTM0QzQ0MywxMzUgNDQzLDEzNSA0NDksMTQwQzQ1NCwxNDYgNDUzLDE0NiA0NTksMTUyQzQ3MywxNjYgNDcyLDE3MyA0NzUsMTgyQzQ3NiwxODggNDg1LDIyMyA0NjgsMjU4QzQ2NSwyNjMgNDQ2LDMwMiA0MTcsMzE3QzQxMSwzMjAgMzcwLDMxOCAzNDAsMzMyQzI5NywzNTQgMzAxLDM2MCAyNjIsMzg5QzI1NiwzOTMgMjU1LDM5MyAyNDcsMzg2QzI0MSwzNzkgMjEzLDM2OCAyMDcsMzY4QzIwMSwzNjcgMjAyLDM2OCAxOTUsMzY5QzE0MCwzNzUgMTU2LDQ4NiAyMDEsNDkyQzIyNSw0OTUgMjIyLDUwNiAyMjEsNTQ1QzIyMSw1NDggMjIwLDU0NyAyMjAsNTUwQzIxOSw1NzUgMjE3LDU3NCAyMTYsNTk5QzIxNiw2MDEgMjE1LDYwMiAyMTUsNjA1QzIxMiw2NzkgMjI3LDcxNCAyNTAsNzQ5QzI1Nyw3NTkgMjM5LDc1OCAyMzYsNzU3QzIyNyw3NTMgMTkzLDc1OCAxNDEsNzQwQzEzMiw3MzcgMTMyLDczNiAxMjQsNzMzQzg1LDcyMCA2MSw2ODUgNTcsNjc3QzQyLDY0NiA0Niw2MjcgNDUsNjIzQzQxLDYxMSA0NCw2MDcgNDMsNjAyQzM5LDU5MSA0MSw1MzcgMzgsNTI1QzM4LDUyNSAzOCw0NzkgMzgsNDc5QzQzLDQ1NiAzNyw0MjkgNDAsNDI0QzQ1LDQxNCAzMCwyNTYgMTQ5LDE2MkMxNTMsMTU5IDE5MSwxMzYgMTk5LDEzNEMyMDMsMTMyIDI0NiwxMTggMjQ5LDExOEMyNjgsMTE3IDI2NywxMTMgMjg5LDExM0MyOTEsMTEzIDI5MCwxMTEgMjkyLDExMUMzMTEsMTA5IDM3MSwxMDkgMzc1LDExMUMzODEsMTE0IDM4NSwxMTIgMzg3LDExM0MzOTQsMTE3IDM5NSwxMTUgMzk1LDExNUM0MDIsMTE4IDQwMiwxMTYgNDAyLDExN0M0MTEsMTIxIDQzOCwxMjQgNDQyLDEzNFoiIHN0eWxlPSJmaWxsOndoaXRlOyIvPjwvZz48ZyB0cmFuc2Zvcm09Im1hdHJpeCgxLDAsMCwxLDIxMjAuOTE0MDA0LDIxNTAuNTUzNjA1KSI+PHBhdGggZD0iTTQ0NSwxMzJDNDQ3LDEzMCA0NDcsMTI5IDQ0OSwxMzFDNDU0LDEzMyA0NTUsMTMxIDQ1OCwxMzJDNDY4LDEzNyA1ODIsMTU0IDU4MiwyNjNDNTgyLDI2NSA1ODAsMjY1IDU4MCwyNjdDNTc5LDMyMSA1NTQsMzIxIDU0NywzMDVDNTQyLDI5NiA1NTgsMjYxIDU0NywyMjhDNTM2LDE5NiA0OTksMTc1IDUwOCwxODRDNTE2LDE5MyA1MTUsMTk0IDUyMiwyMDRDNTM2LDIyNSA1NDIsMjYxIDU0MiwyNjNDNTQyLDI4OSA1NDEsMjg4IDU0MCwzMDZDNTQwLDMwOSA1MzksMzA4IDUzOSwzMTFDNTM4LDMxNiA1MzgsMzE1IDUzNywzMjFDNTM2LDMyOCA1MzUsMzI3IDUzMywzMzRDNTMzLDMzOSA1MjksMzUwIDUyOCwzNTNDNTI2LDM2NCA1MjEsMzY1IDUyNywzNzVDNTM3LDM4OSA2MDUsNDMyIDU0OCw0NjJDNTQxLDQ2NSA1NDIsNDY2IDU0NSw0NzNDNTU0LDQ5MSA1MzUsNDk1IDUzNyw0OTlDNTUyLDUxOCA1MzAsNTI0IDUzMiw1MzJDNTM1LDU0MyA1MzMsNTYyIDUzMSw1NjRDNTIzLDU4MCA1MjEsNTg1IDUwNCw1OTNDNDk1LDU5OCA0NjMsNTkxIDQ2Myw1OTFDNDQyLDU4MSA0MjcsNTkwIDQyNCw1OTJDNDEyLDU5OSA0MTUsNjAyIDM5MSw2NzVDMzgyLDcwNSAzODMsNzA2IDM4Miw3MDhDMzc5LDcxNSAzODIsNzE3IDM4Myw3MTlDMzgzLDczMiA0MDEsNzQ3IDQwNSw3NTJDNDE3LDc2NCA0MDAsNzczIDM5OSw3NzRDMzkzLDc3NyAyOTcsNzYzIDI5Myw3NjJDMjkwLDc2MiAyNTUsNzA3IDI1NSw3MDVDMjU0LDcwNSAyNTQsNzAyIDI1MSw2OTRDMjI5LDY0MSAyNDcsNTY4IDI0Nyw1MjBDMjQ3LDUwNCAyNDYsNTA1IDI0Miw0ODlDMjQxLDQ4MiAyMjcsNDcyIDIyNSw0NzJDMjEzLDQ2OSAyMTQsNDY4IDIxMiw0NjhDMTg3LDQ2NiAxODIsNDI1IDE4Nyw0MTBDMTk5LDM3MiAyMzQsNDEwIDIzOCw0MTJDMjU4LDQyMyAyNjYsNDE2IDI3Myw0MTNDMjkxLDQwNCAzMzgsMzQ1IDM5MywzNDVDNDMxLDM0NSA0NDEsMzMyIDQ1NiwzMjBDNDU5LDMxNyA0NTksMzE3IDQ2MiwzMTRDNDY0LDMxMiA0NzYsMjk5IDQ4MywyODZDNTA0LDI0MyA0OTgsMjM5IDUwMSwyMzRDNTA0LDIyNiA1MDIsMjIzIDUwMiwyMjFDNTA2LDIxMiA1MDEsMTk0IDUwNSwxODNDNTA3LDE3OCA0NDcsMTM3IDQ0NSwxMzJaIiBzdHlsZT0iZmlsbDp3aGl0ZTsiLz48L2c+PGcgdHJhbnNmb3JtPSJtYXRyaXgoMSwwLDAsMSwyMDY4LjI4ODM4MywyMTE1LjcxMDQ3OSkiPjxwYXRoIGQ9Ik04NDMsNDcwQzg0NCw0ODMgODQ1LDQ4MiA4NDUsNDk0Qzg0NSw1MjcgODQ1LDUyNyA4NDIsNTQ2QzgzMyw1OTAgODMxLDU4OSA4MTIsNjI5QzgxMiw2MzAgNzk5LDY0OSA3OTgsNjUwQzc5OCw2NTEgNzc4LDY3NyA3NzAsNjgyQzc2MSw2ODkgNzM0LDY3NyA3NTYsNjU1QzgwNSw2MDYgODQ0LDUwMiA3OTAsNDAxQzc2MSwzNDYgNzMzLDM0NiA3NTUsMzI3Qzc2NywzMTYgNzgxLDMzOCA3OTIsMzUwQzgwMSwzNTkgODM0LDQxNSA4MzcsNDM4QzgzNyw0NDIgODM5LDQ0MiA4NDAsNDUzQzg0MCw0NTQgODQzLDQ2MiA4NDMsNDcwWiIgc3R5bGU9ImZpbGw6d2hpdGU7Ii8+PC9nPjxnIHRyYW5zZm9ybT0ibWF0cml4KDEsMCwwLDEsMjA2OC4yODgzODMsMjExNS43MTA0NzkpIj48cGF0aCBkPSJNNzI2LDQ3MUM3MjUsNDY4IDcyMCw0NTIgNzE4LDQ1MEM2OTcsNDA3IDY3NCw0MDYgNjk0LDM4OEM3MDIsMzgxIDcxNSwzODkgNzE4LDM5NkM3MjEsNDAyIDczMiw0MDkgNzQ0LDQzNkM3NjMsNDc0IDc2MCw1MTMgNzYwLDUxM0M3NTgsNTE5IDc1Nyw1MzUgNzU3LDUzOEM3NTIsNTYyIDczMiw1OTcgNzI1LDYwNEM3MTUsNjE1IDcxNyw2MTggNzA0LDYyNEM2OTksNjI2IDY4OCw2MTcgNjg4LDYxM0M2ODQsNTkzIDcwNiw1OTQgNzIxLDU1M0M3MjUsNTQwIDcyNSw1NDAgNzI4LDUyN0M3MzMsNDk4IDcyNiw0NzggNzI2LDQ3MVoiIHN0eWxlPSJmaWxsOndoaXRlOyIvPjwvZz48ZyB0cmFuc2Zvcm09Im1hdHJpeCgxLDAsMCwxLDIwNjguMjg4MzgzLDIxMTUuNzEwNDc5KSI+PHBhdGggZD0iTTY1NSw1MTZDNjU1LDUxNCA2NTcsNTA2IDY1NCw0OTFDNjUwLDQ2NyA2MTgsNDUyIDY0Niw0MzdDNjU1LDQzMyA2NzEsNDU0IDY3NSw0NjJDNzA4LDUyNSA2NTcsNTgzIDY0Myw1NjlDNjIwLDU0OCA2NTEsNTQ3IDY1NSw1MTZaIiBzdHlsZT0iZmlsbDp3aGl0ZTsiLz48L2c+PC9nPjxnIHRyYW5zZm9ybT0ibWF0cml4KDEsMCwwLDEsMjA2OC4yODgzODMsMjExNS43MTA0NzkpIj48cGF0aCBkPSJNODQzLDQ3MEM4NDQsNDgzIDg0NSw0ODIgODQ1LDQ5NEM4NDUsNTI3IDg0NSw1MjcgODQyLDU0NkM4MzMsNTkwIDgzMSw1ODkgODEyLDYyOUM4MTIsNjMwIDc5OSw2NDkgNzk4LDY1MEM3OTgsNjUxIDc3OCw2NzcgNzcwLDY4MkM3NjEsNjg5IDczNCw2NzcgNzU2LDY1NUM4MDUsNjA2IDg0NCw1MDIgNzkwLDQwMUM3NjEsMzQ2IDczMywzNDYgNzU1LDMyN0M3NjcsMzE2IDc4MSwzMzggNzkyLDM1MEM4MDEsMzU5IDgzNCw0MTUgODM3LDQzOEM4MzcsNDQyIDgzOSw0NDIgODQwLDQ1M0M4NDAsNDU0IDg0Myw0NjIgODQzLDQ3MFoiIHN0eWxlPSJmaWxsOndoaXRlOyIvPjwvZz48ZyB0cmFuc2Zvcm09Im1hdHJpeCgxLDAsMCwxLDIwNjguMjg4MzgzLDIxMTUuNzEwNDc5KSI+PHBhdGggZD0iTTcyNiw0NzFDNzI1LDQ2OCA3MjAsNDUyIDcxOCw0NTBDNjk3LDQwNyA2NzQsNDA2IDY5NCwzODhDNzAyLDM4MSA3MTUsMzg5IDcxOCwzOTZDNzIxLDQwMiA3MzIsNDA5IDc0NCw0MzZDNzYzLDQ3NCA3NjAsNTEzIDc2MCw1MTNDNzU4LDUxOSA3NTcsNTM1IDc1Nyw1MzhDNzUyLDU2MiA3MzIsNTk3IDcyNSw2MDRDNzE1LDYxNSA3MTcsNjE4IDcwNCw2MjRDNjk5LDYyNiA2ODgsNjE3IDY4OCw2MTNDNjg0LDU5MyA3MDYsNTk0IDcyMSw1NTNDNzI1LDU0MCA3MjUsNTQwIDcyOCw1MjdDNzMzLDQ5OCA3MjYsNDc4IDcyNiw0NzFaIiBzdHlsZT0iZmlsbDp3aGl0ZTsiLz48L2c+PGcgdHJhbnNmb3JtPSJtYXRyaXgoMSwwLDAsMSwyMDY4LjI4ODM4MywyMTE1LjcxMDQ3OSkiPjxwYXRoIGQ9Ik02NTUsNTE2QzY1NSw1MTQgNjU3LDUwNiA2NTQsNDkxQzY1MCw0NjcgNjE4LDQ1MiA2NDYsNDM3QzY1NSw0MzMgNjcxLDQ1NCA2NzUsNDYyQzcwOCw1MjUgNjU3LDU4MyA2NDMsNTY5QzYyMCw1NDggNjUxLDU0NyA2NTUsNTE2WiIgc3R5bGU9ImZpbGw6d2hpdGU7Ii8+PC9nPjwvZz48L3N2Zz4=)";
+    }
+    else
+    {
+        document.getElementById("sound-effects-button").style.backgroundImage = "url(data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiIHN0YW5kYWxvbmU9Im5vIj8+PCFET0NUWVBFIHN2ZyBQVUJMSUMgIi0vL1czQy8vRFREIFNWRyAxLjEvL0VOIiAiaHR0cDovL3d3dy53My5vcmcvR3JhcGhpY3MvU1ZHLzEuMS9EVEQvc3ZnMTEuZHRkIj48c3ZnIHdpZHRoPSIxODJweCIgaGVpZ2h0PSIxNjBweCIgdmVyc2lvbj0iMS4xIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnhsaW5rPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hsaW5rIiB4bWw6c3BhY2U9InByZXNlcnZlIiB4bWxuczpzZXJpZj0iaHR0cDovL3d3dy5zZXJpZi5jb20vIiBzdHlsZT0iZmlsbC1ydWxlOmV2ZW5vZGQ7Y2xpcC1ydWxlOmV2ZW5vZGQ7c3Ryb2tlLWxpbmVqb2luOnJvdW5kO3N0cm9rZS1taXRlcmxpbWl0OjI7Ij48ZyB0cmFuc2Zvcm09Im1hdHJpeCgwLjI0LDAsMCwwLjI0LC01MTguMDg4MjEyLC01NDIuNDU0NDM4KSI+PGcgdHJhbnNmb3JtPSJtYXRyaXgoMSwwLDAsMSwyMTIwLjkxNDAwNCwyMTUwLjU1MzYwNSkiPjxwYXRoIGQ9Ik0zMzEsMzM3QzI5NywzNTUgMjk4LDM2MyAyNjIsMzg5QzI1NiwzOTMgMjU1LDM5MyAyNDcsMzg2QzI0MSwzNzkgMjEzLDM2OCAyMDcsMzY4QzIwMSwzNjcgMjAyLDM2OCAxOTUsMzY5QzE0MCwzNzUgMTU2LDQ4NiAyMDEsNDkyQzIyNSw0OTUgMjIyLDUwNiAyMjEsNTQ1QzIyMSw1NDggMjIwLDU0NyAyMjAsNTUwQzIxOSw1NzUgMjE3LDU3NCAyMTYsNTk5QzIxNiw2MDEgMjE1LDYwMiAyMTUsNjA1QzIxMiw2NzkgMjI3LDcxNCAyNTAsNzQ5QzI1Nyw3NTkgMjM5LDc1OCAyMzYsNzU3QzIyNyw3NTMgMTkzLDc1OCAxNDEsNzQwQzEzMiw3MzcgMTMyLDczNiAxMjQsNzMzQzg1LDcyMCA2MSw2ODUgNTcsNjc3QzQyLDY0NiA0Niw2MjcgNDUsNjIzQzQxLDYxMSA0NCw2MDcgNDMsNjAyQzM5LDU5MSA0MSw1MzcgMzgsNTI1QzM4LDUyNSAzOCw0NzkgMzgsNDc5QzQzLDQ1NiAzNyw0MjkgNDAsNDI0QzQ1LDQxNCAzMSwyNjYgMTM5LDE3MUwzMzEsMzM3Wk0xNzksMTQ0QzE4OCwxMzkgMTk1LDEzNSAxOTksMTM0QzIwMywxMzIgMjQ2LDExOCAyNDksMTE4QzI2OCwxMTcgMjY3LDExMyAyODksMTEzQzI5MSwxMTMgMjkwLDExMSAyOTIsMTExQzMxMSwxMDkgMzcxLDEwOSAzNzUsMTExQzM4MSwxMTQgMzg1LDExMiAzODcsMTEzQzM5NCwxMTcgMzk1LDExNSAzOTUsMTE1QzQwMiwxMTggNDAyLDExNiA0MDIsMTE3QzQxMSwxMjEgNDM4LDEyNCA0NDIsMTM0QzQ0MywxMzUgNDQzLDEzNSA0NDksMTQwQzQ1NCwxNDYgNDUzLDE0NiA0NTksMTUyQzQ3MywxNjYgNDcyLDE3MyA0NzUsMTgyQzQ3NiwxODggNDg1LDIyMyA0NjgsMjU4QzQ2NSwyNjMgNDQ2LDMwMiA0MTcsMzE3QzQxNCwzMTggNDAwLDMxOCAzODMsMzIxTDE3OSwxNDRaIiBzdHlsZT0iZmlsbDp3aGl0ZTsiLz48L2c+PGcgdHJhbnNmb3JtPSJtYXRyaXgoMSwwLDAsMSwyMTIwLjkxNDAwNCwyMTUwLjU1MzYwNSkiPjxwYXRoIGQ9Ik00MTAsMzQ0QzQzNCwzNDEgNDQzLDMzMCA0NTYsMzIwQzQ1OSwzMTcgNDU5LDMxNyA0NjIsMzE0QzQ2NCwzMTIgNDc2LDI5OSA0ODMsMjg2QzUwNCwyNDMgNDk4LDIzOSA1MDEsMjM0QzUwNCwyMjYgNTAyLDIyMyA1MDIsMjIxQzUwNiwyMTIgNTAxLDE5NCA1MDUsMTgzQzUwNywxNzggNDQ3LDEzNyA0NDUsMTMyQzQ0NywxMzAgNDQ3LDEyOSA0NDksMTMxQzQ1NCwxMzMgNDU1LDEzMSA0NTgsMTMyQzQ2OCwxMzcgNTgyLDE1NCA1ODIsMjYzQzU4MiwyNjUgNTgwLDI2NSA1ODAsMjY3QzU3OSwzMjEgNTU0LDMyMSA1NDcsMzA1QzU0MiwyOTYgNTU4LDI2MSA1NDcsMjI4QzUzNiwxOTYgNDk5LDE3NSA1MDgsMTg0QzUxNiwxOTMgNTE1LDE5NCA1MjIsMjA0QzUzNiwyMjUgNTQyLDI2MSA1NDIsMjYzQzU0MiwyODkgNTQxLDI4OCA1NDAsMzA2QzU0MCwzMDkgNTM5LDMwOCA1MzksMzExQzUzOCwzMTYgNTM4LDMxNSA1MzcsMzIxQzUzNiwzMjggNTM1LDMyNyA1MzMsMzM0QzUzMywzMzkgNTI5LDM1MCA1MjgsMzUzQzUyNiwzNjQgNTIxLDM2NSA1MjcsMzc1QzUzNywzODkgNjA1LDQzMiA1NDgsNDYyQzU0Nyw0NjIgNTQ3LDQ2MiA1NDYsNDYyTDQxMCwzNDRaTTU0MCw1MTlDNTM2LDUyNCA1MzEsNTI3IDUzMiw1MzJDNTM1LDU0MyA1MzMsNTYyIDUzMSw1NjRDNTIzLDU4MCA1MjEsNTg1IDUwNCw1OTNDNDk1LDU5OCA0NjMsNTkxIDQ2Myw1OTFDNDQyLDU4MSA0MjcsNTkwIDQyNCw1OTJDNDEyLDU5OSA0MTUsNjAyIDM5MSw2NzVDMzgyLDcwNSAzODMsNzA2IDM4Miw3MDhDMzc5LDcxNSAzODIsNzE3IDM4Myw3MTlDMzgzLDczMiA0MDEsNzQ3IDQwNSw3NTJDNDE3LDc2NCA0MDAsNzczIDM5OSw3NzRDMzkzLDc3NyAyOTcsNzYzIDI5Myw3NjJDMjkwLDc2MiAyNTUsNzA3IDI1NSw3MDVDMjU0LDcwNSAyNTQsNzAyIDI1MSw2OTRDMjI5LDY0MSAyNDcsNTY4IDI0Nyw1MjBDMjQ3LDUwNCAyNDYsNTA1IDI0Miw0ODlDMjQxLDQ4MiAyMjcsNDcyIDIyNSw0NzJDMjEzLDQ2OSAyMTQsNDY4IDIxMiw0NjhDMTg3LDQ2NiAxODIsNDI1IDE4Nyw0MTBDMTk5LDM3MiAyMzQsNDEwIDIzOCw0MTJDMjU4LDQyMyAyNjYsNDE2IDI3Myw0MTNDMjg2LDQwNyAzMTUsMzczIDM1MiwzNTZMNTQwLDUxOVoiIHN0eWxlPSJmaWxsOndoaXRlOyIvPjwvZz48ZyB0cmFuc2Zvcm09Im1hdHJpeCgxLDAsMCwxLDIwNjguMjg4MzgzLDIxMTUuNzEwNDc5KSI+PHBhdGggZD0iTTg0Myw0NzBDODQ0LDQ4MyA4NDUsNDgyIDg0NSw0OTRDODQ1LDUyNyA4NDUsNTI3IDg0Miw1NDZDODMzLDU5MCA4MzEsNTg5IDgxMiw2MjlDODEyLDYzMCA3OTksNjQ5IDc5OCw2NTBDNzk4LDY1MSA3NzgsNjc3IDc3MCw2ODJDNzYxLDY4OSA3MzQsNjc3IDc1Niw2NTVDODA1LDYwNiA4NDQsNTAyIDc5MCw0MDFDNzYxLDM0NiA3MzMsMzQ2IDc1NSwzMjdDNzY3LDMxNiA3ODEsMzM4IDc5MiwzNTBDODAxLDM1OSA4MzQsNDE1IDgzNyw0MzhDODM3LDQ0MiA4MzksNDQyIDg0MCw0NTNDODQwLDQ1NCA4NDMsNDYyIDg0Myw0NzBaIiBzdHlsZT0iZmlsbDp3aGl0ZTsiLz48L2c+PGcgdHJhbnNmb3JtPSJtYXRyaXgoMSwwLDAsMSwyMDY4LjI4ODM4MywyMTE1LjcxMDQ3OSkiPjxwYXRoIGQ9Ik03MjYsNDcxQzcyNSw0NjggNzIwLDQ1MiA3MTgsNDUwQzY5Nyw0MDcgNjc0LDQwNiA2OTQsMzg4QzcwMiwzODEgNzE1LDM4OSA3MTgsMzk2QzcyMSw0MDIgNzMyLDQwOSA3NDQsNDM2Qzc2Myw0NzQgNzYwLDUxMyA3NjAsNTEzQzc1OCw1MTkgNzU3LDUzNSA3NTcsNTM4Qzc1Miw1NjIgNzMyLDU5NyA3MjUsNjA0QzcxNSw2MTUgNzE3LDYxOCA3MDQsNjI0QzY5OSw2MjYgNjg4LDYxNyA2ODgsNjEzQzY4NCw1OTMgNzA2LDU5NCA3MjEsNTUzQzcyNSw1NDAgNzI1LDU0MCA3MjgsNTI3QzczMyw0OTggNzI2LDQ3OCA3MjYsNDcxWiIgc3R5bGU9ImZpbGw6d2hpdGU7Ii8+PC9nPjxnIHRyYW5zZm9ybT0ibWF0cml4KDEsMCwwLDEsMjA2OC4yODgzODMsMjExNS43MTA0NzkpIj48cGF0aCBkPSJNNjU1LDUxNkM2NTUsNTE0IDY1Nyw1MDYgNjU0LDQ5MUM2NTAsNDY3IDYxOCw0NTIgNjQ2LDQzN0M2NTUsNDMzIDY3MSw0NTQgNjc1LDQ2MkM3MDgsNTI1IDY1Nyw1ODMgNjQzLDU2OUM2MjAsNTQ4IDY1MSw1NDcgNjU1LDUxNloiIHN0eWxlPSJmaWxsOndoaXRlOyIvPjwvZz48ZyB0cmFuc2Zvcm09Im1hdHJpeCgwLjY1ODc0OCwwLjU3MjE0LC0wLjY1NTczMiwwLjc1NDk5NCwyODczLjU3MjI1NywtMTEyMy4zODAwNykiPjxyZWN0IHg9IjE5NTIiIHk9IjMwMDMiIHdpZHRoPSIxMDk4IiBoZWlnaHQ9IjQ3IiBzdHlsZT0iZmlsbDp3aGl0ZTsiLz48L2c+PC9nPjwvc3ZnPg==)";
+    }
+}
 
 var android_js_bridge = {
     /**
-     * @brief java's "go idle": enters deep idle, which sends the request to the server itself and shuts down audio, the opus tick and the datachannel
-     *        a call without is_forced (home button) keeps a session that is in a channel alive; a forced one (the app swiped away) goes idle from any channel
+     * @brief applies an idle request from Android
      *
-     * @param boolean is_forced -> true for a swipe-away
+     * @param boolean is_forced -> true to idle from any channel
      *
      * @return void
      */
     send_go_to_idle_mode_request_android: function(is_forced)
     {
-        // android_host__enter_deep_idle sends the go-to-idle request to the server itself and additionally
-        // shuts down audio, the opus tick and the webrtc datachannel. a call without is_forced (home
-        // button) keeps a session that is in a channel alive; a forced one (the app swiped away) goes idle from any channel
+        // apply the native idle request
+
         android_host__enter_deep_idle(is_forced === true);
     },
 
     /**
-     * @brief java's "leave idle": asks the server to bring the client back into a channel
-     *        sometimes runs twice (a call accept, then onResume) and the server refuses the second;
-     *        a channel id means a call accept, so presence is held through the accept transition
+     * @brief restores media and requests entry into a channel
      *
-     * @param number|null channelId -> the channel to rejoin, null for root
+     * @param number|null channelId -> channel to rejoin or null for root
      *
      * @return void
      */
     send_come_from_idle_mode_request_android: function(channelId = null)
     {
-        // this function sometimes gets ran twice,
-        // when client accepts the call and a bit later when app runs onResume (because he accepted it)
-        // but server is smart and doesnt let user come back from idle mode twice
 
-        // a channel id means a call accept, so presence is held, because the accept
-        // transition's blink of invisibility could otherwise idle the user right back
-        // out of the call
+        // keep presence active when returning to a call channel
+
         if (channelId != null)
         {
             android_host__mark_call_accept_presence_grace();
@@ -491,17 +776,20 @@ var android_js_bridge = {
 
         if (channelId == null)
         {
-            channelId = 0; // unspecified, so root channel.
+            channelId = 0; // use the root channel
         }
 
-        // restore audio, the opus tick, webrtc and the fast heartbeat before rejoining
+        // restore media before requesting channel entry
         android_host__exit_deep_idle();
 
-        client_msg.send_come_from_idle_mode_request(channelId);
+        if (!android_host__is_ui_only_runtime())
+        {
+            client_msg.send_come_from_idle_mode_request(channelId);
+        }
     },
 
     /**
-     * @brief java calls this on ACTION_ACCEPT_CALL, so the webview's own idle logic knows a call was just accepted; node learns it through its come-from-idle instead
+     * @brief defers ordinary idle briefly after a native call accept
      *
      * @return void
      */
@@ -511,9 +799,9 @@ var android_js_bridge = {
     },
 
     /**
-     * @brief java hands over the username: it is sent as a rename now and remembered as the chosen name, so the next connect applies it at login (a rename the admin may have switched off for users)
+     * @brief applies the native username and saves it for the next login
      *
-     * @param string username -> the name, "" is ignored
+     * @param string username -> new username. empty strings are ignored
      *
      * @return void
      */
@@ -524,9 +812,8 @@ var android_js_bridge = {
             return;
         }
 
-        // remembered as the chosen username too, because on the next connect the
-        // server can then apply the name at login instead of through a rename -
-        // a rename the admin may have switched off for users
+        // keep this name for the next login
+
         g_chosen_username = username;
 
         client_msg.send_change_client_username_request(username, g_local_client_id);
@@ -539,21 +826,35 @@ var android_js_bridge = {
         }
 
         g_local_username = username;
-        { let rename_input = document.getElementById('connected-local-client-input'); if (rename_input != null) { rename_input.setAttribute('value', g_local_username); } }
+        {
+            let rename_input = document.getElementById('connected-local-client-input');
+            if (rename_input != null)
+            {
+                rename_input.setAttribute('value', g_local_username);
+            }
+        }
     },
 
     /**
-     * @brief node's connection phase relayed by java
-     *        it feeds the page's own status machinery, which the ticker keeps repainting, and keeps
-     *        the spinner up while node works; nothing once authenticated
+     * @brief displays the connection phase reported by the native owner
      *
-     * @param string state -> the phase name
-     * @param string reason -> the text to show with it
+     * @param string state -> native connection phase
+     * @param string reason -> explanation shown with the phase
      *
      * @return void
      */
     show_connection_phase_android: function(state, reason)
     {
+        if (state === "runtime_failed")
+        {
+            connection__handle_runtime_failure(reason);
+            return;
+        }
+        if (g_connection_status.runtime_failure_reason)
+        {
+            connection__render_connection_status();
+            return;
+        }
         if (g_is_authenticated == true)
         {
             return;
@@ -574,9 +875,7 @@ var android_js_bridge = {
     },
 
     /**
-     * @brief java says node is connected or the app came to front
-     *        whether to connect is decided in connection__request_connect; this only recovers from a lost
-     *        settings push first (no loopback details yet means one got lost, so it asks again)
+     * @brief requests missing local settings and reattaches the WebView
      *
      * @return void
      */
@@ -587,7 +886,7 @@ var android_js_bridge = {
             return;
         }
 
-        // no loopback details yet means a settings push got lost, so ask again
+        // request settings when the local endpoint is missing
         if (g_loopback_port <= 0)
         {
             if (typeof Android !== "undefined")
@@ -601,11 +900,9 @@ var android_js_bridge = {
     },
 
     /**
-     * @brief takes the settings json java pushes: app mode and theme first, then the loopback details, the identity, the microphone mode and the autoconnect, and finally gives the connect loop its target
-     *        the theme is applied before anything below can throw: the settings json grows
-     *        incrementally on the java side, and a missing field must not skip the theme
+     * @brief validates and applies a native settings snapshot
      *
-     * @param string json_current_settings -> the settings as json
+     * @param string json_current_settings -> serialized native settings snapshot
      *
      * @return void
      */
@@ -613,9 +910,35 @@ var android_js_bridge = {
     {
 
         let settings_from_android = JSON.parse(json_current_settings);
+        if (settings_from_android == null || typeof settings_from_android !== "object" || Array.isArray(settings_from_android))
+        {
+            throw new Error("invalid Android settings");
+        }
+        if (typeof settings_from_android.identity_error === "string" && settings_from_android.identity_error)
+        {
+            node_identity_blocked = true;
+            android_host__node_set_connection_wanted(false);
+            connection__report_connection_status("error", "The saved identity needs recovery. Open Android settings to choose or import your identity.");
+            return;
+        }
+        if (node_identity_blocked)
+        {
+            node_identity_blocked = false;
+            if (!is_connection_ended_by_user)
+            {
+                g_node_connection_wanted = true;
+            }
+        }
+        // validate credentials before changing runtime state
+        const next_metadata_keys = settings_from_android.metadata_keys || [];
+        const next_metadata_signature = android_host__metadata_keys_signature(next_metadata_keys);
+        if (android_host__is_ui_only_runtime() && Number.isSafeInteger(settings_from_android.identity_revision) && settings_from_android.identity_revision >= g_identity_revision)
+        {
+            g_identity_revision = settings_from_android.identity_revision;
+        }
 
-        // the theme is applied first, before anything below can throw: the settings json
-        // grows incrementally on the java side, and a missing field must not skip the theme
+        // apply the selected theme
+
         g_android_app_mode = (typeof settings_from_android.app_mode === "string") ? settings_from_android.app_mode : "";
         console.log("android settings received, app_mode = " + g_android_app_mode);
 
@@ -624,28 +947,14 @@ var android_js_bridge = {
         g_are_server_details_predefined = true;
         is_autoconnect_enabled = true;
 
-        // there is difference between how web browser app and how android app handles auto connects
+        // enable autoconnect and sound unless explicitly disabled
 
-        // in a browser: predefined details show only the connect button, no details show the
-        // form as well, and autoconnect without user action shows neither and keeps trying to connect
-
-        // in android
-        // autoconnect is on -> connect button doesnt show, app goes in loop and tries to join the server until it succeeds
-        // autoconnect is off -> connect button shows (but server details need specified in android settings)
-
-        // these differences exists because web browser has limitation, sometimes it requries user interaction to play soudns and android app doesnt
-        // different enviroments sometimes need different way of doing things
-
-        // yes, this is confusing, and needs improvements, should be documentated better
-
-        // a first-run json may lack these fields; an absent field means on, because a
-        // fresh install must connect (undefined == false is false in js, so the checks need it)
         g_is_autoconnect_without_user_action_active = (settings_from_android.is_autoconnect_enabled != false);
 
-        // android decides if the log file is written. the page only copies the answer
+        // copy the native logging preference
         g_is_file_logging_enabled = (settings_from_android.is_file_logging_enabled != false);
 
-        // a choice made in the local settings panel outranks the android settings json
+        // keep the local microphone preference when one is saved
         let has_local_sound_choice = false;
         has_local_sound_choice = (utils__storage_get("lemon_sound_effects") != null);
 
@@ -654,9 +963,8 @@ var android_js_bridge = {
             g_are_sound_effects_enabled = (settings_from_android.is_audio_effect_enabled == true);
         }
 
-        // the mic has to start or stop with the flag; the connect path applies it on the first
-        // push, so only a switch moved while running is acted on here. the flag is set directly,
-        // not through the click handler, so a runtime with no ui sets it and touches no audio
+        // apply microphone mode changes to an existing connection
+
         let is_microphone_always_on_wanted = (settings_from_android.is_microphone_always_on == true);
 
         if (g_have_received_android_settings == false)
@@ -671,67 +979,26 @@ var android_js_bridge = {
 
         g_have_received_android_settings = true;
 
-        // the app log is opt-in from the java settings. the open textarea is hidden too
-        // when the switch turns off, because it would otherwise linger with no button to close it
-        if (settings_from_android.is_app_log_enabled == true)
-        {
-            document.getElementById("show-hide-log-button").style.display = "";
-        }
-        else
-        {
-            document.getElementById("show-hide-log-button").style.display = "none";
-            document.getElementById("textarea-log").style.display = "none";
-        }
+        android_host__apply_settings_presentation(settings_from_android);
 
-        // on android the details come from the java settings window, so the in-page form
-        // is hidden (display none, no empty space); autoconnect off means the user needs a connect button
-        document.getElementById("connect-form-grid").style.display = "none";
-        document.getElementById("add-key-button").style.display = "none";
+        // save previous connection values for comparison
 
-        // bookmarks fill those hidden fields, so they have nothing to act on here
-        document.getElementById("server-bookmarks-container").style.display = "none";
-
-        if (g_is_autoconnect_without_user_action_active == false)
-        {
-            document.getElementById("another-buttons-sub-container").style.display = "";
-            document.getElementById("another-buttons-sub-loading-container").style.display = "none";
-            // explicit visible is needed because a stylesheet default hides it; the spinner
-            // page has an opaque background now, so the button can not float through anymore
-            document.getElementById("connect-button").style.visibility = "visible";
-            document.getElementById("import-identity-button").style.display = "none";
-
-            // nothing connects on its own here: no spinner, the connect page is the page
-            connection__reveal_connect_page();
-        }
-
-        if (g_are_sound_effects_enabled == true)
-        {
-            document.getElementById("sound-effects-button").style.backgroundImage = "url(data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiIHN0YW5kYWxvbmU9Im5vIj8+PCFET0NUWVBFIHN2ZyBQVUJMSUMgIi0vL1czQy8vRFREIFNWRyAxLjEvL0VOIiAiaHR0cDovL3d3dy53My5vcmcvR3JhcGhpY3MvU1ZHLzEuMS9EVEQvc3ZnMTEuZHRkIj48c3ZnIHdpZHRoPSIxODJweCIgaGVpZ2h0PSIxNjBweCIgdmVyc2lvbj0iMS4xIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnhsaW5rPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hsaW5rIiB4bWw6c3BhY2U9InByZXNlcnZlIiB4bWxuczpzZXJpZj0iaHR0cDovL3d3dy5zZXJpZi5jb20vIiBzdHlsZT0iZmlsbC1ydWxlOmV2ZW5vZGQ7Y2xpcC1ydWxlOmV2ZW5vZGQ7c3Ryb2tlLWxpbmVqb2luOnJvdW5kO3N0cm9rZS1taXRlcmxpbWl0OjI7Ij48ZyB0cmFuc2Zvcm09Im1hdHJpeCgwLjI0LDAsMCwwLjI0LC01MTguMDg4MjEyLC01NDIuNDU0NDM4KSI+PGc+PGcgdHJhbnNmb3JtPSJtYXRyaXgoMSwwLDAsMSwyMTIwLjkxNDAwNCwyMTUwLjU1MzYwNSkiPjxwYXRoIGQ9Ik00NDIsMTM0QzQ0MywxMzUgNDQzLDEzNSA0NDksMTQwQzQ1NCwxNDYgNDUzLDE0NiA0NTksMTUyQzQ3MywxNjYgNDcyLDE3MyA0NzUsMTgyQzQ3NiwxODggNDg1LDIyMyA0NjgsMjU4QzQ2NSwyNjMgNDQ2LDMwMiA0MTcsMzE3QzQxMSwzMjAgMzcwLDMxOCAzNDAsMzMyQzI5NywzNTQgMzAxLDM2MCAyNjIsMzg5QzI1NiwzOTMgMjU1LDM5MyAyNDcsMzg2QzI0MSwzNzkgMjEzLDM2OCAyMDcsMzY4QzIwMSwzNjcgMjAyLDM2OCAxOTUsMzY5QzE0MCwzNzUgMTU2LDQ4NiAyMDEsNDkyQzIyNSw0OTUgMjIyLDUwNiAyMjEsNTQ1QzIyMSw1NDggMjIwLDU0NyAyMjAsNTUwQzIxOSw1NzUgMjE3LDU3NCAyMTYsNTk5QzIxNiw2MDEgMjE1LDYwMiAyMTUsNjA1QzIxMiw2NzkgMjI3LDcxNCAyNTAsNzQ5QzI1Nyw3NTkgMjM5LDc1OCAyMzYsNzU3QzIyNyw3NTMgMTkzLDc1OCAxNDEsNzQwQzEzMiw3MzcgMTMyLDczNiAxMjQsNzMzQzg1LDcyMCA2MSw2ODUgNTcsNjc3QzQyLDY0NiA0Niw2MjcgNDUsNjIzQzQxLDYxMSA0NCw2MDcgNDMsNjAyQzM5LDU5MSA0MSw1MzcgMzgsNTI1QzM4LDUyNSAzOCw0NzkgMzgsNDc5QzQzLDQ1NiAzNyw0MjkgNDAsNDI0QzQ1LDQxNCAzMCwyNTYgMTQ5LDE2MkMxNTMsMTU5IDE5MSwxMzYgMTk5LDEzNEMyMDMsMTMyIDI0NiwxMTggMjQ5LDExOEMyNjgsMTE3IDI2NywxMTMgMjg5LDExM0MyOTEsMTEzIDI5MCwxMTEgMjkyLDExMUMzMTEsMTA5IDM3MSwxMDkgMzc1LDExMUMzODEsMTE0IDM4NSwxMTIgMzg3LDExM0MzOTQsMTE3IDM5NSwxMTUgMzk1LDExNUM0MDIsMTE4IDQwMiwxMTYgNDAyLDExN0M0MTEsMTIxIDQzOCwxMjQgNDQyLDEzNFoiIHN0eWxlPSJmaWxsOndoaXRlOyIvPjwvZz48ZyB0cmFuc2Zvcm09Im1hdHJpeCgxLDAsMCwxLDIxMjAuOTE0MDA0LDIxNTAuNTUzNjA1KSI+PHBhdGggZD0iTTQ0NSwxMzJDNDQ3LDEzMCA0NDcsMTI5IDQ0OSwxMzFDNDU0LDEzMyA0NTUsMTMxIDQ1OCwxMzJDNDY4LDEzNyA1ODIsMTU0IDU4MiwyNjNDNTgyLDI2NSA1ODAsMjY1IDU4MCwyNjdDNTc5LDMyMSA1NTQsMzIxIDU0NywzMDVDNTQyLDI5NiA1NTgsMjYxIDU0NywyMjhDNTM2LDE5NiA0OTksMTc1IDUwOCwxODRDNTE2LDE5MyA1MTUsMTk0IDUyMiwyMDRDNTM2LDIyNSA1NDIsMjYxIDU0MiwyNjNDNTQyLDI4OSA1NDEsMjg4IDU0MCwzMDZDNTQwLDMwOSA1MzksMzA4IDUzOSwzMTFDNTM4LDMxNiA1MzgsMzE1IDUzNywzMjFDNTM2LDMyOCA1MzUsMzI3IDUzMywzMzRDNTMzLDMzOSA1MjksMzUwIDUyOCwzNTNDNTI2LDM2NCA1MjEsMzY1IDUyNywzNzVDNTM3LDM4OSA2MDUsNDMyIDU0OCw0NjJDNTQxLDQ2NSA1NDIsNDY2IDU0NSw0NzNDNTU0LDQ5MSA1MzUsNDk1IDUzNyw0OTlDNTUyLDUxOCA1MzAsNTI0IDUzMiw1MzJDNTM1LDU0MyA1MzMsNTYyIDUzMSw1NjRDNTIzLDU4MCA1MjEsNTg1IDUwNCw1OTNDNDk1LDU5OCA0NjMsNTkxIDQ2Myw1OTFDNDQyLDU4MSA0MjcsNTkwIDQyNCw1OTJDNDEyLDU5OSA0MTUsNjAyIDM5MSw2NzVDMzgyLDcwNSAzODMsNzA2IDM4Miw3MDhDMzc5LDcxNSAzODIsNzE3IDM4Myw3MTlDMzgzLDczMiA0MDEsNzQ3IDQwNSw3NTJDNDE3LDc2NCA0MDAsNzczIDM5OSw3NzRDMzkzLDc3NyAyOTcsNzYzIDI5Myw3NjJDMjkwLDc2MiAyNTUsNzA3IDI1NSw3MDVDMjU0LDcwNSAyNTQsNzAyIDI1MSw2OTRDMjI5LDY0MSAyNDcsNTY4IDI0Nyw1MjBDMjQ3LDUwNCAyNDYsNTA1IDI0Miw0ODlDMjQxLDQ4MiAyMjcsNDcyIDIyNSw0NzJDMjEzLDQ2OSAyMTQsNDY4IDIxMiw0NjhDMTg3LDQ2NiAxODIsNDI1IDE4Nyw0MTBDMTk5LDM3MiAyMzQsNDEwIDIzOCw0MTJDMjU4LDQyMyAyNjYsNDE2IDI3Myw0MTNDMjkxLDQwNCAzMzgsMzQ1IDM5MywzNDVDNDMxLDM0NSA0NDEsMzMyIDQ1NiwzMjBDNDU5LDMxNyA0NTksMzE3IDQ2MiwzMTRDNDY0LDMxMiA0NzYsMjk5IDQ4MywyODZDNTA0LDI0MyA0OTgsMjM5IDUwMSwyMzRDNTA0LDIyNiA1MDIsMjIzIDUwMiwyMjFDNTA2LDIxMiA1MDEsMTk0IDUwNSwxODNDNTA3LDE3OCA0NDcsMTM3IDQ0NSwxMzJaIiBzdHlsZT0iZmlsbDp3aGl0ZTsiLz48L2c+PGcgdHJhbnNmb3JtPSJtYXRyaXgoMSwwLDAsMSwyMDY4LjI4ODM4MywyMTE1LjcxMDQ3OSkiPjxwYXRoIGQ9Ik04NDMsNDcwQzg0NCw0ODMgODQ1LDQ4MiA4NDUsNDk0Qzg0NSw1MjcgODQ1LDUyNyA4NDIsNTQ2QzgzMyw1OTAgODMxLDU4OSA4MTIsNjI5QzgxMiw2MzAgNzk5LDY0OSA3OTgsNjUwQzc5OCw2NTEgNzc4LDY3NyA3NzAsNjgyQzc2MSw2ODkgNzM0LDY3NyA3NTYsNjU1QzgwNSw2MDYgODQ0LDUwMiA3OTAsNDAxQzc2MSwzNDYgNzMzLDM0NiA3NTUsMzI3Qzc2NywzMTYgNzgxLDMzOCA3OTIsMzUwQzgwMSwzNTkgODM0LDQxNSA4MzcsNDM4QzgzNyw0NDIgODM5LDQ0MiA4NDAsNDUzQzg0MCw0NTQgODQzLDQ2MiA4NDMsNDcwWiIgc3R5bGU9ImZpbGw6d2hpdGU7Ii8+PC9nPjxnIHRyYW5zZm9ybT0ibWF0cml4KDEsMCwwLDEsMjA2OC4yODgzODMsMjExNS43MTA0NzkpIj48cGF0aCBkPSJNNzI2LDQ3MUM3MjUsNDY4IDcyMCw0NTIgNzE4LDQ1MEM2OTcsNDA3IDY3NCw0MDYgNjk0LDM4OEM3MDIsMzgxIDcxNSwzODkgNzE4LDM5NkM3MjEsNDAyIDczMiw0MDkgNzQ0LDQzNkM3NjMsNDc0IDc2MCw1MTMgNzYwLDUxM0M3NTgsNTE5IDc1Nyw1MzUgNzU3LDUzOEM3NTIsNTYyIDczMiw1OTcgNzI1LDYwNEM3MTUsNjE1IDcxNyw2MTggNzA0LDYyNEM2OTksNjI2IDY4OCw2MTcgNjg4LDYxM0M2ODQsNTkzIDcwNiw1OTQgNzIxLDU1M0M3MjUsNTQwIDcyNSw1NDAgNzI4LDUyN0M3MzMsNDk4IDcyNiw0NzggNzI2LDQ3MVoiIHN0eWxlPSJmaWxsOndoaXRlOyIvPjwvZz48ZyB0cmFuc2Zvcm09Im1hdHJpeCgxLDAsMCwxLDIwNjguMjg4MzgzLDIxMTUuNzEwNDc5KSI+PHBhdGggZD0iTTY1NSw1MTZDNjU1LDUxNCA2NTcsNTA2IDY1NCw0OTFDNjUwLDQ2NyA2MTgsNDUyIDY0Niw0MzdDNjU1LDQzMyA2NzEsNDU0IDY3NSw0NjJDNzA4LDUyNSA2NTcsNTgzIDY0Myw1NjlDNjIwLDU0OCA2NTEsNTQ3IDY1NSw1MTZaIiBzdHlsZT0iZmlsbDp3aGl0ZTsiLz48L2c+PC9nPjxnIHRyYW5zZm9ybT0ibWF0cml4KDEsMCwwLDEsMjA2OC4yODgzODMsMjExNS43MTA0NzkpIj48cGF0aCBkPSJNODQzLDQ3MEM4NDQsNDgzIDg0NSw0ODIgODQ1LDQ5NEM4NDUsNTI3IDg0NSw1MjcgODQyLDU0NkM4MzMsNTkwIDgzMSw1ODkgODEyLDYyOUM4MTIsNjMwIDc5OSw2NDkgNzk4LDY1MEM3OTgsNjUxIDc3OCw2NzcgNzcwLDY4MkM3NjEsNjg5IDczNCw2NzcgNzU2LDY1NUM4MDUsNjA2IDg0NCw1MDIgNzkwLDQwMUM3NjEsMzQ2IDczMywzNDYgNzU1LDMyN0M3NjcsMzE2IDc4MSwzMzggNzkyLDM1MEM4MDEsMzU5IDgzNCw0MTUgODM3LDQzOEM4MzcsNDQyIDgzOSw0NDIgODQwLDQ1M0M4NDAsNDU0IDg0Myw0NjIgODQzLDQ3MFoiIHN0eWxlPSJmaWxsOndoaXRlOyIvPjwvZz48ZyB0cmFuc2Zvcm09Im1hdHJpeCgxLDAsMCwxLDIwNjguMjg4MzgzLDIxMTUuNzEwNDc5KSI+PHBhdGggZD0iTTcyNiw0NzFDNzI1LDQ2OCA3MjAsNDUyIDcxOCw0NTBDNjk3LDQwNyA2NzQsNDA2IDY5NCwzODhDNzAyLDM4MSA3MTUsMzg5IDcxOCwzOTZDNzIxLDQwMiA3MzIsNDA5IDc0NCw0MzZDNzYzLDQ3NCA3NjAsNTEzIDc2MCw1MTNDNzU4LDUxOSA3NTcsNTM1IDc1Nyw1MzhDNzUyLDU2MiA3MzIsNTk3IDcyNSw2MDRDNzE1LDYxNSA3MTcsNjE4IDcwNCw2MjRDNjk5LDYyNiA2ODgsNjE3IDY4OCw2MTNDNjg0LDU5MyA3MDYsNTk0IDcyMSw1NTNDNzI1LDU0MCA3MjUsNTQwIDcyOCw1MjdDNzMzLDQ5OCA3MjYsNDc4IDcyNiw0NzFaIiBzdHlsZT0iZmlsbDp3aGl0ZTsiLz48L2c+PGcgdHJhbnNmb3JtPSJtYXRyaXgoMSwwLDAsMSwyMDY4LjI4ODM4MywyMTE1LjcxMDQ3OSkiPjxwYXRoIGQ9Ik02NTUsNTE2QzY1NSw1MTQgNjU3LDUwNiA2NTQsNDkxQzY1MCw0NjcgNjE4LDQ1MiA2NDYsNDM3QzY1NSw0MzMgNjcxLDQ1NCA2NzUsNDYyQzcwOCw1MjUgNjU3LDU4MyA2NDMsNTY5QzYyMCw1NDggNjUxLDU0NyA2NTUsNTE2WiIgc3R5bGU9ImZpbGw6d2hpdGU7Ii8+PC9nPjwvZz48L3N2Zz4=)";
-        }
-        else
-        {
-            document.getElementById("sound-effects-button").style.backgroundImage = "url(data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiIHN0YW5kYWxvbmU9Im5vIj8+PCFET0NUWVBFIHN2ZyBQVUJMSUMgIi0vL1czQy8vRFREIFNWRyAxLjEvL0VOIiAiaHR0cDovL3d3dy53My5vcmcvR3JhcGhpY3MvU1ZHLzEuMS9EVEQvc3ZnMTEuZHRkIj48c3ZnIHdpZHRoPSIxODJweCIgaGVpZ2h0PSIxNjBweCIgdmVyc2lvbj0iMS4xIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnhsaW5rPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hsaW5rIiB4bWw6c3BhY2U9InByZXNlcnZlIiB4bWxuczpzZXJpZj0iaHR0cDovL3d3dy5zZXJpZi5jb20vIiBzdHlsZT0iZmlsbC1ydWxlOmV2ZW5vZGQ7Y2xpcC1ydWxlOmV2ZW5vZGQ7c3Ryb2tlLWxpbmVqb2luOnJvdW5kO3N0cm9rZS1taXRlcmxpbWl0OjI7Ij48ZyB0cmFuc2Zvcm09Im1hdHJpeCgwLjI0LDAsMCwwLjI0LC01MTguMDg4MjEyLC01NDIuNDU0NDM4KSI+PGcgdHJhbnNmb3JtPSJtYXRyaXgoMSwwLDAsMSwyMTIwLjkxNDAwNCwyMTUwLjU1MzYwNSkiPjxwYXRoIGQ9Ik0zMzEsMzM3QzI5NywzNTUgMjk4LDM2MyAyNjIsMzg5QzI1NiwzOTMgMjU1LDM5MyAyNDcsMzg2QzI0MSwzNzkgMjEzLDM2OCAyMDcsMzY4QzIwMSwzNjcgMjAyLDM2OCAxOTUsMzY5QzE0MCwzNzUgMTU2LDQ4NiAyMDEsNDkyQzIyNSw0OTUgMjIyLDUwNiAyMjEsNTQ1QzIyMSw1NDggMjIwLDU0NyAyMjAsNTUwQzIxOSw1NzUgMjE3LDU3NCAyMTYsNTk5QzIxNiw2MDEgMjE1LDYwMiAyMTUsNjA1QzIxMiw2NzkgMjI3LDcxNCAyNTAsNzQ5QzI1Nyw3NTkgMjM5LDc1OCAyMzYsNzU3QzIyNyw3NTMgMTkzLDc1OCAxNDEsNzQwQzEzMiw3MzcgMTMyLDczNiAxMjQsNzMzQzg1LDcyMCA2MSw2ODUgNTcsNjc3QzQyLDY0NiA0Niw2MjcgNDUsNjIzQzQxLDYxMSA0NCw2MDcgNDMsNjAyQzM5LDU5MSA0MSw1MzcgMzgsNTI1QzM4LDUyNSAzOCw0NzkgMzgsNDc5QzQzLDQ1NiAzNyw0MjkgNDAsNDI0QzQ1LDQxNCAzMSwyNjYgMTM5LDE3MUwzMzEsMzM3Wk0xNzksMTQ0QzE4OCwxMzkgMTk1LDEzNSAxOTksMTM0QzIwMywxMzIgMjQ2LDExOCAyNDksMTE4QzI2OCwxMTcgMjY3LDExMyAyODksMTEzQzI5MSwxMTMgMjkwLDExMSAyOTIsMTExQzMxMSwxMDkgMzcxLDEwOSAzNzUsMTExQzM4MSwxMTQgMzg1LDExMiAzODcsMTEzQzM5NCwxMTcgMzk1LDExNSAzOTUsMTE1QzQwMiwxMTggNDAyLDExNiA0MDIsMTE3QzQxMSwxMjEgNDM4LDEyNCA0NDIsMTM0QzQ0MywxMzUgNDQzLDEzNSA0NDksMTQwQzQ1NCwxNDYgNDUzLDE0NiA0NTksMTUyQzQ3MywxNjYgNDcyLDE3MyA0NzUsMTgyQzQ3NiwxODggNDg1LDIyMyA0NjgsMjU4QzQ2NSwyNjMgNDQ2LDMwMiA0MTcsMzE3QzQxNCwzMTggNDAwLDMxOCAzODMsMzIxTDE3OSwxNDRaIiBzdHlsZT0iZmlsbDp3aGl0ZTsiLz48L2c+PGcgdHJhbnNmb3JtPSJtYXRyaXgoMSwwLDAsMSwyMTIwLjkxNDAwNCwyMTUwLjU1MzYwNSkiPjxwYXRoIGQ9Ik00MTAsMzQ0QzQzNCwzNDEgNDQzLDMzMCA0NTYsMzIwQzQ1OSwzMTcgNDU5LDMxNyA0NjIsMzE0QzQ2NCwzMTIgNDc2LDI5OSA0ODMsMjg2QzUwNCwyNDMgNDk4LDIzOSA1MDEsMjM0QzUwNCwyMjYgNTAyLDIyMyA1MDIsMjIxQzUwNiwyMTIgNTAxLDE5NCA1MDUsMTgzQzUwNywxNzggNDQ3LDEzNyA0NDUsMTMyQzQ0NywxMzAgNDQ3LDEyOSA0NDksMTMxQzQ1NCwxMzMgNDU1LDEzMSA0NTgsMTMyQzQ2OCwxMzcgNTgyLDE1NCA1ODIsMjYzQzU4MiwyNjUgNTgwLDI2NSA1ODAsMjY3QzU3OSwzMjEgNTU0LDMyMSA1NDcsMzA1QzU0MiwyOTYgNTU4LDI2MSA1NDcsMjI4QzUzNiwxOTYgNDk5LDE3NSA1MDgsMTg0QzUxNiwxOTMgNTE1LDE5NCA1MjIsMjA0QzUzNiwyMjUgNTQyLDI2MSA1NDIsMjYzQzU0MiwyODkgNTQxLDI4OCA1NDAsMzA2QzU0MCwzMDkgNTM5LDMwOCA1MzksMzExQzUzOCwzMTYgNTM4LDMxNSA1MzcsMzIxQzUzNiwzMjggNTM1LDMyNyA1MzMsMzM0QzUzMywzMzkgNTI5LDM1MCA1MjgsMzUzQzUyNiwzNjQgNTIxLDM2NSA1MjcsMzc1QzUzNywzODkgNjA1LDQzMiA1NDgsNDYyQzU0Nyw0NjIgNTQ3LDQ2MiA1NDYsNDYyTDQxMCwzNDRaTTU0MCw1MTlDNTM2LDUyNCA1MzEsNTI3IDUzMiw1MzJDNTM1LDU0MyA1MzMsNTYyIDUzMSw1NjRDNTIzLDU4MCA1MjEsNTg1IDUwNCw1OTNDNDk1LDU5OCA0NjMsNTkxIDQ2Myw1OTFDNDQyLDU4MSA0MjcsNTkwIDQyNCw1OTJDNDEyLDU5OSA0MTUsNjAyIDM5MSw2NzVDMzgyLDcwNSAzODMsNzA2IDM4Miw3MDhDMzc5LDcxNSAzODIsNzE3IDM4Myw3MTlDMzgzLDczMiA0MDEsNzQ3IDQwNSw3NTJDNDE3LDc2NCA0MDAsNzczIDM5OSw3NzRDMzkzLDc3NyAyOTcsNzYzIDI5Myw3NjJDMjkwLDc2MiAyNTUsNzA3IDI1NSw3MDVDMjU0LDcwNSAyNTQsNzAyIDI1MSw2OTRDMjI5LDY0MSAyNDcsNTY4IDI0Nyw1MjBDMjQ3LDUwNCAyNDYsNTA1IDI0Miw0ODlDMjQxLDQ4MiAyMjcsNDcyIDIyNSw0NzJDMjEzLDQ2OSAyMTQsNDY4IDIxMiw0NjhDMTg3LDQ2NiAxODIsNDI1IDE4Nyw0MTBDMTk5LDM3MiAyMzQsNDEwIDIzOCw0MTJDMjU4LDQyMyAyNjYsNDE2IDI3Myw0MTNDMjg2LDQwNyAzMTUsMzczIDM1MiwzNTZMNTQwLDUxOVoiIHN0eWxlPSJmaWxsOndoaXRlOyIvPjwvZz48ZyB0cmFuc2Zvcm09Im1hdHJpeCgxLDAsMCwxLDIwNjguMjg4MzgzLDIxMTUuNzEwNDc5KSI+PHBhdGggZD0iTTg0Myw0NzBDODQ0LDQ4MyA4NDUsNDgyIDg0NSw0OTRDODQ1LDUyNyA4NDUsNTI3IDg0Miw1NDZDODMzLDU5MCA4MzEsNTg5IDgxMiw2MjlDODEyLDYzMCA3OTksNjQ5IDc5OCw2NTBDNzk4LDY1MSA3NzgsNjc3IDc3MCw2ODJDNzYxLDY4OSA3MzQsNjc3IDc1Niw2NTVDODA1LDYwNiA4NDQsNTAyIDc5MCw0MDFDNzYxLDM0NiA3MzMsMzQ2IDc1NSwzMjdDNzY3LDMxNiA3ODEsMzM4IDc5MiwzNTBDODAxLDM1OSA4MzQsNDE1IDgzNyw0MzhDODM3LDQ0MiA4MzksNDQyIDg0MCw0NTNDODQwLDQ1NCA4NDMsNDYyIDg0Myw0NzBaIiBzdHlsZT0iZmlsbDp3aGl0ZTsiLz48L2c+PGcgdHJhbnNmb3JtPSJtYXRyaXgoMSwwLDAsMSwyMDY4LjI4ODM4MywyMTE1LjcxMDQ3OSkiPjxwYXRoIGQ9Ik03MjYsNDcxQzcyNSw0NjggNzIwLDQ1MiA3MTgsNDUwQzY5Nyw0MDcgNjc0LDQwNiA2OTQsMzg4QzcwMiwzODEgNzE1LDM4OSA3MTgsMzk2QzcyMSw0MDIgNzMyLDQwOSA3NDQsNDM2Qzc2Myw0NzQgNzYwLDUxMyA3NjAsNTEzQzc1OCw1MTkgNzU3LDUzNSA3NTcsNTM4Qzc1Miw1NjIgNzMyLDU5NyA3MjUsNjA0QzcxNSw2MTUgNzE3LDYxOCA3MDQsNjI0QzY5OSw2MjYgNjg4LDYxNyA2ODgsNjEzQzY4NCw1OTMgNzA2LDU5NCA3MjEsNTUzQzcyNSw1NDAgNzI1LDU0MCA3MjgsNTI3QzczMyw0OTggNzI2LDQ3OCA3MjYsNDcxWiIgc3R5bGU9ImZpbGw6d2hpdGU7Ii8+PC9nPjxnIHRyYW5zZm9ybT0ibWF0cml4KDEsMCwwLDEsMjA2OC4yODgzODMsMjExNS43MTA0NzkpIj48cGF0aCBkPSJNNjU1LDUxNkM2NTUsNTE0IDY1Nyw1MDYgNjU0LDQ5MUM2NTAsNDY3IDYxOCw0NTIgNjQ2LDQzN0M2NTUsNDMzIDY3MSw0NTQgNjc1LDQ2MkM3MDgsNTI1IDY1Nyw1ODMgNjQzLDU2OUM2MjAsNTQ4IDY1MSw1NDcgNjU1LDUxNloiIHN0eWxlPSJmaWxsOndoaXRlOyIvPjwvZz48ZyB0cmFuc2Zvcm09Im1hdHJpeCgwLjY1ODc0OCwwLjU3MjE0LC0wLjY1NTczMiwwLjc1NDk5NCwyODczLjU3MjI1NywtMTEyMy4zODAwNykiPjxyZWN0IHg9IjE5NTIiIHk9IjMwMDMiIHdpZHRoPSIxMDk4IiBoZWlnaHQ9IjQ3IiBzdHlsZT0iZmlsbDp3aGl0ZTsiLz48L2c+PC9nPjwvc3ZnPg==)";
-        }
-
-        // kept so a save that did not touch the server details can not tear down a live
-        // connection. captured before the keys array below is cleared and refilled
         let previous_autoconnect_host = g_autoconnect_details.host;
         let previous_autoconnect_port = g_autoconnect_details.port;
-        let previous_autoconnect_keys = (g_autoconnect_details.keys || []).join("\n");
-        // gaining or losing the loopback must count as a change, because a webview that
-        // connected directly before node announced itself would otherwise never re-route through it
+        let previous_autoconnect_keys = android_host__metadata_keys_signature(g_autoconnect_details.keys || []);
+        // track local endpoint changes
+
         let previous_loopback = g_loopback_port + ":" + g_loopback_token;
 
         g_autoconnect_details.host = settings_from_android.host;
         g_autoconnect_details.port = settings_from_android.port;
 
-        // null it out in case it wasnt
+        // replace the stored metadata keys
         g_autoconnect_details.keys.length = 0;
         g_autoconnect_details.keys = [];
 
-        // metadata_keys is optional, because the json grows incrementally (identity
-        // first, app_mode on the first-run answer) and only a native-settings save
-        // writes the full form - and a server without keys never gets any
+        // copy metadata keys when provided
+
         if (settings_from_android.metadata_keys != null)
         {
             for (i = 0; i < settings_from_android.metadata_keys.length; i++)
@@ -740,60 +1007,54 @@ var android_js_bridge = {
             }
         }
 
-        // the loopback fields only ever appear in the webview's settings json
+        // read the local endpoint supplied to the WebView
         g_loopback_port = (typeof settings_from_android.loopback_port === "number") ? settings_from_android.loopback_port : 0;
 
         g_loopback_token = (typeof settings_from_android.loopback_token === "string") ? settings_from_android.loopback_token : "";
 
-        // no unconditional spinner hold here, because connection__request_connect raises the spinner
-        // only when it actually starts an attempt; a save with autoconnect off changes nothing on screen
+        // tell the data worker whether Node owns encryption
 
-        // the data worker has its own copy of the flag and encrypts outgoing direct
-        // messages itself, so it must skip that in loopback mode too
         if (g_data_processing_worker != null)
         {
             g_data_processing_worker.postMessage({ type: "mainthread__set_loopback_mode", value: g_loopback_port });
         }
 
-        console.log("accept_current_settings_from_android autoconnect_details" + JSON.stringify(g_autoconnect_details));
+        // close the current socket when connection settings change
+        let are_server_details_changed = (g_autoconnect_details.host != previous_autoconnect_host) || (g_autoconnect_details.port != previous_autoconnect_port) || (next_metadata_signature !== previous_autoconnect_keys) || ((g_loopback_port + ":" + g_loopback_token) != previous_loopback);
 
-        // a save that changed the server means the live connection is stale
-        let are_server_details_changed = (g_autoconnect_details.host != previous_autoconnect_host)
-            || (g_autoconnect_details.port != previous_autoconnect_port)
-            || ((g_autoconnect_details.keys || []).join("\n") != previous_autoconnect_keys)
-            || ((g_loopback_port + ":" + g_loopback_token) != previous_loopback);
-
-        if (are_server_details_changed && g_is_authenticated == true)
+        if (are_server_details_changed)
         {
+            connection__invalidate_pending_attempts();
             console.log("connect-path: server details changed, dropping the live connection");
-            g_websocket_worker.postMessage({ type: "close" });
+            if (g_websocket_worker != null)
+            {
+                g_websocket_worker.postMessage({ type: "close" });
+            }
         }
 
-        // the android default username becomes the chosen username, because the settings
-        // arrive before the connection attempt and the server then applies the name at login - the old
-        // way was a rename after connect, which an admin can switch off for users
+        // keep the default username for login
+
         if (typeof settings_from_android.default_username === "string" && settings_from_android.default_username.length > 0)
         {
             g_chosen_username = settings_from_android.default_username;
         }
 
-        // only node derives its identity from the settings, because the webview does not
-        // own the connection. whether to actually connect is decided inside connection__request_connect,
-        // and that holds for both runtimes
+        // only the connection owner generates the identity
+
         if (android_host__is_ui_only_runtime() == false)
         {
-            connection__request_identity(settings_from_android.identity_string);
+            connection__request_identity(settings_from_android.identity_string, settings_from_android.rsa_key_bits, settings_from_android.identity_revision);
         }
 
-        connection__request_connect("settings");
+        if (!is_connection_ended_by_user)
+        {
+            connection__request_connect("settings");
+        }
     }
 }
 
-// ---- idle mode ----
-
 /**
- * @brief remembers that a come-from-idle request is waiting for the server's answer, so idle entry is deferred meanwhile
- *        if the answer never comes, the flag clears itself after 20 s so idle is not blocked forever
+ * @brief defers idle entry while waiting for the server to confirm a return
  *
  * @return void
  */
@@ -806,7 +1067,7 @@ function android_host__mark_come_from_idle_in_flight()
         clearTimeout(come_from_idle_in_flight_timer);
     }
 
-    // if the answer never comes, give up after a while so idle is not blocked forever
+    // clear the pending request if the server does not answer
     come_from_idle_in_flight_timer = setTimeout(function()
     {
         come_from_idle_in_flight_timer = null;
@@ -817,7 +1078,7 @@ function android_host__mark_come_from_idle_in_flight()
 }
 
 /**
- * @brief the server answered the come-from-idle: idle is allowed again, and a deferred idle entry runs now
+ * @brief clears the pending return and applies any deferred idle request
  *
  * @return void
  */
@@ -835,8 +1096,7 @@ function android_host__clear_come_from_idle_in_flight()
 }
 
 /**
- * @brief runs an idle entry that android_host__enter_deep_idle deferred while a come-from-idle was unconfirmed
- *        android_host__exit_deep_idle cancels the pending flag, so a foregrounded app never re-enters idle here
+ * @brief applies an idle request deferred during a return from idle
  *
  * @return void
  */
@@ -844,17 +1104,16 @@ function android_host__apply_pending_deep_idle_if_any()
 {
     if (g_is_deep_idle_pending == true && g_is_deep_idle == false)
     {
+        const forced = pending_deep_idle_forced;
         g_is_deep_idle_pending = false;
+        pending_deep_idle_forced = false;
         console.log("connect-path: running deferred idle entry");
-        android_host__enter_deep_idle();
+        android_host__enter_deep_idle(forced);
     }
 }
 
 /**
- * @brief holds presence for a moment after a call accept
- *        accepting a call blinks the screen off or hands the call screen over to the activity, and
- *        both read as "nobody is looking" exactly while the user IS there, which idled people right
- *        back out of the call they just answered
+ * @brief keeps presence active briefly after accepting a call
  *
  * @return void
  */
@@ -865,8 +1124,7 @@ function android_host__mark_call_accept_presence_grace()
 }
 
 /**
- * @brief one shot at the end of the presence grace: node re-reads whether a ui is attached, the webview retries the gentle idle entry
- *        when the user actually came back, android_host__exit_deep_idle cancelled this and nothing runs
+ * @brief schedules an idle decision after call acceptance grace ends
  *
  * @return void
  */
@@ -895,7 +1153,7 @@ function android_host__schedule_presence_grace_recheck()
 }
 
 /**
- * @brief drops the queued presence-grace re-check
+ * @brief cancels the delayed idle decision
  *
  * @return void
  */
@@ -909,45 +1167,44 @@ function android_host__cancel_presence_grace_recheck()
 }
 
 /**
- * @brief deep idle, entered when the android app goes to background: keeps the websocket alive on a slow heartbeat and shuts down everything else (audio graph, opus decoder tick, webrtc datachannel)
- *        every refusal is logged, because a silent one is indistinguishable from the request never
- *        arriving; an unconfirmed come-from-idle defers the entry instead of dropping it
+ * @brief enters idle with a slower heartbeat and suspended media
  *
- * @param boolean is_forced -> true idles from any channel, false keeps an in-channel session alive
+ * @param boolean is_forced -> true to idle from any channel. false preserves an active channel
  *
  * @return void
  */
 function android_host__enter_deep_idle(is_forced)
 {
-    // every refusal below says so. a silent one is indistinguishable from the request
-    // never arriving, which is what made this so hard to find
+    // ignore duplicate idle entry
+
     if (g_is_deep_idle == true)
     {
         console.log("connect-path: idle requested, already idle");
         return;
     }
 
-    // an unconfirmed come-from-idle blocks idle entry, but the request must not be thrown
-    // away: dropping it left the page awake while the server considered the client idle,
-    // and every datachannel handshake attempted from that split state was doomed
+    // retain idle requests until the pending return completes
+
     if (is_come_from_idle_in_flight == true)
     {
         console.log("connect-path: idle deferred, a come-from-idle is still unconfirmed");
         g_is_deep_idle_pending = true;
+        pending_deep_idle_forced = pending_deep_idle_forced || is_forced === true;
         return;
     }
 
-    // app backgrounded before authentication finished - remember it, the auth success handler
-    // re-enters (fixes the "went to background while still connecting" race)
+    // retain idle requests received before login
+
     if (g_is_authenticated == false)
     {
         console.log("connect-path: idle requested while not authenticated, deferred to login");
         g_is_deep_idle_pending = true;
+        pending_deep_idle_forced = pending_deep_idle_forced || is_forced === true;
         return;
     }
 
-    // inside the call-accept presence grace: hold, then re-decide from the real state.
-    // the app being swiped away (is_forced) is a deliberate action and is handled at once
+    // defer ordinary idle during call acceptance
+
     if (is_forced != true && new Date().valueOf() < presence_grace_until_timestamp)
     {
         console.log("connect-path: idle deferred, inside the call-accept presence grace");
@@ -955,8 +1212,8 @@ function android_host__enter_deep_idle(is_forced)
         return;
     }
 
-    // backgrounding (home) keeps an in-channel session alive - music and calls continue.
-    // only a swipe-away forces idle from any channel (is_forced, from onTaskRemoved)
+    // keep ordinary background sessions in their current channel
+
     if (is_forced != true)
     {
         let local_client = channel_tree__get_client_by_client_id(g_local_client_id);
@@ -973,9 +1230,12 @@ function android_host__enter_deep_idle(is_forced)
     g_is_deep_idle = true;
     audio_transport__reset();
 
-    client_msg.send_go_to_idle_mode_request();
+    if (!android_host__is_ui_only_runtime())
+    {
+        client_msg.send_go_to_idle_mode_request();
+    }
 
-    // heartbeat 10s -> 120s, loss detector 120s -> 360s (three missed checks)
+    // use a 120 second heartbeat and a 360 second idle timeout
     g_connection_check.interval_ms = 120 * 1000;
     g_connection_check.lost_threshold_ms = 360 * 1000;
 
@@ -984,9 +1244,8 @@ function android_host__enter_deep_idle(is_forced)
         audio_suspend_promise = g_audio_context.suspend();
     }
 
-    // a push-to-talk held down at background time must not keep capturing all idle long;
-    // capture stays off until the next press. guarded: node has no audio at all, and
-    // an unguarded call threw out of here, so headless node never actually went idle
+    // stop microphone capture while idle
+
     if (typeof audio__set_microphone_capture_active === "function")
     {
         audio__set_microphone_capture_active(false);
@@ -1002,8 +1261,8 @@ function android_host__enter_deep_idle(is_forced)
         g_opus_decoder_worker.postMessage({ type: "deep_idle_stop" });
     }
 
-    // the datachannel's ICE consent checks ping the server every few seconds even when nothing
-    // streams - close it, android_host__exit_deep_idle re-establishes it
+    // close the data channel to stop its background checks
+
     if (g_peer_connection_with_server != null)
     {
         try
@@ -1023,17 +1282,18 @@ function android_host__enter_deep_idle(is_forced)
 }
 
 /**
- * @brief leaves deep idle: restores the heartbeat cadence, the audio graph, the opus tick and the webrtc datachannel
+ * @brief restores heartbeat timing, audio and the data channel after idle
  *
  * @return void
  */
 function android_host__exit_deep_idle()
 {
-    // the user is demonstrably here: a queued presence-grace re-check must not run after this.
-    // this comes before the was-not-idle return, because the webview starts that timer without ever being idle
+    // cancel any delayed idle decision before returning
+
     android_host__cancel_presence_grace_recheck();
 
     g_is_deep_idle_pending = false;
+    pending_deep_idle_forced = false;
 
     if (g_is_deep_idle == false)
     {
@@ -1041,19 +1301,22 @@ function android_host__exit_deep_idle()
         return;
     }
 
-    // we really were idle, so an answer from the server is coming. started here rather
-    // than where the request is sent, because a request sent while not idle gets none
-    android_host__mark_come_from_idle_in_flight();
+    // track the server's pending return from idle
+
+    if (!android_host__is_ui_only_runtime())
+    {
+        android_host__mark_come_from_idle_in_flight();
+    }
 
     console.log("connect-path: leaving idle");
 
     g_is_deep_idle = false;
 
     g_connection_check.interval_ms = 10 * 1000;
-    g_connection_check.lost_threshold_ms = 35 * 1000; // keep in sync with the startup value
+    g_connection_check.lost_threshold_ms = 35 * 1000; // matches the startup timeout
     g_connection_check.last_response_timestamp = new Date().valueOf();
 
-    // wake the heartbeat loop out of its long idle sleep so a fresh check goes out now
+    // wake the heartbeat loop immediately
     if (g_connection_check.sleep_resolve != null)
     {
         g_connection_check.sleep_resolve();
@@ -1062,22 +1325,27 @@ function android_host__exit_deep_idle()
 
     if (g_audio_context != null)
     {
-        // wait for idle entry's suspend to settle before acting, so the two can never race
+        // wait for audio suspension to finish
         let suspend_settled = (audio_suspend_promise != null) ? audio_suspend_promise : Promise.resolve();
         audio_suspend_promise = null;
 
-        suspend_settled.catch(function() {}).then(function()
+        suspend_settled.catch(function()
         {
-            // android resets the audio HAL under a backgrounded webview; resume() then
-            // "succeeds" into a broken graph (gurgling both ways), so rebuild instead
+        }).then(function()
+        {
+            // rebuild the Android audio graph after idle
+
             if (g_android_app_mode != "")
             {
                 audio__rebuild_audio_graph_after_idle();
                 return;
             }
 
-            // browsers: resume, but verify it took - rebuild when the context stays stuck
-            g_audio_context.resume().catch(function(e) { console.log("audio resume rejected: " + e.message); });
+            // rebuild the browser audio graph if resume fails
+            g_audio_context.resume().catch(function(e)
+            {
+                console.log("audio resume rejected: " + e.message);
+            });
             setTimeout(function()
             {
                 if (g_audio_context.state !== "running")
@@ -1094,7 +1362,7 @@ function android_host__exit_deep_idle()
         g_opus_decoder_worker.postMessage({ type: "deep_idle_resume" });
     }
 
-    // re-establish the webrtc datachannel that idle entry closed
+    // reconnect the data channel closed during idle
     if (g_is_voice_chat_allowed_by_server == true && g_is_webrtc_datachannel_connected == false && g_is_webrtc_datachannel_check_running == false)
     {
         g_is_webrtc_datachannel_check_running = true;

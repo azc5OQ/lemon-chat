@@ -1,290 +1,575 @@
-// Connects to the java side of the service over loopback TCP and speaks JSON lines.
-//
-// java is the server (it writes bridge.json with {port, token} before starting node), node is the
-// client. commands in: "settings" (connect with this json), "disconnect" (park the socket).
-// events out: "status", "member_change", "chat_activity" - the things a notification keys off.
-//
-// the token is required as the first line, because 127.0.0.1 is reachable by every app on the device.
+// uses an authenticated control connection to the native owner
+// each socket owns its receive buffer, callbacks and write queue
+const net = require("net");
+const fs = require("fs");
+const path = require("path");
+const TextDecoder = require("util").TextDecoder;
+const limits = require("./transport-limits.js");
 
-let net = require("net");
-let fs = require("fs");
-let path = require("path");
-
-let BRIDGE_RETRY_MS = 3000;
-let DEBOUNCE_MS = 300;
-
-function start(bundle, loopback_info)
+/**
+ * @brief reads bounded UTF8 control lines from socket chunks
+ *
+ * @param on_line callback for each complete nonempty line
+ *
+ * @return chunk reader that throws for invalid UTF8 or oversized lines
+ */
+function create_line_reader(on_line)
 {
-    let socket = null;
-    let receive_buffer = "";
-    let debounce_timer = null;
-
-    let previous = {
-        connected: false,
-        logged_in: false,
-        username: "",
-        members: "",
-        activity: ""
-    };
-
-    function send_event(event_object)
+    const buffer = Buffer.allocUnsafe(limits.controlLineBytes);
+    let bytes = 0;
+    const decoder = new TextDecoder("utf-8", { fatal: true });
+    return function(data)
     {
-        if (socket != null && socket.writable)
+        let start = 0;
+        while (start < data.length)
         {
-            socket.write(JSON.stringify(event_object) + "\n");
+            const newline = data.indexOf(10, start);
+            const end = newline < 0 ? data.length : newline;
+            const part = data.subarray(start, end);
+            bytes += part.length;
+            if (bytes > limits.controlLineBytes)
+            {
+                throw new RangeError("Bridge control line exceeds capacity");
+            }
+            part.copy(buffer, bytes - part.length);
+            if (newline < 0)
+            {
+                return;
+            }
+            const line = decoder.decode(buffer.subarray(0, bytes));
+            bytes = 0;
+            if (line.trim().length > 0)
+            {
+                on_line(line);
+            }
+            start = newline + 1;
+        }
+    };
+}
+
+/**
+ * @brief checks the fields allowed in a native command
+ *
+ * @param command parsed command to validate
+ *
+ * @return true when the command has a supported type and valid fields
+ */
+function valid_command(command)
+{
+    if (command === null || typeof command !== "object" || Array.isArray(command))
+    {
+        return false;
+    }
+    switch (command.type)
+    {
+        case "settings":
+            return typeof command.json === "string";
+        case "connect":
+        case "disconnect":
+            if (typeof command.command_id !== "string")
+            {
+                return false;
+            }
+            if (command.command_id.length === 0 || command.command_id.length > 128)
+            {
+                return false;
+            }
+            return true;
+        case "ui_visible":
+            if (typeof command.visible !== "boolean")
+            {
+                return false;
+            }
+            if (command.preserve_idle !== undefined)
+            {
+                if (typeof command.preserve_idle !== "boolean")
+                {
+                    return false;
+                }
+            }
+            if (command.force_idle !== undefined)
+            {
+                if (typeof command.force_idle !== "boolean")
+                {
+                    return false;
+                }
+            }
+            if (command.force_idle === true)
+            {
+                if (command.visible === true || command.preserve_idle === true)
+                {
+                    return false;
+                }
+            }
+            return true;
+        case "network":
+            return typeof command.available === "boolean";
+        case "log_enabled":
+            return typeof command.enabled === "boolean";
+        case "log":
+            if (typeof command.line !== "string")
+            {
+                return false;
+            }
+            if (command.line.length > 8192)
+            {
+                return false;
+            }
+            return true;
+        case "call_action":
+        case "come_from_idle":
+            if (typeof command.call_id !== "string")
+            {
+                return false;
+            }
+            if (!/^[a-f0-9]{32}$/.test(command.call_id))
+            {
+                return false;
+            }
+            if (typeof command.session_id !== "string")
+            {
+                return false;
+            }
+            if (command.session_id.length === 0 || command.session_id.length > 128)
+            {
+                return false;
+            }
+            if (command.action === "accept")
+            {
+                return true;
+            }
+            else if (command.action === "decline")
+            {
+                return true;
+            }
+            else if (command.type === "come_from_idle")
+            {
+                return true;
+            }
+            return false;
+        default:
+            return false;
+    }
+}
+
+/**
+ * @brief connects the Node client to the native control service
+ *
+ * @param bundle shared client exports
+ * @param initial_loopback_info local page endpoint when already available
+ * @param options optional bridge configuration path and retry delay
+ *
+ * @return control handle for endpoint updates and shutdown
+ */
+function start(bundle, initial_loopback_info, options)
+{
+    options = options || {};
+    let current = null;
+    let retry_timer = null;
+    let debounce_timer = null;
+    let stopped = false;
+    let loopback_info = initial_loopback_info || null;
+    let unread_total = 0;
+    let phase = null;
+    let pending_call = null;
+    let previous_state = "";
+    let last_connect_intent = null;
+    const pending_notifications = [];
+
+    /**
+     * @brief queues an event for the current native control connection
+     *
+     * @param object event -> native event to serialize
+     *
+     * @return boolean -> true when the event entered the bounded queue
+     */
+    function send_event(event)
+    {
+        const owner = current;
+        if (owner === null || owner.connected !== true || owner.socket.destroyed)
+        {
+            return false;
+        }
+        const line = JSON.stringify(event) + "\n";
+        const bytes = Buffer.byteLength(line, "utf8");
+        if (bytes > limits.controlLineBytes || owner.bytes + owner.socket.writableLength + bytes > limits.controlQueueBytes)
+        {
+            owner.socket.destroy();
+            return false;
+        }
+        owner.queue.push({ line, bytes });
+        owner.bytes += bytes;
+        flush(owner);
+        return true;
+    }
+
+    /**
+     * @brief writes queued control events until the socket needs to drain
+     *
+     * @param object owner -> control socket owner
+     *
+     * @return void
+     */
+    function flush(owner)
+    {
+        if (owner !== current || owner.blocked || owner.socket.destroyed)
+        {
+            return;
+        }
+        while (owner.queue.length > 0)
+        {
+            const item = owner.queue.shift();
+            owner.bytes -= item.bytes;
+            if (owner.socket.write(item.line) === false)
+            {
+                owner.blocked = true;
+                owner.write_timer = setTimeout(function()
+                {
+                    if (current === owner && owner.blocked)
+                    {
+                        owner.socket.destroy();
+                    }
+                }, limits.controlWriteTimeoutMs);
+                return;
+            }
         }
     }
 
-    // diff state against the last report and emit what changed. force sends status and members
-    // unconditionally - the hello on (re)connect, since a fresh runtime equals the reset diff state
-    // and a pure diff would say nothing at all
-    function report_state_changes(force)
+    /**
+     * @brief reports connection and member state when it changes
+     *
+     * @param boolean force -> true to report even when the state signature is unchanged
+     *
+     * @return void
+     */
+    function report_state(force)
     {
-        let state = bundle.read_state();
-
-        let connected = (state.g_is_authenticated === true);
-        let logged_in = (typeof state.g_local_username === "string" && state.g_local_username.length > 0);
-
-        if (force === true || connected !== previous.connected || logged_in !== previous.logged_in
-            || state.g_local_username !== previous.username)
+        const state = bundle.read_state();
+        const authenticated = typeof bundle.get_ui_session_snapshot === "function" ? bundle.get_ui_session_snapshot().authenticated === true : state.g_is_authenticated === true;
+        const status = {
+            type: "status",
+            connected: authenticated,
+            logged_in: authenticated && typeof state.g_local_username === "string" && state.g_local_username.length > 0,
+            username: state.g_local_username || ""
+        };
+        const members = state.g_client_list.map(function(client)
         {
-            previous.connected = connected;
-            previous.logged_in = logged_in;
-            previous.username = state.g_local_username;
-            send_event({ type: "status", connected: connected, logged_in: logged_in, username: state.g_local_username });
-        }
-
-        let members = state.g_client_list
-            .map(function(c) { return c.client_id + ":" + c.username; })
-            .join(",");
-
-        if (force === true || members !== previous.members)
+            return client.client_id + ":" + client.username;
+        }).join(",");
+        const signature = JSON.stringify([status, members]);
+        if (force || previous_state !== signature)
         {
-            previous.members = members;
-            send_event({ type: "member_change", members: members });
-        }
-
-        // unread counts plus last sender per context: enough for "new message from X"
-        let activity = state.g_client_list
-            .filter(function(c) { return (c.unread_count || 0) > 0; })
-            .map(function(c) { return c.username + "=" + c.unread_count; })
-            .join(",")
-            + "|" + state.g_chat_context_array
-                .map(function(c) { return c.last_known_message_sender_username || ""; })
-                .join(",");
-
-        if (activity !== previous.activity)
-        {
-            let is_first_report = (previous.activity === "");
-            previous.activity = activity;
-
-            // skip the first report: it is the login snapshot, not a new message
-            if (is_first_report === false)
+            if (send_event(status) && send_event({ type: "member_change", members }))
             {
-                let unread = state.g_client_list
-                    .filter(function(c) { return (c.unread_count || 0) > 0; })
-                    .map(function(c) { return { username: c.username, unread: c.unread_count }; });
-
-                let last_sender = "";
-                for (let i = 0; i < state.g_chat_context_array.length; i++)
-                {
-                    if (state.g_chat_context_array[i].last_known_message_sender_username)
-                    {
-                        last_sender = state.g_chat_context_array[i].last_known_message_sender_username;
-                    }
-                }
-
-                send_event({ type: "chat_activity", unread: unread, last_sender: last_sender });
+                previous_state = signature;
             }
+        }
+    }
+
+    /**
+     * @brief restores endpoint, status, call and notification state after native reconnect
+     *
+     * @return void
+     */
+    function replay()
+    {
+        if (loopback_info !== null)
+        {
+            send_event({ type: "loopback", port: loopback_info.loopback_port, token: loopback_info.loopback_token });
+        }
+        report_state(true);
+        send_event({ type: "unread", count: unread_total });
+        if (phase !== null)
+        {
+            send_event({ type: "status_text", state: phase.state, reason: phase.reason });
+        }
+        const session = typeof bundle.get_ui_session_snapshot === "function" ? bundle.get_ui_session_snapshot() : null;
+        const current_call = session && session.authenticated ? session.current_call : null;
+        if (current_call && current_call.expires_at > Date.now())
+        {
+            pending_call = Object.assign({}, current_call, { type: "call", caller: current_call.caller_username });
+            send_event(pending_call);
+        }
+        while (pending_notifications.length > 0)
+        {
+            if (session && pending_notifications[0].session_id !== session.session_id)
+            {
+                pending_notifications.shift();
+                continue;
+            }
+            if (!send_event(pending_notifications[0]))
+            {
+                break;
+            }
+            pending_notifications.shift();
         }
     }
 
     bundle.set_on_message_processed(function()
     {
-        if (debounce_timer != null)
+        clearTimeout(debounce_timer);
+        debounce_timer = setTimeout(function()
         {
-            clearTimeout(debounce_timer);
-        }
-        debounce_timer = setTimeout(report_state_changes, DEBOUNCE_MS);
+            report_state(false);
+        }, 300);
     });
-
-    // connection phase for the webview, routed through java: while node derives the identity
-    // key its whole thread is frozen and the loopback cannot deliver anything
     if (typeof bundle.set_connection_status_listener === "function")
     {
         bundle.set_connection_status_listener(function(status)
         {
-            send_event({ type: "status_text", state: status.state, reason: status.reason });
+            phase = { state: status.state, reason: status.reason };
+            send_event({ type: "status_text", state: phase.state, reason: phase.reason });
         });
     }
-
-    // the launcher icon badge. node is the only side that is always alive - the webview may be
-    // gone (idle, closed, or a headless boot start), which is exactly when a badge matters
-    let previous_unread_total = -1;
-
     if (typeof bundle.set_unread_listener === "function")
     {
         bundle.set_unread_listener(function(total)
         {
-            if (total === previous_unread_total)
-            {
-                return;
-            }
-
-            previous_unread_total = total;
+            unread_total = total;
             send_event({ type: "unread", count: total });
         });
     }
-
-    // somebody is calling and there is no webview to show it, which is the case after a boot start
     if (typeof bundle.set_incoming_call_listener === "function")
     {
-        bundle.set_incoming_call_listener(function(caller, channel_id)
+        bundle.set_incoming_call_listener(function(caller, channel_id, record)
         {
-            send_event({ type: "call", caller: caller, channel_id: channel_id });
+            if (!record || typeof record.call_id !== "string")
+            {
+                return;
+            }
+            pending_call = Object.assign({}, record, { type: "call", caller, channel_id });
+            send_event(pending_call);
+        });
+    }
+    if (typeof bundle.set_notification_listener === "function")
+    {
+        bundle.set_notification_listener(function(event)
+        {
+            if (!send_event(event))
+            {
+                // keep recent notification events for the next native control connection
+                if (pending_notifications.length === 256)
+                {
+                    pending_notifications.shift();
+                }
+                pending_notifications.push(event);
+            }
         });
     }
 
-    function handle_command(line)
+    /**
+     * @brief validates and applies a command from the current native socket
+     *
+     * @param object owner -> control socket owner
+     * @param string line -> complete JSON command line
+     *
+     * @return void
+     */
+    function handle_line(owner, line)
     {
-        let command = null;
-
-        try
+        if (owner !== current || owner.socket.destroyed)
         {
-            command = JSON.parse(line);
-        }
-        catch (bad_json)
-        {
-            console.error("bridge: unparseable command: " + line);
             return;
         }
-
-        if (command.type === "settings")
+        try
         {
-            console.log("bridge: settings received, connecting");
-            bundle.node_set_connection_wanted(true);
-            bundle.android_js_bridge.accept_current_settings_from_android(command.json);
-        }
-        else if (command.type === "disconnect")
-        {
-            console.log("bridge: disconnect command, parking the socket");
-            bundle.node_set_connection_wanted(false);
-        }
-        else if (command.type === "come_from_idle")
-        {
-            // a call was accepted. node owns the connection, so it leaves idle itself - the
-            // webview may not even exist (boot start), and it is not the authority anyway
-            console.log("bridge: coming back from idle into channel " + command.channel_id);
-            bundle.android_js_bridge.send_come_from_idle_mode_request_android(command.channel_id);
-        }
-        else if (command.type === "log")
-        {
-            // a line the webview printed. we print it too, so both end up in the same log file
-            console.log("[webview] " + command.line);
-        }
-        else if (command.type === "log_enabled")
-        {
-            if (typeof global.lemonchat_set_file_logging === "function")
+            const command = JSON.parse(line);
+            if (!valid_command(command))
             {
-                global.lemonchat_set_file_logging(command.enabled === true);
+                console.warn("bridge: rejected invalid command");
+                return;
+            }
+            switch (command.type)
+            {
+                case "settings":
+                    bundle.android_js_bridge.accept_current_settings_from_android(command.json);
+                    break;
+                case "connect":
+                case "disconnect":
+                {
+                    if (last_connect_intent == null || last_connect_intent.command_id !== command.command_id)
+                    {
+                        const accepted = command.type === "connect" ? bundle.node_request_connect() === true : bundle.node_disconnect_by_user() === true;
+                        last_connect_intent = {command_id: command.command_id, action: command.type, accepted};
+                    }
+                    send_event({type: "connect_intent_result", command_id: command.command_id,
+                        accepted: last_connect_intent.action === command.type && last_connect_intent.accepted});
+                    break;
+                }
+                case "call_action":
+                case "come_from_idle":
+                    const accepted = bundle.node_handle_call_action( command.type === "come_from_idle" || command.action === "accept" ? "accept_call" : "decline_call", command) === true;
+                    if (accepted)
+                    {
+                        pending_call = null;
+                    }
+                    send_event({type: "call_action_result", call_id: command.call_id,
+                        session_id: command.session_id, accepted});
+                    break;
+                case "ui_visible":
+                    bundle.node_set_ui_attached(command.visible, true, command.preserve_idle === true, command.force_idle === true);
+                    break;
+                case "network":
+                    bundle.node_set_device_network(command.available);
+                    break;
+                case "log_enabled":
+                    if (typeof global.lemonchat_set_file_logging === "function")
+                    {
+                        global.lemonchat_set_file_logging(command.enabled);
+                    }
+                    break;
+                case "log":
+                    // keep console output out of native events
+                    break;
             }
         }
-        else if (command.type === "ui_visible")
+        catch (error)
         {
-            // java telling us if the user is actually looking at the app. we cannot tell on our
-            // own, because the webview stays connected even when the app is in the background
-            console.log("bridge: ui " + (command.visible ? "visible" : "hidden"));
-
-            if (typeof bundle.node_set_ui_attached === "function")
-            {
-                // the second argument marks java as the authority from here on
-                bundle.node_set_ui_attached(command.visible === true, true);
-            }
-        }
-        else if (command.type === "network")
-        {
-            // java watches connectivity for us; node cannot see it and the webview lies about it
-            console.log("bridge: device network " + (command.available ? "available" : "GONE"));
-
-            if (typeof bundle.node_set_device_network === "function")
-            {
-                bundle.node_set_device_network(command.available === true);
-            }
-        }
-        else
-        {
-            console.error("bridge: unknown command type: " + command.type);
+            // log failures without received data or exception details
+            console.warn("bridge: command rejected or handler failed");
         }
     }
 
-    function connect_to_bridge()
+    /**
+     * @brief schedules one native control reconnect while the bridge is running
+     *
+     * @return void
+     */
+    function schedule_retry()
     {
-        let bridge_config = null;
-
-        try
+        if (!stopped && retry_timer === null)
         {
-            bridge_config = JSON.parse(fs.readFileSync(path.join(__dirname, "bridge.json"), "utf8"));
+            retry_timer = setTimeout(function()
+            {
+                retry_timer = null;
+                connect();
+            }, options.retry_ms || 3000);
         }
-        catch (no_config)
+    }
+
+    /**
+     * @brief opens a scoped native control socket and installs its callbacks
+     *
+     * @return void
+     */
+    function connect()
+    {
+        if (stopped || current !== null)
         {
-            console.error("bridge: cannot read bridge.json (" + (no_config.code || no_config.message) + "), retrying");
-            setTimeout(connect_to_bridge, BRIDGE_RETRY_MS);
             return;
         }
-
-        console.log("bridge: dialing 127.0.0.1:" + bridge_config.port);
-
-        socket = net.connect({ host: "127.0.0.1", port: bridge_config.port }, function()
+        let config;
+        try
         {
-            console.log("bridge: connected to java on port " + bridge_config.port);
-            socket.write(bridge_config.token + "\n");
-
-            // announce the loopback ui endpoint so java can point the webview at it
-            if (loopback_info != null)
+            config = JSON.parse(fs.readFileSync(options.config_path || path.join(__dirname, "bridge.json"), "utf8"));
+            if (!Number.isInteger(config.port) || config.port < 1 || config.port > 65535 || typeof config.token !== "string" || !/^[a-f0-9]{32,128}$/i.test(config.token))
             {
-                send_event({ type: "loopback", port: loopback_info.loopback_port, token: loopback_info.loopback_token });
+                throw new Error("Invalid bridge configuration");
             }
-
-            // hello: send the full current state, then diff from here. activity resets too, so the
-            // next real message is reported but the login snapshot is not re-announced
-            previous.activity = "";
-            report_state_changes(true);
+        }
+        catch (error)
+        {
+            console.warn("bridge: configuration unavailable; retrying");
+            schedule_retry();
+            return;
+        }
+        const socket = net.connect({ host: "127.0.0.1", port: config.port });
+        const owner = { socket, connected: false, queue: [], bytes: 0, blocked: false, write_timer: null };
+        current = owner;
+        const read = create_line_reader(function(line)
+        {
+            handle_line(owner, line);
         });
-
+        const connect_timer = setTimeout(function()
+        {
+            if (current === owner && !owner.connected)
+            {
+                socket.destroy();
+            }
+        }, limits.handshakeTimeoutMs);
+        socket.on("connect", function()
+        {
+            if (current !== owner)
+            {
+                socket.destroy();
+                return;
+            }
+            clearTimeout(connect_timer);
+            owner.connected = true;
+            socket.setNoDelay(true);
+            socket.write(config.token + "\n");
+            replay();
+        });
         socket.on("data", function(data)
         {
-            receive_buffer += data.toString("utf8");
-
-            let newline_index;
-            while ((newline_index = receive_buffer.indexOf("\n")) !== -1)
+            if (current !== owner)
             {
-                let line = receive_buffer.substring(0, newline_index).trim();
-                receive_buffer = receive_buffer.substring(newline_index + 1);
-
-                if (line.length > 0)
-                {
-                    handle_command(line);
-                }
+                return;
+            }
+            try
+            {
+                read(data);
+            }
+            catch (error)
+            {
+                console.warn("bridge: invalid or oversized UTF-8 control line");
+                socket.destroy();
             }
         });
-
-        socket.on("error", function(bridge_error)
+        socket.on("drain", function()
         {
-            // never silent: this is the wire everything else depends on
-            console.error("bridge: connect to 127.0.0.1:" + bridge_config.port + " failed: "
-                + (bridge_error != null ? (bridge_error.code || bridge_error.message) : "?"));
+            clearTimeout(owner.write_timer);
+            owner.blocked = false;
+            flush(owner);
         });
-
-        socket.on("close", function(had_error)
+        socket.on("error", function()
         {
-            console.log("bridge: socket closed (had_error=" + had_error + ", was_connecting=" + (socket != null ? socket.connecting : "?") + ")");
-            socket = null;
-            receive_buffer = "";
-            setTimeout(connect_to_bridge, BRIDGE_RETRY_MS);
+            console.warn("bridge: transport failure");
+        });
+        socket.on("close", function()
+        {
+            clearTimeout(connect_timer);
+            clearTimeout(owner.write_timer);
+            owner.queue = [];
+            if (current === owner)
+            {
+                current = null;
+                previous_state = "";
+                schedule_retry();
+            }
         });
     }
 
-    connect_to_bridge();
+    connect();
+    return {
+        /**
+         * @brief stores and announces the current local page endpoint
+         *
+         * @param object info -> loopback port and authentication token
+         *
+         * @return void
+         */
+        set_loopback_info: function(info)
+        {
+            loopback_info = info;
+            send_event({ type: "loopback", port: info.loopback_port, token: info.loopback_token });
+        },
+        /**
+         * @brief stops control retries and closes the active native socket
+         *
+         * @return void
+         */
+        stop: function()
+        {
+            stopped = true;
+            clearTimeout(retry_timer);
+            clearTimeout(debounce_timer);
+            if (current !== null)
+            {
+                current.socket.destroy();
+            }
+        }
+    };
 }
 
-module.exports = { start: start };
+module.exports = { start, create_line_reader, valid_command };

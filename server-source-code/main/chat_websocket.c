@@ -1,7 +1,7 @@
-// This file accepts chat WebSocket connections, receives and decrypts messages,
+// this file accepts chat WebSocket connections, receives and decrypts messages,
 // and passes them to base.c to choose the request handler. It also checks connection
 // timeouts. client_session.c manages the client's record, which can stay in use
-// when a reconnect replaces the WebSocket connection.
+// when a reconnect replaces the WebSocket connection
 #include "chat_websocket.h"
 #include "integrations/tailscale.h"
 
@@ -32,11 +32,11 @@ static void _chat_websocket_internal__onmessage_long(ws_cli_conn_t *websocket, u
 static boole _chat_websocket_internal__has_connection_timed_out(client_t *client, uint64 now);
 
 /**
- * @brief finds which slot of g_clients_array holds a given websocket connection.
+ * @brief finds which slot of g_clients_array holds a given websocket connection
  *
  * @param ws_cli_conn_t* p_ws_connection -> websocket connection pointer to look up in the clients array
  *
- * @note takes the clients read lock itself, so it must not be called with that lock already held.
+ * @note takes the clients read lock itself, so it must not be called with that lock already held
  *
  * @return int64 -> the client's index, or -1 when the pointer is null or matches no connected client
  */
@@ -184,11 +184,11 @@ label_onopen_end:
 
 /**
  * @brief websocket callback for a closed connection: drops the client count and tears the client
- *        down through client_session__process_client_disconnect. an unknown socket is ignored.
+ *        down through client_session__process_client_disconnect. an unknown socket is ignored
  *
  * @param ws_cli_conn_t* websocket -> websocket connection of the client that disconnected
  *
- * @note holds the clients AND channels write locks for the whole teardown.
+ * @note holds the clients AND channels write locks for the whole teardown
  *
  * @return void
  */
@@ -266,7 +266,7 @@ label_onclose_end:
 
 /**
  * @brief websocket callback for an incoming frame: decodes and decrypts the payload, then routes it
- *        to the authenticated or the not-yet-authenticated message handler.
+ *        to the authenticated or the not-yet-authenticated message handler
  *
  * @param ws_cli_conn_t* websocket -> websocket connection of the client that sent the message
  * @param ubyte* base64_to_process_and_decrypt -> received base64 payload to decode and decrypt
@@ -398,8 +398,18 @@ static void _chat_websocket_internal__onmessage(ws_cli_conn_t *websocket, ubyte 
     }
 }
 
-// Some platforms declare the WebSocket library's 64-bit callback size as
-// unsigned long. Keep that boundary exact, then use uint64 inside the server.
+// some platforms declare the WebSocket library's 64-bit callback size as
+// unsigned long. Keep that boundary exact, then use uint64 inside the server
+/**
+ * @brief adapts the websocket callback length to the shared message handler
+ *
+ * @param ws_cli_conn_t * websocket -> socket delivering the frame
+ * @param ubyte * data -> received bytes
+ * @param unsigned long size -> received byte count
+ * @param int type -> websocket frame type
+ *
+ * @return void
+ */
 static void _chat_websocket_internal__onmessage_long(ws_cli_conn_t *websocket, ubyte *data, unsigned long size, int type)
 {
     _chat_websocket_internal__onmessage(websocket, data, (uint64)size, type);
@@ -409,7 +419,9 @@ static void _chat_websocket_internal__onmessage_long(ws_cli_conn_t *websocket, u
  * @brief this is function used that is used as an entry point for websocket thread
  *
  * this function calls theldus internal function that handles incoming websocket connections and that takes it from here
+ *
  * @param void* argument -> unused thread argument
+ *
  * @return void* -> NULL_POINTER when the thread finishes
  *
  */
@@ -452,15 +464,13 @@ void *chat_websocket__listen_thread(void *argument)
 }
 
 /**
- * @brief Checks whether a connection has taken too long to finish signing in or has stopped sending
- *        valid messages while that timeout check is enabled.
+ * @brief checks the login deadline and enabled inactivity timeout
  *
- * @param client_t* client -> the client slot whose connection is being checked
- * @param uint64 now -> current time in milliseconds from util__get_timestamp_ms
+ * @param client_t* client -> client slot to inspect under the clients lock
+ * @param uint64 now -> current value from util__get_timestamp_ms
  *
- * @attention The caller must hold the clients lock while reading the connection and settings. Repeat the check after taking the write lock before disconnecting a client, because a valid message or a settings change may have arrived.
- *
- * @return boole -> TRUE when the connection has passed its time limit; FALSE otherwise
+ * @return boole -> TRUE if the connection has timed out, otherwise FALSE
+ * @attention recheck under the write lock before disconnecting the client
  */
 static boole _chat_websocket_internal__has_connection_timed_out(client_t *client, uint64 now)
 {
@@ -480,7 +490,7 @@ static boole _chat_websocket_internal__has_connection_timed_out(client_t *client
             return FALSE;
         }
 
-        // every valid authenticated message refreshes liveness, including upload chunks.
+        // every valid authenticated message refreshes liveness, including upload chunks
         // idle clients may wait 120 seconds; active clients send heartbeats every 10 seconds
         maintain_limit_ms = (g_server_settings.is_idle_mode_allowed == TRUE) ? 150000 : 80000;
         return client->timestamp_last_maintain_connection_message_received + maintain_limit_ms < now;
@@ -492,11 +502,12 @@ static boole _chat_websocket_internal__has_connection_timed_out(client_t *client
 }
 
 /**
- * @brief Runs the thread that disconnects clients whose login or keep-alive time limit has expired.
- *        It reads the current settings on each pass so an administrator can enable or disable
- *        keep-alive timeout checks while the server is running.
+ * @brief runs the thread that disconnects clients whose login or keep-alive time limit has expired
+ *        it reads the current settings on each pass so an administrator can enable or disable
+ *        keep-alive timeout checks while the server is running
  *
  * @param void* argument -> unused thread argument
+ *
  * @return void* -> NULL_POINTER when the thread finishes
  */
 void *chat_websocket__check_connections_thread(void *argument)

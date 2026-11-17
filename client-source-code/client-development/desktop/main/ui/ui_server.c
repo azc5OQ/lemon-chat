@@ -17,9 +17,11 @@ static void _ui_server_internal__refresh(gui_event_t *event);
 static void _ui_server_internal__rows(void);
 
 /**
- * @brief copies plain server information into a control without interpreting markup.
+ * @brief copies plain server information into a control without interpreting markup
+ *
  * @param const char* id -> control ID
  * @param const char* text -> copied display text
+ *
  * @return void
  */
 static void _ui_server_internal__text(const char *id, const char *text)
@@ -34,7 +36,8 @@ static void _ui_server_internal__text(const char *id, const char *text)
 }
 
 /**
- * @brief creates a bounded public-feature list once for this scene.
+ * @brief creates a bounded public feature list once for this scene
+ *
  * @return void
  */
 static void _ui_server_internal__rows(void)
@@ -81,8 +84,10 @@ static void _ui_server_internal__rows(void)
 }
 
 /**
- * @brief requests public information through the normal bounded command queue.
+ * @brief requests public information through the normal bounded command queue
+ *
  * @param gui_event_t* event -> unused refresh event
+ *
  * @return void
  */
 static void _ui_server_internal__refresh(gui_event_t *event)
@@ -106,8 +111,10 @@ static void _ui_server_internal__refresh(gui_event_t *event)
 }
 
 /**
- * @brief opens a floating read-only panel while leaving chat and channel controls accessible.
+ * @brief opens a floating read only panel while leaving chat and channel controls accessible
+ *
  * @param gui_event_t* event -> unused toolbar event
+ *
  * @return void
  */
 static void _ui_server_internal__show(gui_event_t *event)
@@ -137,8 +144,10 @@ static void _ui_server_internal__show(gui_event_t *event)
 }
 
 /**
- * @brief closes the information panel and stops its periodic refresh requests.
+ * @brief closes the information panel and stops its periodic refresh requests
+ *
  * @param gui_event_t* event -> unused close event
+ *
  * @return void
  */
 static void _ui_server_internal__close(gui_event_t *event)
@@ -155,7 +164,8 @@ static void _ui_server_internal__close(gui_event_t *event)
 }
 
 /**
- * @brief displays only published values and refreshes while the panel is open.
+ * @brief displays only published values and refreshes while the panel is open
+ *
  * @return void
  */
 void desktop_ui_server__update(void)
@@ -250,9 +260,11 @@ void desktop_ui_server__update(void)
 }
 
 /**
- * @brief registers the public server information panel before layout parsing.
- * @param desktop_session_t* session -> GUI-owned session
+ * @brief registers the public server information panel before layout parsing
+ *
+ * @param desktop_session_t* session -> GUI owned session
  * @param const desktop_session_view_t* view -> stable GUI snapshot
+ *
  * @return void
  */
 void desktop_ui_server__initialize(desktop_session_t *session, const desktop_session_view_t *view)

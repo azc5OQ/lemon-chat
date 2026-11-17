@@ -100,8 +100,10 @@ static void _ui_context_internal__volume_save(gui_event_t *event);
 static void _ui_context_internal__volume_close(gui_event_t *event);
 
 /**
- * @brief maps only the two owned popup nodes; other divs keep their original behavior.
- * @param gui_node_t* node -> scene-owned node
+ * @brief maps only the two owned popup nodes. Other divs keep their original behavior
+ *
+ * @param gui_node_t* node -> scene owned node
+ *
  * @return int64 -> menu index or -1
  */
 static int64 _ui_context_internal__index(gui_node_t *node)
@@ -110,7 +112,8 @@ static int64 _ui_context_internal__index(gui_node_t *node)
 }
 
 /**
- * @brief resolves the captured client lifetime and channel before every action.
+ * @brief resolves the captured client lifetime and channel before every action
+ *
  * @return const desktop_client_t* -> borrowed GUI snapshot or NULL when stale
  */
 static const desktop_client_t *_ui_context_internal__member(void)
@@ -129,9 +132,11 @@ static const desktop_client_t *_ui_context_internal__member(void)
 }
 
 /**
- * @brief keeps restricted actions visible while checking current server hints.
+ * @brief keeps restricted actions visible while checking current server hints
+ *
  * @param int64 kind -> menu action
  * @param const desktop_client_t* member -> current target
+ *
  * @return boole -> whether activation is allowed
  */
 static boole _ui_context_internal__allowed(int64 kind, const desktop_client_t *member)
@@ -208,7 +213,8 @@ static boole _ui_context_internal__allowed(int64 kind, const desktop_client_t *m
 }
 
 /**
- * @brief clears fixed menu storage without retaining client names or borrowed textures.
+ * @brief clears fixed menu storage without retaining client names or borrowed textures
+ *
  * @return void
  */
 void desktop_ui_context__close(void)
@@ -235,7 +241,8 @@ void desktop_ui_context__close(void)
 }
 
 /**
- * @brief resolves a channel only while the captured catalog entry remains unchanged.
+ * @brief resolves a channel only while the captured catalog entry remains unchanged
+ *
  * @return const desktop_channel_t* -> borrowed current channel or NULL
  */
 static const desktop_channel_t *_ui_context_internal__channel(void)
@@ -254,10 +261,12 @@ static const desktop_channel_t *_ui_context_internal__channel(void)
 }
 
 /**
- * @brief opens channel actions without joining; unknown rights remain disabled until the reply arrives.
+ * @brief opens channel actions without joining. Unknown rights remain disabled until the reply arrives
+ *
  * @param const desktop_channel_t* channel -> current channel
  * @param int64 x -> physical pointer x
  * @param int64 y -> physical pointer y
+ *
  * @return void
  */
 void desktop_ui_context__channel(const desktop_channel_t *channel, int64 x, int64 y)
@@ -310,10 +319,12 @@ void desktop_ui_context__channel(const desktop_channel_t *channel, int64 x, int6
 }
 
 /**
- * @brief opens a right-click menu using the same ordering as the browser member menu.
+ * @brief opens a right click menu using the same ordering as the browser member menu
+ *
  * @param const desktop_client_t* member -> current target, copied by identity lifetime
  * @param int64 x -> physical pointer coordinate
  * @param int64 y -> physical pointer coordinate
+ *
  * @return void
  */
 void desktop_ui_context__open(const desktop_client_t *member, int64 x, int64 y)
@@ -366,8 +377,10 @@ void desktop_ui_context__open(const desktop_client_t *member, int64 x, int64 y)
 }
 
 /**
- * @brief fills a bounded submenu; checked channel groups are removed by choosing them again.
+ * @brief fills a bounded submenu. Checked channel groups are removed by choosing them again
+ *
  * @param int64 kind -> server groups, channel groups, move, or timed mute
+ *
  * @return void
  */
 static void _ui_context_internal__submenu(int64 kind)
@@ -399,7 +412,7 @@ static void _ui_context_internal__submenu(int64 kind)
     // set the vertical position
     for (index = 0; index < g_menus[0].count && g_menus[0].entries[index].value != kind; index++)
     {
-        // find the actual parent row; the local-client menu has a different ordering
+        // find the actual parent row. The local client menu has a different ordering
     }
     menu->y = parent->bounds.y + 4 * scene__scale() + (float)index * _ui_context_internal__row_height(parent) * scene__scale() - parent->scroll_y;
 
@@ -458,9 +471,11 @@ static void _ui_context_internal__submenu(int64 kind)
 }
 
 /**
- * @brief queues an action against the captured target without mutating server-owned membership locally.
+ * @brief queues an action against the captured target without mutating server owned membership locally
+ *
  * @param int64 menu -> root or submenu index
  * @param int64 row -> bounded entry index
+ *
  * @return void
  */
 static void _ui_context_internal__activate(int64 menu, int64 row)
@@ -594,8 +609,10 @@ static void _ui_context_internal__activate(int64 menu, int64 row)
 }
 
 /**
- * @brief maps a visible row click to the bounded menu data, including its scroll offset.
+ * @brief maps a visible row click to the bounded menu data, including its scroll offset
+ *
  * @param gui_event_t* event -> pointer click supplied by Meek
+ *
  * @return void
  */
 static void _ui_context_internal__click(gui_event_t *event)
@@ -612,8 +629,10 @@ static void _ui_context_internal__click(gui_event_t *event)
 }
 
 /**
- * @brief reads shared popup row geometry from the selected stylesheet.
+ * @brief reads shared popup row geometry from the selected stylesheet
+ *
  * @param gui_node_t* node -> popup with resolved theme properties
+ *
  * @return float -> logical row height clamped to readable bounds
  */
 static float _ui_context_internal__row_height(gui_node_t *node)
@@ -622,13 +641,15 @@ static float _ui_context_internal__row_height(gui_node_t *node)
 }
 
 /**
- * @brief uses fixed storage and draws only visible rows, even for a thousand-group server.
+ * @brief uses fixed storage and draws only visible rows, even for a thousand group server
+ *
  * @param gui_node_t* node -> popup or ordinary div
  * @param float x -> allocated origin
  * @param float y -> allocated origin
  * @param float width -> allocated width
  * @param float height -> allocated height
  * @param float scale -> physical pixels per logical unit
+ *
  * @return void
  */
 static void _ui_context_internal__layout(gui_node_t *node, float x, float y, float width, float height, float scale)
@@ -667,10 +688,13 @@ static void _ui_context_internal__layout(gui_node_t *node, float x, float y, flo
 }
 
 /**
- * @brief draws small geometric menu symbols without font-dependent icon characters.
+ * @brief draws small geometric menu symbols without font dependent icon characters
+ *
  * @param int64 kind -> action icon
  * @param gui_rect_t rect -> icon slot
  * @param gui_color_t color -> enabled or disabled foreground
+ * @param gui_color_t background -> color used to cut details out of the symbol
+ *
  * @return void
  */
 static void _ui_context_internal__glyph(int64 kind, gui_rect_t rect, gui_color_t color, gui_color_t background)
@@ -787,9 +811,11 @@ static void _ui_context_internal__glyph(int64 kind, gui_rect_t rect, gui_color_t
 }
 
 /**
- * @brief paints matching main/submenu rows, checkmarks, real group textures and disabled labels.
+ * @brief paints matching main/submenu rows, checkmarks, real group textures and disabled labels
+ *
  * @param gui_node_t* node -> popup or ordinary div
  * @param float scale -> physical pixels per logical unit
+ *
  * @return void
  */
 static void _ui_context_internal__draw(gui_node_t *node, float scale)
@@ -903,9 +929,11 @@ static void _ui_context_internal__draw(gui_node_t *node, float scale)
 }
 
 /**
- * @brief avoids a second scrollbar/scissor pass for custom menus.
- * @param gui_node_t* node -> scene-owned node
+ * @brief avoids a second scrollbar/scissor pass for custom menus
+ *
+ * @param gui_node_t* node -> scene owned node
  * @param float scale -> display scale
+ *
  * @return void
  */
 static void _ui_context_internal__post(gui_node_t *node, float scale)
@@ -917,11 +945,13 @@ static void _ui_context_internal__post(gui_node_t *node, float scale)
 }
 
 /**
- * @brief focuses a menu for arrow-key navigation without changing other div behavior.
+ * @brief focuses a menu for arrow key navigation without changing other div behavior
+ *
  * @param gui_node_t* node -> pressed node
  * @param int64 x -> pointer x
  * @param int64 y -> pointer y
  * @param int64 button -> mouse button
+ *
  * @return void
  */
 static void _ui_context_internal__down(gui_node_t *node, int64 x, int64 y, int64 button)
@@ -937,10 +967,12 @@ static void _ui_context_internal__down(gui_node_t *node, int64 x, int64 y, int64
 }
 
 /**
- * @brief supports arrows, Enter, Space and Escape using the same action validation as clicks.
+ * @brief supports arrows, Enter, Space and Escape using the same action validation as clicks
+ *
  * @param gui_node_t* node -> focused menu
  * @param int64 key -> portable virtual key
  * @param boole down -> TRUE for key press
+ *
  * @return void
  */
 static void _ui_context_internal__key(gui_node_t *node, int64 key, boole down)
@@ -1010,7 +1042,8 @@ static void _ui_context_internal__key(gui_node_t *node, int64 key, boole down)
 }
 
 /**
- * @brief refreshes permissions and hover submenus; outside clicks retain their ordinary chat action.
+ * @brief refreshes permissions and hover submenus. Outside clicks retain their ordinary chat action
+ *
  * @return boole -> TRUE when the caller should redraw or refresh its conversation view
  */
 boole desktop_ui_context__tick(void)
@@ -1129,8 +1162,10 @@ boole desktop_ui_context__tick(void)
 }
 
 /**
- * @brief labels the unsaved local volume draft.
+ * @brief labels the unsaved local volume draft
+ *
  * @param gui_event_t* event -> unused slider event
+ *
  * @return void
  */
 static void _ui_context_internal__volume_change(gui_event_t *event)
@@ -1150,8 +1185,10 @@ static void _ui_context_internal__volume_change(gui_event_t *event)
 }
 
 /**
- * @brief discards the volume draft without applying it.
+ * @brief discards the volume draft without applying it
+ *
  * @param gui_event_t* event -> unused close event
+ *
  * @return void
  */
 static void _ui_context_internal__volume_close(gui_event_t *event)
@@ -1170,8 +1207,10 @@ static void _ui_context_internal__volume_close(gui_event_t *event)
 }
 
 /**
- * @brief applies only to the captured peer lifetime and reports stale targets.
+ * @brief applies only to the captured peer lifetime and reports stale targets
+ *
  * @param gui_event_t* event -> unused Save event
+ *
  * @return void
  */
 static void _ui_context_internal__volume_save(gui_event_t *event)
@@ -1199,11 +1238,13 @@ static void _ui_context_internal__volume_save(gui_event_t *event)
 }
 
 /**
- * @brief installs the menu adapter using only public Meek UI widget hooks.
+ * @brief installs the menu adapter using only public Meek UI widget hooks
+ *
  * @param desktop_session_t* session -> borrowed session
- * @param const desktop_session_view_t* view -> stable GUI-owned snapshot
- * @param void (*show_info)(void) -> opens the existing selected-member panel
- * @param void (*join_channel)(int64) -> existing password-aware channel join
+ * @param const desktop_session_view_t* view -> stable GUI owned snapshot
+ * @param void (*show_info)(void) -> opens the existing selected member panel
+ * @param void (*join_channel)(int64) -> existing password aware channel join
+ *
  * @return void
  */
 void desktop_ui_context__initialize(desktop_session_t *session, const desktop_session_view_t *view, void (*show_info)(void), void (*join_channel)(int64))

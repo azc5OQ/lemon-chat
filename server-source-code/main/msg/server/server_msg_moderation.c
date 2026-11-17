@@ -1,5 +1,5 @@
 #include "../../clib/clib.h"
-// This file sends channel rights, moderation results and the permitted ban details.
+// this file sends channel rights, moderation results and the permitted ban details
 #include "server_msg.h"
 #include "../../base.h"
 #include "../../core/channel_groups.h"
@@ -9,10 +9,11 @@
 #include <stdio.h>
 
 /**
- * @brief Reports whether a requested change was applied.
- * @param receiver Client receiving the result with the clients lock held.
- * @param text Short explanation for the user.
- * @param succeeded Whether the operation succeeded.
+ * @brief reports whether a requested change was applied
+ *
+ * @param receiver Client receiving the result with the clients lock held
+ * @param text Short explanation for the user
+ * @param succeeded Whether the operation succeeded
  */
 void server_msg__moderation__send_result(client_t *receiver, cstring text, boole succeeded)
 {
@@ -29,9 +30,10 @@ void server_msg__moderation__send_result(client_t *receiver, cstring text, boole
 }
 
 /**
- * @brief Sends the receiver's rights for one channel.
- * @param receiver Authenticated client with the clients lock held.
- * @param channel Existing channel with the channels lock held.
+ * @brief sends the receiver's rights for one channel
+ *
+ * @param receiver Authenticated client with the clients lock held
+ * @param channel Existing channel with the channels lock held
  */
 void server_msg__moderation__send_channel_access(client_t *receiver, channel_t *channel)
 {
@@ -80,6 +82,15 @@ void server_msg__moderation__send_channel_access(client_t *receiver, channel_t *
 }
 
 /* These hints use the same checks as the action handler. Every action is checked again on receipt. */
+/**
+ * @brief sends moderation actions and assignable roles for a selected client
+ *
+ * @param client_t * receiver -> client receiving the permission reply
+ * @param client_t * target -> client being inspected
+ * @param channel_t * channel -> channel containing the target
+ *
+ * @return void
+ */
 void server_msg__moderation__send_client_access(client_t *receiver, client_t *target, channel_t *channel)
 {
     cJSON *message = NULL_POINTER;
@@ -123,8 +134,9 @@ void server_msg__moderation__send_client_access(client_t *receiver, client_t *ta
 }
 
 /**
- * @brief Updates visible channel assignments without sending a channel join event.
- * @param subject Changed client with the clients and channels locks held.
+ * @brief updates visible channel assignments without sending a channel join event
+ *
+ * @param subject Changed client with the clients and channels locks held
  */
 void server_msg__moderation__send_channel_group_changed(client_t *subject)
 {
@@ -158,10 +170,11 @@ void server_msg__moderation__send_channel_group_changed(client_t *subject)
 }
 
 /**
- * @brief Sends bans without exposing addresses to a user who may not view them.
- * @param receiver Permitted reader with the clients lock held.
- * @param show_addresses Whether the reader may view IP addresses.
- * @attention The caller holds the bans write lock while tokens are assigned.
+ * @brief sends bans without exposing addresses to a user who may not view them
+ *
+ * @param receiver Permitted reader with the clients lock held
+ * @param show_addresses Whether the reader may view IP addresses
+ * @attention the caller holds the bans write lock while tokens are assigned
  */
 void server_msg__moderation__send_bans(client_t *receiver, boole show_addresses)
 {

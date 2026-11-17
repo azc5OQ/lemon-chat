@@ -1,193 +1,321 @@
-plugins {
+plugins
+{
     alias(libs.plugins.android.application)
 }
 
-//Min SDK Version: The min sdk version is the earliest release of the Android SDK that your application can run on. If you set your minsSdkVersion to 21 then the app can be installed on Android 5.0 (Lollipop) and above. Users with older devices, such as those running Android 4.4 (KitKat), wonâ€™t be able to install your app.
-//Target SDK Version: The version your application was targeted to run on. By setting the targetSdkVersion to 33, your app will behave as if it is optimized for Android 13 features when it is running on devices with Android 13. It may run on earlier or later releases, but this is what you were aiming for.
-//Compile SDK Version: This is the version of the Android SDK that the build system (like Gradle) uses to compile your appâ€™s source code into an APK (or AAB). It dictates which APIs are available during the compilation of your code. The version of Android used by your IDE to build your app into an APK. This means you can use Android API features included in that version of the API (as well as all previous versions). If you try and use API 34 features but set compileSdkVersion to 33, you will get a compilation error. If you set compileSdkVersion to 34 you can still run the app on a API 33 device.
-//jklminSdkVersion <= targetSdkVersion <= compileSdkVersion
 
-android {
+// the fetcher owns the runtime version and supported architectures
+def pythonExe = resolvePython()
+def nodeRuntimeFetcher = rootProject.file('../nodejs-client/fetch-nodejs-mobile.py')
+def runtimeMetadataProcess = [pythonExe, nodeRuntimeFetcher.absolutePath, '--metadata'].execute()
+def runtimeMetadataText = runtimeMetadataProcess.inputStream.getText('UTF-8')
+def runtimeMetadataError = runtimeMetadataProcess.errorStream.getText('UTF-8')
+runtimeMetadataProcess.waitFor()
+if (runtimeMetadataProcess.exitValue() != 0)
+{
+    throw new GradleException('Cannot read Node runtime metadata: ' + runtimeMetadataError)
+}
+def nodeRuntimeMetadata = new groovy.json.JsonSlurper().parseText(runtimeMetadataText)
+def minimumAndroidApi = 26
+if (nodeRuntimeMetadata.android_min_api > minimumAndroidApi || nodeRuntimeMetadata.header_cpp_standard != 20)
+{
+    throw new GradleException('The pinned Node runtime needs an explicit Android API or C++ standard update')
+}
+def androidAbis = providers.gradleProperty('androidAbis').orElse(nodeRuntimeMetadata.default_abis.join(',')).get().split(',').collect
+{
+    it.trim()
+}.unique().sort()
+def unsupportedAbis = androidAbis.findAll
+{
+    !(it in nodeRuntimeMetadata.supported_abis)
+}
+if (androidAbis.isEmpty() || !unsupportedAbis.isEmpty())
+{
+    throw new GradleException('androidAbis must select from ' + nodeRuntimeMetadata.supported_abis.join(', '))
+}
+def nodeRuntimeDirectory = layout.buildDirectory.dir('generated/node-runtime/' + nodeRuntimeMetadata.version + '/' + androidAbis.join('_')).get().asFile
+def verificationBuild = providers.gradleProperty('verificationBuild').orElse('false').get().toBoolean()
+def hybridApplicationId = verificationBuild ? 'com.lemonchat.hybridverification' : 'com.lemonchat'
+
+android
+{
     namespace 'com.lemonchat'
     compileSdk 36
 
-    defaultConfig {
-        applicationId "com.lemonchat"
-        minSdk 26
+    defaultConfig
+    {
+        applicationId hybridApplicationId
+        manifestPlaceholders = [hybridTargetPackage: hybridApplicationId, hybridAppLabel: verificationBuild ? 'Lemon Hybrid Verification' : '@string/app_name']
+        minSdk minimumAndroidApi
         //noinspection ExpiredTargetSdkVersion
-        targetSdk 31
+        targetSdk 35
         versionCode 1
         versionName "1.0"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
 
-        // the embedded node runtime ships one prebuilt libnode.so per abi, and they are ~59 MB each
-        // uncompressed - so ship only the abis that are actually wanted. anything not listed here
-        // gets no libnode.so and NodeRuntime logs an UnsatisfiedLinkError rather than crashing
-        ndk {
-            abiFilters 'arm64-v8a', 'armeabi-v7a'
+        ndk
+        {
+            abiFilters.addAll(androidAbis)
         }
 
-        externalNativeBuild {
-            cmake {
-                // libnode.so is built against the SHARED libc++, so libc++_shared.so has to be in the
-                // apk next to it. building our own glue with the same stl is what makes the ndk package
-                // it. without this the device fails at System.loadLibrary("node") with
-                //   dlopen failed: library "libc++_shared.so" not found
-                // which no amount of desktop testing would have shown.
-                arguments '-DANDROID_STL=c++_shared'
+        externalNativeBuild
+        {
+            cmake
+            {
+                // node and the JNI adapter use the same packaged C++ runtime
+                arguments '-DANDROID_STL=c++_shared', '-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON', '-DNODEJS_MOBILE_ROOT=' + nodeRuntimeDirectory.absolutePath.replace('\\', '/')
             }
         }
     }
 
     // builds liblemonchatnode.so, the jni glue that calls node::Start
-    externalNativeBuild {
-        cmake {
+    externalNativeBuild
+    {
+        cmake
+        {
             path 'src/main/cpp/CMakeLists.txt'
             version '3.22.1'
         }
     }
 
-    ndkVersion '27.2.12479018'
+    ndkVersion nodeRuntimeMetadata.source_ndk_revision
 
-    packagingOptions {
-        // libnode.so is a prebuilt from the nodejs-mobile release; there is nothing to strip and
-        // letting the strip task at a 59 MB binary only risks breaking it
-        doNotStrip '*/arm64-v8a/libnode.so'
-        doNotStrip '*/armeabi-v7a/libnode.so'
+    sourceSets
+    {
+        main.jniLibs.setSrcDirs([new File(nodeRuntimeDirectory, 'jniLibs')])
     }
 
-    buildTypes {
-        release {
+    packaging
+    {
+        jniLibs
+        {
+            useLegacyPackaging = providers.gradleProperty('compressNativeLibraries').orElse('true').get().toBoolean()
+        }
+    }
+
+    buildTypes
+    {
+        release
+        {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
-    compileOptions {
+    compileOptions
+    {
         sourceCompatibility JavaVersion.VERSION_11
         targetCompatibility JavaVersion.VERSION_11
     }
 }
 
-// finds a working python 3 no matter how this machine names it: the windows launcher, plain
-// python, or python3. also rejects the microsoft store's fake python.exe alias (nonzero exit)
-// and a bare python 2. the build scripts themselves run on any python 3.
-def resolvePython() {
+// finds Python 3 and rejects the Windows store placeholder
+def resolvePython()
+{
     def candidates = ['python', 'py', 'python3']
 
-    for (candidate in candidates) {
-        try {
+    for (candidate in candidates)
+    {
+        try
+        {
             def probe = [candidate, '--version'].execute()
             def output = probe.inputStream.text + probe.errorStream.text
             probe.waitFor()
 
-            if (probe.exitValue() == 0 && output.contains('Python 3')) {
+            if (probe.exitValue() == 0 && output.contains('Python 3'))
+            {
                 return candidate
             }
-        } catch (Exception notFound) { }
+        }
+        catch (Exception notFound)
+        {
+        }
     }
 
     throw new GradleException("no python 3 found on PATH (tried: " + candidates.join(', ') + ")")
 }
 
-def pythonExe = resolvePython()
+tasks.register('prepareNodeRuntime', Exec)
+{
+    def arguments = [pythonExe, nodeRuntimeFetcher.absolutePath, '--output-dir', nodeRuntimeDirectory.absolutePath, '--abis', androidAbis.join(',')]
+    def archive = providers.gradleProperty('nodeRuntimeArchive').orNull
+    if (archive != null)
+    {
+        arguments.addAll(['--archive', rootProject.file(archive).absolutePath])
+    }
+    commandLine arguments
+    inputs.file nodeRuntimeFetcher
+    inputs.file new File(nodeRuntimeFetcher.parentFile, 'nodejs-mobile-runtime.json')
+    inputs.dir new File(nodeRuntimeFetcher.parentFile, 'licenses')
+    inputs.property 'nodeRuntimeVersion', nodeRuntimeMetadata.version
+    inputs.property 'androidAbis', androidAbis.join(',')
+    // no outputs declaration so Gradle cannot create the immutable directory
+}
 
-// Gradle never prompts. Optional minification: install Terser, then use -PclientBuildMode=minified.
+tasks.register('copyNodeNotices', Sync)
+{
+    dependsOn tasks.named('prepareNodeRuntime')
+    from new File(nodeRuntimeDirectory, 'notices')
+    into layout.buildDirectory.dir('generated/node-notices/third-party')
+}
+android.sourceSets.main.assets.srcDir layout.buildDirectory.dir('generated/node-notices')
+
+tasks.configureEach
+{
+    if (name.startsWith('configureCMake') || name.startsWith('buildCMake') || name.startsWith('externalNativeBuild'))
+    {
+        dependsOn tasks.named('prepareNodeRuntime')
+    }
+}
+
+// minification is selected with clientBuildMode and never prompts
 def clientBuildMode = providers.gradleProperty('clientBuildMode').orElse('unminified').get()
 if (!(clientBuildMode in ['minified', 'unminified']))
 {
     throw new GradleException('clientBuildMode must be minified or unminified')
 }
 def browserClientDirectory = rootProject.file('../../browser')
+def nodeClientDirectory = rootProject.file('../nodejs-client')
+tasks.register('prepareNodeRuntimeProbeAssets', Sync)
+{
+    from(browserClientDirectory)
+    {
+        include 'main/scripts/vendor/aes-js.js', 'main/scripts/vendor/sha256.js', 'main/scripts/vendor/js-sha256.js'
+        include 'main/scripts/app/crypto/rsa-crypto.js', 'main/scripts/app/crypto/identity-file.js', 'main/scripts/app/crypto/keys.js'
+        include 'main/scripts/app/workers/workers.js', 'main/wasm/rsa_keygen.wasm'
+        include 'client-webassemblies/rsa-keygen/test/vectors-2048.json'
+        into 'browser'
+    }
+    from rootProject.file('test/runtime-probe.cjs')
+    from rootProject.file('test/node18-identity-vectors.json')
+    from new File(nodeClientDirectory, 'nodejs-mobile-runtime.json')
+    into layout.buildDirectory.dir('generated/node-runtime-probe/probe')
+}
+android.sourceSets.androidTest.assets.srcDir layout.buildDirectory.dir('generated/node-runtime-probe')
+tasks.configureEach
+{
+    if ((name.startsWith('merge') && name.endsWith('AndroidTestAssets')) || (name.contains('AndroidTest') && name.toLowerCase().contains('lint')))
+    {
+        dependsOn tasks.named('prepareNodeRuntimeProbeAssets')
+    }
+}
+def nodeInputProcess = [pythonExe, new File(nodeClientDirectory, 'build-node.py').absolutePath, '--list-inputs'].execute()
+def nodeInputPaths = nodeInputProcess.inputStream.getText('UTF-8').readLines()
+def nodeInputErrors = nodeInputProcess.errorStream.getText('UTF-8')
+nodeInputProcess.waitFor()
+if (nodeInputProcess.exitValue() != 0)
+{
+    throw new GradleException('Cannot enumerate Node build inputs: ' + nodeInputErrors)
+}
+def nodeBuildInputs = files(nodeInputPaths)
+def nodeBundleFile = new File(nodeClientDirectory, 'bundle.js')
+def nodeFingerprintFile = layout.buildDirectory.file('generated/nodejs/bundle-fingerprint.json').get().asFile
 
-// the apk build runs the Node.js page builder first, then the Python node-bundle builder, then
-// packaging. declared inputs/outputs let gradle skip them when nothing changed.
-// the layout around this project: ../../browser holds the page sources and build.cjs, ../nodejs-client the
-// node bundle, and the built client.html lands in client-source-code
+def sha256File(File sourceFile)
+{
+    return java.security.MessageDigest.getInstance('SHA-256').digest(sourceFile.bytes).encodeHex().toString()
+}
+
+def nodeInputSnapshot =
+{
+    def snapshot = new TreeMap()
+    for (File sourceFile : nodeBuildInputs.files)
+    {
+        snapshot[sourceFile.canonicalPath] = sha256File(sourceFile)
+    }
+    return snapshot
+}
+
+// builds the browser page and shared Node bundle before packaging
 task buildClientHtml(type: Exec)
 {
     workingDir browserClientDirectory
     commandLine 'node', 'build.cjs', '--' + clientBuildMode, '--no-server-copy'
     inputs.property 'clientBuildMode', clientBuildMode
-    inputs.dir new File(browserClientDirectory, 'src')
+    inputs.dir new File(browserClientDirectory, 'main')
     inputs.file new File(browserClientDirectory, 'build.cjs')
     outputs.file "${rootDir}/../../../client.html"
 }
 
-task buildNodeBundle(type: Exec) {
+task buildNodeBundle(type: Exec)
+{
     workingDir "${rootDir}/../nodejs-client"
     commandLine pythonExe, 'build-node.py'
-    inputs.dir "${rootDir}/../../browser/src/scripts"
-    inputs.files "${rootDir}/../nodejs-client/dom-shim.js",
-                 "${rootDir}/../nodejs-client/node-template.js",
-                 "${rootDir}/../nodejs-client/build-node.py"
-    outputs.file "${rootDir}/../nodejs-client/bundle.js"
+    inputs.files nodeBuildInputs
+    outputs.file nodeBundleFile
+    outputs.file nodeFingerprintFile
     mustRunAfter buildClientHtml
+
+    doLast
+    {
+        nodeFingerprintFile.parentFile.mkdirs()
+        nodeFingerprintFile.setText(groovy.json.JsonOutput.toJson(
+            [inputs: nodeInputSnapshot(), bundle: sha256File(nodeBundleFile)]), 'UTF-8')
+    }
 }
 
-task copyExternalHtml(type: Copy) {
+task copyExternalHtml(type: Copy)
+{
     dependsOn buildClientHtml
     from "${rootDir}/../../../client.html"
     into "${projectDir}/src/main/assets"
 }
 
-// safety net behind buildNodeBundle: fails the build if the bundle somehow ends up stale anyway.
-// its own always-running task, because gradle skips a Copy it considers up to date.
-task checkNodeBundleFresh {
-    mustRunAfter buildNodeBundle
+// identical Wasm bytes remain valid after a timestamp change
+task checkNodeBundleFresh
+{
+    dependsOn buildNodeBundle
 
-    doLast {
-        def bundle = file("${rootDir}/../nodejs-client/bundle.js")
-
-        if (!bundle.exists()) {
-            throw new GradleException(
-                "nodejs-client/bundle.js is missing - run 'python build-node.py' in " +
-                "client-source-code/client-development/mobile/nodejs-client before building the apk")
+    doLast
+    {
+        if (!nodeBundleFile.exists() || !nodeFingerprintFile.exists())
+        {
+            throw new GradleException('Node bundle or its build fingerprint is missing')
         }
-
-        // a stale bundle fails invisibly on device. the sweep is wider than the real include list
-        // (ui.js false-triggers it), but a false positive only costs the second build-node.py takes.
-        def newestSource = 0L
-        (fileTree("${rootDir}/../../browser/src/scripts") +
-         files("${rootDir}/../nodejs-client/dom-shim.js",
-               "${rootDir}/../nodejs-client/node-template.js",
-               "${rootDir}/../nodejs-client/build-node.py")).each { sourceFile ->
-            if (sourceFile.lastModified() > newestSource) { newestSource = sourceFile.lastModified() }
-        }
-
-        if (newestSource > bundle.lastModified()) {
+        def fingerprint = new groovy.json.JsonSlurper().parse(nodeFingerprintFile, 'UTF-8')
+        if (fingerprint.inputs != nodeInputSnapshot() || fingerprint.bundle != sha256File(nodeBundleFile))
+        {
             throw new GradleException(
-                "nodejs-client/bundle.js is STALE (a client source is newer) - run " +
-                "'python build-node.py' in client-source-code/client-development/mobile/nodejs-client, then rebuild")
+                'Node bundle contents or inputs changed after generation; rebuild before packaging')
         }
     }
 }
 
-task copyNodeProject(type: Copy) {
+task copyNodeProject(type: Sync)
+{
     dependsOn buildNodeBundle
     dependsOn checkNodeBundleFresh
 
-    from("${rootDir}/../nodejs-client") {
+    from("${rootDir}/../nodejs-client")
+    {
         include 'bundle.js'
         include 'load-bundle.js'
         include 'android-main.js'
         include 'android-bridge-client.js'
         include 'loopback-ui-server.js'
-        include 'mini-ws.js'
+        include 'websocket-adapter.js'
+        include 'transport-limits.js'
+        include 'loopback-transfer.js'
+        include 'vendor/ws/**'
+        include 'vendor/ws-lock.json'
     }
     into "${projectDir}/src/main/assets/nodejs-project"
 }
 
 preBuild.dependsOn copyExternalHtml
 preBuild.dependsOn copyNodeProject
+preBuild.dependsOn tasks.named('prepareNodeRuntime')
+preBuild.dependsOn tasks.named('copyNodeNotices')
 
-dependencies {
+dependencies
+{
 
     implementation libs.appcompat
     implementation libs.material
     implementation libs.activity
     implementation libs.constraintlayout
     testImplementation libs.junit
+    testImplementation 'org.json:json:20250517'
     androidTestImplementation libs.ext.junit
     androidTestImplementation libs.espresso.core
 }

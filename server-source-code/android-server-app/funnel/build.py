@@ -61,6 +61,13 @@ def main():
         if content.count(old) != 1:
             raise RuntimeError("Unexpected Tailscale certificate source: " + str(original))
         original.write_text(content.replace(old, new), encoding="utf-8")
+    # this standalone cgo helper has no Java interface getter
+    registration = module_path / "feature" / "androidbin" / "register.go"
+    content = registration.read_text(encoding="utf-8")
+    old = "//go:build (linux && !android) || (android && !cgo)"
+    if content.count(old) != 1:
+        raise RuntimeError("Unexpected Tailscale Android registration: " + str(registration))
+    registration.write_text(content.replace(old, "//go:build linux"), encoding="utf-8")
     build_module = generated / "go.mod"
     build_module.write_text((source / "go.mod").read_text(encoding="utf-8") +
                            "\nreplace tailscale.com => " + json.dumps(str(module_path)) + "\n", encoding="utf-8")

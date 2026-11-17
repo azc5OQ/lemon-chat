@@ -1,9 +1,13 @@
-// The browser, Android node host and native server share these cipher implementations.
+// connection ciphers shared by the browser, Android Node host and server
 var connection_crypto_wasm = null;
 var CONNECTION_CIPHERS = ["aes256", "chacha20", "camellia256", "twofish256", "serpent256", "trivium80"];
 var CONNECTION_CIPHER_IDS = [1, 3, 4, 5, 6, 7];
 
-/** @brief Loads the local embedded module; it has no imports or external requests. */
+/**
+ * @brief loads and caches the embedded cipher module
+ *
+ * @return object the Wasm exports
+ */
 function connection_crypto__module()
 {
     if (connection_crypto_wasm == null)
@@ -19,7 +23,16 @@ function connection_crypto__module()
     return connection_crypto_wasm;
 }
 
-/** @brief Encrypts/decrypts a typed 256-bit layer, clearing the temporary WASM memory. */
+/**
+ * @brief encrypts or decrypts one layer and clears temporary Wasm memory
+ *
+ * @param string type -> cipher name from CONNECTION_CIPHERS
+ * @param Uint8Array key -> the 32 byte key
+ * @param Uint8Array iv -> the 16 byte starting value
+ * @param Uint8Array data -> input bytes
+ *
+ * @return Uint8Array the transformed bytes
+ */
 function connection_crypto__crypt(type, key, iv, data)
 {
     let index = CONNECTION_CIPHERS.indexOf(type);
@@ -52,7 +65,13 @@ function connection_crypto__crypt(type, key, iv, data)
     }
 }
 
-/** @brief Normalizes legacy password strings and typed password objects. */
+/**
+ * @brief validates a password entry and supplies AES for legacy strings
+ *
+ * @param string|object value -> password string or cipher and password pair
+ *
+ * @return object the cipher type and password
+ */
 function connection_crypto__password_entry(value)
 {
     let entry = typeof value === "string" ? { type: "aes256", password: value } : value;
@@ -63,28 +82,45 @@ function connection_crypto__password_entry(value)
     return { type: entry.type, password: entry.password };
 }
 
-/** @brief Matches the C length-prefixed hash-chain for handshake fields. */
+/**
+ * @brief hashes a handshake field with its length and the previous hash
+ *
+ * @param array|Uint8Array state -> previous hash bytes
+ * @param string|array|Uint8Array value -> field to add
+ *
+ * @return array the new SHA256 hash
+ */
 function connection_crypto__mix(state, value)
 {
     let bytes = typeof value === "string" ? aesjs.utils.utf8.toBytes(value) : value;
     let length = bytes.length;
-    return _sha256.array(Array.from(state).concat([(length >>> 24) & 255, (length >>> 16) & 255,
-        (length >>> 8) & 255, length & 255], Array.from(bytes)));
+    return _sha256.array(Array.from(state).concat([(length >>> 24) & 255, (length >>> 16) & 255, (length >>> 8) & 255, length & 255], Array.from(bytes)));
 }
 
-/** @brief Derives a purpose-specific 256-bit key with the agreed transcript as HKDF salt. */
+/**
+ * @brief derives a key using the handshake transcript as HKDF salt
+ *
+ * @param array|Uint8Array secret -> shared secret bytes
+ * @param array|Uint8Array transcript -> handshake hash
+ * @param string purpose -> key purpose used as HKDF context
+ *
+ * @return array the 32 derived bytes
+ */
 function connection_crypto__derive(secret, transcript, purpose)
 {
     return keys___hkdf_sha256(secret, transcript, aesjs.utils.utf8.toBytes(purpose), 32);
 }
 
-/** @brief Validates a negotiated policy before any additional expensive DH work. */
+/**
+ * @brief rejects unsupported encryption settings before starting more DH exchanges
+ *
+ * @param object policy -> server encryption policy
+ *
+ * @return void
+ */
 function connection_crypto__validate_policy(policy)
 {
-    if (policy == null || policy.version !== 2 || !/^[0-9a-f]{32}$/.test(policy.nonce)
-        || !Number.isInteger(policy.dh_exchange_count) || policy.dh_exchange_count < 1 || policy.dh_exchange_count > 4
-        || !Number.isInteger(policy.session_encryption_layer_count) || policy.session_encryption_layer_count < 1 || policy.session_encryption_layer_count > 8
-        || CONNECTION_CIPHERS.indexOf(policy.session_cipher) < 0 || typeof policy.is_random_cipher_layer_enabled !== "boolean")
+    if (policy == null || policy.version !== 2 || !/^[0-9a-f]{32}$/.test(policy.nonce) || !Number.isInteger(policy.dh_exchange_count) || policy.dh_exchange_count < 1 || policy.dh_exchange_count > 4 || !Number.isInteger(policy.session_encryption_layer_count) || policy.session_encryption_layer_count < 1 || policy.session_encryption_layer_count > 8 || CONNECTION_CIPHERS.indexOf(policy.session_cipher) < 0 || typeof policy.is_random_cipher_layer_enabled !== "boolean")
     {
         throw new Error("Unsupported or excessive server encryption policy");
     }
@@ -92,12 +128,26 @@ function connection_crypto__validate_policy(policy)
 
 var g_crypto_handshake = null;
 
-/** @brief Starts one bounded negotiation; each exchange keeps its own fresh exponent. */
+/**
+ * @brief stores the first DH exchange for encryption negotiation
+ *
+ * @param string public_key -> local identity public key
+ * @param string mix -> public value matching g_dh_secret_exponent
+ *
+ * @return void
+ */
 function connection_crypto__begin(public_key, mix)
 {
     g_crypto_handshake = { public_key: public_key, mixes: [mix], exponents: [g_dh_secret_exponent], policy: null };
 }
 
+/**
+ * @brief validates server policy and prepares the remaining DH exchanges
+ *
+ * @param object policy -> server encryption policy
+ *
+ * @return object public key request containing the negotiated exchanges
+ */
 function connection_crypto__accept_policy(policy)
 {
     connection_crypto__validate_policy(policy);
@@ -120,6 +170,14 @@ function connection_crypto__accept_policy(policy)
     } };
 }
 
+/**
+ * @brief decodes a handshake field after checking its exact hex length
+ *
+ * @param string value -> lowercase hexadecimal field
+ * @param number length -> required byte count
+ *
+ * @return Uint8Array -> decoded bytes
+ */
 function connection_crypto__hex(value, length)
 {
     if (typeof value !== "string" || value.length !== length * 2 || !/^[0-9a-f]+$/.test(value))
@@ -129,6 +187,14 @@ function connection_crypto__hex(value, length)
     return keys__hex_to_bytes(value);
 }
 
+/**
+ * @brief compares byte sequences without stopping at the first differing byte
+ *
+ * @param array|Uint8Array left -> first byte sequence
+ * @param array|Uint8Array right -> second byte sequence
+ *
+ * @return boolean -> true when lengths and bytes match
+ */
 function connection_crypto__equal(left, right)
 {
     if (left.length !== right.length)
@@ -143,7 +209,13 @@ function connection_crypto__equal(left, right)
     return difference === 0;
 }
 
-/** @brief Verifies the negotiated transcript and optional hidden-cipher probe before installing keys. */
+/**
+ * @brief verifies the server proof and returns the negotiated keys
+ *
+ * @param object message -> server challenge and encryption proof
+ *
+ * @return array connection key layers
+ */
 function connection_crypto__finish(message)
 {
     let state = g_crypto_handshake;
@@ -154,6 +226,7 @@ function connection_crypto__finish(message)
     let secret = new Uint8Array(32);
     try
     {
+        // use the legacy DH exchange only when no versioned policy was negotiated
         if (state.policy == null)
         {
             if (message.crypto != null)
@@ -165,16 +238,15 @@ function connection_crypto__finish(message)
             let keys = keys__dh_derive_keys(shared);
             return [{ info: "aes-ctr", key_bytes: keys.enc_key, mac_bytes: keys.mac_key }];
         }
+        // require the challenge to match the agreed exchange count
         let policy = state.policy;
         let reply = message.crypto;
-        if (reply == null || reply.version !== 2 || !Array.isArray(reply.dh_public_mixes)
-            || reply.dh_public_mixes.length !== policy.dh_exchange_count || reply.dh_public_mixes[0] !== message.dh_public_mix)
+        if (reply == null || reply.version !== 2 || !Array.isArray(reply.dh_public_mixes) || reply.dh_public_mixes.length !== policy.dh_exchange_count || reply.dh_public_mixes[0] !== message.dh_public_mix)
         {
             throw new Error("Incomplete encryption negotiation");
         }
-        let transcript = connection_crypto__mix(new Uint8Array(32), "lemonchat-v2|" + policy.nonce + "|"
-            + policy.dh_exchange_count + "|" + policy.session_encryption_layer_count + "|" + policy.session_cipher
-            + "|" + (policy.is_random_cipher_layer_enabled ? 1 : 0));
+        // bind the policy and every DH exchange into the transcript
+        let transcript = connection_crypto__mix(new Uint8Array(32), "lemonchat-v2|" + policy.nonce + "|" + policy.dh_exchange_count + "|" + policy.session_encryption_layer_count + "|" + policy.session_cipher + "|" + (policy.is_random_cipher_layer_enabled ? 1 : 0));
         transcript = connection_crypto__mix(transcript, state.public_key);
         for (let index = 0; index < policy.dh_exchange_count; index++)
         {
@@ -186,6 +258,7 @@ function connection_crypto__finish(message)
             transcript = connection_crypto__mix(transcript, state.mixes[index]);
             transcript = connection_crypto__mix(transcript, reply.dh_public_mixes[index]);
         }
+        // identify the optional cipher by verifying its decrypted probe
         let random_type = null;
         if (policy.is_random_cipher_layer_enabled)
         {
@@ -222,6 +295,7 @@ function connection_crypto__finish(message)
         {
             throw new Error("Unexpected random cipher layer");
         }
+        // verify the server proof before returning any connection keys
         let receive_mac = connection_crypto__derive(secret, transcript, "lemonchat/v2/server-to-client/mac");
         let expected = keys___hmac_sha256(receive_mac, transcript);
         if (!connection_crypto__equal(expected, connection_crypto__hex(reply.finished, 32)))
@@ -229,6 +303,7 @@ function connection_crypto__finish(message)
             receive_mac.fill(0);
             throw new Error("Server encryption proof failed");
         }
+        // derive separate outgoing and incoming keys for each layer
         let layers = [];
         let count = policy.session_encryption_layer_count + (random_type == null ? 0 : 1);
         for (let index = 0; index < count; index++)
@@ -247,6 +322,7 @@ function connection_crypto__finish(message)
     }
     finally
     {
+        // discard private handshake state on both success and failure
         secret.fill(0);
         state.exponents.fill(null);
         g_dh_secret_exponent = null;
@@ -254,6 +330,13 @@ function connection_crypto__finish(message)
     }
 }
 
+/**
+ * @brief parses a DH public value and rejects values outside the allowed range
+ *
+ * @param string value -> decimal public value from the peer
+ *
+ * @return bigint -> public value between 2 and the modulus minus 2
+ */
 function connection_crypto__public_mix(value)
 {
     if (typeof value !== "string" || value.length > 4096 || !/^[0-9]+$/.test(value))
@@ -268,7 +351,11 @@ function connection_crypto__public_mix(value)
     return mix;
 }
 
-/** @brief Drops private handshake references when a socket closes before negotiation finishes. */
+/**
+ * @brief discards private handshake references when negotiation is abandoned
+ *
+ * @return void
+ */
 function connection_crypto__clear_handshake()
 {
     if (g_crypto_handshake != null)

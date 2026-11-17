@@ -1,7 +1,7 @@
-// This file manages each client's record on the server: its slot, username,
+// this file manages each client's record on the server: its slot, username,
 // duplicate logins and cleanup after disconnection. During a reconnect it can
 // attach a new WebSocket connection to the existing session. The socket callbacks
-// and incoming messages are handled in chat_websocket.c.
+// and incoming messages are handled in chat_websocket.c
 #include "../../third-party/zhicheng/base64.h"
 #include "../crypto/ciphers.h"
 #include "channel.h"
@@ -31,7 +31,7 @@
  *
  * @return void
  *
- * @attention closing connection takes more lines of code, and this function was created to eliminate that.
+ * @attention closing connection takes more lines of code, and this function was created to eliminate that
  */
 void client_session__close_websocket_connection(uint64 client_index, boole use_readlock)
 {
@@ -68,14 +68,12 @@ void client_session__close_websocket_connection(uint64 client_index, boole use_r
 }
 
 /**
- * @brief assigns username to client
+ * @brief assigns an available numbered name using the server's default name
  *
- * @param uint64 client_index -> index of client that needs new username
- * @param cstring default_name -> default part of name string
+ * @param uint64 client_index -> client whose name is updated
+ * @param cstring default_name -> unused legacy argument
  *
- * @return boole returns true if username has been assigned, false if not. username is assigned within this function, to avoid need allocating on heap (stack returning meh)
- *
- * @attention bad code
+ * @return boole TRUE if a new name was assigned, otherwise FALSE
  */
 boole client_session__assign_username_for_newly_joined_client(uint64 client_index, cstring default_name)
 {
@@ -414,10 +412,12 @@ boole client_session__is_there_another_authenticated_client_with_same_public_key
 }
 
 /**
- * @brief Checks whether an existing authenticated client has the given public key.
+ * @brief checks whether an existing authenticated client has the given public key
+ *
  * @param cstring public_key -> public key to look for
+ *
  * @return boole -> TRUE when a matching client exists; FALSE otherwise
- * @attention The caller holds the clients lock.
+ * @attention the caller holds the clients lock
  */
 boole client_session__is_there_a_client_with_same_public_key(cstring public_key)
 {
@@ -447,15 +447,12 @@ boole client_session__is_there_a_client_with_same_public_key(cstring public_key)
 }
 
 /**
- * @brief the socket-open half of the same-ip rule: only one handshake at a time per ip, so a flood
- *        from one address costs one slot and not the whole table, while an established session
- *        never counts
+ * @brief checks whether an existing handshake already uses this IP address
  *
- * @param cstring ip_address -> ip address of the socket that just opened
+ * @param cstring ip_address -> address of the newly opened socket
  *
- * @return boole
- *
- * @attention the caller must hold the clients write lock
+ * @return boole TRUE if an unfinished handshake uses this address, otherwise FALSE
+ * @attention the caller holds the clients write lock
  */
 boole client_session__is_there_an_unfinished_handshake_from_same_ip_address(cstring ip_address)
 {
@@ -479,17 +476,14 @@ boole client_session__is_there_an_unfinished_handshake_from_same_ip_address(cstr
 }
 
 /**
- * @brief the login half of the same-ip rule, checked only once the challenge proved the identity,
- *        so a returning client is refused because of a second person on the same ip and never
- *        because of its own dropped session
+ * @brief checks for another authenticated identity on the same IP address
  *
- * @param uint64 client_index -> the client being checked, never counted
- * @param cstring ip_address -> the client's ip address
- * @param cstring public_key -> the client's identity; older sessions holding it are earlier sessions of the same identity that are being disconnected, and they are skipped
+ * @param uint64 client_index -> client slot to exclude
+ * @param cstring ip_address -> address to check
+ * @param cstring public_key -> identity to exclude, including its earlier sessions
  *
- * @return boole
- *
- * @attention the caller must hold the clients write lock. only authenticated sessions count: an unfinished handshake from the same ip is checked when it gets here itself, which lets exactly one of them in
+ * @return boole TRUE if another identity is connected from this address, otherwise FALSE
+ * @attention the caller holds the clients write lock
  */
 boole client_session__is_there_another_authenticated_client_with_same_ip_address(uint64 client_index, cstring ip_address, cstring public_key)
 {

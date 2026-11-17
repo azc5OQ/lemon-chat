@@ -1,21 +1,15 @@
-// workers.js is embedded in template.html along with the other client files, and in the node bundle
-// it holds the two worker handlers, each running inside its worker only: the data-processing worker
-// (the rsa keypair, decrypting what the socket delivers, encrypting what the page sends) and the
-// websocket worker (the socket to the server). In the browser, they exchange received frames
-// and keepalives directly. The page receives the results it needs to display.
-// worker-entry.js picks the handler; connection.js sets up the ports for each connection.
+// handles socket transport and message encryption in separate workers
+// worker-entry.js selects the handler. connection.js supplies each connection's ports
 
-// state private to this file
-// the server refuses uploads of 4096 base64 characters or less, so file bodies are padded to this
-// many plaintext bytes (5462 characters encoded); without it a small file would be refused silently
+// pad file bodies above the server's minimum encoded upload length
 var CHAT_FILE_BODY_MIN_PADDED_BYTES = 4096;
 
-// when on, every decrypted server frame is also posted back raw (node uses it for the ui replay)
+// forward decrypted frames to Node for page replay when enabled
 var dpw_forward_frames = false;
 
 var websocket_instance = null;
 
-// counts sockets ever created. events from an old (replaced) socket are ignored
+// count socket generations so replaced sockets cannot publish events
 var websocket_generation = 0;
 
 var dpw_channel_key_request = null;
@@ -28,6 +22,9 @@ var dpw_channel_keys_need_refresh = true;
 
 var dpw_socket_port = null;
 var dpw_connection_generation = 0;
+var dpw_local_delivery_scope = null;
+var dpw_local_session_id = "";
+var dpw_local_transfer_receiver = null;
 var dpw_connection_open = false;
 var dpw_keepalive_timer = null;
 var dpw_keepalive_last_reply = 0;
@@ -43,7 +40,8 @@ var WEBSOCKET_UPLOAD_BUFFER_LIMIT = 64 * 1024;
 var WEBSOCKET_UPLOAD_WAIT_MS = 120000;
 
 /**
- * @brief Tracks channel membership in socket order so received keys need not wait for the interface.
+ * @brief tracks channel membership in socket order so received keys need not wait for the interface
+ *
  * @param object message -> a decrypted server message
  */
 function workers__update_channel_members(message)
@@ -52,11 +50,7 @@ function workers__update_channel_members(message)
     let local = null;
     let departing_member = dpw_channel_members.get(message.client_id);
     let was_maintainer = departing_member != null && departing_member.client_id === dpw_channel_maintainer_id;
-    let left_channel = departing_member != null && !departing_member.is_idle && !departing_member.is_music_bot
-        && departing_member.channel_id === dpw_current_channel_id
-        && (message.type === "client_disconnect" || message.type === "client_going_to_idle_mode"
-            || ((message.type === "channel_join" || message.type === "client_coming_back_from_idle_mode")
-                && message.channel_id !== dpw_current_channel_id));
+    let left_channel = departing_member != null && !departing_member.is_idle && !departing_member.is_music_bot && departing_member.channel_id === dpw_current_channel_id && (message.type === "client_disconnect" || message.type === "client_going_to_idle_mode" || ((message.type === "channel_join" || message.type === "client_coming_back_from_idle_mode") && message.channel_id !== dpw_current_channel_id));
     if (message.type === "client_list")
     {
         dpw_channel_keys_need_refresh = true;
@@ -92,8 +86,7 @@ function workers__update_channel_members(message)
     {
         dpw_channel_members.delete(message.client_id);
     }
-    else if (message.type === "channel_join" || message.type === "client_coming_back_from_idle_mode"
-        || message.type === "client_going_to_idle_mode")
+    else if (message.type === "channel_join" || message.type === "client_coming_back_from_idle_mode" || message.type === "client_going_to_idle_mode")
     {
         member = dpw_channel_members.get(message.client_id);
         if (member != null)
@@ -115,12 +108,9 @@ function workers__update_channel_members(message)
     {
         member = dpw_channel_members.get(message.maintainer_id);
         local = dpw_channel_members.get(dpw_local_client_id);
-        if (message.has_maintainer && member != null && !member.is_idle && !member.is_music_bot
-            && local != null && !local.is_idle && member.channel_id === dpw_current_channel_id
-            && Number.isSafeInteger(message.maintainer_generation) && message.maintainer_generation >= 0)
+        if (message.has_maintainer && member != null && !member.is_idle && !member.is_music_bot && local != null && !local.is_idle && member.channel_id === dpw_current_channel_id && Number.isSafeInteger(message.maintainer_generation) && message.maintainer_generation >= 0)
         {
-            if (dpw_channel_maintainer_id !== message.maintainer_id
-                || dpw_maintainer_generation !== message.maintainer_generation)
+            if (dpw_channel_maintainer_id !== message.maintainer_id || dpw_maintainer_generation !== message.maintainer_generation)
             {
                 dpw_channel_key_request = null;
                 dpw_channel_keys_need_refresh = true;
@@ -150,7 +140,8 @@ function workers__update_channel_members(message)
 }
 
 /**
- * @brief Counts active people using membership received directly from the socket.
+ * @brief counts active people using membership received directly from the socket
+ *
  * @return number people in the worker's current channel
  */
 function workers__channel_member_count()
@@ -167,7 +158,7 @@ function workers__channel_member_count()
 }
 
 /**
- * @brief Stops obsolete key delivery and tells the interface that it has finished.
+ * @brief stops obsolete key delivery and tells the interface that it has finished
  */
 function workers__cancel_channel_key_distribution()
 {
@@ -186,7 +177,8 @@ function workers__cancel_channel_key_distribution()
 }
 
 /**
- * @brief Applies key reuse settings immediately, including while the interface is busy.
+ * @brief applies key reuse settings immediately, including while the interface is busy
+ *
  * @param object policy -> settings from login or a live server policy message
  */
 function workers__apply_channel_key_policy(policy)
@@ -214,24 +206,19 @@ function workers__apply_channel_key_policy(policy)
 }
 
 /**
- * @brief Checks a distribution request against membership already received from the socket.
+ * @brief checks a distribution request against membership already received from the socket
+ *
  * @param object request -> the interface's request to create keys
+ *
  * @return boolean true when this client still maintains that channel
  */
 function workers__is_channel_key_request_current(request)
 {
-    return g_is_authenticated && request.local_client_id === dpw_local_client_id
-        && request.channel_id === dpw_current_channel_id && dpw_channel_maintainer_id === dpw_local_client_id
-        && request.maintainer_generation === dpw_maintainer_generation;
+    return g_is_authenticated && request.local_client_id === dpw_local_client_id && request.channel_id === dpw_current_channel_id && dpw_channel_maintainer_id === dpw_local_client_id && request.maintainer_generation === dpw_maintainer_generation;
 }
 
 /**
- * @brief Checks that the decrypted content of a direct message is what its purpose says.
- *
- *        The server cannot read the content. It checks the rules of the purpose the sender
- *        named: "channel_keys" needs no permission and is passed on only inside one channel,
- *        "seen_receipt" needs no permission, "conversation" needs the permission to send direct
- *        messages. This function is the second half of that check, on the receiving side.
+ * @brief checks whether decrypted direct content matches its declared purpose
  *
  * @param string purpose -> the purpose passed on by the server
  * @param string content_type -> the type field of the decrypted content
@@ -252,8 +239,10 @@ function workers__is_direct_content_allowed_for_purpose(purpose, content_type)
 }
 
 /**
- * @brief Installs received keys before the next encrypted chat message is processed.
+ * @brief installs received keys before the next encrypted chat message is processed
+ *
  * @param object msg -> a decrypted private message containing channel keys
+ *
  * @return boolean true when the keys belong to this channel and its current maintainer
  */
 function workers__receive_channel_keys(msg)
@@ -275,21 +264,26 @@ function workers__receive_channel_keys(msg)
 }
 
 /**
- * @brief Identifies the connection that produced a result, so an old result cannot change a new session.
+ * @brief identifies the connection that produced a result, so an old result cannot change a new session
+ *
  * @param object message -> the result sent to the page
  */
 function workers__post_to_main(message)
 {
-    if (dpw_connection_generation > 0 && message.type !== "data_processing_worker__generate_rsa_keypair_result"
-        && message.type !== "data_processing_worker__generate_rsa_keypair_failed")
+    if (dpw_connection_generation > 0 && message.type !== "data_processing_worker__generate_rsa_keypair_result" && message.type !== "data_processing_worker__generate_rsa_keypair_failed")
     {
         message.connection_generation = dpw_connection_generation;
+    }
+    if (dpw_local_delivery_scope != null && message.type !== "decrypted_frame" && message.type !== "data_processing_worker__connection_activity" && message.type !== "data_processing_worker__local_transfer_ack")
+    {
+        message.local_delivery = dpw_local_delivery_scope.value;
+        dpw_local_delivery_scope.outputs++;
     }
     global.postMessage(message);
 }
 
 /**
- * @brief Stops checking the old connection before closing it or replacing its keys.
+ * @brief stops checking the old connection before closing it or replacing its keys
  */
 function workers__stop_keepalive()
 {
@@ -301,7 +295,7 @@ function workers__stop_keepalive()
 }
 
 /**
- * @brief Sends the usual encrypted keepalive without waiting for the page to finish drawing.
+ * @brief sends the usual encrypted keepalive without waiting for the page to finish drawing
  */
 function workers__send_keepalive()
 {
@@ -312,8 +306,7 @@ function workers__send_keepalive()
     {
         return;
     }
-    if (g_server_policy.is_connection_check_enforced !== false
-        && now - dpw_keepalive_last_reply > g_connection_check.lost_threshold_ms)
+    if (g_server_policy.is_connection_check_enforced !== false && now - dpw_keepalive_last_reply > g_connection_check.lost_threshold_ms)
     {
         workers__stop_keepalive();
         dpw_connection_open = false;
@@ -346,7 +339,8 @@ function workers__send_keepalive()
 }
 
 /**
- * @brief Applies the server's timeout setting without waiting for the settings window.
+ * @brief applies the server's timeout setting without waiting for the settings window
+ *
  * @param object policy -> fields from the login reply or a later server policy message
  */
 function workers__apply_keepalive_policy(policy)
@@ -363,7 +357,8 @@ function workers__apply_keepalive_policy(policy)
 }
 
 /**
- * @brief Receives socket frames directly, while keeping close events in the same order as those frames.
+ * @brief receives socket frames and close events in socket order
+ *
  * @param object e -> a message from this connection's WebSocket worker
  */
 function workers__socket_port_onmessage(e)
@@ -392,14 +387,15 @@ function workers__socket_port_onmessage(e)
 }
 
 /**
- * @brief Distributes channel keys without blocking incoming messages for the whole member list.
+ * @brief distributes channel keys without blocking incoming messages for the whole member list
+ *
  * @param object request -> the current members, channel id and request generation
+ *
  * @return Promise<void> finishes after delivery or cancellation
  */
 async function workers__create_channel_keys(request)
 {
-    let reuse = request.reuse_existing_keys === true && !dpw_channel_keys_need_refresh
-        && g_current_channel_keys != null && keys__may_reuse_channel_keys("join", workers__channel_member_count());
+    let reuse = request.reuse_existing_keys === true && !dpw_channel_keys_need_refresh && g_current_channel_keys != null && keys__may_reuse_channel_keys("join", workers__channel_member_count());
     let new_channel_keys = reuse ? g_current_channel_keys : keys__create_random_message_keys();
     let arrivals = new Set(request.arriving_client_ids || []);
     let recipients = reuse ? request.clients.filter(function(client)
@@ -430,12 +426,12 @@ async function workers__create_channel_keys(request)
         return;
     }
     dpw_channel_key_request = request;
-    // Recipients can reply with these keys before distribution finishes.
+    // recipients can reply with these keys before distribution finishes
     keys__set_current_channel_keys(new_channel_keys);
     dpw_channel_keys_need_refresh = false;
     for (x = 0; x < recipients.length; x++)
     {
-        // Let received messages and keepalives run between recipient encryptions.
+        // let received messages and keepalives run between recipient encryptions
         await new Promise(function(resolve)
         {
             setTimeout(resolve, 0);
@@ -446,19 +442,16 @@ async function workers__create_channel_keys(request)
         }
         recipient = recipients[x];
         member = dpw_channel_members.get(recipient.client_id);
-        if (member == null || member.is_idle || member.is_music_bot || member.channel_id !== request.channel_id
-            || member.public_key !== recipient.public_key || (reuse && !arrivals.has(recipient.client_id)))
+        if (member == null || member.is_idle || member.is_music_bot || member.channel_id !== request.channel_id || member.public_key !== recipient.public_key || (reuse && !arrivals.has(recipient.client_id)))
         {
             continue;
         }
-        if (recipient.channel_id !== request.current_channel_id
-            || (recipient.client_id === request.local_client_id && typeof process === "undefined"))
+        if (recipient.channel_id !== request.current_channel_id || (recipient.client_id === request.local_client_id && typeof process === "undefined"))
         {
             continue;
         }
         message_keys = keys__create_random_message_keys();
-        message_data = keys__seal_direct_content(recipient.public_key, message_keys,
-            keys__encrypt_direct_content(message_keys, JSON.stringify(message_value)));
+        message_data = keys__seal_direct_content(recipient.public_key, message_keys, keys__encrypt_direct_content(message_keys, JSON.stringify(message_value)));
         if (message_data == null)
         {
             throw new Error("cannot encrypt channel keys for client " + recipient.client_id);
@@ -477,7 +470,7 @@ async function workers__create_channel_keys(request)
         };
         if (recipient.client_id === request.local_client_id)
         {
-            // The Android host gives its own copy directly to its attached interface.
+            // the Android host gives its own copy directly to its attached interface
             workers__post_to_main(
             {
                 type: "data_processing_worker__local_channel_keys_for_ui",
@@ -529,17 +522,184 @@ async function workers__create_channel_keys(request)
 // ---- data-processing worker ----
 
 /**
- * @brief the data-processing worker's message handler
- *        generates the rsa keypair, decrypts what the socket delivers, encrypts what the page sends
- *        (chat messages, pictures, channel keys). Socket frames also arrive through its MessagePort.
+ * @brief encrypts a direct or channel picture and reports its preparation result
  *
- * @param object e -> the worker message event; e.data.type picks the branch
+ * @param data picture data, recipient and operation identifiers
+ * @param direct true for a private picture. false for a channel picture
+ */
+function workers__prepare_picture_upload(data, direct)
+{
+    try
+    {
+        let sealed;
+        if (direct)
+        {
+            const message_keys = [];
+            for (let index = 0; index < 4; index++)
+            {
+                message_keys.push(
+                {
+                    key_bytes: Array.from(crypto.getRandomValues(new Uint8Array(32))),
+                    iv_bytes: Array.from(crypto.getRandomValues(new Uint8Array(16)))
+                });
+            }
+            const envelope = keys__seal_direct_content(data.receiver_public_key, message_keys, keys__encrypt_direct_content(message_keys, data.base64_picture_string_to_send));
+            sealed = envelope == null ? null : JSON.stringify(envelope);
+        }
+        else
+        {
+            sealed = keys__seal_channel_content(data.current_channel_keys, keys__encrypt_with_aes_keys_and_convert_to_base64(data.current_channel_keys, data.base64_picture_string_to_send));
+        }
+        if (sealed == null)
+        {
+            throw new Error("Picture encryption failed");
+        }
+        workers__post_to_main(
+        {
+            type: direct ? "data_processing_worker__direct_chat_picture_to_be_uploaded_by_parts" : "data_processing_worker__channel_chat_picture_to_be_uploaded_by_parts",
+            data_for_upload_process: sealed,
+            extra_data:
+            {
+                receiver_id: parseInt(direct ? data.chat_message_receiver_id : data.current_channel_id),
+                local_message_id: data.local_message_id,
+                operation_id: data.operation_id
+            }
+        });
+    }
+    catch (error)
+    {
+        workers__post_to_main(
+        {
+            type: "data_processing_worker__chat_picture_send_failed",
+            local_message_id: data.local_message_id,
+            operation_id: data.operation_id,
+            reason: "The picture could not be encrypted. You can try sending it again."
+        });
+    }
+}
+
+/**
+ * @brief checks delivery identifiers against the worker's current local session
+ *
+ * @param object|null delivery -> local delivery metadata
+ *
+ * @return boolean -> true for valid identifiers in the current session
+ */
+function workers__is_local_delivery_current(delivery)
+{
+    return delivery != null && typeof delivery === "object" && !Array.isArray(delivery) && typeof delivery.id === "string" && delivery.id.length > 0 && delivery.id.length <= 128 && typeof delivery.session_id === "string" && delivery.session_id.length > 0 && delivery.session_id.length <= 128 && delivery.session_id === dpw_local_session_id;
+}
+
+/**
+ * @brief posts an attachment result before acknowledging its local delivery
+ *
+ * @param object message -> worker result to send
+ * @param object|null request -> original request with optional local delivery metadata
+ *
+ * @return void
+ */
+function workers__post_attachment_result(message, request)
+{
+    const delivery = request == null ? null : request.local_delivery;
+    if (delivery != null)
+    {
+        if (g_loopback_port <= 0 || !workers__is_local_delivery_current(delivery))
+        {
+            return;
+        }
+        message.local_delivery = {id: delivery.id, session_id: delivery.session_id};
+    }
+    workers__post_to_main(message);
+    if (delivery != null)
+    {
+        workers__post_to_main(
+        {
+            type: "data_processing_worker__local_delivery_accepted",
+            value: {id: delivery.id, session_id: delivery.session_id}
+        });
+    }
+}
+
+/**
+ * @brief reports file decryption failure to the page and local delivery owner
+ *
+ * @param number|string file_id -> failed file identifier
+ * @param object request -> original decryption request
+ *
+ * @return void
+ */
+function workers__post_file_decrypt_failure(file_id, request)
+{
+    if (dpw_forward_frames === true)
+    {
+        workers__post_to_main(
+        {
+            type: "decrypted_frame",
+            value: JSON.stringify({message: {type: "chat_file_decrypt_failed", file_id: file_id}})
+        });
+    }
+    workers__post_attachment_result(
+    {
+        type: "data_processing_worker__chat_file_decrypt_failed",
+        value: {message: {file_id: file_id}}
+    }, request);
+}
+
+/**
+ * @brief reports picture decryption failure to the page and local delivery owner
+ *
+ * @param number|string picture_id -> failed picture identifier
+ * @param object request -> original decryption request
+ *
+ * @return void
+ */
+function workers__post_picture_decrypt_failure(picture_id, request)
+{
+    if (dpw_forward_frames === true)
+    {
+        workers__post_to_main(
+        {
+            type: "decrypted_frame",
+            value: JSON.stringify({message: {type: "chat_picture_decrypt_failed", picture_id: picture_id}})
+        });
+    }
+    workers__post_attachment_result(
+    {
+        type: "data_processing_worker__chat_picture_decrypt_failed",
+        value: {message: {picture_id: picture_id}}
+    }, request);
+}
+
+/**
+ * @brief handles identity, encryption and decrypted socket messages in the data worker
+ *
+ * @param object e -> the worker message event
  *
  * @return void
  */
 function workers__data_processing_worker_onmessage(e)
 {
-    if (DBG_WORKER_BOOT_LOG) { console.log("[dpw] got: " + (e.data && e.data.type)); }
+    if (e.data.type === "mainthread__begin_connection")
+    {
+        if (Number.isSafeInteger(e.data.connection_generation) && e.data.connection_generation > dpw_connection_generation)
+        {
+            workers__cancel_local_transfers("connection_replaced");
+            dpw_connection_generation = e.data.connection_generation;
+        }
+        return;
+    }
+    if (e.data.connection_generation != null && e.data.connection_generation !== dpw_connection_generation && e.data.type !== "mainthread__connect_socket_port")
+    {
+        return;
+    }
+    if (e.data.local_delivery != null && (g_loopback_port <= 0 || !workers__is_local_delivery_current(e.data.local_delivery) || (e.data.type !== "mainthread__process_encrypted_channel_chat_file_data" && e.data.type !== "mainthread__process_encrypted_channel_chat_picture_data")))
+    {
+        return;
+    }
+    if (DBG_WORKER_BOOT_LOG)
+    {
+        console.log("[dpw] got: " + (e.data && e.data.type));
+    }
     if (e.data.type == "mainthread__connect_socket_port")
     {
         workers__stop_keepalive();
@@ -569,9 +729,11 @@ function workers__data_processing_worker_onmessage(e)
     }
     else if (e.data.type == "mainthread__set_loopback_mode")
     {
-        // the worker builds and transport-encrypts direct messages itself; without this
-        // its encrypt_all still wrapped them, node wrapped again, and the server kicked
-        // the connection on the resulting garbage
+        if (g_loopback_port !== e.data.value)
+        {
+            workers__cancel_local_transfers("endpoint_replaced");
+        }
+        // direct messages already have connection encryption when they leave this worker
         g_loopback_port = e.data.value;
     }
     else if (e.data.type == "mainthread__metadata_keys")
@@ -587,7 +749,7 @@ function workers__data_processing_worker_onmessage(e)
             type: "data_processing_worker__metadata_keys_accepted",
             value: null
         });
-        // The server may reply immediately. Install its new keys before sending the login response.
+        // the server may reply immediately. install its new keys before sending the login response
         if (dpw_socket_port != null && dpw_connection_open && e.data.send_after_update != null)
         {
             dpw_socket_port.postMessage(
@@ -601,8 +763,18 @@ function workers__data_processing_worker_onmessage(e)
     else if (e.data.type == "mainthread__generate_rsa_keypair")
     {
         utils__custom_log("generating random public/private key pair");
-        if (DBG_WORKER_BOOT_LOG) { console.log("[keygen] starting generateRSAKey"); }
+        if (DBG_WORKER_BOOT_LOG)
+        {
+            console.log("[keygen] starting generateRSAKey");
+        }
 
+        /**
+         * @brief creates an unbiased alphanumeric identity seed using secure random bytes
+         *
+         * @param number length -> required character count
+         *
+         * @return string -> random seed
+         */
         const randomstring = (length = 8) =>
         {
             const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -630,42 +802,59 @@ function workers__data_processing_worker_onmessage(e)
 
         let identity_passphrase_string = "";
 
-        // the size travels with the request: this worker has its own copy of every global,
-        // so the main thread's preference does not reach it any other way
-        let requested_rsa_key_bits = 2048;
-        if (G_ALLOWED_RSA_KEY_BITS.indexOf(e.data.rsa_key_bits) >= 0) { requested_rsa_key_bits = e.data.rsa_key_bits; }
+        // workers have separate globals, so the request must include the selected size
+        const requested_rsa_key_bits = e.data.rsa_key_bits;
+        let generated_key = null;
+        let generated_public_key = null;
 
         try
         {
-            if (e.data.from_identity_string == true && e.data.identity_passphrase_string != null && e.data.identity_passphrase_string.length > 0)
+            if (G_ALLOWED_RSA_KEY_BITS.indexOf(requested_rsa_key_bits) < 0)
             {
+                throw new Error("Unsupported identity key size");
+            }
+            if (e.data.from_identity_string === true)
+            {
+                if (typeof e.data.identity_passphrase_string !== "string" || e.data.identity_passphrase_string.length < 199)
+                {
+                    throw new Error("Incomplete identity passphrase");
+                }
                 identity_passphrase_string = e.data.identity_passphrase_string;
             }
             else
             {
                 identity_passphrase_string = randomstring(200);
             }
-            g_my_rsa_key_object = lemon_crypto.generateRSAKey(identity_passphrase_string, requested_rsa_key_bits);
+            generated_key = lemon_crypto.generateRSAKey(identity_passphrase_string, requested_rsa_key_bits);
+            generated_public_key = lemon_crypto.publicKeyString(generated_key);
         }
         catch (err)
         {
-            // Neither missing secure randomness nor key generation failure may select a weaker identity.
+            // neither missing secure randomness nor key generation failure may select a weaker identity
             utils__custom_log("Identity generation failed; no replacement identity was installed.");
             workers__post_to_main(
             {
-                type: "data_processing_worker__generate_rsa_keypair_failed"
+                type: "data_processing_worker__generate_rsa_keypair_failed",
+                identity_request_id: e.data.identity_request_id,
+                identity_revision: e.data.identity_revision,
+                rsa_key_bits: requested_rsa_key_bits
             });
             return;
         }
-        g_rsa_public_key_string = lemon_crypto.publicKeyString(g_my_rsa_key_object);
+        // do not expose a new private key paired with the previous public key if serialization fails
+        g_my_rsa_key_object = generated_key;
+        g_rsa_public_key_string = generated_public_key;
 
         workers__post_to_main({
             type: "data_processing_worker__generate_rsa_keypair_result",
             value: g_rsa_public_key_string,
-            identity_string: identity_passphrase_string
+            identity_string: identity_passphrase_string,
+            identity_request_id: e.data.identity_request_id,
+            identity_revision: e.data.identity_revision,
+            rsa_key_bits: requested_rsa_key_bits
         });
 
-        utils__custom_log("public key now in use: " + g_rsa_public_key_string);
+        utils__custom_log("Identity key generation finished.");
 
     }
     else if (e.data.type == "mainthread__process_received_websocket_message")
@@ -674,6 +863,7 @@ function workers__data_processing_worker_onmessage(e)
     }
     else if (e.data.type == "mainthread_reset_data")
     {
+        workers__cancel_local_transfers("session_reset");
         workers__stop_keepalive();
         dpw_connection_open = false;
         dpw_channel_key_request = null;
@@ -689,7 +879,7 @@ function workers__data_processing_worker_onmessage(e)
         dpw_channel_maintainer_id = -1;
         dpw_maintainer_generation = -1;
     }
-    // the notice that the local user closed a direct conversation, encrypted like a text message
+    // encrypt the conversation close notice for its recipient
     else if (e.data.type == "mainthread__create_direct_chat_closed_message")
     {
         let notice_keys = keys__create_random_message_keys();
@@ -718,8 +908,7 @@ function workers__data_processing_worker_onmessage(e)
             data_to_be_sent_over_websocket: keys__encrypt_all_message_data_and_convert_to_base64(JSON.stringify(notice_message_object))
         });
     }
-    // a read receipt, encrypted for the original sender the same way channel keys are.
-    // the server never learns what it says: to it this is an ordinary direct message
+    // encrypt the read receipt so only the original sender can read it
     else if (e.data.type == "mainthread__create_seen_receipt_message")
     {
         let receipt_keys = [];
@@ -746,8 +935,7 @@ function workers__data_processing_worker_onmessage(e)
             value: "" + e.data.server_chat_message_id
         };
 
-        let receipt_data = keys__seal_direct_content(e.data.public_key, receipt_keys,
-            keys__encrypt_direct_content(receipt_keys, JSON.stringify(receipt_value_object)));
+        let receipt_data = keys__seal_direct_content(e.data.public_key, receipt_keys, keys__encrypt_direct_content(receipt_keys, JSON.stringify(receipt_value_object)));
         if (receipt_data == null)
         {
             return;
@@ -817,8 +1005,7 @@ function workers__data_processing_worker_onmessage(e)
             value: e.data.chat_message_value
         };
 
-        let message_data = keys__seal_direct_content(e.data.receiver_public_key, current_message_keys,
-            keys__encrypt_direct_content(current_message_keys, JSON.stringify(message_value_object)));
+        let message_data = keys__seal_direct_content(e.data.receiver_public_key, current_message_keys, keys__encrypt_direct_content(current_message_keys, JSON.stringify(message_value_object)));
         if (message_data == null)
         {
             return;
@@ -849,9 +1036,7 @@ function workers__data_processing_worker_onmessage(e)
     }
     else if (e.data.type == "mainthread__create_offline_chat_message")
     {
-        // identical crypto to a direct message - the recipient is simply not connected,
-        // so the request names their saved identity and the server stores the result
-        // until they come back. the server sees the same opaque blob either way.
+        // use the same direct encryption for an offline recipient. the server stores only ciphertext
         let current_message_keys = [];
 
         for (let i = 0; i < 4; i++)
@@ -881,8 +1066,7 @@ function workers__data_processing_worker_onmessage(e)
             value: e.data.chat_message_value
         };
 
-        let message_data = keys__seal_direct_content(e.data.receiver_public_key, current_message_keys,
-            keys__encrypt_direct_content(current_message_keys, JSON.stringify(message_value_object)));
+        let message_data = keys__seal_direct_content(e.data.receiver_public_key, current_message_keys, keys__encrypt_direct_content(current_message_keys, JSON.stringify(message_value_object)));
         if (message_data == null)
         {
             return;
@@ -907,69 +1091,11 @@ function workers__data_processing_worker_onmessage(e)
     }
     else if (e.data.type == "mainthread__create_direct_chat_picture")
     {
-        let current_message_keys = [];
-
-        for (let i = 0; i < 4; i++)
-        {
-            let single_key = {
-                key_bytes: [],
-                iv_bytes: []
-            };
-
-            for (let ii = 0; ii < 32; ii++)
-            {
-                let single_byte = crypto.getRandomValues(new Uint8Array(1))[0];
-                single_key.key_bytes.push(single_byte);
-            }
-
-            for (let ii = 0; ii < 16; ii++)
-            {
-                let single_byte = crypto.getRandomValues(new Uint8Array(1))[0];
-                single_key.iv_bytes.push(single_byte);
-            }
-
-            current_message_keys.push(single_key);
-        }
-
-        let message_data = keys__seal_direct_content(e.data.receiver_public_key, current_message_keys,
-            keys__encrypt_direct_content(current_message_keys, e.data.base64_picture_string_to_send));
-        if (message_data == null)
-        {
-            return;
-        }
-
-        let data_for_upload_process = JSON.stringify(message_data);
-
-        let extra_data = {
-            receiver_id: parseInt(e.data.chat_message_receiver_id),
-            local_message_id: e.data.local_message_id
-        };
-
-        workers__post_to_main({
-            type: "data_processing_worker__direct_chat_picture_to_be_uploaded_by_parts",
-            data_for_upload_process: data_for_upload_process,
-            extra_data: extra_data
-        });
+        workers__prepare_picture_upload(e.data, true);
     }
     else if (e.data.type == "mainthread__create_channel_chat_picture")
     {
-        let extra_data = {
-            receiver_id: parseInt(e.data.current_channel_id),
-            local_message_id: e.data.local_message_id
-        };
-
-        let data_for_upload_process = keys__seal_channel_content(e.data.current_channel_keys,
-            keys__encrypt_with_aes_keys_and_convert_to_base64(e.data.current_channel_keys, e.data.base64_picture_string_to_send));
-        if (data_for_upload_process == null)
-        {
-            return;
-        }
-
-        workers__post_to_main({
-            type: "data_processing_worker__channel_chat_picture_to_be_uploaded_by_parts",
-            data_for_upload_process: data_for_upload_process,
-            extra_data: extra_data
-        });
+        workers__prepare_picture_upload(e.data, false);
     }
     else if (e.data.type == "mainthread__create_channel_chat_message")
     {
@@ -978,12 +1104,11 @@ function workers__data_processing_worker_onmessage(e)
                 type: "channel_chat_message",
                 value: "",
                 receiver_id: parseInt(e.data.current_channel_id),
-                local_message_id: e.data.local_message_id // server needs this to inform client that message has been received.This is different from message ID stored by server
+                local_message_id: e.data.local_message_id // correlate the receipt with the local message ID, separate from the server's ID
             }
         };
 
-        message_object.message.value = keys__seal_channel_content(e.data.current_channel_keys,
-            keys__encrypt_with_aes_keys_and_convert_to_base64(e.data.current_channel_keys, e.data.chat_message_to_send_value));
+        message_object.message.value = keys__seal_channel_content(e.data.current_channel_keys, keys__encrypt_with_aes_keys_and_convert_to_base64(e.data.current_channel_keys, e.data.chat_message_to_send_value));
         if (message_object.message.value == null)
         {
             return;
@@ -999,21 +1124,26 @@ function workers__data_processing_worker_onmessage(e)
     }
     else if (e.data.type == "mainthread__process_encrypted_direct_chat_picture_data")
     {
-        let message_data = JSON.parse(e.data.message_raw);
-        let direct_content = keys__open_direct_content(message_data, g_my_rsa_key_object);
-
-        if (direct_content == null)
+        let decrypted_base64_picture_sanitized = "";
+        try
         {
-            log("failed to decrypt direct chat picture");
+            const message_data = JSON.parse(e.data.message_raw);
+            const direct_content = keys__open_direct_content(message_data, g_my_rsa_key_object);
+            if (direct_content != null)
+            {
+                const picture = keys__decrypt_direct_content(direct_content.keys, direct_content.value);
+                decrypted_base64_picture_sanitized = chat__sanitize_image_data_url(picture);
+            }
+        }
+        catch (error)
+        {
+            decrypted_base64_picture_sanitized = "";
+        }
+        if (!decrypted_base64_picture_sanitized)
+        {
+            workers__post_picture_decrypt_failure(e.data.picture_id, e.data);
             return;
         }
-
-        let decrypted_base64_picture = keys__decrypt_direct_content(direct_content.keys, direct_content.value);
-        if (decrypted_base64_picture == null)
-        {
-            return;
-        }
-        let decrypted_base64_picture_sanitized = chat__sanitize_image_data_url(decrypted_base64_picture);
 
         let msg = {
             message : {
@@ -1026,7 +1156,7 @@ function workers__data_processing_worker_onmessage(e)
 
         msg.message.decrypted_base64_picture = decrypted_base64_picture_sanitized;
 
-        // loopback: the ui has no key for this, so send it the finished picture
+        // Node sends the decrypted picture to the page
         if (dpw_forward_frames == true)
         {
             workers__post_to_main({ type: "decrypted_frame", value: JSON.stringify({
@@ -1046,29 +1176,53 @@ function workers__data_processing_worker_onmessage(e)
     }
     else if (e.data.type == "mainthread__process_encrypted_channel_chat_picture_data")
     {
-        let decrypted_picture = keys__decrypt_channel_contents(e.data.message_raw, true);
-        if (decrypted_picture != null)
+        let picture = "";
+        try
+        {
+            picture = chat__sanitize_image_data_url(keys__decrypt_channel_contents(e.data.message_raw, true));
+        }
+        catch (error)
+        {
+            picture = "";
+        }
+        if (!picture)
+        {
+            workers__post_picture_decrypt_failure(e.data.picture_id, e.data);
+            return;
+        }
+        if (dpw_forward_frames === true)
         {
             workers__post_to_main(
             {
-                type: "data_processing_worker__channel_chat_picture",
-                value:
+                type: "decrypted_frame",
+                value: JSON.stringify({message:
                 {
-                    message:
-                    {
-                        picture_id: e.data.picture_id,
-                        client_id: e.data.sender_id,
-                        value: null,
-                        decrypted_base64_picture: chat__sanitize_image_data_url(decrypted_picture)
-                    }
-                }
+                    type: "channel_chat_picture_decrypted",
+                    picture_id: e.data.picture_id,
+                    client_id: e.data.sender_id,
+                    decrypted_base64_picture: picture
+                }})
             });
         }
+        workers__post_attachment_result(
+        {
+            type: "data_processing_worker__channel_chat_picture",
+            value:
+            {
+                message:
+                {
+                    picture_id: e.data.picture_id,
+                    client_id: e.data.sender_id,
+                    value: null,
+                    decrypted_base64_picture: picture
+                }
+            }
+        }, e.data);
     }
     else if (e.data.type == "mainthread__create_direct_chat_file")
     {
-        // header and body get their own key sets: two plaintexts must never share a ctr keystream.
-        // the body pads up so even a 1 kb file clears the server's minimum upload size
+        // use separate keys for the header and body to avoid repeating a CTR keystream
+        // pad the body above the server's minimum upload size
         let file_header = chat_files__create_direct_chat_file_envelope(e.data.receiver_public_key, chat_files__build_chat_file_header_json(e.data.file));
         let data_for_upload_process = chat_files__create_direct_chat_file_envelope(e.data.receiver_public_key, chat_files__build_chat_file_body_json(e.data.file), CHAT_FILE_BODY_MIN_PADDED_BYTES);
 
@@ -1094,10 +1248,8 @@ function workers__data_processing_worker_onmessage(e)
     }
     else if (e.data.type == "mainthread__create_channel_chat_file")
     {
-        let file_header = keys__seal_channel_content(e.data.current_channel_keys,
-            chat_files__encrypt_string_with_aes_keys_fast(e.data.current_channel_keys, chat_files__build_chat_file_header_json(e.data.file)));
-        let data_for_upload_process = keys__seal_channel_content(e.data.current_channel_keys,
-            chat_files__encrypt_string_with_aes_keys_fast(e.data.current_channel_keys, chat_files__build_chat_file_body_json(e.data.file), CHAT_FILE_BODY_MIN_PADDED_BYTES));
+        let file_header = keys__seal_channel_content(e.data.current_channel_keys, chat_files__encrypt_string_with_aes_keys_fast(e.data.current_channel_keys, chat_files__build_chat_file_header_json(e.data.file)));
+        let data_for_upload_process = keys__seal_channel_content(e.data.current_channel_keys, chat_files__encrypt_string_with_aes_keys_fast(e.data.current_channel_keys, chat_files__build_chat_file_body_json(e.data.file), CHAT_FILE_BODY_MIN_PADDED_BYTES));
 
         if (file_header == null || data_for_upload_process == null)
         {
@@ -1122,15 +1274,18 @@ function workers__data_processing_worker_onmessage(e)
     }
     else if (e.data.type == "mainthread__process_encrypted_direct_chat_file_data")
     {
-        let file = chat_files__parse_decrypted_chat_file_body(chat_files__open_direct_chat_file_envelope(e.data.message_raw));
-
+        let file = null;
+        try
+        {
+            file = chat_files__parse_decrypted_chat_file_body(chat_files__open_direct_chat_file_envelope(e.data.message_raw));
+        }
+        catch (error)
+        {
+            file = null;
+        }
         if (file == null)
         {
-            utils__custom_log("failed to decrypt direct chat file");
-            workers__post_to_main({
-                type: "data_processing_worker__chat_file_decrypt_failed",
-                value: { message: { file_id: e.data.file_id } }
-            });
+            workers__post_file_decrypt_failure(e.data.file_id, e.data);
             return;
         }
 
@@ -1142,7 +1297,7 @@ function workers__data_processing_worker_onmessage(e)
             }
         };
 
-        // loopback: the ui has no key for this, so send it the finished file
+        // Node sends the decrypted file to the page
         if (dpw_forward_frames == true)
         {
             workers__post_to_main({ type: "decrypted_frame", value: JSON.stringify({
@@ -1162,19 +1317,36 @@ function workers__data_processing_worker_onmessage(e)
     }
     else if (e.data.type == "mainthread__process_encrypted_channel_chat_file_data")
     {
-        let file = chat_files__decrypt_channel_chat_file_body(e.data.file_id, e.data.message_raw);
-
+        let file = null;
+        try
+        {
+            file = chat_files__decrypt_channel_chat_file_body(e.data.file_id, e.data.message_raw);
+        }
+        catch (error)
+        {
+            file = null;
+        }
         if (file == null)
         {
-            utils__custom_log("channel_chat_file decrypt failed, no channel key opened it");
-            workers__post_to_main({
-                type: "data_processing_worker__chat_file_decrypt_failed",
-                value: { message: { file_id: e.data.file_id } }
-            });
+            workers__post_file_decrypt_failure(e.data.file_id, e.data);
             return;
         }
 
-        workers__post_to_main({
+        if (dpw_forward_frames === true)
+        {
+            workers__post_to_main(
+            {
+                type: "decrypted_frame",
+                value: JSON.stringify({message:
+                {
+                    type: "channel_chat_file_decrypted",
+                    file_id: e.data.file_id,
+                    client_id: e.data.sender_id,
+                    file: file
+                }})
+            });
+        }
+        workers__post_attachment_result({
             type: "data_processing_worker__channel_chat_file",
             value: {
                 message: {
@@ -1183,14 +1355,12 @@ function workers__data_processing_worker_onmessage(e)
                     file: file
                 }
             }
-        });
+        }, e.data);
     }
 }
 
 /**
- * @brief the announced minimum key size when a raw frame is the plaintext "your key is too weak" notice
- *        that notice is the only type accepted in the clear, because the server sends it before the
- *        diffie-hellman exchange has produced a shared secret
+ * @brief reads the key size rejection allowed before encrypted transport is established
  *
  * @param string raw_value -> the frame as it arrived on the socket
  *
@@ -1205,8 +1375,14 @@ function workers__try_read_plaintext_rsa_key_notice(raw_value)
 
     let parsed = null;
 
-    try { parsed = JSON.parse(raw_value); }
-    catch (parse_error) { return null; }
+    try
+    {
+        parsed = JSON.parse(raw_value);
+    }
+    catch (parse_error)
+    {
+        return null;
+    }
 
     if (parsed == null || parsed.message == null || parsed.message.type !== "rsa_key_too_weak")
     {
@@ -1216,16 +1392,115 @@ function workers__try_read_plaintext_rsa_key_notice(raw_value)
 }
 
 /**
- * @brief processes one frame that arrived on the socket
- *        recognises the plaintext key-size notice, decrypts everything else and posts each server
- *        message to the main thread under its data_processing_worker__*_from_server type
+ * @brief decodes an incoming socket frame and dispatches its server message
  *
- * @param object e -> the worker message event; e.data.value is the frame, e.data.is_plaintext marks a loopback frame
+ * @param object e -> the worker message event. E.data.value is the frame, e.data.is_plaintext marks a loopback frame
  *
  * @return void
  */
 function workers__mainthread__process_received_websocket_message_continue(e)
 {
+    dpw_local_delivery_scope = null;
+    try
+    {
+        workers__process_received_frame(e);
+        const delivery = dpw_local_delivery_scope;
+        dpw_local_delivery_scope = null;
+        if (delivery != null && delivery.outputs > 0 && delivery.deferred !== true)
+        {
+            workers__post_to_main(
+            {
+                type: "data_processing_worker__local_delivery_accepted",
+                value: delivery.value
+            });
+        }
+    }
+    finally
+    {
+        dpw_local_delivery_scope = null;
+    }
+}
+
+/**
+ * @brief cancels unfinished local transfers before their scope is replaced
+ *
+ * @param string reason -> failure reason for the affected transfers
+ *
+ * @return void
+ */
+function workers__cancel_local_transfers(reason)
+{
+    if (dpw_local_transfer_receiver != null)
+    {
+        dpw_local_transfer_receiver.cancelAll(reason);
+    }
+}
+
+/**
+ * @brief creates the scoped local receiver when needed and passes it a transfer message
+ *
+ * @param object message -> local begin, chunk or cancel message
+ *
+ * @return void
+ */
+function workers__receive_local_transfer(message)
+{
+    if (dpw_local_transfer_receiver == null)
+    {
+        dpw_local_transfer_receiver = local_transfer__create_receiver(
+        {
+            getScope: function()
+            {
+                return {session_id: dpw_local_session_id, generation: dpw_connection_generation};
+            },
+            setTimer: setTimeout,
+            clearTimer: clearTimeout,
+            onAck: function(acknowledgement)
+            {
+                workers__post_to_main(
+                {
+                    type: "data_processing_worker__local_transfer_ack",
+                    value: {message: acknowledgement}
+                });
+            },
+            onFailure: function(metadata, reason)
+            {
+                if (metadata == null)
+                {
+                    return;
+                }
+                const message = {reason: metadata.content_type.endsWith("_file_decrypted") ? "could not receive this file" : "could not receive this picture"};
+                message[metadata.key] = metadata.id;
+                workers__post_to_main(
+                {
+                    type: metadata.content_type.endsWith("_file_decrypted") ? "data_processing_worker__chat_file_decrypt_failed" : "data_processing_worker__chat_picture_decrypt_failed",
+                    value: {message: message}
+                });
+            },
+            onFrame: function(text, frame)
+            {
+                workers__process_received_frame({data: {is_plaintext: true, value: text}}, frame);
+            }
+        });
+    }
+    dpw_local_transfer_receiver.receive(message);
+}
+
+/**
+ * @brief validates frame origin before processing protocol or trusted local content
+ *
+ * @param object e -> socket event with frame bytes and local origin flag
+ * @param object|undefined parsed_local_frame -> already parsed local frame when supplied by the transfer receiver
+ *
+ * @return void
+ */
+function workers__process_received_frame(e, parsed_local_frame)
+{
+    const trusted_loopback = g_loopback_port > 0 && e.data.is_plaintext === true;
+    if (e.data.is_plaintext === true && !trusted_loopback)
+    {
+        return;
+    }
     if (e.data.is_plaintext != true)
     {
         let announced_minimum_bits = workers__try_read_plaintext_rsa_key_notice(e.data.value);
@@ -1240,26 +1515,153 @@ function workers__mainthread__process_received_websocket_message_continue(e)
         }
     }
 
-    // loopback frames are plaintext; everything downstream is identical
+    // only local socket frames may skip connection decryption
     let decrypted_metadata = (e.data.is_plaintext == true) ? e.data.value : keys__decrypt_message_metadata(e.data.value);
 
     let msg = null;
 
     try
     {
-        msg = JSON.parse(decrypted_metadata);
+        msg = trusted_loopback && parsed_local_frame != null ? parsed_local_frame : JSON.parse(decrypted_metadata);
     }
     catch (Exception)
     {
         return;
     }
-    if (msg == null || msg.message == null || typeof msg.message.type !== "string" || msg.message.type.length === 0)
+    if (msg == null || typeof msg !== "object" || Array.isArray(msg) || msg.message == null || typeof msg.message !== "object" || Array.isArray(msg.message) || typeof msg.message.type !== "string" || msg.message.type.length === 0)
     {
         return;
     }
 
-    // Any valid decrypted server message proves the connection is receiving.
-    // Heartbeat replies still supply RTT; attachment traffic must not look dead.
+    // reject remote claims of local origin before forwarding any frame to the page
+    if (!trusted_loopback && (msg.local_delivery != null || msg.local_sender != null || msg.message.type.startsWith("local_") || msg.message.type.startsWith("loopback_") || msg.message.type === "direct_chat_file_decrypted" || msg.message.type === "direct_chat_picture_decrypted" || msg.message.type === "channel_chat_file_decrypted" || msg.message.type === "channel_chat_picture_decrypted" || msg.message.type === "chat_file_decrypt_failed" || msg.message.type === "chat_picture_decrypt_failed" || msg.message.some_json != null || msg.message.file_header_decrypted != null || msg.message.decrypted_base64_picture != null || msg.message.decrypted_value != null))
+    {
+        return;
+    }
+    if (trusted_loopback && (msg.message.type === "local_transfer_begin" || msg.message.type === "local_transfer_chunk" || msg.message.type === "local_transfer_cancel"))
+    {
+        workers__receive_local_transfer(msg.message);
+        return;
+    }
+    if (trusted_loopback && msg.local_delivery != null)
+    {
+        const delivery = msg.local_delivery;
+        if (!workers__is_local_delivery_current(delivery))
+        {
+            return;
+        }
+        dpw_local_delivery_scope = {value: {id: delivery.id, session_id: delivery.session_id}, outputs: 0};
+    }
+    if (msg.local_sender != null && (!trusted_loopback || !workers__is_local_delivery_current(msg.local_delivery)))
+    {
+        return;
+    }
+
+    if (trusted_loopback && msg.message.type === "local_session_state")
+    {
+        const state = msg.message.value || msg.message;
+        if (typeof state.public_key_string !== "string" || !state.public_key_string)
+        {
+            return;
+        }
+        if (typeof state.session_id === "string" && dpw_local_session_id !== state.session_id)
+        {
+            workers__data_processing_worker_onmessage({data: {type: "mainthread_reset_data"}});
+            dpw_local_session_id = state.session_id;
+        }
+        g_rsa_public_key_string = state.public_key_string;
+        g_identity_revision = Number.isSafeInteger(state.identity_revision) ? state.identity_revision : 0;
+        workers__post_to_main(
+        {
+            type: "data_processing_worker__local_session_state",
+            value: state
+        });
+        return;
+    }
+    if (trusted_loopback && msg.message.type === "local_identity_result")
+    {
+        workers__post_to_main(
+        {
+            type: "data_processing_worker__local_identity_result",
+            value: msg.message.value || msg.message
+        });
+        return;
+    }
+    if (trusted_loopback && msg.message.type === "local_peer_state")
+    {
+        workers__post_to_main(
+        {
+            type: "data_processing_worker__local_peer_state",
+            value: msg.message.value || msg.message
+        });
+        return;
+    }
+    if (trusted_loopback && msg.message.type === "local_upload_result")
+    {
+        workers__post_to_main(
+        {
+            type: "data_processing_worker__local_upload_result",
+            value: msg.message.value || msg.message
+        });
+        return;
+    }
+    if (trusted_loopback && msg.message.type === "local_command_result")
+    {
+        workers__post_to_main(
+        {
+            type: "data_processing_worker__local_command_result",
+            value: msg.message.value || msg.message
+        });
+        return;
+    }
+
+    // finish accepted local transfers even while recovery pauses authentication
+    if (trusted_loopback && (msg.message.type === "chat_file_decrypt_failed" || msg.message.type === "chat_picture_decrypt_failed"))
+    {
+        workers__post_to_main(
+        {
+            type: msg.message.type === "chat_file_decrypt_failed" ? "data_processing_worker__chat_file_decrypt_failed" : "data_processing_worker__chat_picture_decrypt_failed",
+            value: msg
+        });
+        return;
+    }
+    if (trusted_loopback && (msg.message.type === "direct_chat_file_decrypted" || msg.message.type === "channel_chat_file_decrypted"))
+    {
+        workers__post_to_main(
+        {
+            type: msg.message.type === "direct_chat_file_decrypted" ? "data_processing_worker__direct_chat_file" : "data_processing_worker__channel_chat_file",
+            value:
+            {
+                message:
+                {
+                    file_id: msg.message.file_id,
+                    client_id: msg.message.client_id,
+                    file: msg.message.file
+                }
+            }
+        });
+        return;
+    }
+    if (trusted_loopback && (msg.message.type === "direct_chat_picture_decrypted" || msg.message.type === "channel_chat_picture_decrypted"))
+    {
+        workers__post_to_main(
+        {
+            type: msg.message.type === "direct_chat_picture_decrypted" ? "data_processing_worker__direct_chat_picture" : "data_processing_worker__channel_chat_picture",
+            value:
+            {
+                message:
+                {
+                    picture_id: msg.message.picture_id,
+                    client_id: msg.message.client_id,
+                    value: null,
+                    decrypted_base64_picture: msg.message.decrypted_base64_picture
+                }
+            }
+        });
+        return;
+    }
+
+    // any valid server message proves the connection is alive. heartbeats still measure RTT
     if (g_is_authenticated)
     {
         dpw_keepalive_last_reply = performance.now();
@@ -1269,28 +1671,32 @@ function workers__mainthread__process_received_websocket_message_continue(e)
         }
     }
 
-    // the webrtc handshake retries every 10s and its frames used to flood the 50kb log,
-    // pushing the interesting events out before they could be read
-    if (msg.message.type != "ice_candidate" && msg.message.type != "sdp_offer"
-        && msg.message.type != "connection_check_response")
+    // keep repeated WebRTC negotiation messages out of the bounded log
+    if (msg.message.type != "ice_candidate" && msg.message.type != "sdp_offer" && msg.message.type != "connection_check_response")
     {
         utils__custom_log('[R] msg.message.type : ' + msg.message.type);
     }
 
-    // rsa-encrypted kinds are forwarded from their own branches instead, once node has
-    // decrypted them - the ui never holds a private key
-    if (dpw_forward_frames == true
-        && msg.message.type != "direct_chat_message"
-        && msg.message.type != "offline_chat_message"
-        && msg.message.type != "direct_chat_file_metadata")
+    // forward private content only after Node has decrypted it
+    if (dpw_forward_frames == true && msg.message.type != "direct_chat_message" && msg.message.type != "offline_chat_message" && msg.message.type != "direct_chat_file_metadata" && msg.message.type != "channel_chat_message" && msg.message.type != "channel_chat_file_metadata" && msg.message.type != "file_receive_completed")
     {
         workers__post_to_main({ type: "decrypted_frame", value: decrypted_metadata });
     }
 
-    // node's connection status for the login page - meta, not protocol, and it must
-    // flow while unauthenticated, so it is handled before the auth gate
+    // display local connection status before authentication completes
     if (msg.message.type == "loopback_status")
     {
+        const state = msg.message.value;
+        if (state != null && (state.state === "idle" || state.state === "error"))
+        {
+            // reset here before the next login burst can reach this worker
+            workers__data_processing_worker_onmessage({data: {type: "mainthread_reset_data"}});
+            dpw_local_session_id = "";
+        }
+        else if (state != null && state.state === "connecting")
+        {
+            g_is_authenticated = false;
+        }
         workers__post_to_main({
             type: "data_processing_worker__loopback_status",
             value: msg.message.value
@@ -1298,8 +1704,7 @@ function workers__mainthread__process_received_websocket_message_continue(e)
         return;
     }
 
-    // handled before the auth gate, so a login replay is never dropped
-    // (a stale "already authenticated" worker used to swallow it)
+    // apply a login replay before checking the previous authentication state
     if (msg.message.type == "authentication_status")
     {
         if (msg.message.value == "success")
@@ -1308,8 +1713,7 @@ function workers__mainthread__process_received_websocket_message_continue(e)
             workers__apply_keepalive_policy(msg.message);
             workers__apply_channel_key_policy(msg.message);
 
-            // the whole message is passed on as the policy: server_settings_tab__apply_server_policy_fields takes the
-            // fields it knows, so a new server field never needs a second list here
+            // let the policy handler select fields from the full message
             workers__post_to_main({
                 type: "data_processing_worker__authentication_status",
                 is_idle_mode_allowed: msg.message.is_idle_mode_allowed,
@@ -1324,8 +1728,7 @@ function workers__mainthread__process_received_websocket_message_continue(e)
                 dpw_keepalive_timer = setInterval(workers__send_keepalive, g_connection_check.interval_ms);
             }
 
-            // the audio datachannel is needed when either client voice or music bots are on (the
-            // server pushes bot audio through it); whether this client may transmit is a separate flag
+            // keep the audio data channel for voice or bot playback. microphone permission is separate
             if (msg.message.is_voice_chat_active == true || msg.message.is_music_bot_audio_active == true)
             {
                 workers__post_to_main({
@@ -1339,8 +1742,7 @@ function workers__mainthread__process_received_websocket_message_continue(e)
         return;
     }
 
-    // a fast reconnect's answer comes right before authentication_status, i.e. while this worker is
-    // still in handshake mode, so it is handled ahead of the authenticated / unauthenticated split
+    // the resume response arrives before authentication_status
     if (msg.message.type == "fast_reconnect_ok")
     {
         workers__post_to_main({
@@ -1762,8 +2164,7 @@ function workers__mainthread__process_received_websocket_message_continue(e)
         }
         else if (msg.message.type == "local_media_keys" && g_loopback_port > 0)
         {
-            // only over the loopback: the node runtime on the same device hands the webview the two keys
-            // for its media frames. a real server never gets to send this
+            // accept media keys only from the local Node owner
             workers__post_to_main(
             {
                 type: "data_processing_worker__local_media_keys",
@@ -1842,10 +2243,16 @@ function workers__mainthread__process_received_websocket_message_continue(e)
         }
         else if (msg.message.type == "channel_chat_file_metadata")
         {
-            // the header is opened here (the channel keys are kept in this worker); null leaves a nameless card
-            msg.message.file_header_decrypted = (typeof msg.message.file_header === "string")
-                ? chat_files__decrypt_channel_chat_file_header(msg.message.file_id, msg.message.file_header) : null;
-            msg.message.file_header = null;
+            // open the header with worker keys. keep a file card even if its name cannot be decrypted
+            if (!trusted_loopback || msg.message.file_header_decrypted === undefined)
+            {
+                msg.message.file_header_decrypted = (typeof msg.message.file_header === "string") ? chat_files__decrypt_channel_chat_file_header(msg.message.file_id, msg.message.file_header) : null;
+                msg.message.file_header = null;
+            }
+            if (dpw_forward_frames === true)
+            {
+                workers__post_to_main({type: "decrypted_frame", value: JSON.stringify(msg)});
+            }
 
             workers__post_to_main({
                 type: "data_processing_worker__channel_chat_file_metadata",
@@ -1857,8 +2264,7 @@ function workers__mainthread__process_received_websocket_message_continue(e)
             // loopback: node already opened the header, so just pass it on
             if (msg.message.file_header_decrypted == null)
             {
-                msg.message.file_header_decrypted = (typeof msg.message.file_header === "string")
-                    ? chat_files__parse_chat_file_header(chat_files__open_direct_chat_file_envelope(msg.message.file_header)) : null;
+                msg.message.file_header_decrypted = (typeof msg.message.file_header === "string") ? chat_files__parse_chat_file_header(chat_files__open_direct_chat_file_envelope(msg.message.file_header)) : null;
                 msg.message.file_header = null;
 
                 // opened shape, so the ui reads it without a key of its own
@@ -1871,18 +2277,6 @@ function workers__mainthread__process_received_websocket_message_continue(e)
             workers__post_to_main({
                 type: "data_processing_worker__direct_chat_file_metadata",
                 value: msg
-            });
-        }
-        else if (msg.message.type == "direct_chat_file_decrypted")
-        {
-            // loopback only: node decrypted it for us
-            workers__post_to_main({
-                type: "data_processing_worker__direct_chat_file",
-                value: { message: {
-                    file_id: msg.message.file_id,
-                    client_id: msg.message.client_id,
-                    file: msg.message.file
-                } }
             });
         }
         else if (msg.message.type == "file_send_error")
@@ -1901,11 +2295,15 @@ function workers__mainthread__process_received_websocket_message_continue(e)
         }
         else if (msg.message.type == "channel_chat_message")
         {
-            let decrypted_value = keys__decrypt_channel_contents(msg.message.value, false);
+            let decrypted_value = trusted_loopback && typeof msg.message.decrypted_value === "string" ? msg.message.decrypted_value : keys__decrypt_channel_contents(msg.message.value, false);
             if (decrypted_value != null)
             {
                 msg.message.decrypted_value = decrypted_value;
                 msg.message.value = null;
+                if (dpw_forward_frames === true)
+                {
+                    workers__post_to_main({type: "decrypted_frame", value: JSON.stringify(msg)});
+                }
                 workers__post_to_main(
                 {
                     type: "data_processing_worker__channel_chat_message",
@@ -1918,8 +2316,7 @@ function workers__mainthread__process_received_websocket_message_continue(e)
             // loopback: node already decrypted this, so just pass it on
             if (msg.message.some_json != null)
             {
-                if (msg.message.some_json.type === "channel_keys_from_maintainer"
-                    && !workers__receive_channel_keys(msg))
+                if (msg.message.some_json.type === "channel_keys_from_maintainer" && !workers__receive_channel_keys(msg))
                 {
                     return;
                 }
@@ -1950,7 +2347,7 @@ function workers__mainthread__process_received_websocket_message_continue(e)
 
             if (some_json.type == "direct_chat_message")
             {
-                some_json.value = some_json.value; // sanitize here ?
+                some_json.value = some_json.value; 
             }
 
             // content that does not match the purpose named by the sender is dropped
@@ -1962,7 +2359,7 @@ function workers__mainthread__process_received_websocket_message_continue(e)
 
             msg.message.some_json = some_json;
             msg.message.value = null;
-            // Install keys before the next socket frame, even while the interface is busy.
+            // install keys before the next socket frame, even while the interface is busy
             if (some_json.type === "channel_keys_from_maintainer" && !workers__receive_channel_keys(msg))
             {
                 return;
@@ -1991,8 +2388,7 @@ function workers__mainthread__process_received_websocket_message_continue(e)
                 return;
             }
 
-            // something that was said to us while we were away. same envelope as a direct
-            // message, so the same decrypt; it just arrives on connect instead of live
+            // decrypt queued messages with the same envelope used for live direct messages
             let message_data = JSON.parse(msg.message.value);
 
             let direct_content = keys__open_direct_content(message_data, g_my_rsa_key_object);
@@ -2022,19 +2418,6 @@ function workers__mainthread__process_received_websocket_message_continue(e)
             workers__post_to_main({
                 type: "data_processing_worker__offline_chat_message",
                 value: msg
-            });
-        }
-        else if (msg.message.type == "direct_chat_picture_decrypted")
-        {
-            // loopback only: node decrypted it for us
-            workers__post_to_main({
-                type: "data_processing_worker__direct_chat_picture",
-                value: { message: {
-                    picture_id: msg.message.picture_id,
-                    client_id: msg.message.client_id,
-                    value: null,
-                    decrypted_base64_picture: msg.message.decrypted_base64_picture
-                } }
             });
         }
         else if (msg.message.type == "image_sent_status")
@@ -2074,6 +2457,11 @@ function workers__mainthread__process_received_websocket_message_continue(e)
         }
         else if (msg.message.type == "file_receive_completed")
         {
+            if (dpw_local_delivery_scope != null && (msg.message.receive_type === "channel_chat_file" || msg.message.receive_type === "channel_chat_picture"))
+            {
+                // wait for main thread decryption before acknowledging this local delivery
+                dpw_local_delivery_scope.deferred = true;
+            }
             workers__post_to_main({
                 type: "data_processing_worker__file_receive_completed_from_server",
                 value: msg
@@ -2085,14 +2473,15 @@ function workers__mainthread__process_received_websocket_message_continue(e)
 // ---- websocket worker ----
 
 /**
- * @brief Sends received frames and connection events to the decryption thread, or to the Android host's existing path.
+ * @brief sends received frames and connection events to the decryption thread, or to the Android host's existing path
+ *
  * @param object message -> a received frame, socket error or close event
  */
 function workers__deliver_socket_event(message)
 {
+    message.connection_generation = websocket_connection_generation;
     if (websocket_data_port != null)
     {
-        message.connection_generation = websocket_connection_generation;
         websocket_data_port.postMessage(message);
     }
     else
@@ -2102,7 +2491,8 @@ function workers__deliver_socket_event(message)
 }
 
 /**
- * @brief Completes or cancels the one upload chunk waiting for socket capacity.
+ * @brief completes or cancels the one upload chunk waiting for socket capacity
+ *
  * @param boolean sent -> whether this chunk was handed to the current socket
  */
 function workers__finish_upload_send(sent)
@@ -2119,8 +2509,7 @@ function workers__finish_upload_send(sent)
 }
 
 /**
- * @brief Waits for the browser's outgoing buffer before accepting another upload chunk.
- * Normal chat and heartbeat messages can still use the socket while uploads wait.
+ * @brief waits for socket capacity without blocking chat or heartbeat messages
  */
 function workers__flush_upload_send()
 {
@@ -2129,8 +2518,7 @@ function workers__flush_upload_send()
     {
         return;
     }
-    if (pending.generation !== websocket_generation || websocket_instance == null
-        || websocket_instance.readyState !== 1 || performance.now() >= pending.deadline)
+    if (pending.generation !== websocket_generation || websocket_instance == null || websocket_instance.readyState !== 1 || performance.now() >= pending.deadline)
     {
         workers__finish_upload_send(false);
         return;
@@ -2153,11 +2541,9 @@ function workers__flush_upload_send()
 }
 
 /**
- * @brief the websocket worker's message handler
- *        creates the socket, sends received frames to the decryption thread, sends data when the socket
- *        is open, and closes it on request
+ * @brief handles socket creation, sending and closure requests
  *
- * @param object e -> the worker message event; e.data.type picks the branch
+ * @param object e -> the worker message event. E.data.type picks the branch
  *
  * @return void
  */
@@ -2172,7 +2558,13 @@ function workers__websocket_worker_onmessage(e)
         // a replaced socket is closed, and its events below are ignored as stale
         if (websocket_instance != null)
         {
-            try { websocket_instance.close(); } catch (close_error) { }
+            try
+            {
+                websocket_instance.close();
+            }
+            catch (close_error)
+            {
+            }
         }
 
         if (websocket_data_port != null)
@@ -2186,8 +2578,7 @@ function workers__websocket_worker_onmessage(e)
         {
             websocket_data_port.onmessage = function(port_event)
             {
-                if (generation === websocket_generation
-                    && port_event.data.connection_generation === websocket_connection_generation)
+                if (generation === websocket_generation && port_event.data.connection_generation === websocket_connection_generation)
                 {
                     workers__websocket_worker_onmessage(port_event);
                 }
@@ -2198,7 +2589,10 @@ function workers__websocket_worker_onmessage(e)
 
         websocket_instance.addEventListener('message', function (event)
         {
-            if (generation != websocket_generation) { return; }
+            if (generation != websocket_generation)
+            {
+                return;
+            }
 
             workers__deliver_socket_event({
                 type: "websocket_worker_onmessage",
@@ -2229,11 +2623,12 @@ function workers__websocket_worker_onmessage(e)
 
         websocket_instance.onerror = function (error)
         {
-            if (generation != websocket_generation) { return; }
+            if (generation != websocket_generation)
+            {
+                return;
+            }
 
-            // node hands us the real socket error; its code says WHY (no network vs
-            // refused vs timeout), which is the difference between a useful message
-            // and a guess. a browser gives an opaque event and no code - that is fine
+            // use Node's socket error code when available. browsers may provide only an opaque event
             let error_code = (error != null && typeof error.code === "string") ? error.code : "";
 
             console.error("websocket error event" + (error_code !== "" ? " (" + error_code + ")" : ""));
@@ -2245,7 +2640,10 @@ function workers__websocket_worker_onmessage(e)
 
         websocket_instance.onopen = function ()
         {
-            if (generation != websocket_generation) { return; }
+            if (generation != websocket_generation)
+            {
+                return;
+            }
 
             websocket_instance.send(e.data.value.onopen_data);
         }
@@ -2264,7 +2662,7 @@ function workers__websocket_worker_onmessage(e)
         }
         if (e.data.reply_port != null)
         {
-            // The page waits for this acknowledgement before creating the next chunk.
+            // the page waits for this acknowledgement before creating the next chunk
             if (websocket_upload_pending != null)
             {
                 e.data.reply_port.postMessage({sent: false});
@@ -2281,8 +2679,7 @@ function workers__websocket_worker_onmessage(e)
             workers__flush_upload_send();
             return;
         }
-        // null before the first connect: the loopback ui can forward a request while
-        // node still has no socket, and dereferencing it threw out of the handler
+        // the local page can send a request before Node has opened the remote socket
         if (websocket_instance == null)
         {
             console.warn("websocket send skipped: no socket yet");
@@ -2312,8 +2709,7 @@ function workers__websocket_worker_onmessage(e)
         }
         workers__finish_upload_send(false);
         websocket_close_reason = e.data.reason || "";
-        // deliberate disconnect (identity switch): the onclose event that follows
-        // drives the normal reset path on the main thread
+        // let onclose perform the normal reset after a deliberate disconnect
         if (websocket_instance != null)
         {
             websocket_instance.close();

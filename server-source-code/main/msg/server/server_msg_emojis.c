@@ -1,11 +1,12 @@
 #include "../../util.h"
-// This file sends the server emoji names and requested images to connected clients.
+// this file sends the server emoji names and requested images to connected clients
 #include "server_msg.h"
 #include "../../core/emojis.h"
 
 /**
- * @brief Sends emoji names without loading their images into the client's chat.
- * @param receiver Connected client receiving the list with the clients lock held.
+ * @brief sends emoji names without loading their images into the client's chat
+ *
+ * @param receiver Connected client receiving the list with the clients lock held
  */
 void server_msg__emojis__send_list(client_t *receiver)
 {
@@ -35,9 +36,10 @@ void server_msg__emojis__send_list(client_t *receiver)
 }
 
 /**
- * @brief Sends one requested image or reports that it no longer exists.
- * @param receiver Connected client receiving the image with the clients lock held.
- * @param id Stable emoji identifier.
+ * @brief sends one requested image or reports that it no longer exists
+ *
+ * @param receiver Connected client receiving the image with the clients lock held
+ * @param id Stable emoji identifier
  */
 void server_msg__emojis__send_image(client_t *receiver, cstring id)
 {
@@ -66,9 +68,10 @@ void server_msg__emojis__send_image(client_t *receiver, cstring id)
 }
 
 /**
- * @brief Announces an added image by name so clients can request it when needed.
- * @param id New stable identifier.
- * @param name Emoji name with the clients lock held.
+ * @brief announces an added image by name so clients can request it when needed
+ *
+ * @param id New stable identifier
+ * @param name Emoji name with the clients lock held
  */
 void server_msg__emojis__send_added(cstring id, cstring name)
 {
@@ -85,8 +88,9 @@ void server_msg__emojis__send_added(cstring id, cstring name)
 }
 
 /**
- * @brief Removes a deleted emoji from connected clients' choices.
- * @param id Deleted identifier with the clients lock held.
+ * @brief removes a deleted emoji from connected clients' choices
+ *
+ * @param id Deleted identifier with the clients lock held
  */
 void server_msg__emojis__send_deleted(cstring id)
 {
@@ -102,11 +106,12 @@ void server_msg__emojis__send_deleted(cstring id)
 }
 
 /**
- * @brief Reports an emoji request failure so the client can stop waiting.
- * @param receiver Client that sent the request with the clients lock held.
- * @param operation Request message type.
- * @param reason Explanation shown by the client.
- * @param id Optional emoji identifier.
+ * @brief reports an emoji request failure so the client can stop waiting
+ *
+ * @param receiver Client that sent the request with the clients lock held
+ * @param operation Request message type
+ * @param reason Explanation shown by the client
+ * @param id Optional emoji identifier
  */
 void server_msg__emojis__send_error(client_t *receiver, cstring operation, cstring reason, cstring id)
 {

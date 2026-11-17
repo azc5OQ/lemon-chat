@@ -1,9 +1,14 @@
 #include "cipher_trivium.h"
 #include "ciphers.h"
 
-// Trivium's three shift registers, packed into 3 + 3 + 4 words.
-// One update advances all registers by 32 bits. The unused high bits in the
-// last word of each register are never read by a feedback tap.
+/**
+ * @brief advances the Trivium registers by 32 bits
+ *
+ * @param uint32_t[10] state -> registers packed into 3, 3 and 4 words
+ *
+ * @return uint32_t -> the next 32 bits of keystream
+ */
+// state words must remain 32 bits. Unused high bits are not read
 static uint32_t _cipher_trivium_internal__next_word(uint32_t state[10])
 {
     uint32_t first = ((state[2] << 30) | (state[1] >> 2)) ^ ((state[2] << 3) | (state[1] >> 29));
@@ -31,8 +36,18 @@ static uint32_t _cipher_trivium_internal__next_word(uint32_t state[10])
     return output;
 }
 
-// Exact Trivium-80 variant: SHA-256(key)[0..9], fixed IV 01..0a and its word byte order.
-// No message IV is used. Repeating a key repeats the keystream. Returns 1 on success.
+/**
+ * @brief encrypts or decrypts data in place with the legacy Trivium variant
+ *
+ * @param const unsigned char* key -> input bytes hashed to derive the cipher key
+ * @param size_t key_size -> number of bytes in key
+ * @param unsigned char* data -> buffer to update
+ * @param size_t size -> number of bytes in data
+ *
+ * @return int -> 1 on success. 0 for a NULL pointer or a hash failure
+ */
+// uses the first 10 SHA256 bytes and the fixed IV 01..0a
+// reusing the key repeats the keystream
 int cipher_trivium__crypt(const unsigned char* key, size_t key_size, unsigned char* data, size_t size)
 {
     unsigned char digest[32];

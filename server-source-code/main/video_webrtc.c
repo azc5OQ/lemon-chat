@@ -1,10 +1,10 @@
-// This file lets Lemon Chat clients send and receive video through WebRTC.
-// It creates the video data channel, handles arriving packets and connection changes,
-// and sends packets to viewers whose connection can accept more data.
+// this file lets Lemon Chat clients send and receive video through WebRTC
+// it creates the video data channel, handles arriving packets and connection changes,
+// and sends packets to viewers whose connection can accept more data
 //
-// audio_webrtc.c creates and closes the WebRTC connection shared by audio and video.
-// This file handles only its video data channel. video_channel.c decides who may stream
-// or watch and forwards the packets through each viewer's chosen connection.
+// audio_webrtc.c creates and closes the WebRTC connection shared by audio and video
+// this file handles only its video data channel. video_channel.c decides who may stream
+// or watch and forwards the packets through each viewer's chosen connection
 #include "definitions.h"
 #include "../third-party/dave-g-json/cJSON.h"
 #include "base.h"
@@ -55,12 +55,12 @@ static void RTC_API _video_webrtc_internal__datachannel_on_open_callback(int id,
 }
 
 /**
- * @brief Stops using the client's closed video data channel.
+ * @brief stops using the client's closed video data channel
  *
  * video_channel.c decides whether to stop streaming or watching; a working
  * video WebSocket can keep either one going. When audio_webrtc.c closes the
  * whole connection, it removes the client pointer before deleting the channels,
- * so later callbacks do nothing.
+ * so later callbacks do nothing
  *
  * @param int id -> data channel handle
  * @param void* ptr -> the webrtc_peer_t this data channel belongs to
@@ -146,11 +146,11 @@ static void RTC_API _video_webrtc_internal__datachannel_on_error_callback(int id
 }
 
 /**
- * @brief Creates an ordered video channel that stops retrying packets after 250 milliseconds.
+ * @brief creates an ordered video channel that stops retrying packets after 250 milliseconds
  *
  * @param webrtc_peer_t* peer -> peer that receives the new video handle and callbacks
  *
- * @attention The caller holds the WebRTC peers write lock. Failure leaves the video handle empty; the audio channel remains usable.
+ * @attention the caller holds the WebRTC peers write lock. Failure leaves the video handle empty; the audio channel remains usable
  *
  * @return void
  */
@@ -184,13 +184,13 @@ void video_webrtc__create_data_channel(webrtc_peer_t *peer)
 }
 
 /**
- * @brief Checks whether the client has an open video data channel.
+ * @brief checks whether the client has an open video data channel
  *
  * @param uint64 client_id -> valid index of the client's WebRTC peer
  *
- * @attention The caller holds the WebRTC peers read lock.
+ * @attention the caller holds the WebRTC peers read lock
  *
- * @return boole -> TRUE when the peer exists and its video channel is open; otherwise FALSE.
+ * @return boole -> TRUE when the peer exists and its video channel is open; otherwise FALSE
  */
 boole video_webrtc__is_connected(uint64 client_id)
 {
@@ -200,14 +200,14 @@ boole video_webrtc__is_connected(uint64 client_id)
 }
 
 /**
- * @brief Checks whether a packet came from the client's current open video channel.
+ * @brief checks whether a packet came from the client's current open video channel
  *
  * @param uint64 client_id -> valid index of the client's WebRTC peer
  * @param int data_channel -> channel handle the packet arrived on
  *
- * @attention The caller holds the WebRTC peers read lock. Channels replaced during reconnect must not send packets.
+ * @attention the caller holds the WebRTC peers read lock. Channels replaced during reconnect must not send packets
  *
- * @return boole -> TRUE when the handle matches the open channel; otherwise FALSE.
+ * @return boole -> TRUE when the handle matches the open channel; otherwise FALSE
  */
 boole video_webrtc__is_data_channel_current(uint64 client_id, int data_channel)
 {
@@ -217,13 +217,13 @@ boole video_webrtc__is_data_channel_current(uint64 client_id, int data_channel)
 }
 
 /**
- * @brief Checks whether the viewer's open video channel has room for another packet.
+ * @brief checks whether the viewer's open video channel has room for another packet
  *
  * @param uint64 client_id -> valid index of the receiving client's WebRTC peer
  *
- * @attention The caller holds the WebRTC peers read lock.
+ * @attention the caller holds the WebRTC peers read lock
  *
- * @return boole -> TRUE when the channel is open and its queued data is within the limit; otherwise FALSE.
+ * @return boole -> TRUE when the channel is open and its queued data is within the limit; otherwise FALSE
  */
 boole video_webrtc__can_send(uint64 client_id)
 {
@@ -242,15 +242,15 @@ boole video_webrtc__can_send(uint64 client_id)
 }
 
 /**
- * @brief Sends one encrypted video packet through the viewer's data channel.
+ * @brief sends one encrypted video packet through the viewer's data channel
  *
  * @param uint64 client_id -> valid index of the receiving client's WebRTC peer
  * @param const ubyte* packet -> encrypted packet; the caller keeps this buffer
  * @param uint64 size -> packet length in bytes
  *
- * @attention The caller holds the WebRTC peers read lock and checks video_webrtc__can_send before preparing the packet.
+ * @attention the caller holds the WebRTC peers read lock and checks video_webrtc__can_send before preparing the packet
  *
- * @return boole -> TRUE when libdatachannel accepted the packet; FALSE if disconnected or sending fails.
+ * @return boole -> TRUE when libdatachannel accepted the packet; FALSE if disconnected or sending fails
  */
 boole video_webrtc__send(uint64 client_id, const ubyte *packet, uint64 size)
 {

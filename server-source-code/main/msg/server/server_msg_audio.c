@@ -1,5 +1,5 @@
 #include "../../util.h"
-// This file sends microphone status, audio connection details and WebRTC connection offers.
+// this file sends microphone status, audio connection details and WebRTC connection offers
 
 #include "server_msg.h"
 #include "../../base.h"
@@ -7,7 +7,7 @@
 #include "../../../third-party/rxi-log/log.h"
 
 /**
- * @brief Sends the microphone states of clients in the selected channel.
+ * @brief sends the microphone states of clients in the selected channel
  *
  * @param client_t* receiver -> the client that receives it
  * @param uint64 channel_id -> channel whose microphone states are reported

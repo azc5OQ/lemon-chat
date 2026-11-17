@@ -1,5 +1,5 @@
-// This file reads incoming message types and calls the matching request handlers.
-// It also holds shared server state and checks clients, permissions and server limits.
+// this file reads incoming message types and calls the matching request handlers
+// it also holds shared server state and checks clients, permissions and server limits
 #include "base.h"
 #include "core/channel.h"
 #include "crypto/auth_rsa.h"
@@ -19,8 +19,8 @@
 #include <stdatomic.h>
 #include <string.h>
 
-// When several locks are needed, take them in this order:
-// clients, WebRTC peers, channels, icons, groups, then bans.
+// when several locks are needed, take them in this order:
+// clients, WebRTC peers, channels, icons, groups, then bans
 custom_rwlock_t g_clients_global_rwlock_guard;
 custom_rwlock_t g_channels_global_rwlock_guard;
 custom_rwlock_t g_icons_global_rwlock_guard;
@@ -40,8 +40,18 @@ server_settings_t g_server_settings;
 
 static _Thread_local client_request_context_t g_client_request_context;
 
-// Begin while the clients lock protects the socket/authentication snapshot. End
-// restores the prior thread-local scope, including when dispatch is nested.
+// begin while the clients lock protects the socket/authentication snapshot. End
+// restores the prior thread-local scope, including when dispatch is nested
+/**
+ * @brief captures the connection owning the current request
+ *
+ * @param ws_cli_conn_t * socket -> request socket
+ * @param uint64 client_id -> requesting client slot
+ * @param boole authenticated -> authentication state at dispatch
+ * @param client_request_context_t * previous -> receives the context to restore afterward
+ *
+ * @return void
+ */
 void base__begin_client_request(ws_cli_conn_t *socket, uint64 client_id, boole authenticated, client_request_context_t *previous)
 {
     // save the previous context
@@ -54,13 +64,27 @@ void base__begin_client_request(ws_cli_conn_t *socket, uint64 client_id, boole a
     g_client_request_context.active = TRUE;
 }
 
+/**
+ * @brief restores the request context saved by the caller
+ *
+ * @param const client_request_context_t * previous -> context saved before dispatch
+ *
+ * @return void
+ */
 void base__end_client_request(const client_request_context_t *previous)
 {
     g_client_request_context = *previous;
 }
 
-// Caller holds the clients lock. Internal calls without a request scope remain
-// allowed for a valid existing slot; WebSocket dispatch must establish a scope.
+// caller holds the clients lock. Internal calls without a request scope remain
+// allowed for a valid existing slot; WebSocket dispatch must establish a scope
+/**
+ * @brief checks that a live client slot still belongs to this request
+ *
+ * @param uint64 client_id -> client slot to validate
+ *
+ * @return boole -> TRUE for the matching connection or an internal call without a request context
+ */
 boole base__is_current_client_request(uint64 client_id)
 {
     client_t *client = NULL_POINTER;
@@ -95,7 +119,7 @@ static _Atomic(uint64) webrtc_received_bytes;
 static _Atomic(uint64) webrtc_sent_bytes;
 
 #if SIZE_MAX <= UINT32_MAX
-// Leave room for libraries and thread stacks in a 32-bit process.
+// leave room for libraries and thread stacks in a 32-bit process
 #ifndef LEMON_32BIT_RAM_BUDGET_MB
 #define LEMON_32BIT_RAM_BUDGET_MB 1536U
 #endif
@@ -106,14 +130,12 @@ static boole _base_internal__is_message_correct_at_first_sight_and_get_message_t
 static void _base_internal__process_music_bot_key_request(cJSON *json_root, ws_cli_conn_t *websocket, uint64 client_index);
 
 /**
- * @brief enforces per-client spam protection: rejects an action made inside the cooldown window,
- *        otherwise records its time and allows it
+ * @brief checks the request cooldown and records an allowed action's time
  *
- * @param uint64 client_index -> id of the client
+ * @param uint64 client_index -> requesting client's slot
  *
- * @attention uses write lock on clients_global_rwlock_guard
- *
- * @return boole
+ * @return boole TRUE for a current request outside the cooldown, otherwise FALSE
+ * @attention acquires the clients write lock
  */
 boole base__is_request_allowed_based_on_spam_protection(uint64 client_index)
 {
@@ -191,10 +213,12 @@ void base__increment_chat_message_id(void)
 }
 
 /**
- * @brief Checks that a client slot exists, is authenticated and has a WebSocket connection.
+ * @brief checks that a client slot exists, is authenticated and has a WebSocket connection
+ *
  * @param uint64 client_id -> index into g_clients_array; client id and client index are the same
+ *
  * @return boole -> TRUE when all checks pass; FALSE for an invalid or unused slot
- * @attention The caller holds the clients lock.
+ * @attention the caller holds the clients lock
  */
 boole base__is_client_valid(uint64 client_id)
 {
@@ -211,10 +235,12 @@ boole base__is_client_valid(uint64 client_id)
 }
 
 /**
- * @brief Checks for an authenticated client with a WebSocket connection, excluding music bots.
+ * @brief checks for an authenticated client with a WebSocket connection, excluding music bots
+ *
  * @param uint64 client_id -> index into the clients array
+ *
  * @return boole -> TRUE when the client passes these checks
- * @attention The caller holds the clients lock.
+ * @attention the caller holds the clients lock
  */
 boole base__is_client_valid_and_not_music_bot(uint64 client_id)
 {
@@ -232,10 +258,12 @@ boole base__is_client_valid_and_not_music_bot(uint64 client_id)
 }
 
 /**
- * @brief Checks for an authenticated client with a WebSocket connection and admin rights.
+ * @brief checks for an authenticated client with a WebSocket connection and admin rights
+ *
  * @param uint64 client_id -> index into the clients array
+ *
  * @return boole -> TRUE when the client passes these checks
- * @attention The caller holds the clients lock.
+ * @attention the caller holds the clients lock
  */
 boole base__is_client_valid_admin(uint64 client_id)
 {
@@ -253,10 +281,12 @@ boole base__is_client_valid_admin(uint64 client_id)
 }
 
 /**
- * @brief Checks whether the client slot holds an existing music bot.
+ * @brief checks whether the client slot holds an existing music bot
+ *
  * @param uint64 client_id -> index into the clients array
+ *
  * @return boole -> TRUE when the slot contains a music bot
- * @attention The caller holds the clients lock.
+ * @attention the caller holds the clients lock
  */
 boole base__is_client_valid_musicbot(uint64 client_id)
 {
@@ -272,10 +302,12 @@ boole base__is_client_valid_musicbot(uint64 client_id)
 }
 
 /**
- * @brief Checks whether an existing music bot has room for another song.
+ * @brief checks whether an existing music bot has room for another song
+ *
  * @param uint64 client_id -> index into the clients array
+ *
  * @return boole -> TRUE when the music bot has a free song slot
- * @attention The caller holds the clients lock.
+ * @attention the caller holds the clients lock
  */
 boole base__is_music_bot_and_song_slot_valid(uint64 client_id)
 {
@@ -292,10 +324,12 @@ boole base__is_music_bot_and_song_slot_valid(uint64 client_id)
 }
 
 /**
- * @brief Checks whether this user chose to block this kind of picture or file and the server allows
- *        it.
+ * @brief checks whether this user chose to block this kind of picture or file and the server allows
+ *        it
+ *
  * @param client_t* client -> recipient, protected by the clients lock
  * @param cstring receive_type -> direct_chat_picture, direct_chat_file, channel_chat_picture or channel_chat_file
+ *
  * @return boole -> TRUE when a new attachment should skip this recipient
  */
 boole base__is_attachment_blocked(client_t *client, cstring receive_type)
@@ -323,8 +357,9 @@ boole base__is_attachment_blocked(client_t *client, cstring receive_type)
 }
 
 /**
- * @brief Checks whether the 32-bit memory budget prevents a new login or upload. The 64-bit build
- *        always returns FALSE.
+ * @brief checks whether the 32-bit memory budget prevents a new login or upload. The 64-bit build
+ *        always returns FALSE
+ *
  * @return boole -> TRUE when the 32-bit budget is reached or usage cannot be read
  */
 boole base__is_server_ram_budget_reached(void)
@@ -346,9 +381,11 @@ boole base__is_server_ram_budget_reached(void)
 }
 
 /**
- * @brief Counts WebRTC data-channel bytes received or accepted for sending since startup.
+ * @brief counts WebRTC data-channel bytes received or accepted for sending since startup
+ *
  * @param uint64 received -> bytes received in this call
  * @param uint64 sent -> bytes accepted for sending in this call
+ *
  * @return void
  */
 void base__count_webrtc_bytes(uint64 received, uint64 sent)
@@ -367,9 +404,11 @@ void base__count_webrtc_bytes(uint64 received, uint64 sent)
 }
 
 /**
- * @brief Reads WebRTC traffic totals without blocking the threads that relay audio and video.
+ * @brief reads WebRTC traffic totals without blocking the threads that relay audio and video
+ *
  * @param uint64* received -> receives the incoming byte total
  * @param uint64* sent -> receives the outgoing byte total
+ *
  * @return void
  */
 void base__get_webrtc_bytes(uint64 *received, uint64 *sent)
@@ -379,7 +418,8 @@ void base__get_webrtc_bytes(uint64 *received, uint64 *sent)
 }
 
 /**
- * @brief Records when this server run begins, before any worker threads start.
+ * @brief records when this server run begins, before any worker threads start
+ *
  * @return void
  */
 void base__start_server_uptime(void)
@@ -388,7 +428,8 @@ void base__start_server_uptime(void)
 }
 
 /**
- * @brief Returns how many whole seconds this server run has been active.
+ * @brief returns how many whole seconds this server run has been active
+ *
  * @return uint64 -> elapsed seconds, or zero if the clock is unavailable
  */
 uint64 base__get_server_uptime_seconds(void)
@@ -406,7 +447,7 @@ uint64 base__get_server_uptime_seconds(void)
 }
 
 /**
- * @brief Checks the message object and reads its type before choosing a request handler.
+ * @brief checks the message object and reads its type before choosing a request handler
  *
  * @param cJSON* json_root -> the parsed client request
  * @param uint64 client_id -> id of the client
@@ -472,8 +513,12 @@ static boole _base_internal__is_message_correct_at_first_sight_and_get_message_t
 }
 
 /**
- * @brief Sends the requested bot key after checking the session, bot ID and channel.
- * @attention Acquires the clients write lock and preserves the request cooldown.
+ * @brief sends a bot key after checking the requesting session and channel
+ *
+ * @param cJSON* json_root -> parsed key request containing the bot ID
+ * @param ws_cli_conn_t* websocket -> socket that sent the request
+ * @param uint64 client_index -> requesting client's slot
+ * @attention acquires the clients write lock and enforces the request cooldown
  */
 static void _base_internal__process_music_bot_key_request(cJSON *json_root, ws_cli_conn_t *websocket, uint64 client_index)
 {
@@ -537,13 +582,19 @@ end:
     clib__unlock(&g_clients_global_rwlock_guard);
 }
 
-/** @brief Bounds command tree allocation before parsing and rejects ambiguous JSON text. */
+/**
+ * @brief checks JSON complexity and text validity before parsing a client command
+ *
+ * @param const char* text -> complete command text ending in a zero byte
+ *
+ * @return cJSON* -> parsed tree for the caller to free, or NULL if invalid or allocation fails
+ */
 static cJSON *_base_internal__parse_client_message(const char *text)
 {
     const char *cursor = NULL_POINTER;
     ubyte value = 0;
 
-    // existing requests are shallow objects; large chat/file bodies are strings.
+    // existing requests are shallow objects; large chat/file bodies are strings
     // this conservative structural count bounds tree nodes even for unused fields
     const uint64 maximum_depth = 32;
     const uint64 maximum_complexity = 4096;
@@ -695,7 +746,7 @@ void base__process_authenticated_client_message(ws_cli_conn_t *websocket, uint64
     }
 
     // a decrypted, well-formed message from this authenticated socket proves
-    // liveness even when its action is later refused by permissions or policy.
+    // liveness even when its action is later refused by permissions or policy
     // never refresh a replacement session or accept malformed JSON as activity
     g_clients_array[client_index].timestamp_last_maintain_connection_message_received = util__get_timestamp_ms();
     is_sender_idle = g_clients_array[client_index].is_idle;

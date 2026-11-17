@@ -12,7 +12,8 @@ struct desktop_activity_t
 };
 
 /**
- * @brief creates a worker-owned speech detector for 20 ms, 48 kHz microphone frames.
+ * @brief creates a worker-owned speech detector for 20 ms, 48 kHz microphone frames
+ *
  * @return desktop_activity_t* -> owned detector, or NULL on failure
  */
 desktop_activity_t *desktop_activity__create(void)
@@ -40,8 +41,10 @@ desktop_activity_t *desktop_activity__create(void)
 }
 
 /**
- * @brief releases the detector after its owning audio worker stops.
+ * @brief releases the detector after its owning audio worker stops
+ *
  * @param desktop_activity_t* activity -> owned detector, or NULL
+ *
  * @return void
  */
 void desktop_activity__destroy(desktop_activity_t *activity)
@@ -57,8 +60,10 @@ void desktop_activity__destroy(desktop_activity_t *activity)
 }
 
 /**
- * @brief resets learned noise and speech history after capture stops or changes mode.
+ * @brief resets learned noise and speech history after capture stops or changes mode
+ *
  * @param desktop_activity_t* activity -> worker-owned detector
+ *
  * @return void
  */
 void desktop_activity__reset(desktop_activity_t *activity)
@@ -74,10 +79,12 @@ void desktop_activity__reset(desktop_activity_t *activity)
 }
 
 /**
- * @brief combines WebRTC speech classification with a minimum level and a 200 ms trailing hold.
+ * @brief combines WebRTC speech classification with a minimum level and a 200 ms trailing hold
+ *
  * @param desktop_activity_t* activity -> worker-owned detector
  * @param const float* mono -> exactly DESKTOP_AUDIO_FRAME normalized samples
  * @param int64 threshold -> minimum speech level in dBFS, -60 through -10
+ *
  * @return boole -> TRUE for detected speech or its trailing hold
  */
 boole desktop_activity__process(desktop_activity_t *activity, const float *mono, int64 threshold)
@@ -125,8 +132,10 @@ boole desktop_activity__process(desktop_activity_t *activity, const float *mono,
 }
 
 /**
- * @brief returns the most recently processed microphone level.
+ * @brief returns the most recently processed microphone level
+ *
  * @param const desktop_activity_t* activity -> worker-owned detector
+ *
  * @return int64 -> RMS level in dBFS, -90 through zero
  */
 int64 desktop_activity__level(const desktop_activity_t *activity)

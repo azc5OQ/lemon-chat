@@ -1,4 +1,5 @@
 #include "crypto_storage.h"
+#include "../clib/clib.h"
 #include "ciphers.h"
 #include "keys_session.h"
 #include "../util.h"
@@ -6,12 +7,22 @@
 #include <string.h>
 #include <stdio.h>
 
-// Header: magic[8], layer count[1], cipher IDs[100], random salt[32], IV[16].
-// The trailing 32-byte tag covers the complete header and stored payload.
+// header: magic[8], layer count[1], cipher IDs[100], random salt[32], IV[16]
+// the trailing 32-byte tag covers the complete header and stored payload
 #define STORAGE_HEADER_SIZE 157
 #define STORAGE_SALT_OFFSET 109
 #define STORAGE_IV_OFFSET 141
 
+/**
+ * @brief derives a snapshot authentication key from ordered password keys
+ *
+ * @param const crypto_key_t * keys -> ordered password keys
+ * @param uint64 count -> number of keys
+ * @param const ubyte [32] salt -> snapshot salt
+ * @param ubyte [32] result -> receives the 32 byte authentication key
+ *
+ * @return boole -> TRUE when every derivation step succeeds
+ */
 static boole _crypto_storage_internal__mac_key(const crypto_key_t *keys, uint64 count, const ubyte salt[32], ubyte result[32])
 {
     uint64 index = 0;
@@ -23,7 +34,7 @@ static boole _crypto_storage_internal__mac_key(const crypto_key_t *keys, uint64 
     for (index = 0; index < count; index++)
     {
         entry[0] = (ubyte)keys[index].type;
-        memcpy(entry + 1, keys[index].material.raw, 32);
+        clib__copy_memory(keys[index].material.raw, entry + 1, 32, sizeof(entry) - 1);
         if (!keys_session__mix(combined, entry, sizeof(entry)))
         {
             goto done;
@@ -39,6 +50,17 @@ done:
     return success;
 }
 
+/**
+ * @brief applies snapshot cipher layers in encryption or reverse decryption order
+ *
+ * @param const crypto_key_t * keys -> ordered password keys
+ * @param uint64 count -> number of layers
+ * @param ubyte * file -> snapshot header followed by the mutable payload
+ * @param uint64 size -> payload byte count
+ * @param boole encrypt -> TRUE to encrypt or FALSE to decrypt
+ *
+ * @return boole -> TRUE when every cipher layer succeeds
+ */
 static boole _crypto_storage_internal__layers(const crypto_key_t *keys, uint64 count, ubyte *file, uint64 size, boole encrypt)
 {
     uint64 step = 0;
@@ -66,8 +88,22 @@ done:
     return success;
 }
 
-// Encrypts a RAM payload with the configured password layers. The caller frees
-// the returned buffer. With no keys, a checksum detects accidental corruption.
+// encrypts a RAM payload with the configured password layers. The caller frees
+// the returned buffer. With no keys, a checksum detects accidental corruption
+/**
+ * @brief builds a snapshot envelope using the configured password keys
+ * free the returned file buffer after use
+ * without keys the payload remains plaintext and uses an unkeyed checksum
+ *
+ * @param const crypto_key_t * keys -> ordered password keys
+ * @param uint64 count -> number of keys from zero to 100
+ * @param const ubyte * data -> snapshot payload bytes
+ * @param uint64 size -> payload byte count
+ * @param ubyte ** output -> receives an allocated file buffer owned by the caller
+ * @param uint64 * output_size -> receives the file byte count
+ *
+ * @return boole -> TRUE when built, otherwise FALSE with empty outputs
+ */
 boole crypto_storage__seal(const crypto_key_t *keys, uint64 count, const ubyte *data, uint64 size, ubyte **output, uint64 *output_size)
 {
     uint64 index = 0;
@@ -95,7 +131,7 @@ boole crypto_storage__seal(const crypto_key_t *keys, uint64 count, const ubyte *
     }
 
     // write the header
-    memcpy(file, "LCMUS01", 8);
+    clib__copy_memory("LCMUS01", file, 8, total);
     file[8] = (ubyte)count;
     for (index = 0; index < count; index++)
     {
@@ -103,7 +139,7 @@ boole crypto_storage__seal(const crypto_key_t *keys, uint64 count, const ubyte *
     }
 
     // copy the data
-    memcpy(file + STORAGE_HEADER_SIZE, data, size);
+    clib__copy_memory(data, file + STORAGE_HEADER_SIZE, size, total - STORAGE_HEADER_SIZE);
 
     // create salt, then encrypt
     if (!util__fill_secure_random_bytes(file + STORAGE_SALT_OFFSET, 48) || !_crypto_storage_internal__layers(keys, count, file, size, TRUE))
@@ -141,7 +177,20 @@ done:
     return success;
 }
 
-// Authenticates before decrypting in place. The returned payload points into file.
+// authenticates before decrypting in place. The returned payload points into file
+/**
+ * @brief checks a snapshot envelope before decrypting its payload in place
+ * the returned payload shares the file buffer and must not be freed separately
+ *
+ * @param const crypto_key_t * keys -> ordered password keys
+ * @param uint64 count -> number of supplied keys
+ * @param ubyte * file -> mutable snapshot file buffer
+ * @param uint64 file_size -> file byte count
+ * @param ubyte ** data -> receives a borrowed pointer into the file payload
+ * @param uint64 * size -> receives the payload byte count
+ *
+ * @return boole -> TRUE when the envelope and decryption succeed
+ */
 boole crypto_storage__open(const crypto_key_t *keys, uint64 count, ubyte *file, uint64 file_size, ubyte **data, uint64 *size)
 {
     uint64 verification_index = 0;

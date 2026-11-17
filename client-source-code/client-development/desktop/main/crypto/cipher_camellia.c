@@ -1,10 +1,19 @@
 #include "cipher_camellia.h"
+#include "../clib/clib.h"
 #include "ciphers.h"
 #include "mbedtls/camellia.h"
 #include <string.h>
 
-// Camellia-256-CTR, in place. Returns 1 on success, 0 on failure.
-// The key, IV and data must be non-NULL; encryption and decryption are identical.
+/**
+ * @brief encrypts or decrypts data in place with Camellia CTR
+ *
+ * @param const ubyte[32] key -> 256 bit key. Must not be NULL
+ * @param const ubyte[16] iv -> initial counter. Must not be NULL
+ * @param ubyte* data -> buffer to update. Must not be NULL
+ * @param uint64 size -> number of bytes in data
+ *
+ * @return boole -> 1 on success. 0 on failure
+ */
 boole cipher_camellia__crypt(const ubyte key[32], const ubyte iv[16], ubyte *data, uint64 size)
 {
     mbedtls_camellia_context context = { 0 };
@@ -20,7 +29,7 @@ boole cipher_camellia__crypt(const ubyte key[32], const ubyte iv[16], ubyte *dat
     }
 
     // apply the cipher
-    memcpy(counter, iv, sizeof(counter));
+    clib__copy_memory(iv, counter, sizeof(counter), sizeof(counter));
     mbedtls_camellia_init(&context);
     status = mbedtls_camellia_setkey_enc(&context, key, 256) == 0 && mbedtls_camellia_crypt_ctr(&context, size, &offset, counter, stream, data, data) == 0;
 

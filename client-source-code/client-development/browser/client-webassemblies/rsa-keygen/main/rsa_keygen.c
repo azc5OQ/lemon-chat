@@ -1,24 +1,19 @@
-// rsa_keygen.c is the c source of rsa_keygen.wasm, the webassembly that does the heavy rsa math for the lemon chat client
-// build.cjs compiles it with Zig (freestanding C, no libc) and the client build embeds the wasm into rsa-crypto.js, which
-// runs in the data processing worker. rsa-crypto.js is the only caller: it seeds the generator with the sha256 hex of the
-// identity passphrase, calls rsa_keygen__generate to derive the identity keypair, and calls rsa_keygen__modpow for the
-// big modular exponentiation behind every rsa encrypt and decrypt
+// Zig builds this RSA implementation for the browser's processing worker.
+// rsa-crypto.js seeds it with the passphrase's SHA256 hex, derives identity keys
+// with rsa_keygen__generate and performs RSA operations with rsa_keygen__modpow.
 //
-// a lemon chat identity IS this calculation: the same passphrase must produce the same keypair on every machine, forever.
-// the old client derived keys in javascript (cryptico's seeded Math.random + jsbn's RSAGenerate), so this file clones
-// that old path step by step - same random generator, same prime search, same COUNT of random draws - because even one
-// extra random() call would steer the prime search elsewhere and every existing identity would derive different keys
+// The same passphrase and RSA key size must reproduce the same identity.
+// Preserve the legacy generator, prime search and random draw order. One extra
+// random draw changes the resulting keys and prevents an old identity from returning.
 //
-// the cloned pipeline, in order:
-//   1. Math.seedrandom(seed)        - the seed keys an arc4 stream cipher that replaces Math.random
-//   2. Math.random()                - each call turns arc4 bytes into one random double between 0 and 1
-//   3. SeededRandom.nextBytes       - one random byte = floor(Math.random() * 256)
-//   4. new BigInteger(bits, 1, rng) - draw a random number, force the top bit, make it odd, then
-//                                     step +2 until a candidate passes the primality test
-//   5. RSAGenerate(bits, "03")      - repeat that for two primes p and q (each with p-1 coprime to
-//                                     e=3), then compute the key parts n, d, dmp1, dmq1, coeff
-// the primality test picks its random witnesses with Math.random() too, so every random() call in
-// this file happens at exactly the same point of the walk as it did in the js
+// The legacy sequence is:
+//   1. Math.seedrandom(seed) seeds the ARC4 stream behind Math.random.
+//   2. Math.random() converts ARC4 bytes to a double between zero and one.
+//   3. SeededRandom.nextBytes computes floor(Math.random() * 256) for each byte.
+//   4. BigInteger draws an odd candidate with its top bit set, then steps by two
+//      until the candidate passes the primality test.
+//   5. RSAGenerate selects two primes compatible with e=3 and computes the key parts.
+// Primality witnesses also consume Math.random draws in that same order.
 
 typedef unsigned char uint8;
 typedef unsigned int uint32;
@@ -42,8 +37,13 @@ static uint8 g_arc4_s[256];
 static uint32 g_arc4_i = 0;
 static uint32 g_arc4_j = 0;
 
-// the next byte of the arc4 stream (swap two table entries, serve a third);
+// the next byte of the arc4 stream (swap two table entries, serve a third).
 // byte for byte the same as seedrandom's internal g() step
+/**
+ * @brief advances the seeded ARC4 stream by one byte
+ *
+ * @return uint32 -> next byte from the legacy random sequence
+ */
 static uint32 _rsa_internal__arc4_byte(void)
 {
     uint8 t, u;
@@ -61,6 +61,14 @@ static uint32 _rsa_internal__arc4_byte(void)
 // keys arc4 from the seed string the way Math.seedrandom does: the seed characters
 // become the key, the normal arc4 key schedule shuffles the table with it, and the
 // first 256 output bytes are thrown away
+/**
+ * @brief initializes the legacy random stream and discards its first 256 bytes
+ *
+ * @param const uint8* seed -> seed text bytes
+ * @param int32 seed_length -> number of seed bytes
+ *
+ * @return void
+ */
 static void _rsa_internal__seedrandom(const uint8* seed, int32 seed_length)
 {
     int32 key[256];
@@ -114,7 +122,7 @@ static void _rsa_internal__seedrandom(const uint8* seed, int32 seed_length)
     g_arc4_i = 0;
     g_arc4_j = 0;
 
-    // seedrandom's constructor throws away 256 bytes before first use; only the state stepping matters
+    // seedrandom's constructor throws away 256 bytes before first use. Only the state stepping matters
     for (i = 0; i < 256; i++)
     {
         _rsa_internal__arc4_byte();
@@ -123,6 +131,11 @@ static void _rsa_internal__seedrandom(const uint8* seed, int32 seed_length)
 
 // the seeded Math.random(): one random double between 0 and 1 built from arc4 bytes,
 // with the exact floating point steps of the js closure, so both sides match bit for bit
+/**
+ * @brief reproduces the legacy seeded Math.random conversion
+ *
+ * @return double -> random value from zero inclusive to one exclusive
+ */
 static double _rsa_internal__random(void)
 {
     double n;
@@ -154,6 +167,11 @@ static double _rsa_internal__random(void)
 }
 
 // one random byte, exactly how cryptico's SeededRandom.nextBytes made one: floor(Math.random() * 256)
+/**
+ * @brief draws one byte using the legacy SeededRandom conversion
+ *
+ * @return uint32 -> random byte from zero through 255
+ */
 static uint32 _rsa_internal__random_byte(void)
 {
     return (uint32)(_rsa_internal__random() * 256.0);
@@ -166,10 +184,17 @@ static uint32 _rsa_internal__random_byte(void)
 
 typedef struct
 {
-    int32 used;                 // limbs in use; 0 means the value 0
+    int32 used;                 // limbs in use. 0 means the value 0
     uint32 limb[BN_LIMBS];
 } bignum;
 
+/**
+ * @brief clears every limb and resets the integer to zero
+ *
+ * @param bignum* a -> integer to clear
+ *
+ * @return void
+ */
 static void _rsa_internal__bn_zero(bignum* a)
 {
     int32 i;
@@ -180,6 +205,13 @@ static void _rsa_internal__bn_zero(bignum* a)
     a->used = 0;
 }
 
+/**
+ * @brief removes zero limbs from the integer length
+ *
+ * @param bignum* a -> integer to normalize
+ *
+ * @return void
+ */
 static void _rsa_internal__bn_trim(bignum* a)
 {
     while (a->used > 0 && a->limb[a->used - 1] == 0)
@@ -188,6 +220,14 @@ static void _rsa_internal__bn_trim(bignum* a)
     }
 }
 
+/**
+ * @brief copies an integer and clears unused destination limbs
+ *
+ * @param bignum* out -> destination integer
+ * @param const bignum* a -> integer to copy
+ *
+ * @return void
+ */
 static void _rsa_internal__bn_copy(bignum* out, const bignum* a)
 {
     int32 i;
@@ -202,6 +242,14 @@ static void _rsa_internal__bn_copy(bignum* out, const bignum* a)
     out->used = a->used;
 }
 
+/**
+ * @brief replaces an integer with one machine word
+ *
+ * @param bignum* a -> destination integer
+ * @param uint32 w -> word value
+ *
+ * @return void
+ */
 static void _rsa_internal__bn_set_word(bignum* a, uint32 w)
 {
     _rsa_internal__bn_zero(a);
@@ -212,6 +260,14 @@ static void _rsa_internal__bn_set_word(bignum* a, uint32 w)
     }
 }
 
+/**
+ * @brief compares two normalized nonnegative integers
+ *
+ * @param const bignum* a -> first integer
+ * @param const bignum* b -> second integer
+ *
+ * @return int32 -> minus one, zero or one according to numeric order
+ */
 static int32 _rsa_internal__bn_compare(const bignum* a, const bignum* b)
 {
     int32 i;
@@ -233,6 +289,14 @@ static int32 _rsa_internal__bn_compare(const bignum* a, const bignum* b)
     return 0;
 }
 
+/**
+ * @brief checks whether an integer equals one machine word
+ *
+ * @param const bignum* a -> integer to inspect
+ * @param uint32 w -> word value
+ *
+ * @return boole -> true when the values match
+ */
 static boole _rsa_internal__bn_is_word(const bignum* a, uint32 w)
 {
     if (w == 0)
@@ -242,6 +306,13 @@ static boole _rsa_internal__bn_is_word(const bignum* a, uint32 w)
     return (a->used == 1 && a->limb[0] == w) ? TRUE : FALSE;
 }
 
+/**
+ * @brief counts the bits needed to represent an integer
+ *
+ * @param const bignum* a -> normalized integer
+ *
+ * @return int32 -> bit count, or zero for zero
+ */
 static int32 _rsa_internal__bn_bit_length(const bignum* a)
 {
     uint32 top;
@@ -264,6 +335,14 @@ static int32 _rsa_internal__bn_bit_length(const bignum* a)
     return bits;
 }
 
+/**
+ * @brief reads one bit of a nonnegative integer
+ *
+ * @param const bignum* a -> integer to inspect
+ * @param int32 bit -> nonnegative bit index
+ *
+ * @return boole -> true when the bit is set
+ */
 static boole _rsa_internal__bn_test_bit(const bignum* a, int32 bit)
 {
     int32 limb_index = bit >> 5;
@@ -274,6 +353,14 @@ static boole _rsa_internal__bn_test_bit(const bignum* a, int32 bit)
     return ((a->limb[limb_index] >> (bit & 31)) & 1) ? TRUE : FALSE;
 }
 
+/**
+ * @brief sets one bit and extends the recorded integer length
+ *
+ * @param bignum* a -> integer to update
+ * @param int32 bit -> bit index within the fixed limb capacity
+ *
+ * @return void
+ */
 static void _rsa_internal__bn_set_bit(bignum* a, int32 bit)
 {
     int32 limb_index = bit >> 5;
@@ -284,7 +371,15 @@ static void _rsa_internal__bn_set_bit(bignum* a, int32 bit)
     }
 }
 
-// a += w, one machine word wide; the carry ripples up as far as it needs to
+// a += w, one machine word wide. The carry ripples up as far as it needs to
+/**
+ * @brief adds one word and propagates its carry
+ *
+ * @param bignum* a -> integer with space for the result
+ * @param uint32 w -> word to add
+ *
+ * @return void
+ */
 static void _rsa_internal__bn_add_word(bignum* a, uint32 w)
 {
     uint64 carry = w;
@@ -305,6 +400,14 @@ static void _rsa_internal__bn_add_word(bignum* a, uint32 w)
 }
 
 // a -= b, requires a >= b (there are no negative numbers in this file)
+/**
+ * @brief subtracts a nonnegative integer in place
+ *
+ * @param bignum* a -> value at least as large as the subtrahend
+ * @param const bignum* b -> value to subtract
+ *
+ * @return void
+ */
 static void _rsa_internal__bn_sub(bignum* a, const bignum* b)
 {
     int64 borrow = 0;
@@ -328,6 +431,14 @@ static void _rsa_internal__bn_sub(bignum* a, const bignum* b)
 }
 
 // a += b
+/**
+ * @brief adds two nonnegative integers in place
+ *
+ * @param bignum* a -> destination with space for the result
+ * @param const bignum* b -> value to add
+ *
+ * @return void
+ */
 static void _rsa_internal__bn_add(bignum* a, const bignum* b)
 {
     uint64 carry = 0;
@@ -348,7 +459,16 @@ static void _rsa_internal__bn_add(bignum* a, const bignum* b)
     a->used = top;
 }
 
-// out = a * b, schoolbook long multiplication; out must be a different bignum than a and b
+// out = a * b, schoolbook long multiplication. Out must be a different bignum than a and b
+/**
+ * @brief multiplies two integers with schoolbook limb arithmetic
+ *
+ * @param bignum* out -> destination distinct from both inputs
+ * @param const bignum* a -> first factor
+ * @param const bignum* b -> second factor
+ *
+ * @return void
+ */
 static void _rsa_internal__bn_mul(bignum* out, const bignum* a, const bignum* b)
 {
     int32 i, j;
@@ -377,7 +497,15 @@ static void _rsa_internal__bn_mul(bignum* out, const bignum* a, const bignum* b)
     _rsa_internal__bn_trim(out);
 }
 
-// remainder of a divided by the small word m (m < 2^31); a itself is untouched
+// remainder of a divided by the small word m (m < 2^31). A itself is untouched
+/**
+ * @brief computes a remainder without changing the integer
+ *
+ * @param const bignum* a -> dividend
+ * @param uint32 m -> nonzero divisor below 2^31
+ *
+ * @return uint32 -> remainder after division
+ */
 static uint32 _rsa_internal__bn_mod_word(const bignum* a, uint32 m)
 {
     uint64 r = 0;
@@ -390,7 +518,15 @@ static uint32 _rsa_internal__bn_mod_word(const bignum* a, uint32 m)
     return (uint32)r;
 }
 
-// a /= m for a small word m; its one job is the exact division by 3 that produces d
+// a /= m for a small word m. Its one job is the exact division by 3 that produces d
+/**
+ * @brief divides an integer by a machine word and discards the remainder
+ *
+ * @param bignum* a -> dividend replaced by its quotient
+ * @param uint32 m -> nonzero divisor
+ *
+ * @return void
+ */
 static void _rsa_internal__bn_div_word(bignum* a, uint32 m)
 {
     uint64 r = 0;
@@ -406,6 +542,13 @@ static void _rsa_internal__bn_div_word(bignum* a, uint32 m)
 }
 
 // a <<= 1 (doubles a)
+/**
+ * @brief doubles an integer in place
+ *
+ * @param bignum* a -> integer with space for a carry limb
+ *
+ * @return void
+ */
 static void _rsa_internal__bn_shl1(bignum* a)
 {
     uint32 carry = 0;
@@ -425,6 +568,13 @@ static void _rsa_internal__bn_shl1(bignum* a)
 }
 
 // a >>= 1 (halves a, dropping the low bit)
+/**
+ * @brief halves an integer and discards its lowest bit
+ *
+ * @param bignum* a -> integer to update
+ *
+ * @return void
+ */
 static void _rsa_internal__bn_shr1(bignum* a)
 {
     int32 i;
@@ -440,6 +590,15 @@ static void _rsa_internal__bn_shr1(bignum* a)
 // out = a mod m the schoolbook way: line m up under a, subtract wherever it fits,
 // shift m back down, repeat. slow, but only a handful of calls per key need it
 static bignum g_secret_bn_mod_shifted;
+/**
+ * @brief reduces an integer by aligned subtraction
+ *
+ * @param bignum* out -> destination, which may be the dividend
+ * @param const bignum* a -> dividend
+ * @param const bignum* m -> nonzero modulus
+ *
+ * @return void
+ */
 static void _rsa_internal__bn_mod(bignum* out, const bignum* a, const bignum* m)
 {
     int32 diff;
@@ -484,6 +643,13 @@ static uint32 g_mont_n0;         // -modulus^-1 mod 2^32
 static bignum g_mont_r2;         // R^2 mod modulus, R = 2^(32*len)
 
 // -modulus^-1 mod 2^32, the one helper constant montgomery reduction needs
+/**
+ * @brief computes the negative modular inverse used by Montgomery reduction
+ *
+ * @param uint32 odd -> odd low word of the modulus
+ *
+ * @return uint32 -> negative inverse modulo 2^32
+ */
 static uint32 _rsa_internal__mont_n0_of(uint32 odd)
 {
     uint32 x = odd;              // 3-bit start, doubles correct bits each round
@@ -497,6 +663,15 @@ static uint32 _rsa_internal__mont_n0_of(uint32 odd)
 // montgomery multiplication: out = a * b * R^-1 mod modulus, with multiply and
 // reduction interleaved limb by limb. out must be a different bignum than a and b
 static uint32 g_secret_mont_mul_t[BN_LIMBS + 2];
+/**
+ * @brief multiplies values using the active Montgomery modulus
+ *
+ * @param bignum* out -> destination distinct from both inputs
+ * @param const bignum* a -> first factor
+ * @param const bignum* b -> second factor
+ *
+ * @return void
+ */
 static void _rsa_internal__mont_mul(bignum* out, const bignum* a, const bignum* b)
 {
     int32 i, j;
@@ -567,6 +742,14 @@ static void _rsa_internal__mont_mul(bignum* out, const bignum* a, const bignum* 
 // multiplies (each cross product computed once, then doubled). only mont_setup calls
 // it - the hot loop squares via mont_mul instead (see mont_pow). out must not alias a
 static uint32 g_secret_mont_sqr_t[2 * BN_LIMBS + 2];
+/**
+ * @brief squares a value using the active Montgomery modulus
+ *
+ * @param bignum* out -> destination distinct from the input
+ * @param const bignum* a -> value to square
+ *
+ * @return void
+ */
 static void _rsa_internal__mont_sqr(bignum* out, const bignum* a)
 {
     int32 i, j;
@@ -637,7 +820,7 @@ static void _rsa_internal__mont_sqr(bignum* out, const bignum* a)
         }
     }
 
-    // the reduction pass; the reduced result collects in the top half, t[len .. 2*len]
+    // the reduction pass. The reduced result collects in the top half, t[len .. 2*len]
     for (i = 0; i < len; i++)
     {
         uint32 m = g_secret_mont_sqr_t[i] * g_mont_n0;
@@ -684,6 +867,13 @@ static void _rsa_internal__mont_sqr(bignum* out, const bignum* a)
 // R^2 mod m). must run before mont_mul, mont_sqr or mont_pow can be used
 static bignum g_secret_mont_setup_r;
 static bignum g_secret_mont_setup_t2;
+/**
+ * @brief prepares the modulus and constants used by Montgomery operations
+ *
+ * @param const bignum* m -> nonzero odd modulus
+ *
+ * @return void
+ */
 static void _rsa_internal__mont_setup(const bignum* m)
 {
     int32 bit;
@@ -729,11 +919,20 @@ static void _rsa_internal__mont_setup(const bignum* m)
 }
 
 // out = base^exp mod the modulus given to mont_setup. the exponent is eaten 4 bits at a
-// time against a table of the first 15 powers of base; same value as square-and-multiply
+// time against a table of the first 15 powers of base. Same value as square-and-multiply
 static bignum g_secret_mont_pow_table[16];
 static bignum g_secret_mont_pow_acc;
 static bignum g_secret_mont_pow_tmp;
 static bignum g_secret_mont_pow_one;
+/**
+ * @brief raises a base to an exponent under the active modulus
+ *
+ * @param bignum* out -> destination for the ordinary reduced result
+ * @param const bignum* base -> base already reduced below the modulus
+ * @param const bignum* exp -> nonnegative exponent
+ *
+ * @return void
+ */
 static void _rsa_internal__mont_pow(bignum* out, const bignum* base, const bignum* exp)
 {
     bignum* cur = &g_secret_mont_pow_acc;
@@ -814,6 +1013,14 @@ static bignum g_secret_miller_rabin_r;
 static bignum g_secret_miller_rabin_y;
 static bignum g_secret_miller_rabin_base;
 static bignum g_secret_miller_rabin_tmp;
+/**
+ * @brief tests a candidate using witnesses from the legacy random sequence
+ *
+ * @param const bignum* x -> odd candidate greater than one
+ * @param int32 t -> legacy certainty value controlling the round count
+ *
+ * @return boole -> true when all selected witnesses pass
+ */
 static boole _rsa_internal__miller_rabin(const bignum* x, int32 t)
 {
     int32 k, i, j;
@@ -875,6 +1082,14 @@ static boole _rsa_internal__miller_rabin(const bignum* x, int32 t)
 }
 
 // jsbn's isProbablePrime: trial-divide by every small prime, then hand over to miller-rabin
+/**
+ * @brief runs small-prime division before the legacy Miller Rabin test
+ *
+ * @param const bignum* x -> candidate from the RSA prime search
+ * @param int32 t -> legacy certainty value
+ *
+ * @return boole -> true when the candidate passes both tests
+ */
 static boole _rsa_internal__is_probable_prime(const bignum* x, int32 t)
 {
     int32 i;
@@ -907,6 +1122,14 @@ static boole _rsa_internal__is_probable_prime(const bignum* x, int32 t)
 // draws the random candidate exactly like new BigInteger(bits, rng): (bits>>3)+1 bytes
 // consumed, top byte masked (or zeroed when bits is a multiple of 8), big-endian
 static uint8 g_secret_draw_candidate_bytes[1032];
+/**
+ * @brief draws candidate bytes in the same order as the legacy generator
+ *
+ * @param bignum* out -> destination integer
+ * @param int32 bits -> requested candidate bit length
+ *
+ * @return void
+ */
 static void _rsa_internal__draw_candidate(bignum* out, int32 bits)
 {
     int32 count = (bits >> 3) + 1;
@@ -938,14 +1161,23 @@ static void _rsa_internal__draw_candidate(bignum* out, int32 bits)
 }
 
 // walk state: the candidate's remainder against each odd small prime, stepped by 2 along
-// the walk so no candidate ever needs the full trial division again; verdicts identical
+// the walk so no candidate ever needs the full trial division again. Verdicts identical
 static uint32 g_walk_residues[LOWPRIMES_COUNT];
 static uint32 g_walk_half_residues[LOWPRIMES_COUNT];
 
 // finds a prime like new BigInteger(bits, 1, rng) does: random start, top bit forced so
 // the prime has full size, made odd, then +2 steps until a candidate survives both the
-// stepped remainders and miller-rabin; same verdicts as running the full test each step
+// stepped remainders and miller-rabin. Same verdicts as running the full test each step
 static bignum g_secret_random_prime_half;
+/**
+ * @brief walks odd candidates until the primality tests pass
+ *
+ * @param bignum* out -> destination for the probable prime
+ * @param int32 bits -> required bit length
+ * @param int32 certainty -> legacy certainty value
+ *
+ * @return void
+ */
 static void _rsa_internal__random_prime(bignum* out, int32 bits, int32 certainty)
 {
     int32 i;
@@ -1017,12 +1249,21 @@ static void _rsa_internal__random_prime(bignum* out, int32 bits, int32 certainty
     }
 }
 
-// modular inverse for an odd modulus (the binary extended euclid algorithm); its one
+// modular inverse for an odd modulus (the binary extended euclid algorithm). Its one
 // job here is coeff = q^-1 mod p, the last of the eight key parts
 static bignum g_secret_bn_mod_inverse_odd_u;
 static bignum g_secret_bn_mod_inverse_odd_v;
 static bignum g_secret_bn_mod_inverse_odd_x1;
 static bignum g_secret_bn_mod_inverse_odd_x2;
+/**
+ * @brief computes an inverse using binary extended Euclid
+ *
+ * @param bignum* out -> destination for the reduced inverse
+ * @param const bignum* a -> value coprime to the modulus
+ * @param const bignum* m -> nonzero odd modulus
+ *
+ * @return void
+ */
 static void _rsa_internal__bn_mod_inverse_odd(bignum* out, const bignum* a, const bignum* m)
 {
 
@@ -1109,6 +1350,14 @@ static uint8 g_seed_buffer[256];
 static uint8 g_results[RESULT_COUNT][RESULT_HEX_MAX];
 
 // writes a bignum as minimal lowercase hex, same shape jsbn's toString(16) produces
+/**
+ * @brief writes an integer as minimal lowercase hexadecimal text
+ *
+ * @param const bignum* a -> integer to encode
+ * @param uint8* out -> output buffer large enough for the digits and null terminator
+ *
+ * @return void
+ */
 static void _rsa_internal__bn_to_hex(const bignum* a, uint8* out)
 {
     static const char digits[] = "0123456789abcdef";
@@ -1139,12 +1388,24 @@ static void _rsa_internal__bn_to_hex(const bignum* a, uint8* out)
     out[pos] = 0;
 }
 
+/**
+ * @brief exposes the buffer filled before deterministic key generation
+ *
+ * @return uint8* -> writable seed buffer with capacity for 256 bytes
+ */
 __attribute__((export_name("rsa_keygen__get_seed_buffer")))
 uint8* rsa_keygen__get_seed_buffer(void)
 {
     return g_seed_buffer;
 }
 
+/**
+ * @brief exposes one generated RSA component as hexadecimal text
+ *
+ * @param int32 index -> component index for n, e, d, p, q, dmp1, dmq1 or coeff
+ *
+ * @return uint8* -> component buffer, or the n buffer for an invalid index
+ */
 __attribute__((export_name("rsa_keygen__get_result")))
 uint8* rsa_keygen__get_result(int32 index)
 {
@@ -1168,6 +1429,14 @@ static bignum g_secret_rsa_keygen__generate_dmp1;
 static bignum g_secret_rsa_keygen__generate_dmq1;
 static bignum g_secret_rsa_keygen__generate_coeff;
 static bignum g_secret_rsa_keygen__generate_tmp;
+/**
+ * @brief recreates the legacy RSA identity from the loaded seed
+ *
+ * @param int32 bits -> requested modulus size from 256 through 8192 bits
+ * @param int32 seed_length -> loaded seed byte count from 1 through 256
+ *
+ * @return int32 -> one after writing all eight result components, zero for invalid input
+ */
 __attribute__((export_name("rsa_keygen__generate")))
 int32 rsa_keygen__generate(int32 bits, int32 seed_length)
 {
@@ -1228,7 +1497,7 @@ int32 rsa_keygen__generate(int32 bits, int32 seed_length)
             _rsa_internal__bn_mul(&g_secret_rsa_keygen__generate_n, &g_secret_rsa_keygen__generate_p, &g_secret_rsa_keygen__generate_q);
 
             // d = 3^-1 mod phi as (k*phi + 1) / 3, because with e fixed at 3 the inverse
-            // has that closed form; k is whichever of 1 or 2 makes it divide evenly
+            // has that closed form. K is whichever of 1 or 2 makes it divide evenly
             k = (_rsa_internal__bn_mod_word(&g_secret_rsa_keygen__generate_phi, 3) == 1) ? 2 : 1;
             _rsa_internal__bn_copy(&g_secret_rsa_keygen__generate_d, &g_secret_rsa_keygen__generate_phi);
             if (k == 2)
@@ -1271,7 +1540,15 @@ int32 rsa_keygen__generate(int32 bits, int32 seed_length)
 static uint8 g_modpow_input[MODPOW_BUFFERS][RESULT_HEX_MAX];
 static uint8 g_modpow_result[RESULT_HEX_MAX];
 
-// parses a hex string (either case) into a bignum; FALSE on empty, oversized or junk input
+// parses a hex string (either case) into a bignum. FALSE on empty, oversized or junk input
+/**
+ * @brief parses bounded hexadecimal text into an integer
+ *
+ * @param bignum* out -> destination integer
+ * @param const uint8* hex -> null terminated hexadecimal text
+ *
+ * @return boole -> true for nonempty input within the supported length
+ */
 static boole _rsa_internal__bn_from_hex(bignum* out, const uint8* hex)
 {
     int32 length = 0;
@@ -1313,6 +1590,13 @@ static boole _rsa_internal__bn_from_hex(bignum* out, const uint8* hex)
     return TRUE;
 }
 
+/**
+ * @brief exposes one modular exponentiation input buffer
+ *
+ * @param int32 index -> zero for base, one for exponent or two for modulus
+ *
+ * @return uint8* -> input buffer, or the base buffer for an invalid index
+ */
 __attribute__((export_name("rsa_keygen__get_modpow_buffer")))
 uint8* rsa_keygen__get_modpow_buffer(int32 index)
 {
@@ -1323,19 +1607,29 @@ uint8* rsa_keygen__get_modpow_buffer(int32 index)
     return g_modpow_input[index];
 }
 
+/**
+ * @brief exposes the last modular exponentiation result
+ *
+ * @return uint8* -> null terminated hexadecimal result buffer
+ */
 __attribute__((export_name("rsa_keygen__get_modpow_result")))
 uint8* rsa_keygen__get_modpow_result(void)
 {
     return g_modpow_result;
 }
 
-// base^exp mod modulus from the hex input buffers (0=base, 1=exp, 2=modulus);
+// base^exp mod modulus from the hex input buffers (0=base, 1=exp, 2=modulus).
 // result lands as hex in the result buffer, returns 1 on success
 static bignum g_secret_rsa_keygen__modpow_base;
 static bignum g_secret_rsa_keygen__modpow_exp;
 static bignum g_secret_rsa_keygen__modpow_modulus;
 static bignum g_secret_rsa_keygen__modpow_reduced;
 static bignum g_secret_rsa_keygen__modpow_result;
+/**
+ * @brief computes base to the exponent modulo an odd modulus from the input buffers
+ *
+ * @return int32 -> one after writing the result, zero when an input is rejected
+ */
 __attribute__((export_name("rsa_keygen__modpow")))
 int32 rsa_keygen__modpow(void)
 {
@@ -1383,6 +1677,14 @@ int32 rsa_keygen__modpow(void)
     return 1;
 }
 
+/**
+ * @brief clears a buffer through volatile writes
+ *
+ * @param void* pointer -> writable buffer
+ * @param uint32 size -> number of bytes to erase
+ *
+ * @return void
+ */
 static void _rsa_internal__wipe(void* pointer, uint32 size)
 {
     volatile uint8* bytes = pointer;
@@ -1393,6 +1695,11 @@ static void _rsa_internal__wipe(void* pointer, uint32 size)
     }
 }
 
+/**
+ * @brief erases random state, private intermediates and exported input and result buffers
+ *
+ * @return void
+ */
 __attribute__((export_name("rsa_keygen__clear_sensitive")))
 void rsa_keygen__clear_sensitive(void)
 {

@@ -1,5 +1,5 @@
 #!/bin/sh
-# Shared validation; no side effects when sourced. Values written into shell configs must pass here.
+# Shared validation. No side effects when sourced. Values written into shell configs must pass here.
 
 valid_port() {
     case "$1" in ''|*[!0-9]*|0*|??????*) return 1 ;; esac

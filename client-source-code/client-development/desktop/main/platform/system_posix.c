@@ -1,4 +1,4 @@
-// Linux/macOS clock and executable-directory access; string operations use Lemon clib.
+// Linux/macOS clock and executable directory access. String operations use Lemon clib
 #define _POSIX_C_SOURCE 200809L
 #include <errno.h>
 #include <stdlib.h>
@@ -12,7 +12,8 @@
 #include "clib.h"
 
 /**
- * @brief reads monotonic elapsed time for display updates and timeouts.
+ * @brief reads monotonic elapsed time for display updates and timeouts
+ *
  * @return uint64 -> monotonic time in milliseconds, or 0 on failure
  */
 uint64 desktop_system__milliseconds(void)
@@ -30,8 +31,10 @@ uint64 desktop_system__milliseconds(void)
 }
 
 /**
- * @brief pauses a worker and resumes its remaining delay after a signal.
+ * @brief pauses a worker and resumes its remaining delay after a signal
+ *
  * @param int64 milliseconds -> requested delay
+ *
  * @return void
  */
 void desktop_system__sleep(int64 milliseconds)
@@ -55,8 +58,9 @@ void desktop_system__sleep(int64 milliseconds)
 }
 
 /**
- * @brief resolves assets beside the actual executable, including symlink launches.
- * @return boole -> 1 on success; 0 on a path or directory error
+ * @brief resolves assets beside the actual executable, including symlink launches
+ *
+ * @return boole -> 1 on success. 0 on a path or directory error
  */
 boole desktop_system__asset_directory(void)
 {
@@ -119,10 +123,12 @@ boole desktop_system__asset_directory(void)
 }
 
 /**
- * @brief selects an installed desktop font, leaving the caller to supply a bundled fallback.
+ * @brief selects an installed desktop font, leaving the caller to supply a bundled fallback
+ *
  * @param char* path -> destination path buffer
  * @param uint64 capacity -> destination capacity including the terminator
  * @param boole bold -> requested font weight
+ *
  * @return boole -> TRUE when a readable native font is available
  */
 boole desktop_system__font_path(char *path, uint64 capacity, boole bold)
@@ -142,7 +148,8 @@ boole desktop_system__font_path(char *path, uint64 capacity, boole bold)
 }
 
 /**
- * @brief leaves native icon registration to the non-Windows application launcher.
+ * @brief leaves native icon registration to the non Windows application launcher
+ *
  * @return void
  */
 void desktop_system__window_icon(void)

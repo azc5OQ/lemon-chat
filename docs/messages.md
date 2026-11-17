@@ -2,7 +2,7 @@
 
 This is the body reference for every current client request and server response in the chat JSON protocol. Each type has its own complete JSON example and field table. Server announcements use the same response bodies documented here. Types with the same spelling in both directions have separate entries.
 
-The reference covers 82 client request types, 91 server response types (including the dormant `channel_chat_picture` serializer), the encrypted transport wrapper, and the JSON carried inside encrypted content. Binary media frames, local worker messages and saved configuration files are separate formats.
+The reference covers 82 client request types, 93 server response types (including the dormant `channel_chat_picture` serializer), the encrypted transport wrapper, and the JSON carried inside encrypted content. Binary media frames, local worker messages and saved configuration files are separate formats.
 
 **Direct-message content, including edits sent by the updated client, is end-to-end encrypted and is not visible to the server.** The server can read the outer routing fields and the encrypted `value` string, but not the plaintext inside it. Decrypted content examples in this document describe client-side data. The insecure legacy edit command is identified separately under [Server visibility of direct-message bodies](#server-visibility-of-direct-message-bodies).
 
@@ -108,6 +108,7 @@ For `direct_chat_message` and `offline_chat_message`, the outer body is readable
 | Client request | [`public_key_info`](#client-request-public_key_info) |
 | Client request | [`public_key_challenge_response`](#client-request-public_key_challenge_response) |
 | Client request | [`client_connection_check`](#client-request-client_connection_check) |
+| Server response | [`crypto_policy`](#server-response-crypto_policy) |
 | Server response | [`public_key_challenge`](#server-response-public_key_challenge) |
 | Server response | [`rsa_key_too_weak`](#server-response-rsa_key_too_weak) |
 | Server response | [`authentication_status`](#server-response-authentication_status) |
@@ -119,7 +120,45 @@ For `direct_chat_message` and `offline_chat_message`, the outer body is readable
 
 ### Client request: `public_key_info`
 
-**Body**
+**Initial version 2 body**
+
+```json
+{
+    "message":
+    {
+        "type": "public_key_info",
+        "value": "<base64 RSA modulus>",
+        "verification_string": "welcome",
+        "crypto_version": 2,
+        "dh_public_mix": "<decimal DH public value>"
+    }
+}
+```
+
+**Version 2 body answering `crypto_policy`**
+
+```json
+{
+    "message":
+    {
+        "type": "public_key_info",
+        "value": "<base64 RSA modulus>",
+        "verification_string": "welcome",
+        "crypto_version": 2,
+        "crypto_nonce": "00112233445566778899aabbccddeeff",
+        "dh_public_mix": "<first decimal DH public value>",
+        "dh_public_mixes":
+        [
+            "<first decimal DH public value>",
+            "<second decimal DH public value>"
+        ]
+    }
+}
+```
+
+The array length equals `crypto_policy.dh_exchange_count`. The example shows two exchanges. The first array entry and `dh_public_mix` contain exactly the same string.
+
+**Legacy body without version negotiation**
 
 ```json
 {
@@ -141,6 +180,11 @@ For `direct_chat_message` and `offline_chat_message`, the outer body is readable
 | `message.value` | string | Required | Base64 RSA modulus representation; length 344–1368 characters and divisible by four. This is the public key, not a PEM object. |
 | `message.verification_string` | string | Required | Literal string `"welcome"`. |
 | `message.dh_public_mix` | string | Required | Decimal-digit string containing the client Diffie–Hellman public value. It must be nonempty and no longer than the decimal modulus string. |
+| `message.crypto_version` | number | Required for version 2; absent in the legacy body | Integer `2`. Other supplied versions are rejected. |
+| `message.crypto_nonce` | string | Required in the version 2 policy response; absent in the initial body | Exact 32-character lowercase hexadecimal `nonce` from this connection's `crypto_policy`. |
+| `message.dh_public_mixes` | array of strings | Required in the version 2 policy response | One decimal DH public value per negotiated exchange, in order. Its length equals `dh_exchange_count`; entry zero equals `dh_public_mix`. |
+
+The legacy form is accepted only before a policy nonce has been issued and when the server uses one DH exchange, one `aes256` session layer and no random cipher layer. Omitting `crypto_version` does not bypass a stronger configured policy.
 
 ### Client request: `public_key_challenge_response`
 
@@ -188,9 +232,73 @@ For `direct_chat_message` and `offline_chat_message`, the outer body is readable
 
 No additional body fields.
 
-### Server response: `public_key_challenge`
+### Server response: `crypto_policy`
 
 **Body**
+
+```json
+{
+    "message":
+    {
+        "type": "crypto_policy",
+        "version": 2,
+        "nonce": "00112233445566778899aabbccddeeff",
+        "dh_exchange_count": 2,
+        "session_encryption_layer_count": 2,
+        "session_cipher": "aes256",
+        "is_random_cipher_layer_enabled": true
+    }
+}
+```
+
+**Fields**
+
+| Field | JSON type | Presence | Body value |
+| --- | --- | --- | --- |
+| `message.type` | string | Required | Literal `"crypto_policy"`. |
+| `message.version` | number | Required | Integer `2`. The request uses the different field name `crypto_version`. |
+| `message.nonce` | string | Required | Connection-specific 16-byte nonce encoded as 32 lowercase hexadecimal characters. Returned unchanged as `public_key_info.crypto_nonce`. |
+| `message.dh_exchange_count` | number | Required | Integer from 1 through 4. Number of entries required in the subsequent client and server `dh_public_mixes` arrays. |
+| `message.session_encryption_layer_count` | number | Required | Integer from 1 through 8. Number of layers using `session_cipher`, before the optional random layer. |
+| `message.session_cipher` | string | Required | One of `"aes256"`, `"chacha20"`, `"camellia256"`, `"twofish256"`, `"serpent256"`, `"trivium80"`. |
+| `message.is_random_cipher_layer_enabled` | boolean | Required | Whether the challenge includes a random-cipher probe and the session adds that extra encryption layer. |
+
+This is a pre-session response to a version 2 `public_key_info` without `crypto_nonce`. It uses the pre-session transport envelope, without a session `tag`.
+
+### Server response: `public_key_challenge`
+
+**Version 2 body with the optional random layer enabled**
+
+```json
+{
+    "message":
+    {
+        "type": "public_key_challenge",
+        "value": "<RSA-encrypted challenge>",
+        "dh_public_mix": "<first server decimal DH public value>",
+        "crypto":
+        {
+            "dh_public_mixes":
+            [
+                "<first server decimal DH public value>",
+                "<second server decimal DH public value>"
+            ],
+            "random_probe":
+            {
+                "iv": "00112233445566778899aabbccddeeff",
+                "data": "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
+                "tag": "ffeeddccbbaa99887766554433221100ffeeddccbbaa99887766554433221100"
+            },
+            "version": 2,
+            "finished": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+        }
+    }
+}
+```
+
+When `is_random_cipher_layer_enabled` is false, the same body omits `crypto.random_probe`. It still includes `crypto.version`, `crypto.dh_public_mixes` and `crypto.finished`.
+
+**Legacy body**
 
 ```json
 {
@@ -210,6 +318,16 @@ No additional body fields.
 | `message.type` | string | Required | Literal `"public_key_challenge"`. |
 | `message.value` | string | Required | RSA-encrypted challenge string. |
 | `message.dh_public_mix` | string | Required | Server Diffie–Hellman public value as a decimal string. |
+| `message.crypto` | object | Required for negotiated version 2; absent in the legacy body | Negotiated key-exchange values and proofs. |
+| `message.crypto.version` | number | Required inside `crypto` | Integer `2`. |
+| `message.crypto.dh_public_mixes` | array of strings | Required inside `crypto` | Server DH public values in exchange order. Array length equals the offered `dh_exchange_count`, and entry zero equals `message.dh_public_mix`. |
+| `message.crypto.finished` | string | Required inside `crypto` | 32-byte server handshake proof encoded as 64 lowercase hexadecimal characters. |
+| `message.crypto.random_probe` | object | Present exactly when the offered random layer is enabled | Encrypted probe used to identify and verify the additional cipher. No cipher-name field is sent for this layer. |
+| `message.crypto.random_probe.iv` | string | Required inside `random_probe` | 16-byte probe IV encoded as 32 lowercase hexadecimal characters. |
+| `message.crypto.random_probe.data` | string | Required inside `random_probe` | 32-byte encrypted probe encoded as 64 lowercase hexadecimal characters. |
+| `message.crypto.random_probe.tag` | string | Required inside `random_probe` | 32-byte probe authentication value encoded as 64 lowercase hexadecimal characters. |
+
+The probe fields and `finished` use hexadecimal, not the transport envelope's base64 encoding. The example values illustrate lengths and are not valid cryptographic proofs.
 
 ### Server response: `rsa_key_too_weak`
 
@@ -5856,6 +5974,17 @@ All listed settings are optional members of `message`. No nested `settings` obje
         "is_logging_socket_opens_and_closes_enabled": true,
         "is_logging_failed_attempts_enabled": true,
         "reserved_slots": 2,
+        "dh_exchange_count": 2,
+        "session_encryption_layer_count": 2,
+        "session_cipher": "aes256",
+        "is_random_cipher_layer_enabled": true,
+        "connection_passwords":
+        [
+            {
+                "type": "aes256",
+                "password": "<connection password>"
+            }
+        ],
         "audio_connections": "both",
         "channel_key_reuse_join_min_clients": 30,
         "channel_key_reuse_leave_min_clients": 30,
@@ -5879,6 +6008,13 @@ All listed settings are optional members of `message`. No nested `settings` obje
 | Field | JSON type | Presence | Body value |
 | --- | --- | --- | --- |
 | `message.type` | string | Required | Literal `"save_server_settings"`. |
+| `message.dh_exchange_count` | number | Optional; absent retains current value | Integer from 1 through 4. Number of DH exchanges offered to new connections. |
+| `message.session_encryption_layer_count` | number | Optional; absent retains current value | Integer from 1 through 8. Number of negotiated layers using `session_cipher`, excluding the optional random layer. |
+| `message.session_cipher` | string | Optional; absent retains current value | One of `"aes256"`, `"chacha20"`, `"camellia256"`, `"twofish256"`, `"serpent256"`, `"trivium80"`. |
+| `message.is_random_cipher_layer_enabled` | boolean | Optional; absent retains current value | Whether new negotiated sessions add a random cipher layer. |
+| `message.connection_passwords` | object[] | Optional; absent retains the current list | Complete ordered replacement list, at most 100 entries. `[]` removes all connection-password layers. These are administrator-supplied server settings, readable by the server. |
+| `message.connection_passwords[].type` | string | Required per entry | One of the six cipher names accepted by `session_cipher`. |
+| `message.connection_passwords[].password` | string | Required per entry | Connection password shorter than 256 UTF-8 bytes. Empty strings are accepted. |
 | `message.is_server_uptime_published` | boolean | Optional; absent retains current value | Whether public info includes uptime. |
 | `message.is_server_slots_published` | boolean | Optional; absent retains current value | Whether public info includes occupied and maximum slots. |
 | `message.is_server_banner_published` | boolean | Optional; absent retains current value | Whether the server banner is public. |
@@ -6033,6 +6169,12 @@ The full example and usage-only example are separate body shapes. `ram_bytes` is
         "used_slots": 8,
         "max_slots": 100,
         "reserved_slots": 2,
+        "max_channel_count": 32,
+        "dh_exchange_count": 2,
+        "session_encryption_layer_count": 2,
+        "session_cipher": "aes256",
+        "is_random_cipher_layer_enabled": true,
+        "connection_password_count": 1,
         "is_server_uptime_published": true,
         "is_server_slots_published": true,
         "is_server_banner_published": true,
@@ -6110,6 +6252,11 @@ The full example and usage-only example are separate body shapes. `ram_bytes` is
 | Field | JSON type | Presence | Body value |
 | --- | --- | --- | --- |
 | `message.type` | string | Required | Literal `"server_settings_values"`. |
+| `message.dh_exchange_count` | number | Present in full response | Configured DH exchange count, integer from 1 through 4. |
+| `message.session_encryption_layer_count` | number | Present in full response | Configured session layer count, integer from 1 through 8, excluding the optional random layer. |
+| `message.session_cipher` | string | Present in full response | One of `"aes256"`, `"chacha20"`, `"camellia256"`, `"twofish256"`, `"serpent256"`, `"trivium80"`. |
+| `message.is_random_cipher_layer_enabled` | boolean | Present in full response | Whether new negotiated sessions add a random cipher layer. |
+| `message.connection_password_count` | number | Present in full response | Number of configured connection-password layers, from 0 through 100. The passwords and their values are not included in this response. |
 | `message.websocket_received_bytes` | number | Required | Total WebSocket bytes received since startup. |
 | `message.websocket_sent_bytes` | number | Required | Total WebSocket bytes sent since startup. |
 | `message.webrtc_received_bytes` | number | Required | Total WebRTC bytes received since startup. |
@@ -6131,7 +6278,7 @@ The full example and usage-only example are separate body shapes. `ram_bytes` is
 | `message.is_video_streaming_active` | boolean | Present in full response | Whether video streaming is enabled; this settings field uses active, while login/policy use allowed. |
 | `message.is_hide_clients_in_password_protected_channels_active` | boolean | Present in full response | Whether membership of password-protected channels is concealed from outsiders. |
 | `message.is_temp_channel_creation_allowed` | boolean | Present in full response | Whether temporary channel creation is enabled by the general setting. |
-| `message.max_channel_count` | number | Present in full response | Configured channel array size, including root and temporary channels; defaults to 100. |
+| `message.max_channel_count` | number | Required in both full and usage-only responses | Configured channel slot limit, including root and temporary channels. |
 | `message.is_typing_indicator_allowed` | boolean | Present in full response | Whether typing indicators are enabled. |
 | `message.is_client_rename_allowed` | boolean | Present in full response | Whether client renaming is enabled. |
 | `message.is_link_preview_allowed` | boolean | Present in full response | Whether URL previews are enabled. |
@@ -6201,6 +6348,7 @@ The full example and usage-only example are separate body shapes. `ram_bytes` is
         "used_slots": 8,
         "max_slots": 100,
         "reserved_slots": 2,
+        "max_channel_count": 32,
         "memory_only": true
     }
 }
@@ -8217,6 +8365,9 @@ The body names, field types and conditional members above were checked against t
 - [Transport encryption](../server-source-code/main/crypto/crypto_metadata.c)
 - [Connection request bodies](../server-source-code/main/msg/client/client_msg_connection.c)
 - [Connection response bodies](../server-source-code/main/msg/server/server_msg_connection.c)
+- [Negotiated crypto policy and challenge fields](../server-source-code/main/crypto/auth_handshake.c)
+- [Connection-encryption settings fields](../server-source-code/main/core/server_settings.c)
+- [Browser crypto policy and challenge validation](../client-source-code/client-development/browser/main/scripts/app/crypto/connection-crypto.js)
 - [Channel request bodies](../server-source-code/main/msg/client/client_msg_channel.c)
 - [Channel response bodies](../server-source-code/main/msg/server/server_msg_channel.c)
 - [Chat request bodies](../server-source-code/main/msg/client/client_msg_chat.c)

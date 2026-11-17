@@ -1,0 +1,27 @@
+{
+  "name": "ws",
+  "version": "8.23.0",
+  "source": "https://registry.npmjs.org/ws/-/ws-8.23.0.tgz",
+  "integrity": "sha512-wCkmX8QMOrKjgO8HW2WyDbTSGeqkocxgDzS9iR79rEAexty6/2qzilx3Ag8Tqf9ykop3irLKle0MtVn5qjVnoQ==",
+  "files": {
+    "browser.js": "010da44addea1d88b2b732540c3f1fd0cbcb28926b96623d4c64222e0ead2d0e",
+    "index.js": "924564d5be26d59b9682c4263f68320e48dde7240bd2d1ad17ec305537429dd2",
+    "lib/buffer-util.js": "4e996b0c29f30bb094d836a2a563aceebaf3e8692a1e3d5bb4a01a233029732f",
+    "lib/constants.js": "391e823142b8b370e55a2fd32b022deaf03b8415c56000009674ebc86a0b4f86",
+    "lib/event-target.js": "c45d3c6e12d170c860c0c3f1a050aa0f864d9806632b609a1e607d675aba128c",
+    "lib/extension.js": "852564f0f6b460287043803eae732666fb5610f676874354fc89f06aa4e986ed",
+    "lib/limiter.js": "e0469d4b83f6ba764b15f80e1766b75c136fbff68f048f4c050f0b1c7f065f69",
+    "lib/permessage-deflate.js": "16a91536988a53c23047ee5882392068728a839a244178c3b09b8c54982f58b0",
+    "lib/receiver.js": "77f7463d96be072b07183cdd8022d80e5032d3257948138ecd669dc758b20efa",
+    "lib/sender.js": "b343e24310aeb924e713767fb7cd445bccf4f3cc3504ceb2c56ce76b89c1cf45",
+    "lib/stream.js": "a56fcb6e2b152097ee820b6f5410b1f71e59819b45d08d9f8bda588fe39070ec",
+    "lib/subprotocol.js": "be3f6323d6f549568577dcba9004c1479d95c65a7abb0fe0c582875b9fac0b7c",
+    "lib/validation.js": "41ce8e83d0d434132e1704895fedb91f6703a701b42d91c80954ab29b2845593",
+    "lib/websocket-server.js": "801cea14cf7dd2a1daee598229a2b5e5516f0ae396d8d1d585652097170b0416",
+    "lib/websocket.js": "5ae09f773299ad39aad65a7ae6aa6a51fd6bae1d8fe1f1255152439ae50975e8",
+    "LICENSE": "2b29dcfe0d6471f7e8c92c5fb38c9f93edee10330937055440192f1832b1ecef",
+    "package.json": "3ae4c2b86b06d3d225f2630c12d6897ec9272d5a17fb8d3657f3df74661b47b2",
+    "README.md": "a20e3ef3800e3a9dc7ed9b666a93fb39f464fee2f48858967844801c8b3b9027",
+    "wrapper.mjs": "fe154662301fd558f935f9c217fccbe7a7dac02ff39e648a000589403ff27c7f"
+  }
+}

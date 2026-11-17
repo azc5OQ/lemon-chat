@@ -13,7 +13,8 @@ static boole g_available;
 static void _hotkey_internal__initialize(void);
 
 /**
- * @brief initializes Xlib threading before any GUI or key-state display is opened.
+ * @brief initializes Xlib threading before any GUI or key state display is opened
+ *
  * @return void
  */
 static void _hotkey_internal__initialize(void)
@@ -22,7 +23,8 @@ static void _hotkey_internal__initialize(void)
 }
 
 /**
- * @brief enables safe concurrent use of the GUI display and separate key-state display.
+ * @brief enables safe concurrent use of the GUI display and separate key state display
+ *
  * @return boole -> nonzero when Xlib threading initialized
  */
 boole desktop_hotkey__initialize(void)
@@ -37,7 +39,8 @@ struct desktop_hotkey_t
 };
 
 /**
- * @brief opens a worker-owned X11 connection for push-to-talk key-state queries.
+ * @brief opens a worker-owned X11 connection for push to talk key state queries
+ *
  * @return desktop_hotkey_t* -> owned context, or NULL without an X11 display
  */
 desktop_hotkey_t *desktop_hotkey__create(void)
@@ -59,8 +62,10 @@ desktop_hotkey_t *desktop_hotkey__create(void)
 }
 
 /**
- * @brief closes the worker's separate X11 connection.
+ * @brief closes the worker's separate X11 connection
+ *
  * @param desktop_hotkey_t* hotkey -> owned context, or NULL
+ *
  * @return void
  */
 void desktop_hotkey__destroy(desktop_hotkey_t *hotkey)
@@ -75,10 +80,12 @@ void desktop_hotkey__destroy(desktop_hotkey_t *hotkey)
 }
 
 /**
- * @brief queries the selected key without grabbing keys away from another X11 app.
+ * @brief queries the selected key without grabbing keys away from another X11 app
+ *
  * @param desktop_hotkey_t* hotkey -> context used only by its creating worker
- * @param int64 key -> printable ASCII key or legacy F-key number
- * @return boole -> nonzero while the key is held; native Wayland apps may require compositor support
+ * @param int64 key -> printable ASCII key or legacy F key number
+ *
+ * @return boole -> nonzero while the key is held. Native Wayland apps may require compositor support
  */
 boole desktop_hotkey__down(desktop_hotkey_t *hotkey, int64 key)
 {

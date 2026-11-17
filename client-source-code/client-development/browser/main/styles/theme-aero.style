@@ -8,12 +8,7 @@
     --chat-tab-close-radius: 3px;
 }
 
-/*
-    Aero gives Lemon Chat the blue glass, white work areas and glossy controls
-    of Windows 7. The existing chat controls and their actions stay in place.
-    The first rules keep the existing control sizes and embedded icons. The
-    appearance rules below give those controls their Aero colors and borders.
-*/
+/* Aero uses blue glass, white panels and glossy controls. Shared theme rules supply the existing layout. */
 
 /* Menu icons use this theme's own colors and are included with its styles. */
 :root
@@ -201,7 +196,7 @@
 
 #verification-system
 {
-    min-height: 100vh;
+    min-height: calc(100vh / var(--ui-display-scale, 1));
     text-align: center;
 }
 
@@ -212,7 +207,7 @@ div
 
 #body-container
 {
-    height: 100vh;
+    height: calc(100vh / var(--ui-display-scale, 1));
     min-width: 550px;
 }
 
@@ -2533,9 +2528,7 @@ body, input, button, textarea, select, p, li, label
 .single-channel:has(.single-channel-is-using-password)::after
 {
     content: "";
-    /* The picture is 13px high and stands at the upper edge of its part, which is 16px high. Its lower edge is
-       then on the base line of the channel name, as the lower edge of the "audio disabled" picture is. In the
-       middle of the part the lock was 1.5px lower. */
+    /* Align the channel picture with the name and audio mark. */
     background-position: 50% 0;
     background-image:url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMjggMTI4Ij48cGF0aCBmaWxsPSIjODc4YjhjIiBmaWxsLXJ1bGU9Im5vbnplcm8iIGQ9Ik00My42NDYsNDMuMzc2YzAsLTUuNzI5IDEuOTk3LC0xMC42IDUuOTkyLC0xNC42MDljMy45OTMsLTQuMDEgOC43OTgsLTYuMDE2IDE0LjQxOSwtNi4wMTZjNS42MiwwIDEwLjQwMSwyLjAwNiAxNC4zNyw2LjAxNmMzLjk1NCw0LjAwOSA1LjkzOCw4Ljg4IDUuOTM4LDE0LjYwOWwwLDUuMzIybDEzLjU2MywwbDAsLTUuMzIyYzAsLTYuMjM0IC0xLjUxNCwtMTEuOTc5IC00LjU2MiwtMTcuMjQyYy0zLjAzNiwtNS4yNjQgLTcuMTQ2LC05LjQzNiAtMTIuMzQxLC0xMi41MTRjLTUuMTk1LC0zLjA3NiAtMTAuODcsLTQuNjIgLTE3LjAyMiwtNC42MmMtNi4xNDYsMCAtMTEuODIsMS41NDQgLTE3LjAxNyw0LjYyMWMtNS4xOTUsMy4wNzggLTkuMzEzLDcuMjUgLTEyLjM1NCwxMi41MTRjLTMuMDM2LDUuMjYzIC00LjU2MSwxMS4wMDggLTQuNTYxLDE3LjI0MmwwLDUuMzIybDEzLjU3NCwwbDAsLTUuMzIzbDAuMDAxLDBaIi8+PHBhdGggZmlsbD0iIzQwNDU0NyIgZmlsbC1ydWxlPSJub256ZXJvIiBkPSJNMjEuNzcyLDU3LjI5Mmw4NC41MDMsMGMxLjI0LDAuMjcxIDIuMzI1LDAuODc0IDMuMjYyLDEuODJjMS4zMDksMS4zMjYgMS45NjMsMi45NTMgMS45NjMsNC44ODhsMCw0OC4xMjNjMCwxLjkyOCAtMC42NTQsMy41NjIgLTEuOTYzLDQuODg3Yy0xLjMxMSwxLjMyOSAtMi45MDksMS45OSAtNC44MjQsMS45OWwtODEuNDI1LDBjLTEuODQzLDAgLTMuNDI5LC0wLjY2MSAtNC43NzEsLTEuOTljLTEuMzQ0LC0xLjMyNSAtMi4wMTcsLTIuOTU5IC0yLjAxNywtNC44ODdsMCwtNDguMTIzYzAsLTEuOTM1IDAuNjczLC0zLjU2MiAyLjAxNywtNC44ODhjMC45NTgsLTAuOTQ2IDIuMDQzLC0xLjU0OSAzLjI1NSwtMS44MloiLz48cGF0aCBmaWxsPSIjZmZmZmZmIiBmaWxsLXJ1bGU9Im5vbnplcm8iIGQ9Ik03MS40MjgsNzMuOTU1YzAsLTIuNzYyIC0yLjIzOCwtNSAtNSwtNWwtNC44NTUsMGMtMi43NjEsMCAtNSwyLjIzOCAtNSw1bDAsMjcuOTIyYzAsMi43NjIgMi4yMzksNSA1LDVsNC44NTUsMGMyLjc2MiwwIDUsLTIuMjM4IDUsLTVsMCwtMjcuOTIyWiIvPjwvc3ZnPg==");
     background-size: 13px 13px;
@@ -3518,9 +3511,9 @@ input:focus-visible, button:focus-visible, textarea:focus-visible, select:focus-
 #secret-identity-string-container-enter
 {
     box-sizing: border-box;
-    width: min(520px, calc(100vw - 24px));
+    width: min(520px, calc(calc(100vw / var(--ui-display-scale, 1)) - 24px));
     min-width: 0;
-    max-height: calc(100vh - 24px);
+    max-height: calc(calc(100vh / var(--ui-display-scale, 1)) - 24px);
     overflow-y: auto;
 }
 
@@ -4463,9 +4456,7 @@ a-toast
     --groups-option-background: #fff;
 }
 
-/* A channel that has nothing to collapse shows no arrow in this theme, but the arrow keeps its room. On
-   such a row the arrow's room comes before the marks, so the marks stand in it, directly next to the
-   picture of the channel; layout.style puts the arrow after the marks on the other rows. */
+/* Keep arrow space on channels without children and align their marks with neighboring rows. */
 #channel-list-container .single-channel.single-channel-no-children > :is(.single-channel-collapse-button, .single-channel-expand-button)
 {
     order: -4;

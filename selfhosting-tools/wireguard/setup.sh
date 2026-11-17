@@ -1,10 +1,10 @@
 #!/bin/sh
-# lemon-chat selfhosting-tools/wireguard/setup.sh - run on the LINUX machine that hosts the lemon-chat server (a pc, a pi, ...).
+# Sets up the tunnel on the Linux server host.
 #
 # turns a VPS into a router for this machine: asks a few questions, sets WireGuard up on the VPS over ssh
 # (router/setup.sh), brings the tunnel up here with wg-quick, forwards the chat ports from the router's public
 # address through the tunnel, and switches the server's wireguard mode on in server_settings.json.
-# see README.md in this directory. run again to change answers; the saved answers are the defaults.
+# see README.md in this directory. run again to change answers. The saved answers are the defaults.
 #
 # needs: sudo, ssh, wireguard-tools (installed here when missing), python3 for the settings files.
 
@@ -101,7 +101,7 @@ while true; do
     warn "enter two ports from 1024 to 65535 as BEGIN-END"
 done
 
-# tls ends on this machine, in the server's own stunnel; the router forwards the encrypted connections
+# tls ends on this machine, in the server's own stunnel. The router forwards the encrypted connections
 # unchanged. the question is asked while stunnel is still off too, because the certificate can only be
 # obtained once tcp 80 is forwarded
 HOST_STUNNEL="$(settings_get is_stunnel_enabled false)"

@@ -1,4 +1,4 @@
-// This file checks requests to view or change server settings, server information and the server banner.
+// this file checks requests to view or change server settings, server information and the server banner
 #include "client_msg.h"
 #include "../../crypto/ciphers.h"
 #include "../../core/permissions.h"
@@ -27,8 +27,8 @@ static boole _client_msg_server_settings_internal__is_save_server_settings_reque
 static boole _client_msg_server_settings_internal__is_server_info_requester(uint64 sender_client_id, ws_cli_conn_t *socket);
 
 /**
- * @brief Checks a default theme name sent with the settings. The name is written into the
- *        served page, so only the characters of the page's own theme names are accepted.
+ * @brief checks a default theme name sent with the settings. The name is written into the
+ *        served page, so only the characters of the page's own theme names are accepted
  *
  * @param cJSON* value -> the field of the request, or NULL_POINTER when the request does not contain it
  *
@@ -62,8 +62,8 @@ static boole _client_msg_server_settings_internal__is_theme_name_valid(cJSON *va
 }
 
 /**
- * @brief Validates every supplied setting before any live policy is changed. Omitted optional
- *        fields keep their existing values; malformed updates are rejected as a whole.
+ * @brief validates every supplied setting before any live policy is changed. Omitted optional
+ *        fields keep their existing values; malformed updates are rejected as a whole
  *
  * @param cJSON* json_root -> the parsed client request
  *
@@ -223,17 +223,9 @@ static boole _client_msg_server_settings_internal__is_save_server_settings_reque
 }
 
 /**
- * @brief processes an admin request to apply and persist server settings, only an authenticated
- *        admin may do this
- *
- *        the general-settings toggles the admin sent (country flags, server-wide audio, music bot
- *        audio, hide-in-password-channels, temp channels) are applied to g_server_settings, each
- *        only when present and boolean. then everything persistable - those toggles plus the
- *        channel layout, the groups/icons and the identity snapshot - is written into
- *        server_settings.json. Music bots and their MP3 data are included in a separate snapshot unless
- *        include_music_bots is false; channel maintainers remain runtime-only state.
- *        If the file cannot be written the toggles are rolled back to their previous
- *        values, so the running state stays consistent with what is on disk.
+ * @brief applies and saves an admin's settings changes with channels, groups and identities
+ *        music bots use a separate snapshot unless include_music_bots is false
+ *        A failed settings write restores the previous policy values
  *
  * @param cJSON* json_root -> the parsed client request
  * @param uint64 sender_client_id -> id of the client that sent the request
@@ -345,7 +337,7 @@ void client_msg__server_settings__process_save_request(cJSON *json_root, uint64 
         requested_channel_count = (uint64)json_field->valuedouble;
     }
 
-    // keep both write locks until persistence and array publication finish.
+    // keep both write locks until persistence and array publication finish
     // requests must recheck their channel indices under these same locks
     clib__write_lock(&g_channels_global_rwlock_guard);
     channel_resize_error = channel__prepare_resize(requested_channel_count, &replacement_channels);
@@ -914,9 +906,8 @@ void client_msg__server_settings__process_save_request(cJSON *json_root, uint64 
         clib__unlock(&g_clients_global_rwlock_guard);
     }
 
-    // persist everything into server_settings.json. the save reads channels, icons, groups and bans, so take
-    // those read locks in lock order (bans is always last). the clients read lock is taken first (clients
-    // before channels, matching the auth path) so the identity snapshot can read each client's group list
+    // save settings with read locks in order: clients, channels, icons, groups, then bans
+    // the clients lock also protects the identity snapshot
     clib__read_lock(&g_clients_global_rwlock_guard);
     clib__read_lock(&g_channels_global_rwlock_guard);
     clib__read_lock(&g_icons_global_rwlock_guard);
@@ -977,8 +968,8 @@ void client_msg__server_settings__process_save_request(cJSON *json_root, uint64 
         g_server_settings.session_cipher = previous_general_settings.session_cipher;
         g_server_settings.is_random_cipher_layer_enabled = previous_general_settings.is_random_cipher_layer_enabled;
         g_server_settings.keys_count = previous_general_settings.keys_count;
-        memcpy(g_server_settings.keys, previous_general_settings.keys, sizeof(g_server_settings.keys));
-        memcpy(g_server_settings.plaintext_keys, previous_general_settings.plaintext_keys, sizeof(g_server_settings.plaintext_keys));
+        clib__copy_memory(previous_general_settings.keys, g_server_settings.keys, sizeof(g_server_settings.keys), sizeof(g_server_settings.keys));
+        clib__copy_memory(previous_general_settings.plaintext_keys, g_server_settings.plaintext_keys, sizeof(g_server_settings.plaintext_keys), sizeof(g_server_settings.plaintext_keys));
 
         // restore the general settings
         g_server_settings.channel_count_limit = previous_general_settings.channel_count_limit;
@@ -1038,7 +1029,7 @@ void client_msg__server_settings__process_save_request(cJSON *json_root, uint64 
         g_server_settings.is_logging_failed_attempts_enabled = previous_general_settings.is_logging_failed_attempts_enabled;
         g_server_settings.admin_log_max_size_bytes = previous_general_settings.admin_log_max_size_bytes;
         g_server_settings.admin_log_retention_days = previous_general_settings.admin_log_retention_days;
-        memcpy(g_server_settings.blocked_countries, previous_general_settings.blocked_countries, sizeof(g_server_settings.blocked_countries));
+        clib__copy_memory(previous_general_settings.blocked_countries, g_server_settings.blocked_countries, sizeof(g_server_settings.blocked_countries), sizeof(g_server_settings.blocked_countries));
         DBG_CLIENT_MESSAGE log_info("%s", "client_msg__server_settings__process_save_request: save failed, rolled back the general-settings toggles");
     }
 
@@ -1080,7 +1071,7 @@ void client_msg__server_settings__process_save_request(cJSON *json_root, uint64 
         settings__refresh_client_config();
         login_admission__set_limit((uint64)g_server_settings.max_concurrent_logins);
 
-        // a client may have been quiet for a long time while the checks were disabled.
+        // a client may have been quiet for a long time while the checks were disabled
         // start a full new waiting period when the admin enables them again
         if (previous_is_connection_check_enforced == FALSE && g_server_settings.is_connection_check_enforced == TRUE)
         {
@@ -1121,11 +1112,13 @@ void client_msg__server_settings__process_save_request(cJSON *json_root, uint64 
 }
 
 /**
- * @brief Checks that an information request still belongs to this authenticated connection.
+ * @brief checks that an information request still belongs to this authenticated connection
+ *
  * @param uint64 sender_client_id -> client slot that sent the request
  * @param ws_cli_conn_t* socket -> socket that delivered the request
+ *
  * @return boole -> TRUE for the same authenticated human client
- * @attention The caller holds the clients lock.
+ * @attention the caller holds the clients lock
  */
 static boole _client_msg_server_settings_internal__is_server_info_requester(uint64 sender_client_id, ws_cli_conn_t *socket)
 {
@@ -1133,10 +1126,12 @@ static boole _client_msg_server_settings_internal__is_server_info_requester(uint
 }
 
 /**
- * @brief Replies with public server information, including for users in idle mode.
+ * @brief replies with public server information, including for users in idle mode
+ *
  * @param cJSON* json_root -> request with an optional include_banner boolean
  * @param uint64 sender_client_id -> client that requested the information
  * @param ws_cli_conn_t* socket -> socket that delivered the request
+ *
  * @return void
  */
 void client_msg__server_settings__process_info_request(cJSON *json_root, uint64 sender_client_id, ws_cli_conn_t *socket)
@@ -1176,10 +1171,12 @@ void client_msg__server_settings__process_info_request(cJSON *json_root, uint64 
 }
 
 /**
- * @brief Saves an administrator's banner change and tells clients when it succeeds.
+ * @brief saves an administrator's banner change and tells clients when it succeeds
+ *
  * @param cJSON* json_root -> request containing a data URL, or an empty banner to remove it
  * @param uint64 sender_client_id -> administrator that sent the request
  * @param ws_cli_conn_t* socket -> socket that delivered the request
+ *
  * @return void
  */
 void client_msg__server_settings__process_set_banner_request(cJSON *json_root, uint64 sender_client_id, ws_cli_conn_t *socket)
@@ -1309,10 +1306,7 @@ void client_msg__server_settings__process_set_banner_request(cJSON *json_root, u
 }
 
 /**
- * @brief processes an admin request to read the current server settings: replies to the sender with
- *        the current general-settings toggle values so the client can reflect them (e.g. tick the
- *        checkboxes when the admin opens the general-settings tab). only an authenticated admin
- *        gets a reply.
+ * @brief returns the current server settings to an authenticated admin
  *
  * @param cJSON* json_root -> the parsed client request
  * @param uint64 sender_client_id -> id of the client that sent the request

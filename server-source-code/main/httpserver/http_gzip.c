@@ -1,10 +1,20 @@
 #include "http_gzip.h"
+#include "../clib/clib.h"
 #include "../../third-party/miniz-3.1.2/miniz.h"
 
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
+/**
+ * @brief compares an HTTP token with a lowercase name
+ *
+ * @param const char * begin -> first token byte
+ * @param const char * end -> first byte after the token
+ * @param const char * expected -> terminated lowercase reference
+ *
+ * @return boole -> TRUE when both names match ignoring ASCII case
+ */
 static boole _http_gzip_internal__equal(const char *begin, const char *end, const char *expected)
 {
     ubyte value = 0;
@@ -25,8 +35,16 @@ static boole _http_gzip_internal__equal(const char *begin, const char *end, cons
     return begin == end && *expected == 0;
 }
 
-// HTTP quality values are 0..1 with at most three decimal places.
-// Invalid values disable that coding rather than accidentally enabling it.
+// HTTP quality values are 0..1 with at most three decimal places
+// invalid values disable that coding rather than accidentally enabling it
+/**
+ * @brief parses an encoding quality value with up to three decimal digits
+ *
+ * @param const char * begin -> first value byte
+ * @param const char * end -> first byte after the value
+ *
+ * @return int64 -> quality from zero to 1000, or zero for invalid syntax
+ */
 static int64 _http_gzip_internal__quality(const char *begin, const char *end)
 {
     int64 quality = 0;
@@ -64,7 +82,15 @@ static int64 _http_gzip_internal__quality(const char *begin, const char *end)
     return quality;
 }
 
-// Parse complete request headers. Explicit q=0 exclusions override wildcards.
+// parse complete request headers. Explicit q=0 exclusions override wildcards
+/**
+ * @brief selects gzip or identity from the request encoding preferences
+ *
+ * @param const char * request -> terminated HTTP request headers
+ * @param boole * identity_allowed -> receives whether an uncompressed response is acceptable
+ *
+ * @return http_encoding_t -> selected encoding or HTTP_ENCODING_UNACCEPTABLE
+ */
 http_encoding_t http_gzip__choose_encoding(const char *request, boole *identity_allowed)
 {
     const char *end = NULL_POINTER;
@@ -188,7 +214,16 @@ http_encoding_t http_gzip__choose_encoding(const char *request, boole *identity_
     return *identity_allowed ? HTTP_ENCODING_IDENTITY : HTTP_ENCODING_UNACCEPTABLE;
 }
 
-// Compress one complete response body. Caller owns the returned malloc buffer.
+// compress one complete response body. Caller owns the returned malloc buffer
+/**
+ * @brief compresses bytes into a gzip member with checksum and size trailer
+ *
+ * @param const void * data -> input bytes
+ * @param uint64 size -> input byte count
+ * @param uint64 * compressed_size -> receives the compressed byte count, or zero on failure
+ *
+ * @return ubyte * -> allocated gzip buffer owned by the caller, or NULL on failure
+ */
 ubyte *http_gzip__compress(const void *data, uint64 size, uint64 *compressed_size)
 {
     uint64 i = 0;
@@ -231,7 +266,7 @@ ubyte *http_gzip__compress(const void *data, uint64 size, uint64 *compressed_siz
 
     // write gzip header
     memmove(result + 10, result, deflated_size);
-    memcpy(result, header, sizeof(header));
+    clib__copy_memory(header, result, sizeof(header), deflated_size + 18);
 
     // calculate the checksum
     crc = (uint64)mz_crc32(MZ_CRC32_INIT, data, size);

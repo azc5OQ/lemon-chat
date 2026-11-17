@@ -1,5 +1,5 @@
 #!/bin/sh
-# lemon-chat selfhosting-tools/wireguard/teardown.sh - run on the Linux machine that hosts the server.
+# Stops the tunnel on the Linux server host.
 # removes the tunnel here, undoes the router side (router/teardown.sh over ssh) and switches the server's
 # wireguard mode off in server_settings.json. the saved answers and the key pairs stay.
 

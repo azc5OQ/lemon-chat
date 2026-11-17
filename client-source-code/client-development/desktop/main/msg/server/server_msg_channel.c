@@ -6,9 +6,11 @@
 #include "mbedtls/platform_util.h"
 
 /**
- * @brief validates and inserts one channel record, preserving server IDs and parentage.
- * @param desktop_session_t* session -> session state; worker-owned unless this is a GUI entry point
+ * @brief validates and inserts one channel record, preserving server IDs and parentage
+ *
+ * @param desktop_session_t* session -> session state. Worker owned unless this is a GUI entry point
  * @param const cJSON* data -> borrowed server state record
+ *
  * @return boole -> 1 when the model accepted this channel
  */
 boole server_msg__channel__read_channel(desktop_session_t *session, const cJSON *data)

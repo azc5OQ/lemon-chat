@@ -25,8 +25,17 @@ static void *_musicbot_internal__prepare_thread(void *arg_void);
 static void *_musicbot_internal__reaper_thread(void *arg_void);
 static boole _musicbot_internal__wait_for_playback(client_t *client, uint64 *playback_start_ms, int64 song_index, uint64 generation);
 
-// These helpers require the clients and channels write locks. Allocation and
-// thread startup are separate so restoring a playlist can roll back cleanly.
+// these helpers require the clients and channels write locks. Allocation and
+// thread startup are separate so restoring a playlist can roll back cleanly
+/**
+ * @brief allocates a bot slot and playback storage without starting its thread
+ * caller holds the client and channel write locks
+ *
+ * @param uint64 channel_id -> existing permanent channel for the bot
+ * @param const char * name -> nonempty bot name below USERNAME_MAX_LENGTH
+ *
+ * @return client_t * -> new bot or NULL_POINTER when validation or allocation fails
+ */
 client_t *musicbot__allocate(uint64 channel_id, const char *name)
 {
     int64 index = 0;
@@ -86,6 +95,13 @@ client_t *musicbot__allocate(uint64 channel_id, const char *name)
     return bot;
 }
 
+/**
+ * @brief starts playback for an allocated bot
+ *
+ * @param client_t * bot -> allocated bot with no running playback thread
+ *
+ * @return boole -> TRUE when the thread starts
+ */
 boole musicbot__start(client_t *bot)
 {
     // start the bot thread
@@ -98,8 +114,16 @@ boole musicbot__start(client_t *bot)
     return TRUE;
 }
 
-// Only use for an unstarted bot or after joining its worker. Uploads must not
-// own this slot. The restoration path has not published the bot to clients yet.
+// only use for an unstarted bot or after joining its worker. Uploads must not
+// own this slot. The restoration path has not published the bot to clients yet
+/**
+ * @brief releases a bot whose playback thread is absent or joined
+ * caller holds the client and channel write locks
+ *
+ * @param client_t * bot -> bot whose resources and client slot are released
+ *
+ * @return void
+ */
 void musicbot__free_unstarted(client_t *bot)
 {
     uint64 song_index = 0;
@@ -134,9 +158,14 @@ void musicbot__free_unstarted(client_t *bot)
 }
 
 /**
- * @brief Waits while playback is paused and keeps the playback clock current.
- * @param client Music bot whose controls are atomic.
- * @param playback_start_ms Clock adjusted by the time spent paused.
+ * @brief waits while playback is paused and keeps the playback clock current
+ *
+ * @param client Music bot whose controls are atomic
+ * @param playback_start_ms Clock adjusted by the time spent paused
+ * @param int64 song_index -> playlist slot currently being played
+ * @param uint64 generation -> expected generation of that slot
+ *
+ * @return boole -> TRUE if the same song may continue and no skip is pending, otherwise FALSE
  */
 static boole _musicbot_internal__wait_for_playback(client_t *client, uint64 *playback_start_ms, int64 song_index, uint64 generation)
 {
@@ -162,6 +191,16 @@ static boole _musicbot_internal__wait_for_playback(client_t *client, uint64 *pla
     return _musicbot_internal__song_matches(client, song_index, generation) && !atomic_exchange(&client->music_bot_client_extension.is_skip_requested, FALSE);
 }
 
+/**
+ * @brief checks audio dimensions and estimated decoding memory
+ *
+ * @param uint64 compressed -> compressed file bytes
+ * @param uint64 frames -> decoded frames per channel
+ * @param uint64 rate -> input sample rate
+ * @param uint64 channels -> audio channel count
+ *
+ * @return boole -> TRUE when dimensions and working memory fit the limits
+ */
 static boole _musicbot_internal__working_set_allowed(uint64 compressed, uint64 frames, uint64 rate, uint64 channels)
 {
     uint64 resampled = 0;
@@ -186,13 +225,13 @@ static boole _musicbot_internal__working_set_allowed(uint64 compressed, uint64 f
 /**
  * @brief decodes one uploaded mp3 into 48 kHz int16 PCM ready for the opus encoder: full mp3
  *        decode, catmull-rom cubic resample to 48 kHz when the source rate differs, float ->
- *        clipped int16. rejects corrupt files, empty songs and songs longer than 1000 seconds.
+ *        clipped int16. rejects corrupt files, empty songs and songs longer than 1000 seconds
  *
  * @param client_t* music_bot_client -> the bot whose song slot to prepare
  * @param int64 song_index -> index of the song slot to prepare
  * @param musicbot_prepared_song_t* out_prepared -> receives the buffers and counts; is_valid says if usable
  *
- * @note runs on the bot or preload thread, decoding a private copy taken under the clients lock.
+ * @note runs on the bot or preload thread, decoding a private copy taken under the clients lock
  *
  * @return void
  */
@@ -424,10 +463,10 @@ static void *_musicbot_internal__prepare_thread(void *arg_void)
 }
 
 /**
- * @brief Waits for a deleted music bot's stream thread, frees its songs, and clears its client slot
- *        for reuse.
+ * @brief waits for a deleted music bot's stream thread, frees its songs, and clears its client slot
+ *        for reuse
  *
- * @details Waits without holding locks. The stream thread joins its preload thread before returning, so neither thread can access the buffers or slot after cleanup.
+ * @details Waits without holding locks. The stream thread joins its preload thread before returning, so neither thread can access the buffers or slot after cleanup
  *
  * @param void* arg_void -> the music bot's client_t (slot stays reserved until this thread nulls it)
  *
@@ -484,8 +523,8 @@ static void *_musicbot_internal__reaper_thread(void *arg_void)
 }
 
 /**
- * @brief Starts a detached cleanup thread, stops music playback, and hides the bot. The client slot
- *        stays reserved until cleanup finishes.
+ * @brief starts a detached cleanup thread, stops music playback, and hides the bot. The client slot
+ *        stays reserved until cleanup finishes
  *
  * @param client_t* music_bot_client -> the bot to delete
  *
@@ -562,13 +601,10 @@ void musicbot__remove_song(client_t *music_bot, uint64 song_id)
 }
 
 /**
- * @brief Adds an uploaded MP3 to a free music bot slot and sends the updated song list.
+ * @brief reserves a song slot, validates the MP3 and sends the updated playlist
  *
- * @details Reserves the slot before unlocking to decode the MP3, then rechecks the bot under the write lock. A successful slot owns the MP3 buffer. On failure the buffer and argument are freed; on success only the argument is freed.
- *
- * @param musicbot_add_song_arg_struct_t* arg -> the upload: target bot, mp3 buffer and its length, song name, and the client_id of the uploader to answer. this function takes ownership of it and of the mp3 buffer
- *
- * @attention questionable thread safety; a client validity check macro should be added so the bot is verified before every access to it
+ * @param musicbot_add_song_arg_struct_t* arg -> upload arguments and MP3 buffer whose ownership this function consumes
+ * @note the song owns the buffer on success. Failure frees it
  *
  * @return void
  */
@@ -830,7 +866,7 @@ void *musicbot__threadstart(void *argument)
                 continue;
             }
 
-            // collect the preloaded PCM if it is for this exact song, otherwise prepare it right here.
+            // collect the preloaded PCM if it is for this exact song, otherwise prepare it right here
             // the preload was started while the previous song streamed, so on the happy path this join
             // returns immediately and playback continues with no decode gap between songs
             if (is_preload_running == TRUE)
@@ -1005,9 +1041,9 @@ void *musicbot__threadstart(void *argument)
                 song_stream_sequence_number = (song_stream_sequence_number + 1) & 0xffff;
                 DBG_MUSIC_BOT probe_frames_sent++;
 
-                // pace to real time: after sending frame K we should be at started + (K+1)*20ms.
-                // sleep only if we are ahead; if behind, send the next frame immediately to catch up.
-                // this self-corrects sleep overshoot / load instead of accumulating drift like a fixed sleep did.
+                // pace to real time: after sending frame K we should be at started + (K+1)*20ms
+                // sleep only if we are ahead; if behind, send the next frame immediately to catch up
+                // this self-corrects sleep overshoot / load instead of accumulating drift like a fixed sleep did
                 // "ahead" means more than MUSIC_BOT_LEAD_MS ahead of the playback clock: the first
                 // lead's worth of frames goes out at once, from then on one frame per 20 ms
                 frames_done = (frame_offset / frame_size) + 1;
@@ -1098,7 +1134,15 @@ void *musicbot__threadstart(void *argument)
     return NULL_POINTER;
 }
 
-/** @brief Checks that prepared audio still belongs to the occupied playlist slot. */
+/**
+ * @brief checks that prepared audio still belongs to the occupied playlist slot
+ *
+ * @param client_t* client -> music bot owning the playlist
+ * @param int64 song_index -> playlist slot that produced the audio
+ * @param uint64 generation -> expected slot generation
+ *
+ * @return boole -> TRUE if the running bot still owns that song generation, otherwise FALSE
+ */
 static boole _musicbot_internal__song_matches(client_t *client, int64 song_index, uint64 generation)
 {
     boole matches = FALSE;

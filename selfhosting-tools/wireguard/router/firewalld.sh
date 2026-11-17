@@ -1,5 +1,5 @@
 #!/bin/sh
-# Appended to the generated forwarding script; all variables are validated by setup.
+# Appended to the generated forwarding script. All variables are validated by setup.
 # These exclusively owned policies supplement iptables on the nftables backend.
 # Inputs: ACTION, ZONE, HOST_IP, TCP_PORTS, UDP_PORTS and WG_PORT.
 # Run before installing iptables rules because the firewalld reload can clear them.

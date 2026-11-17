@@ -1,11 +1,20 @@
 #include "cipher_twofish.h"
+#include "../clib/clib.h"
 #include "ciphers.h"
 #include <string.h>
 #include "../../third-party/libtomcrypt/lemon_config.h"
 #include "../../third-party/libtomcrypt/src/ciphers/twofish/twofish.c"
 
-// Twofish-256-CTR, in place. Returns 1 on success, 0 on failure.
-// The key, IV and data must be non-NULL; encryption and decryption are identical.
+/**
+ * @brief encrypts or decrypts data in place with Twofish CTR
+ *
+ * @param const ubyte[32] key -> 256 bit key. Must not be NULL
+ * @param const ubyte[16] iv -> initial counter. Must not be NULL
+ * @param ubyte* data -> buffer to update. Must not be NULL
+ * @param uint64 size -> number of bytes in data
+ *
+ * @return boole -> 1 on success. 0 on failure
+ */
 boole cipher_twofish__crypt(const ubyte key[32], const ubyte iv[16], ubyte *data, uint64 size)
 {
     int64 position = 0;
@@ -17,7 +26,7 @@ boole cipher_twofish__crypt(const ubyte key[32], const ubyte iv[16], ubyte *data
     boole status = FALSE;
 
     // prepare counter and key
-    memcpy(counter, iv, sizeof(counter));
+    clib__copy_memory(iv, counter, sizeof(counter), sizeof(counter));
     status = twofish_setup(key, 32, 0, &scheduled) == CRYPT_OK;
 
     // apply the cipher

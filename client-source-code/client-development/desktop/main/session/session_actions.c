@@ -3,12 +3,14 @@
 #include "mbedtls/platform_util.h"
 
 /**
- * @brief shares menu availability and worker rechecks using server-supplied group and channel rights.
+ * @brief shares menu availability and worker rechecks using server supplied group and channel rights
+ *
  * @param const desktop_session_view_t* view -> owned snapshot
  * @param const desktop_client_t* client -> target belonging to that snapshot
  * @param desktop_action_e action -> requested group or moderation action
  * @param int64 value -> group ID or channel role for assignment
- * @return boole -> TRUE when current hints permit the action; the server still authorizes it
+ *
+ * @return boole -> TRUE when current hints permit the action. The server still authorizes it
  */
 boole desktop_session__allows(const desktop_session_view_t *view, const desktop_client_t *client, desktop_action_e action, int64 value)
 {
@@ -90,9 +92,11 @@ boole desktop_session__allows(const desktop_session_view_t *view, const desktop_
 }
 
 /**
- * @brief returns the stable attachment manager owned by the session.
- * @param desktop_session_t* session -> live GUI-owned session
- * @return desktop_attachments_t* -> borrowed manager; invalid after session destruction
+ * @brief returns the stable attachment manager owned by the session
+ *
+ * @param desktop_session_t* session -> live GUI owned session
+ *
+ * @return desktop_attachments_t* -> borrowed manager. Invalid after session destruction
  */
 desktop_attachments_t *desktop_session__attachments(desktop_session_t *session)
 {
@@ -100,9 +104,11 @@ desktop_attachments_t *desktop_session__attachments(desktop_session_t *session)
 }
 
 /**
- * @brief copies a file selection into the bounded command queue; no GUI pointers cross threads.
+ * @brief copies a file selection into the bounded command queue. No GUI pointers cross threads
+ *
  * @param desktop_session_t* session -> live session
  * @param const desktop_attachment_request_t* request -> destination and selected path
+ *
  * @return boole -> TRUE when queued
  */
 boole desktop_session__attach(desktop_session_t *session, const desktop_attachment_request_t *request)
@@ -135,9 +141,11 @@ boole desktop_session__attach(desktop_session_t *session, const desktop_attachme
 }
 
 /**
- * @brief queues a bounded action against the exact member and channel shown when clicked.
- * @param desktop_session_t* session -> GUI-owned connection
- * @param const desktop_action_t* action -> copied request; no caller pointers are retained
+ * @brief queues a bounded action against the exact member and channel shown when clicked
+ *
+ * @param desktop_session_t* session -> GUI owned connection
+ * @param const desktop_action_t* action -> copied request. No caller pointers are retained
+ *
  * @return boole -> 1 when queued, zero for stale targets, invalid input or a full queue
  */
 boole desktop_session__action(desktop_session_t *session, const desktop_action_t *action)
@@ -185,9 +193,11 @@ boole desktop_session__action(desktop_session_t *session, const desktop_action_t
 }
 
 /**
- * @brief queues an explicit channel save against the version originally opened by the GUI.
- * @param desktop_session_t* session -> GUI-owned connection
+ * @brief queues an explicit channel save against the version originally opened by the GUI
+ *
+ * @param desktop_session_t* session -> GUI owned connection
  * @param const desktop_channel_request_t* request -> full bounded channel draft
+ *
  * @return boole -> 1 when queued, zero when stale, invalid or unavailable
  */
 boole desktop_session__channel_request(desktop_session_t *session, const desktop_channel_request_t *request)

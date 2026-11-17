@@ -1,0 +1,123 @@
+plugins
+{
+    id 'com.android.application'
+}
+
+def soundSource = rootProject.file('../../browser/main/scripts/app/audio/sounds.js')
+def generatedSoundAssets = layout.buildDirectory.dir('generated/client-sounds')
+def verificationInstall = providers.gradleProperty('nativeVerificationInstall').orElse('false').get() == 'true'
+def generateSoundAssets = tasks.register('generateSoundAssets')
+{
+    inputs.file(soundSource)
+    outputs.dir(generatedSoundAssets)
+    doLast
+    {
+        def output = generatedSoundAssets.get().dir('sounds').asFile
+        output.mkdirs()
+        def clips = soundSource.getText('UTF-8') =~ /([A-Za-z_]+): new Audio\("data:audio\/([^;]+);base64,([^"]+)"\)/
+        int count = 0
+        clips.each
+        {
+            def clip ->
+            def extension = clip[2] == 'mpeg' ? 'mp3' : clip[2]
+            if (!(extension in ['mp3', 'wav', 'ogg']))
+            {
+                throw new GradleException('Unsupported client sound type: ' + extension)
+            }
+            new File(output, clip[1] + '.' + extension).bytes = Base64.decoder.decode(clip[3])
+            count++
+        }
+        if (count == 0)
+        {
+            throw new GradleException('No client notification clips were found')
+        }
+    }
+}
+
+android
+{
+    namespace 'com.lemonchat'
+    compileSdk 36
+    buildToolsVersion '35.0.0'
+    ndkVersion '27.2.12479018'
+    sourceSets.main.assets.srcDir(generatedSoundAssets)
+
+    defaultConfig
+    {
+        applicationId 'com.lemonchat.nativeclient'
+        manifestPlaceholders = [appLabel: 'Lemon Native']
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName '0.1'
+        testInstrumentationRunner 'com.lemonchat.storage.StorageInstrumentation'
+
+        ndk
+        {
+            abiFilters(*providers.gradleProperty('nativeAbis').orElse('arm64-v8a,armeabi-v7a,x86_64').get().split(','))
+        }
+
+        externalNativeBuild
+        {
+            cmake
+            {
+                arguments '-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON', '-DCMAKE_BUILD_TYPE=Release'
+            }
+        }
+    }
+
+    externalNativeBuild
+    {
+        cmake
+        {
+            path 'src/main/cpp/CMakeLists.txt'
+            version '3.22.1'
+            if (providers.gradleProperty('nativeBuildRoot').isPresent())
+            {
+                buildStagingDirectory file(providers.gradleProperty('nativeBuildRoot').get() + '/cxx')
+            }
+        }
+    }
+
+    compileOptions
+    {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    buildTypes
+    {
+        debug
+        {
+            if (verificationInstall)
+            {
+                applicationIdSuffix '.checks'
+                manifestPlaceholders = [appLabel: 'Lemon Native Checks']
+            }
+        }
+        release
+        {
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    testOptions
+    {
+        unitTests.returnDefaultValues = true
+    }
+}
+
+tasks.named('preBuild').configure
+{
+    dependsOn(generateSoundAssets)
+}
+
+dependencies
+{
+    implementation 'org.java-websocket:Java-WebSocket:1.6.0'
+    implementation 'org.slf4j:slf4j-nop:2.0.16'
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.json:json:20240303'
+}

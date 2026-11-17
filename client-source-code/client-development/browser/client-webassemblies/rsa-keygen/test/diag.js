@@ -1,5 +1,5 @@
-// pinpoints where a mismatched vector diverges, to tell a walk-length desync (low bits
-// only) from a candidate-draw desync (high bits)
+// show the first differing hex digit in each RSA prime
+// this helps locate a mismatch between the JavaScript and Wasm vectors
 let fs = require("fs");
 let crypto = require("crypto");
 
@@ -14,25 +14,37 @@ WebAssembly.instantiate(wasm_bytes, {}).then(function(result)
 
     let seed_hex = crypto.createHash("sha256").update(v.passphrase, "utf8").digest("hex");
     let seed_ptr = wasm.rsa_keygen__get_seed_buffer();
-    for (let j = 0; j < seed_hex.length; j++) { mem[seed_ptr + j] = seed_hex.charCodeAt(j); }
+    for (let j = 0; j < seed_hex.length; j++)
+    {
+        mem[seed_ptr + j] = seed_hex.charCodeAt(j);
+    }
     wasm.rsa_keygen__generate(v.bits, seed_hex.length);
 
     ["p", "q"].forEach(function(field, idx)
     {
         let ptr = wasm.rsa_keygen__get_result(idx === 0 ? 3 : 4);
         let hex = "";
-        for (let b = ptr; mem[b] != 0; b++) { hex += String.fromCharCode(mem[b]); }
+        for (let b = ptr; mem[b] != 0; b++)
+        {
+            hex += String.fromCharCode(mem[b]);
+        }
 
         let js_hex = v[field];
         console.log(field + ": js len=" + js_hex.length + " wasm len=" + hex.length);
-        // align from the most significant nibble
+        // compare from the most significant hex digit
         let n = Math.max(js_hex.length, hex.length);
         let js_pad = js_hex.padStart(n, "0");
         let wa_pad = hex.padStart(n, "0");
         let first_diff = -1;
-        for (let i = 0; i < n; i++) { if (js_pad[i] !== wa_pad[i]) { first_diff = i; break; } }
-        console.log("  first differing hex digit from MSB: " + first_diff + " of " + n
-            + " (bits from top ~" + (first_diff * 4) + ")");
+        for (let i = 0; i < n; i++)
+        {
+            if (js_pad[i] !== wa_pad[i])
+            {
+                first_diff = i;
+                break;
+            }
+        }
+        console.log("  first differing hex digit from MSB: " + first_diff + " of " + n + " (bits from top ~" + (first_diff * 4) + ")");
         if (first_diff >= 0)
         {
             console.log("  js  : ..." + js_pad.slice(Math.max(0, first_diff - 4), first_diff + 8));

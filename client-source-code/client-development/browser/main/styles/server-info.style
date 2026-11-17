@@ -242,8 +242,8 @@
     position: fixed;
     inset: 0;
     margin: auto;
-    width: min(400px, calc(100vw - 32px));
-    max-height: calc(100dvh - 40px);
+    width: min(400px, calc(calc(100vw / var(--ui-display-scale, 1)) - 32px));
+    max-height: calc(calc(100dvh / var(--ui-display-scale, 1)) - 40px);
     box-sizing: border-box;
     padding: 0;
     overflow: hidden;
@@ -389,13 +389,13 @@
     box-sizing: border-box;
     width: 560px;
     min-width: 0;
-    max-width: calc(100vw - 32px);
+    max-width: calc(calc(100vw / var(--ui-display-scale, 1)) - 32px);
 }
 
 :root #client-info-content
 {
     min-width: 0;
-    max-height: calc(100vh - 120px);
+    max-height: calc(calc(100vh / var(--ui-display-scale, 1)) - 120px);
     overflow: auto;
 }
 

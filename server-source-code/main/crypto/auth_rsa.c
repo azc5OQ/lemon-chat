@@ -1,4 +1,4 @@
-// This file checks the size of clients' RSA keys and encrypts the challenge used to prove they own their private key.
+// this file checks the size of clients' RSA keys and encrypts the challenge used to prove they own their private key
 #include "../core/channel.h"
 #include "auth_rsa.h"
 #include "../core/client_session.h"
@@ -86,12 +86,14 @@ cleanup:
 }
 
 /**
- * @brief Encrypts the login challenge with the client's RSA modulus and fixed exponent 3.
+ * @brief encrypts the login challenge with the client's RSA modulus and fixed exponent 3
+ *
  * @param char* public_key_modulus -> RSA modulus encoded as base64
  * @param ubyte* bytes -> challenge bytes to encrypt
  * @param uint64 buffer_length -> challenge length, at most 256 bytes and fitting the RSA padding
+ *
  * @return char* -> allocated base64 ciphertext, or NULL_POINTER on invalid input or failure
- * @attention Release the returned string with memorymanager__free.
+ * @attention release the returned string with memorymanager__free
  */
 char *auth_rsa__encrypt_string_with_public_key(char *public_key_modulus, ubyte *bytes, uint64 buffer_length)
 {

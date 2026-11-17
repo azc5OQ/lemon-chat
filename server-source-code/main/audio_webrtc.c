@@ -1,10 +1,10 @@
-// This file creates the WebRTC connection between a Lemon Chat client and the server.
-// It exchanges connection details through the client's encrypted chat connection, handles
-// reconnects and cleanup, and sends and receives audio through its audio data channel.
-// Received audio goes to audio_channel.c for delivery to the other clients in the channel.
+// this file creates the WebRTC connection between a Lemon Chat client and the server
+// it exchanges connection details through the client's encrypted chat connection, handles
+// reconnects and cleanup, and sends and receives audio through its audio data channel
+// received audio goes to audio_channel.c for delivery to the other clients in the channel
 //
-// Audio and video use the same WebRTC connection. This file owns that connection's lifetime,
-// while video_webrtc.c creates and handles the separate data channel used for video.
+// audio and video use the same WebRTC connection. This file owns that connection's lifetime,
+// while video_webrtc.c creates and handles the separate data channel used for video
 #include "definitions.h"
 
 #include "../third-party/dave-g-json/cJSON.h" // needed by base.h
@@ -28,7 +28,7 @@
 
 webrtc_peer_t *g_webrtc_peers_array = NULL_POINTER;
 
-// Reserved before creating a peer, then transferred to the persistent cleanup worker.
+// reserved before creating a peer, then transferred to the persistent cleanup worker
 typedef struct webrtc_teardown_arg_t
 {
     struct webrtc_teardown_arg_t *next;
@@ -77,8 +77,8 @@ void RTC_API audio_webrtc__datachannel_on_error_callback(int id, const char *err
 }
 
 /**
- * @brief Queues the server's WebRTC connection details when they are ready, so they can be
- *        encrypted and delivered through the client's current chat socket.
+ * @brief queues the server's WebRTC connection details when they are ready, so they can be
+ *        encrypted and delivered through the client's current chat socket
  *
  * @param int pc -> peer connection handle
  * @param const char* sdp -> the local SDP description string
@@ -179,7 +179,7 @@ label_descriptionCallback_end:
 }
 
 /**
- * @brief Rejects an unsolicited remote-created data channel without replacing an owned channel.
+ * @brief rejects an unsolicited remote-created data channel without replacing an owned channel
  *
  * @param int pc -> peer connection handle
  * @param int dc -> data channel handle
@@ -195,7 +195,7 @@ void RTC_API audio_webrtc__peerconnection_on_datachannel_callback(int pc, int dc
     // the protocol uses only server-created audio/video channels. this handle
     // has never had application callbacks installed, so deleting it cannot wait
     // for a callback that needs an application lock. the public RTC contract
-    // waits for callbacks of dc, not for this incoming callback on pc.
+    // waits for callbacks of dc, not for this incoming callback on pc
     // reject stale and null-peer deliveries in exactly the same way
     if (dc > 0)
     {
@@ -265,7 +265,7 @@ static void _audio_webrtc_internal__send_public_candidate(const char *candidate,
         return;
     }
 
-    // lower the priority from host (126) to public-address (100) preference.
+    // lower the priority from host (126) to public-address (100) preference
     // the preference occupies the upper 8 bits of the 32-bit priority
     if (priority > ((uint64)26 << 24))
     {
@@ -500,12 +500,10 @@ void RTC_API audio_webrtc__datachannel_on_open_callback(int id, void *ptr)
 }
 
 /**
- * @brief runs when the data channel closes; clears the peer's slot
+ * @brief clears a peer only when the closed data channel still owns its slot
  *
- * @param int id -> data channel handle
- * @param void* ptr -> the webrtc_peer_t this data channel belongs to
- *
- * @attention the slot may have been re-initialized since this data channel was created (the client retries the datachannel setup every 10 seconds and each retry overwrites the slot's handles). a stale data channel closing later must not clear the slot's CURRENT state - that silently removed the client from every audio relay loop while its live datachannel stayed open. only the handle that is still the slot's current one may clear the slot.
+ * @param int id -> closed data channel handle
+ * @param void* ptr -> peer associated with the callback
  *
  * @return void
  */
@@ -715,8 +713,11 @@ label_audio_webrtc__process_client_channel_join_end:
 }
 
 /**
- * @brief Deletes queued RTC objects without holding application or queue locks.
- * @param arg_void Unused; this process-lifetime worker owns each dequeued job.
+ * @brief deletes queued RTC objects without holding application or queue locks
+ *
+ * @param arg_void Unused thread argument
+ *
+ * @return void* -> does not return during normal operation
  */
 static void *_audio_webrtc_internal__teardown_thread(void *arg_void)
 {
@@ -764,8 +765,9 @@ static void *_audio_webrtc_internal__teardown_thread(void *arg_void)
 }
 
 /**
- * @brief Starts cleanup before accepting ownership of the first RTC object. A failed start leaves
- *        no RTC handles behind and a later setup may retry.
+ * @brief starts the RTC cleanup worker once
+ *
+ * @return boole -> TRUE if the worker is running, otherwise FALSE so startup can be retried
  */
 static boole _audio_webrtc_internal__start_teardown_worker(void)
 {
@@ -783,8 +785,11 @@ static boole _audio_webrtc_internal__start_teardown_worker(void)
 }
 
 /**
- * @brief Transfers a peer's handles into its reserved cleanup job.
- * @attention The caller holds the peers write lock. No allocation is needed.
+ * @brief moves a peer's handles to its reserved cleanup job and clears the peer
+ *
+ * @param webrtc_peer_t* peer -> peer to detach with the peers write lock held
+ *
+ * @return webrtc_teardown_arg_t* -> reserved cleanup job, or NULL if the peer has none
  */
 static webrtc_teardown_arg_t *_audio_webrtc_internal__detach_peer(webrtc_peer_t *peer)
 {
@@ -818,8 +823,9 @@ static webrtc_teardown_arg_t *_audio_webrtc_internal__detach_peer(webrtc_peer_t 
 }
 
 /**
- * @brief Gives a reserved job to the worker without allocating or starting a thread. The worker
- *        releases the queue lock before waiting for RTC callbacks to finish.
+ * @brief gives a reserved cleanup job to the RTC worker
+ *
+ * @param webrtc_teardown_arg_t* cleanup -> job whose ownership passes to the worker, or NULL for no work
  */
 static void _audio_webrtc_internal__queue_teardown(webrtc_teardown_arg_t *cleanup)
 {
@@ -868,7 +874,8 @@ void audio_webrtc__process_client_disconnect(client_t *client)
 }
 
 /**
- * @brief Adds a client's ICE candidate to its WebRTC connection.
+ * @brief adds a client's ICE candidate to its WebRTC connection
+ *
  * @param client_t* client -> client that owns the connection
  * @param cstring candidate -> checked candidate from the client's message
  */
@@ -887,7 +894,8 @@ void audio_webrtc__add_remote_candidate(client_t *client, cstring candidate)
 }
 
 /**
- * @brief Applies the client's answer to the server's WebRTC connection offer.
+ * @brief applies the client's answer to the server's WebRTC connection offer
+ *
  * @param client_t* client -> client that owns the connection
  * @param cstring sdp -> checked session description from the client's message
  * @param cstring type -> checked description type from the client's message
@@ -907,15 +915,16 @@ void audio_webrtc__set_remote_description(client_t *client, cstring sdp, cstring
 }
 
 /**
- * @brief Creates the client's WebRTC connection and audio data channel.
+ * @brief creates the client's WebRTC connection and audio data channel
  *
- * Reconnecting detaches the previous connection and channels before replacing
- * the slot, so their callbacks cannot change the new connection's state.
- * Their reserved cleanup jobs are then passed to the cleanup worker.
+ * reconnecting detaches the previous connection and channels before replacing
+ * the slot, so their callbacks cannot change the new connection's state
+ * their reserved cleanup jobs are then passed to the cleanup worker
  *
  * @param client_t* client -> client requesting the connection
- * @attention The caller holds the clients read or write lock. This function takes the peers write lock while rebuilding the slot.
- * @return boole -> TRUE when both resources were created; FALSE when the client is missing, inactive or unauthenticated, or setup fails.
+ * @attention the caller holds the clients read or write lock. This function takes the peers write lock while rebuilding the slot
+ *
+ * @return boole -> TRUE when both resources were created; FALSE when the client is missing, inactive or unauthenticated, or setup fails
  */
 boole audio_webrtc__initialize_datachannel_connection(client_t *client)
 {
@@ -1040,13 +1049,13 @@ end:
 }
 
 /**
- * @brief Checks whether the client's WebRTC connection has reached the connected state.
+ * @brief checks whether the client's WebRTC connection has reached the connected state
  *
  * @param uint64 client_id -> valid index of the client's WebRTC peer
  *
- * @attention The caller holds the WebRTC peers read lock.
+ * @attention the caller holds the WebRTC peers read lock
  *
- * @return boole -> TRUE when the peer exists and is connected; otherwise FALSE.
+ * @return boole -> TRUE when the peer exists and is connected; otherwise FALSE
  */
 boole audio_webrtc__is_connected(uint64 client_id)
 {
@@ -1056,14 +1065,14 @@ boole audio_webrtc__is_connected(uint64 client_id)
 }
 
 /**
- * @brief Checks whether a packet came from the client's current connected voice channel.
+ * @brief checks whether a packet came from the client's current connected voice channel
  *
  * @param uint64 client_id -> valid index of the client's WebRTC peer
  * @param int data_channel -> channel handle the packet arrived on
  *
- * @attention The caller holds the WebRTC peers read lock. Packets from a replaced channel are ignored.
+ * @attention the caller holds the WebRTC peers read lock. Packets from a replaced channel are ignored
  *
- * @return boole -> TRUE when the peer is connected and the handle matches; otherwise FALSE.
+ * @return boole -> TRUE when the peer is connected and the handle matches; otherwise FALSE
  */
 boole audio_webrtc__is_data_channel_current(uint64 client_id, int data_channel)
 {

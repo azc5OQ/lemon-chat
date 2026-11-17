@@ -1,4 +1,4 @@
-// This file starts the bundled stunnel program and renews its certificate when configured.
+// this file starts the bundled stunnel program and renews its certificate when configured
 #include "stunnel.h"
 #include <string.h>
 #include "../util.h"
@@ -28,12 +28,17 @@ static HANDLE g_stunnel_job = NULL_POINTER;
 static int64 g_stunnel_pid = 0;
 
 #ifndef WIN32
-static int g_stunnel_owner_fd = -1; // Native pipe descriptor.
+static int g_stunnel_owner_fd = -1; // native pipe descriptor
 static pthread_mutex_t g_stunnel_owner_mutex = PTHREAD_MUTEX_INITIALIZER;
 static boole g_stunnel_exit_registered = FALSE;
 
-// Closing this pipe also works on non-Linux Unix: the supervisor sees EOF even
-// after a hard server exit and remains alive long enough to stop and reap stunnel.
+// closing this pipe also works on non-Linux Unix: the supervisor sees EOF even
+// after a hard server exit and remains alive long enough to stop and reap stunnel
+/**
+ * @brief closes the ownership pipe so the supervisor stops its child
+ *
+ * @return void
+ */
 static void _stunnel_internal__release_owner(void)
 {
     // close the owner pipe
@@ -46,6 +51,14 @@ static void _stunnel_internal__release_owner(void)
     pthread_mutex_unlock(&g_stunnel_owner_mutex);
 }
 
+/**
+ * @brief waits for a child while retrying interrupted system calls
+ *
+ * @param pid_t child -> child process ID
+ * @param int options -> waitpid options
+ *
+ * @return pid_t -> child ID, zero while still running with WNOHANG, or -1 on failure
+ */
 static pid_t _stunnel_internal__wait(pid_t child, int options)
 {
     pid_t result = 0;
@@ -58,6 +71,13 @@ static pid_t _stunnel_internal__wait(pid_t child, int options)
     return result;
 }
 
+/**
+ * @brief reaps a supervisor and clears its matching ownership state
+ *
+ * @param void * argument -> supervisor PID encoded through nint
+ *
+ * @return void * -> NULL_POINTER
+ */
 static void *_stunnel_internal__reap_supervisor(void *argument)
 {
     pid_t child = (pid_t)(nint)argument;
@@ -80,6 +100,13 @@ static void *_stunnel_internal__reap_supervisor(void *argument)
     return NULL_POINTER;
 }
 
+/**
+ * @brief creates a pipe whose descriptors close during exec
+ *
+ * @param int [2] descriptors -> receives the read and write descriptors
+ *
+ * @return boole -> TRUE when both descriptors are ready
+ */
 static boole _stunnel_internal__make_pipe(int descriptors[2])
 {
     // create the pipe
@@ -98,6 +125,14 @@ static boole _stunnel_internal__make_pipe(int descriptors[2])
     return TRUE;
 }
 
+/**
+ * @brief reads child startup status while retrying interrupted reads
+ *
+ * @param int descriptor -> status pipe descriptor
+ * @param int64 * status -> receives up to one status value
+ *
+ * @return int64 -> bytes read, zero at EOF, or -1 on failure
+ */
 static int64 _stunnel_internal__read_status(int descriptor, int64 *status)
 {
     int64 result = 0;
@@ -110,7 +145,18 @@ static int64 _stunnel_internal__read_status(int descriptor, int64 *status)
     return result;
 }
 
-// Runs only in the supervisor process. No application locks are used after fork.
+// runs only in the supervisor process. No application locks are used after fork
+/**
+ * @brief runs stunnel until the owner pipe closes or the child exits
+ * runs only in the forked supervisor and exits instead of returning
+ *
+ * @param const char * executable -> stunnel executable path
+ * @param const char * configuration -> configuration file path
+ * @param int owner -> owner pipe read descriptor
+ * @param int started -> startup status write descriptor
+ *
+ * @return void
+ */
 static void _stunnel_internal__supervise(const char *executable, const char *configuration, int owner, int started)
 {
     int executed[2] = { -1, -1 }; // pipe writes native descriptors
@@ -241,6 +287,14 @@ static void _stunnel_internal__supervise(const char *executable, const char *con
     _exit(0);
 }
 
+/**
+ * @brief launches a supervised stunnel process owned by this server
+ *
+ * @param const char * executable -> stunnel executable path
+ * @param const char * configuration -> configuration file path
+ *
+ * @return boole -> TRUE when already running or startup was confirmed
+ */
 static boole _stunnel_internal__launch_owned(const char *executable, const char *configuration)
 {
     boole success = FALSE;
@@ -506,10 +560,10 @@ static void _stunnel_internal__terminate_stale_stunnel(const char *pid_path)
 #endif
 
 /**
- * @brief Runs Certbot renewal for the configured domain before the listeners start.
+ * @brief runs Certbot renewal for the configured domain before the listeners start
  *
- * Certbot decides whether renewal is needed. Running it before the listeners start
- * leaves port 80 available for certificate validation.
+ * certbot decides whether renewal is needed. Running it before the listeners start
+ * leaves port 80 available for certificate validation
  *
  * @attention failure is never fatal - the server keeps running with the existing certificate
  *
@@ -609,7 +663,7 @@ void stunnel__renew_certificate_if_due(void)
  * @brief if wss is enabled, writes stunnel.conf next to the executable and launches the bundled
  *        stunnel so the server is reachable over wss as well as ws
  *
- * @attention On Unix a supervisor owns the foreground child and watches this server's lifetime.
+ * @attention on Unix a supervisor owns the foreground child and watches this server's lifetime
  *
  * @return void
  */
@@ -861,7 +915,8 @@ void stunnel__launch(void)
 }
 
 /**
- * @brief Reports whether the bundled stunnel process was started.
+ * @brief reports whether the bundled stunnel process was started
+ *
  * @return boole -> TRUE after stunnel was launched successfully
  */
 boole stunnel__was_started(void)

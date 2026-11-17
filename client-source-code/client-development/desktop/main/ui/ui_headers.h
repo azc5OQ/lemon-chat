@@ -3,8 +3,8 @@
 
 #include "clib.h"
 
-// Meek's pointer-sized aliases use long long on LP64; Lemon's use nint.
-// Keep each library's exact declarations without changing either upstream copy.
+// meek's pointer sized aliases use long long on LP64. Lemon's use nint
+// keep each library's exact declarations without changing either upstream copy
 #define nuint meek_ui_nuint
 #define nint meek_ui_nint
 #include "gui_api.h"

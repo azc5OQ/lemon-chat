@@ -21,7 +21,7 @@
 #include <unistd.h>
 #endif
 
-// A snapshot is bounded before allocation. Normal uploads and playback stay in RAM.
+// A snapshot is bounded before allocation. Normal uploads and playback stay in RAM
 #define MUSICBOT_SNAPSHOT_MAX_BYTES ((uint64)1024 * 1024 * 1024)
 static char g_musicbot_store_error[256];
 static boole g_musicbot_store_restored = FALSE;
@@ -35,12 +35,26 @@ typedef struct musicbot_store_buffer
     boole valid;
 } musicbot_store_buffer_t;
 
+/**
+ * @brief stores a snapshot error for the admin status reply
+ *
+ * @param const char * text -> error text to copy
+ *
+ * @return boole -> FALSE
+ */
 static boole _musicbot_store_internal__error(const char *text)
 {
     snprintf(g_musicbot_store_error, sizeof(g_musicbot_store_error), "%s", text);
     return FALSE;
 }
 
+/**
+ * @brief accepts only generated snapshot basenames
+ *
+ * @param const char * filename -> filename to check
+ *
+ * @return boole -> TRUE for the expected prefix, hexadecimal token and suffix
+ */
 static boole _musicbot_store_internal__valid_name(const char *filename)
 {
     uint64 index = 0;
@@ -62,6 +76,13 @@ static boole _musicbot_store_internal__valid_name(const char *filename)
     return TRUE;
 }
 
+/**
+ * @brief distinguishes a missing snapshot path from an unreadable one
+ *
+ * @param const char * filename -> snapshot path to inspect
+ *
+ * @return boole -> FALSE only when the filesystem reports the path is absent
+ */
 static boole _musicbot_store_internal__reference_may_exist(const char *filename)
 {
 #ifdef WIN32
@@ -73,6 +94,14 @@ static boole _musicbot_store_internal__reference_may_exist(const char *filename)
 #endif
 }
 
+/**
+ * @brief overwrites and removes a validated snapshot file
+ * refuses links and nonregular files before writing
+ *
+ * @param const char * filename -> generated basename or an empty string
+ *
+ * @return boole -> TRUE when absent or successfully cleared
+ */
 boole musicbot_store__remove_file(const char *filename)
 {
     FILE *file = NULL_POINTER;
@@ -211,6 +240,15 @@ boole musicbot_store__remove_file(const char *filename)
     return TRUE;
 }
 
+/**
+ * @brief appends or measures snapshot bytes within the buffer limit
+ *
+ * @param musicbot_store_buffer_t * buffer -> buffer position and validity to update
+ * @param const void * data -> source bytes when the buffer has storage
+ * @param uint64 size -> byte count to append
+ *
+ * @return void
+ */
 static void _musicbot_store_internal__write(musicbot_store_buffer_t *buffer, const void *data, uint64 size)
 {
     // check the free space
@@ -223,11 +261,19 @@ static void _musicbot_store_internal__write(musicbot_store_buffer_t *buffer, con
     // copy the bytes
     if (buffer->data != NULL_POINTER)
     {
-        memcpy(buffer->data + buffer->position, data, size);
+        clib__copy_memory(data, buffer->data + buffer->position, size, buffer->size - buffer->position);
     }
     buffer->position += size;
 }
 
+/**
+ * @brief writes an unsigned value as eight little-endian bytes
+ *
+ * @param musicbot_store_buffer_t * buffer -> destination snapshot buffer
+ * @param uint64 value -> value to encode
+ *
+ * @return void
+ */
 static void _musicbot_store_internal__number(musicbot_store_buffer_t *buffer, uint64 value)
 {
     uint64 index = 0;
@@ -241,6 +287,14 @@ static void _musicbot_store_internal__number(musicbot_store_buffer_t *buffer, ui
     _musicbot_store_internal__write(buffer, bytes, sizeof(bytes));
 }
 
+/**
+ * @brief writes a byte length followed by string content
+ *
+ * @param musicbot_store_buffer_t * buffer -> destination snapshot buffer
+ * @param const char * text -> terminated source string
+ *
+ * @return void
+ */
 static void _musicbot_store_internal__string(musicbot_store_buffer_t *buffer, const char *text)
 {
     uint64 size = strlen(text);
@@ -249,6 +303,14 @@ static void _musicbot_store_internal__string(musicbot_store_buffer_t *buffer, co
     _musicbot_store_internal__write(buffer, text, size);
 }
 
+/**
+ * @brief serializes active bots and retained playlist entries
+ * caller keeps client and channel state locked during serialization
+ *
+ * @param musicbot_store_buffer_t * buffer -> output buffer or measurement state
+ *
+ * @return boole -> TRUE when serialization fits and no upload is pending
+ */
 static boole _musicbot_store_internal__serialize(musicbot_store_buffer_t *buffer)
 {
     uint64 count_index = 0;
@@ -330,7 +392,16 @@ static boole _musicbot_store_internal__serialize(musicbot_store_buffer_t *buffer
     return buffer->valid || _musicbot_store_internal__error("The music snapshot exceeds the 1 GiB limit.");
 }
 
-// Call under the clients lock. Restore also needs the channels write lock.
+// call under the clients lock. Restore also needs the channels write lock
+/**
+ * @brief writes a new encrypted music snapshot before its reference is committed
+ * a failed cleanup may leave the filename set for recovery
+ * caller keeps client and channel state locked during serialization
+ *
+ * @param char [64] filename -> receives the new basename, or empty when no snapshot is needed
+ *
+ * @return boole -> TRUE when prepared or there is no music to save
+ */
 boole musicbot_store__prepare(char filename[64])
 {
 #ifndef WIN32
@@ -466,7 +537,12 @@ done:
     return success;
 }
 
-// Publish prepared-snapshot state only after its settings reference was saved.
+// publish prepared-snapshot state only after its settings reference was saved
+/**
+ * @brief marks the committed playlist as already present in this server run
+ *
+ * @return void
+ */
 void musicbot_store__commit(void)
 {
     // preparation can precede a failed settings write. only a committed reference
@@ -474,6 +550,13 @@ void musicbot_store__commit(void)
     g_musicbot_store_restored = TRUE;
 }
 
+/**
+ * @brief reads an unsigned value from eight little-endian bytes
+ *
+ * @param musicbot_store_buffer_t * buffer -> input position and validity to update
+ *
+ * @return uint64 -> decoded value or zero with valid cleared when bytes are missing
+ */
 static uint64 _musicbot_store_internal__read_number(musicbot_store_buffer_t *buffer)
 {
     uint64 index = 0;
@@ -494,6 +577,15 @@ static uint64 _musicbot_store_internal__read_number(musicbot_store_buffer_t *buf
     return value;
 }
 
+/**
+ * @brief reads a nonempty length-prefixed string without embedded zero bytes
+ *
+ * @param musicbot_store_buffer_t * buffer -> input buffer and position
+ * @param char * output -> destination string buffer
+ * @param uint64 capacity -> destination bytes including the terminator
+ *
+ * @return boole -> TRUE when a complete valid string was copied
+ */
 static boole _musicbot_store_internal__read_string(musicbot_store_buffer_t *buffer, char *output, uint64 capacity)
 {
     uint64 size = _musicbot_store_internal__read_number(buffer);
@@ -505,12 +597,21 @@ static boole _musicbot_store_internal__read_string(musicbot_store_buffer_t *buff
     }
 
     // copy the text
-    memcpy(output, buffer->data + buffer->position, (uint64)size);
+    clib__copy_memory(buffer->data + buffer->position, output, size, capacity);
     output[size] = 0;
     buffer->position += (uint64)size;
     return TRUE;
 }
 
+/**
+ * @brief restores every bot and playlist or rolls back the entire attempt
+ * caller holds the client and channel write locks
+ *
+ * @param ubyte * data -> decrypted snapshot bytes
+ * @param uint64 size -> snapshot byte count
+ *
+ * @return boole -> TRUE when every restored bot starts
+ */
 static boole _musicbot_store_internal__restore_payload(ubyte *data, uint64 size)
 {
     uint64 restore_index = 0;
@@ -607,7 +708,7 @@ static boole _musicbot_store_internal__restore_payload(ubyte *data, uint64 size)
             }
 
             // copy the song data
-            memcpy(song->mp3_data_buffer, buffer.data + buffer.position, (uint64)length);
+            clib__copy_memory(buffer.data + buffer.position, song->mp3_data_buffer, length, length);
             buffer.position += (uint64)length;
             song->mp3_data_buffer_length = length;
             song->generation = ++bot->music_bot_client_extension.next_song_generation;
@@ -668,6 +769,16 @@ done:
     return success;
 }
 
+/**
+ * @brief decrypts the referenced snapshot and restores its playlist once
+ * caller holds the client and channel write locks
+ * failed snapshots remain available for explicit recovery
+ *
+ * @param const crypto_key_t * keys -> ordered snapshot decryption keys
+ * @param uint64 count -> number of keys
+ *
+ * @return boole -> TRUE when restored or a missing reference was safely cleared
+ */
 boole musicbot_store__restore(const crypto_key_t *keys, uint64 count)
 {
     FILE *file = NULL_POINTER;
@@ -774,6 +885,13 @@ done:
     return success;
 }
 
+/**
+ * @brief loads saved snapshot references and attempts startup restoration
+ *
+ * @param cJSON * settings -> parsed server settings object
+ *
+ * @return void
+ */
 void musicbot_store__load_reference(cJSON *settings)
 {
     const char *filename = NULL_POINTER;
@@ -819,6 +937,14 @@ void musicbot_store__load_reference(cJSON *settings)
     }
 }
 
+/**
+ * @brief handles explicit snapshot restoration or deletion
+ * caller holds the client write lock
+ *
+ * @param cJSON * message -> admin request with the action and optional recovery keys
+ *
+ * @return boole -> TRUE when the requested action succeeds
+ */
 boole musicbot_store__action(cJSON *message)
 {
     server_settings_t recovery = { 0 };
@@ -882,6 +1008,13 @@ done:
     return success;
 }
 
+/**
+ * @brief adds snapshot availability and the latest error to a reply
+ *
+ * @param cJSON * message -> reply object receiving the status fields
+ *
+ * @return void
+ */
 void musicbot_store__write_status(cJSON *message)
 {
     // add three status fields

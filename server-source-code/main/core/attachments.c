@@ -1,4 +1,4 @@
-// This file receives uploaded pictures and files and sends them to the intended clients or music bot.
+// this file receives uploaded pictures and files and sends them to the intended clients or music bot
 #include "channel.h"
 #include "attachments.h"
 #include "../definitions.h"
@@ -14,11 +14,18 @@
 #include "../../third-party/zhicheng/base64.h"
 #include "../../third-party/mbedtls-3.6.6/include/mbedtls/platform_util.h"
 
-// Admission is independent of reusable client slots and follows each worker's argument.
+// admission is independent of reusable client slots and follows each worker's argument
 static pthread_mutex_t g_download_mutex = PTHREAD_MUTEX_INITIALIZER;
 static data_for_file_send_thread_t *g_downloads[8];
 static uint64 g_song_upload_workers; // protected by the clients write lock
 
+/**
+ * @brief reserves one download slot within global and sender limits
+ *
+ * @param data_for_file_send_thread_t * arg -> transfer whose sender is checked
+ *
+ * @return boole -> TRUE when the transfer was registered
+ */
 static boole _admit_download(data_for_file_send_thread_t *arg)
 {
     uint64 i = 0;
@@ -52,6 +59,13 @@ static boole _admit_download(data_for_file_send_thread_t *arg)
     return available >= 0;
 }
 
+/**
+ * @brief releases the slots registered for a completed download
+ *
+ * @param data_for_file_send_thread_t * arg -> registered transfer to remove
+ *
+ * @return void
+ */
 static void _release_download(data_for_file_send_thread_t *arg)
 {
     uint64 i = 0;
@@ -76,9 +90,11 @@ static int64 _file_transfer_internal__queue_file_chunk(data_for_file_send_thread
 static void *_file_transfer_internal__file_download_thread(void *argument);
 
 /**
- * @brief Checks that a file recipient or sender still uses the original connection.
+ * @brief checks that a file recipient or sender still uses the original connection
+ *
  * @param uint64 client_id -> client slot to check while holding the clients lock
  * @param const crypto_key_t* authentication_key -> key copied when delivery began
+ *
  * @return boole -> TRUE for the original authenticated connection
  */
 static boole _file_transfer_internal__file_client_is_current(uint64 client_id, const crypto_key_t *authentication_key)
@@ -106,11 +122,13 @@ static boole _file_transfer_internal__file_client_is_current(uint64 client_id, c
 }
 
 /**
- * @brief Checks the original connections and tries to queue a prepared file piece.
+ * @brief checks the original connections and tries to queue a prepared file piece
+ *
  * @param data_for_file_send_thread_t* arg -> file and original sender connection
  * @param uint64 receiver_id -> receiving client slot
  * @param const crypto_key_t* receiver_key -> recipient's original connection key
  * @param const char* plaintext -> prepared message to copy into the queue
+ *
  * @return int64 -> 0 queued, 1 retry later, -1 connection unavailable
  */
 static int64 _file_transfer_internal__queue_file_chunk(data_for_file_send_thread_t *arg, uint64 receiver_id, const crypto_key_t *receiver_key, const char *plaintext)
@@ -128,8 +146,10 @@ static int64 _file_transfer_internal__queue_file_chunk(data_for_file_send_thread
 }
 
 /**
- * @brief Forwards an encrypted upload in chunks to its selected client or channel recipients.
+ * @brief forwards an encrypted upload in chunks to its selected client or channel recipients
+ *
  * @param void* argument -> owned data_for_file_send_thread_t with the buffer, recipients and message ids
+ *
  * @return void* -> NULL_POINTER after releasing the upload buffer and arguments
  */
 static void *_file_transfer_internal__file_download_thread(void *argument)
@@ -311,10 +331,12 @@ file_download_end:
 }
 
 /**
- * @brief Starts sending an uploaded file, or reports server_busy if no worker can be started.
+ * @brief starts sending an uploaded file, or reports server_busy if no worker can be started
+ *
  * @param data_for_file_send_thread_t* arg -> owned upload buffer, recipients and message ids
+ *
  * @return void
- * @attention Takes ownership of arg and its buffer even when thread creation fails.
+ * @attention takes ownership of arg and its buffer even when thread creation fails
  */
 static void _file_transfer_internal__start_file_download(data_for_file_send_thread_t *arg)
 {
@@ -380,7 +402,7 @@ static void _file_transfer_internal__start_file_download(data_for_file_send_thre
 }
 
 /**
- * @brief This function processes channel chat picture
+ * @brief this function processes channel chat picture
  *
  * @param uint64 client_sender_id -> id of the client that sent the picture
  * @param uint64 local_message_id -> the client-side message id of the picture
@@ -490,7 +512,7 @@ void file_transfer__process_channel_chat_picture(uint64 client_sender_id, uint64
 }
 
 /**
- * @brief This function processes direct chat picture
+ * @brief this function processes direct chat picture
  *
  * @param uint64 sender_client_id -> id of the client that sent the picture
  * @param uint64 receiver_id -> id of the client that receives the picture
@@ -865,12 +887,9 @@ void file_transfer__process_direct_chat_file(uint64 sender_client_id, uint64 rec
 }
 
 /**
- * @brief the longest encrypted chat file body the server accepts, derived from the admin's raw-byte
- *        limit
+ * @brief computes the encrypted attachment limit from the raw file size setting
  *
- * @note raw bytes -> base64 data (4/3) -> json wrapper -> aes -> base64 again (4/3). the constant covers the json field names, the mime/name strings and the rsa-wrapped keys of a direct chat file
- *
- * @return uint64 -> length in base64 chars
+ * @return uint64 -> maximum base64 length including encoding and message overhead
  */
 uint64 file_transfer__get_max_chat_file_encrypted_length(void)
 {
@@ -927,8 +946,10 @@ uint64 file_transfer__get_max_file_upload_length(void)
 }
 
 /**
- * @brief Decodes an uploaded song outside the clients lock, then adds it to the music bot.
+ * @brief decodes an uploaded song outside the clients lock, then adds it to the music bot
+ *
  * @param void* argument -> owned musicbot_add_song_arg_struct_t containing the base64 upload
+ *
  * @return void* -> NULL_POINTER when the worker finishes
  */
 static void *_file_transfer_internal__add_song_thread(void *argument)
@@ -960,9 +981,10 @@ static void *_file_transfer_internal__add_song_thread(void *argument)
 }
 
 /**
- * @brief Starts a thread to decode an uploaded song and add it to the music bot.
+ * @brief starts a thread to decode an uploaded song and add it to the music bot
+ *
  * @param musicbot_add_song_arg_struct_t* arguments -> song and buffer owned by this function
- * @attention The caller holds the clients write lock.
+ * @attention the caller holds the clients write lock
  */
 void file_transfer__add_uploaded_song(musicbot_add_song_arg_struct_t *arguments)
 {

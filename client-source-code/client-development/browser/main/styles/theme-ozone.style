@@ -118,12 +118,7 @@ body::after
     }
 }
 
-/* The cursor. The arrow is drawn in the theme's mint light; it is an SVG without filters, because a filter
-   inside a cursor image is not supported everywhere, so three strokes of the same shape make its glow. The
-   halo below it is drawn by the root element's ::after box exactly at the mouse position, which the shared
-   theme helper writes in pixels as --theme-pointer-raw-x and --theme-pointer-raw-y (the ambient light
-   above uses the delayed values). It lies above every panel, lets clicks through, fades out when the
-   mouse leaves the page, stays invisible without a mouse, and does not pulse under reduced motion. */
+/* Draw the cursor glow from the pointer coordinates supplied by the theme helper. The halo passes clicks through and hides when no mouse is present. */
 :root
 {
     --ozone-cursor-arrow: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'><polygon points='2,2 2,25 8.5,19.5 12.5,29 17,27 13,18 22,18' fill='none' stroke='%23a2f8d7' stroke-opacity='0.28' stroke-width='7' stroke-linejoin='round'/><polygon points='2,2 2,25 8.5,19.5 12.5,29 17,27 13,18 22,18' fill='none' stroke='%23a2f8d7' stroke-opacity='0.55' stroke-width='3.5' stroke-linejoin='round'/><polygon points='2,2 2,25 8.5,19.5 12.5,29 17,27 13,18 22,18' fill='%23eafff5' stroke='%2366e9bb' stroke-width='1' stroke-linejoin='round'/></svg>") 2 2;
@@ -242,7 +237,7 @@ html.custom-cursor-off::after
 {
     box-sizing: border-box;
     width: 100%;
-    height: calc(100vh - 68px);
+    height: calc(calc(100vh / var(--ui-display-scale, 1)) - 68px);
     gap: 14px;
     padding: 0 18px 10px;
     background: transparent;
@@ -447,11 +442,7 @@ html.custom-cursor-off::after
     border: 0;
 }
 
-/* The audio state of a person in the channel tree, drawn with css instead of the default theme's pictures,
-   so it matches the glass and mint look. The four classes come from channel-tree.js: microphone-active is
-   sending audio right now, microphone-enabled is ready to send, microphone-disabled has an audio connection
-   but the microphone is off, completely-disabled has no audio connection. The ::before box is the ring,
-   the ::after box the dot in its middle (or the slash for a microphone that is off). */
+/* Draw microphone states with CSS rings, dots and slashes. channel-tree.js supplies the state classes. */
 .connected-client .client-audio-state
 {
     position: relative;
@@ -1581,11 +1572,7 @@ a-toast)
     font-family: var(--set-font);
 }
 
-/* The two marks of a channel in the line style of this theme's other pictures (a 24 by 24 drawing, lines
-   2 wide with round ends). theme-default.style, which this theme includes first, gives both marks the
-   pictures of the Default theme: a blue lock and a grey loudspeaker with a red cross. Here the lock has the
-   theme's gold (--ozone-gold), the loudspeaker the pale green of the theme's other pictures, and the cross
-   a light red. layout.style gives both marks their size and their place. */
+/* Use Ozone colors for channel audio and password marks. layout.style positions them. */
 :root .single-channel > .single-channel-is-audio-disabled
 {
     background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2024%2024%27%20fill%3D%27none%27%20stroke-width%3D%272%27%20stroke-linecap%3D%27round%27%20stroke-linejoin%3D%27round%27%3E%20%3Cpath%20stroke%3D%27%23cee6de%27%20d%3D%27M2.5%209H6.5l5.5-4.5v15L6.5%2015H2.5z%27%2F%3E%20%3Cpath%20stroke%3D%27%23ff9d8a%27%20stroke-width%3D%272.2%27%20d%3D%27M15.5%208.5l6%207M21.5%208.5l-6%207%27%2F%3E%20%3C%2Fsvg%3E");

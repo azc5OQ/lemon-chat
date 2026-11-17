@@ -1,5 +1,5 @@
 #include "platform/memory.h"
-// Device callbacks only move bounded PCM. A worker owns codecs, mixing and device lifetime.
+// device callbacks only move bounded PCM. A worker owns codecs, mixing and device lifetime
 #include <stdlib.h>
 #include "audio/audio.h"
 #include "audio/activity.h"
@@ -77,8 +77,10 @@ static void _audio_internal__decode(desktop_audio_t *audio, audio_peer_t *peers,
 static void _audio_internal__mix(audio_peer_t *peers, float *mixed, int64 volume, float *clip_memory);
 
 /**
- * @brief creates a bounded audio engine; devices remain closed until enabled.
+ * @brief creates a bounded audio engine. Devices remain closed until enabled
+ *
  * @param boole use_devices -> 1 for native devices, 0 for deterministic injected PCM checks
+ *
  * @return desktop_audio_t* -> owned engine, or NULL on allocation/thread failure
  */
 desktop_audio_t *desktop_audio__create(boole use_devices)
@@ -122,8 +124,10 @@ desktop_audio_t *desktop_audio__create(boole use_devices)
 }
 
 /**
- * @brief joins the device/codec worker before releasing callback-visible storage.
+ * @brief joins the device/codec worker before releasing callback visible storage
+ *
  * @param desktop_audio_t* audio -> owned engine, or NULL
+ *
  * @return void
  */
 void desktop_audio__destroy(desktop_audio_t *audio)
@@ -152,9 +156,11 @@ void desktop_audio__destroy(desktop_audio_t *audio)
 }
 
 /**
- * @brief applies validated local audio preferences; disabling transmission immediately discards captured PCM.
+ * @brief applies validated local audio preferences. Disabling transmission immediately discards captured PCM
+ *
  * @param desktop_audio_t* audio -> owned engine
  * @param const desktop_audio_options_t* options -> copied preferences, volume 0..100 and gain 0..200
+ *
  * @return void
  */
 void desktop_audio__configure(desktop_audio_t *audio, const desktop_audio_options_t *options)
@@ -247,10 +253,12 @@ void desktop_audio__configure(desktop_audio_t *audio, const desktop_audio_option
 }
 
 /**
- * @brief obtains device choices independently of connection state and codec work.
+ * @brief obtains device choices independently of connection state and codec work
+ *
  * @param desktop_audio_t* audio -> live engine
- * @param desktop_devices_view_t* view -> caller-owned snapshot
+ * @param desktop_devices_view_t* view -> caller owned snapshot
  * @param boole refresh -> TRUE to request enumeration without opening streams
+ *
  * @return boole -> TRUE when the snapshot changed
  */
 boole desktop_audio__devices(desktop_audio_t *audio, desktop_devices_view_t *view, boole refresh)
@@ -259,8 +267,10 @@ boole desktop_audio__devices(desktop_audio_t *audio, desktop_devices_view_t *vie
 }
 
 /**
- * @brief discards unsent microphone data while the audio mutex is held.
+ * @brief discards unsent microphone data while the audio mutex is held
+ *
  * @param desktop_audio_t* audio -> locked audio engine
+ *
  * @return void
  */
 static void _audio_internal__discard_capture(desktop_audio_t *audio)
@@ -277,9 +287,11 @@ static void _audio_internal__discard_capture(desktop_audio_t *audio)
 }
 
 /**
- * @brief copies a coherent device status without exposing any audio buffers.
+ * @brief copies a coherent device status without exposing any audio buffers
+ *
  * @param desktop_audio_t* audio -> owned engine
  * @param desktop_audio_status_t* status -> destination
+ *
  * @return void
  */
 void desktop_audio__status(desktop_audio_t *audio, desktop_audio_status_t *status)
@@ -291,8 +303,10 @@ void desktop_audio__status(desktop_audio_t *audio, desktop_audio_status_t *statu
 }
 
 /**
- * @brief drops audio from the old channel before another channel can become audible.
+ * @brief drops audio from the old channel before another channel can become audible
+ *
  * @param desktop_audio_t* audio -> owned engine
+ *
  * @return void
  */
 void desktop_audio__reset(desktop_audio_t *audio)
@@ -325,9 +339,11 @@ void desktop_audio__reset(desktop_audio_t *audio)
 }
 
 /**
- * @brief queues one already authenticated Opus packet; network input cannot grow this queue.
+ * @brief queues one already authenticated Opus packet. Network input cannot grow this queue
+ *
  * @param desktop_audio_t* audio -> owned engine
  * @param const desktop_audio_packet_t* packet -> copied encoded frame
+ *
  * @return boole -> 1 when queued
  */
 boole desktop_audio__receive(desktop_audio_t *audio, const desktop_audio_packet_t *packet)
@@ -357,8 +373,10 @@ boole desktop_audio__receive(desktop_audio_t *audio, const desktop_audio_packet_
 }
 
 /**
- * @brief drops stopped music while retaining queued voice and microphone data.
+ * @brief drops stopped music while retaining queued voice and microphone data
+ *
  * @param desktop_audio_t* audio -> owned engine
+ *
  * @return void
  */
 void desktop_audio__discard_music(desktop_audio_t *audio)
@@ -400,9 +418,11 @@ void desktop_audio__discard_music(desktop_audio_t *audio)
 }
 
 /**
- * @brief transfers one freshly encoded microphone packet to the network worker.
+ * @brief transfers one freshly encoded microphone packet to the network worker
+ *
  * @param desktop_audio_t* audio -> owned engine
  * @param desktop_audio_packet_t* packet -> cleared output
+ *
  * @return boole -> 1 when available
  */
 boole desktop_audio__next_packet(desktop_audio_t *audio, desktop_audio_packet_t *packet)
@@ -438,10 +458,12 @@ boole desktop_audio__next_packet(desktop_audio_t *audio, desktop_audio_packet_t 
 }
 
 /**
- * @brief copies microphone PCM without blocking or allocating in the device callback.
+ * @brief copies microphone PCM without blocking or allocating in the device callback
+ *
  * @param desktop_audio_t* audio -> engine retained while the device runs
  * @param const float* mono -> 48 kHz mono input
  * @param uint64 frames -> sample count
+ *
  * @return void
  */
 void desktop_audio__capture(desktop_audio_t *audio, const float *mono, uint64 frames)
@@ -476,10 +498,12 @@ void desktop_audio__capture(desktop_audio_t *audio, const float *mono, uint64 fr
 }
 
 /**
- * @brief supplies stereo PCM without waiting; contention and underruns produce silence.
+ * @brief supplies stereo PCM without waiting. Contention and underruns produce silence
+ *
  * @param desktop_audio_t* audio -> engine retained while the device runs
  * @param float* stereo -> output with frames times two floats
  * @param uint64 frames -> requested 48 kHz frame count
+ *
  * @return void
  */
 void desktop_audio__playback(desktop_audio_t *audio, float *stereo, uint64 frames)
@@ -522,11 +546,13 @@ void desktop_audio__playback(desktop_audio_t *audio, float *stereo, uint64 frame
 }
 
 /**
- * @brief adapts miniaudio callbacks to the bounded PCM queues in chunks.
- * @param ma_device* device -> engine-owned capture or playback device
+ * @brief adapts miniaudio callbacks to the bounded PCM queues in chunks
+ *
+ * @param ma_device* device -> engine owned capture or playback device
  * @param void* output -> stereo float output, or NULL
  * @param const void* input -> mono float input, or NULL
  * @param ma_uint32 frames -> requested frame count
+ *
  * @return void
  */
 static void _audio_internal__callback(ma_device *device, void *output, const void *input, ma_uint32 frames)
@@ -561,11 +587,13 @@ static void _audio_internal__callback(ma_device *device, void *output, const voi
 }
 
 /**
- * @brief opens the selected native device on the audio worker, never on the GUI thread.
+ * @brief opens the selected native device on the audio worker, never on the GUI thread
+ *
  * @param desktop_audio_t* audio -> owned engine
  * @param ma_device* device -> zeroed device storage retained until uninit
  * @param boole capture -> TRUE for microphone, FALSE for speakers
- * @param const char* key -> saved device key; empty follows the system default
+ * @param const char* key -> saved device key. Empty follows the system default
+ *
  * @return boole -> 1 after successful initialization and start
  */
 static boole _audio_internal__device(desktop_audio_t *audio, ma_device *device, boole capture, const char *key)
@@ -617,9 +645,11 @@ static boole _audio_internal__device(desktop_audio_t *audio, ma_device *device, 
 }
 
 /**
- * @brief publishes a device error or listening status.
+ * @brief publishes a device error or listening status
+ *
  * @param desktop_audio_t* audio -> owned engine
  * @param const char* text -> status copied to bounded storage
+ *
  * @return void
  */
 static void _audio_internal__detail(desktop_audio_t *audio, const char *text)
@@ -631,8 +661,10 @@ static void _audio_internal__detail(desktop_audio_t *audio, const char *text)
 }
 
 /**
- * @brief clears one sender and releases its optional music buffer on the audio worker.
+ * @brief clears one sender and releases its optional music buffer on the audio worker
+ *
  * @param audio_peer_t* peer -> worker-owned speaker queue
+ *
  * @return void
  */
 static void _audio_internal__clear_peer(audio_peer_t *peer)
@@ -658,8 +690,10 @@ static void _audio_internal__clear_peer(audio_peer_t *peer)
 }
 
 /**
- * @brief releases stopped music buffers without resetting other speakers.
+ * @brief releases stopped music buffers without resetting other speakers
+ *
  * @param audio_peer_t* peers -> worker-owned decoder pool
+ *
  * @return void
  */
 static void _audio_internal__clear_music(audio_peer_t *peers)
@@ -677,10 +711,12 @@ static void _audio_internal__clear_music(audio_peer_t *peers)
 }
 
 /**
- * @brief retains the server's music lead while keeping ordinary voice buffers short.
+ * @brief retains the server's music lead while keeping ordinary voice buffers short
+ *
  * @param audio_peer_t* peer -> worker-owned sender buffer
  * @param const float* pcm -> decoded stereo samples
  * @param uint64 frames -> decoded frame count
+ *
  * @return void
  */
 static void _audio_internal__append(audio_peer_t *peer, const float *pcm, uint64 frames)
@@ -716,11 +752,13 @@ static void _audio_internal__append(audio_peer_t *peer, const float *pcm, uint64
 }
 
 /**
- * @brief validates and decodes one speaker's packet using its own bounded decoder state.
+ * @brief validates and decodes one speaker's packet using its own bounded decoder state
+ *
  * @param desktop_audio_t* audio -> engine used to publish rejection counts
  * @param audio_peer_t* peers -> worker-owned fixed decoder pool
  * @param const desktop_audio_packet_t* packet -> authenticated packet
  * @param float* scratch -> stereo storage for at least AUDIO_PEER_FRAMES frames
+ *
  * @return void
  */
 static void _audio_internal__decode(desktop_audio_t *audio, audio_peer_t *peers, const desktop_audio_packet_t *packet, float *scratch)
@@ -811,11 +849,13 @@ label_rejected:
 }
 
 /**
- * @brief mixes one 20 ms output interval, soft-clips peaks and conceals at most two brief underruns.
+ * @brief mixes one 20 ms output interval, soft clips peaks and conceals at most two brief underruns
+ *
  * @param audio_peer_t* peers -> worker-owned decoder/PCM pool
  * @param float* mixed -> output for DESKTOP_AUDIO_FRAME stereo frames
  * @param int64 volume -> output volume from zero through 100
  * @param float* clip_memory -> worker-owned continuity state, one float per output channel
+ *
  * @return void
  */
 static void _audio_internal__mix(audio_peer_t *peers, float *mixed, int64 volume, float *clip_memory)
@@ -907,8 +947,10 @@ static void _audio_internal__mix(audio_peer_t *peers, float *mixed, int64 volume
 }
 
 /**
- * @brief owns every device transition and codec call outside the GUI and device callbacks.
+ * @brief owns every device transition and codec call outside the GUI and device callbacks
+ *
  * @param void* context -> engine retained until this worker joins
+ *
  * @return void
  */
 static void _audio_internal__worker(void *context)
@@ -989,7 +1031,7 @@ static void _audio_internal__worker(void *context)
         // transmit time has ended
         if ((audio->options.transmit || audio->options.voice_activation) && desktop_system__milliseconds() >= audio->transmit_until)
         {
-            // protocol work stalled. do not continue transmitting under an old push-to-talk decision
+            // protocol work stalled. do not continue transmitting under an old push to talk decision
             audio->options.transmit = FALSE;
             audio->options.voice_activation = FALSE;
             _audio_internal__discard_capture(audio);
@@ -1211,7 +1253,7 @@ static void _audio_internal__worker(void *context)
                 desktop_mutex__lock(audio->mutex);
                 if ((audio->options.transmit || audio->options.voice_activation) && audio->reset == epoch && desktop_system__milliseconds() < audio->transmit_until)
                 {
-                    // retain 60 ms locally while silent; sending still requires speech and server permission
+                    // retain 60 ms locally while silent. Sending still requires speech and server permission
                     while (audio->outgoing_count >= (options.voice_activation && !voice_active ? 3 : AUDIO_OUTGOING))
                     {
                         clib__null_memory(&audio->outgoing[audio->outgoing_head], sizeof(packet));
@@ -1298,6 +1340,14 @@ label_finished:
     clib__null_memory(decoded, sizeof(decoded));
 }
 
+/**
+ * @brief plays a notification sound when notifications are enabled
+ *
+ * @param desktop_audio_t* audio -> audio owner, or null to do nothing
+ * @param desktop_sound_t id -> notification sound to play
+ *
+ * @return void
+ */
 void desktop_audio__sound(desktop_audio_t *audio, desktop_sound_t id)
 {
     // check arguments
@@ -1315,6 +1365,14 @@ void desktop_audio__sound(desktop_audio_t *audio, desktop_sound_t id)
     desktop_mutex__unlock(audio->mutex);
 }
 
+/**
+ * @brief stops every playback of one notification sound
+ *
+ * @param desktop_audio_t* audio -> audio owner, or null to do nothing
+ * @param desktop_sound_t id -> notification sound to stop
+ *
+ * @return void
+ */
 void desktop_audio__stop_sound(desktop_audio_t *audio, desktop_sound_t id)
 {
     // check arguments
@@ -1329,6 +1387,16 @@ void desktop_audio__stop_sound(desktop_audio_t *audio, desktop_sound_t id)
     desktop_mutex__unlock(audio->mutex);
 }
 
+/**
+ * @brief applies notification volume and output settings
+ *
+ * @param desktop_audio_t* audio -> audio owner
+ * @param boole enabled -> whether notification playback is enabled
+ * @param int64 volume -> volume percentage, clamped to 0 through 100
+ * @param const char* output -> output device name
+ *
+ * @return void
+ */
 void desktop_audio__notifications(desktop_audio_t *audio, boole enabled, int64 volume, const char *output)
 {
     // store notification settings
@@ -1353,7 +1421,14 @@ void desktop_audio__notifications(desktop_audio_t *audio, boole enabled, int64 v
     desktop_mutex__unlock(audio->mutex);
 }
 
-// Closing voice leaves the selected speakers available for notifications.
+// closing voice leaves the selected speakers available for notifications
+/**
+ * @brief disables voice capture and transmission and clears audio queues
+ *
+ * @param desktop_audio_t* audio -> audio owner
+ *
+ * @return void
+ */
 void desktop_audio__stop_voice(desktop_audio_t *audio)
 {
     // disable voice options

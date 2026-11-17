@@ -11,12 +11,14 @@
 static void _server_chat_internal__edit(desktop_session_t *session, int64 channel, int64 peer_slot, int64 author_slot, int64 server_id, const cJSON *edit);
 
 /**
- * @brief retains bounded plain chat text; markup is never interpreted as UI layout.
- * @param desktop_session_t* session -> session state; worker-owned unless this is a GUI entry point
- * @param int64 channel -> server-assigned channel ID
+ * @brief retains bounded plain chat text. Markup is never interpreted as UI layout
+ *
+ * @param desktop_session_t* session -> session state. Worker owned unless this is a GUI entry point
+ * @param int64 channel -> server assigned channel ID
  * @param const char* sender -> display name copied into the retained message
- * @param const char* text -> borrowed NUL-terminated text; copied before returning when retained
+ * @param const char* text -> borrowed NUL terminated text. Copied before returning when retained
  * @param uint64 local_id -> nonzero local message ID for pending outgoing text, zero for incoming text
+ *
  * @return void
  */
 void server_msg__chat__append(desktop_session_t *session, int64 channel, const char *sender, const char *text, uint64 local_id)
@@ -60,11 +62,13 @@ void server_msg__chat__append(desktop_session_t *session, int64 channel, const c
 }
 
 /**
- * @brief retains a private message under this connected peer's lifetime, never a reused numeric client ID.
+ * @brief retains a private message under this connected peer's lifetime, never a reused numeric client ID
+ *
  * @param desktop_session_t* session -> worker-owned session
  * @param int64 slot -> validated index of the connected peer
  * @param const char* text -> plain message text
  * @param uint64 local_id -> pending outgoing ID, or zero for incoming text
+ *
  * @return void
  */
 void server_msg__chat__append_direct(desktop_session_t *session, int64 slot, const char *text, uint64 local_id)
@@ -90,14 +94,16 @@ void server_msg__chat__append_direct(desktop_session_t *session, int64 slot, con
 }
 
 /**
- * @brief extracts the browser's text wrapper while displaying its contents as plain text.
+ * @brief extracts the browser's text wrapper while displaying its contents as plain text
+ *
  * @param desktop_session_t* session -> worker-owned session
  * @param int64 channel -> destination channel, ignored for private text
  * @param int64 slot -> connected private peer index, or -1 for channel text
  * @param const char* sender -> channel sender name provided by the server
- * @param const char* payload -> decrypted text wrapper; legacy raw text remains readable
+ * @param const char* payload -> decrypted text wrapper. Legacy raw text remains readable
  * @param int64 author_slot -> connected sender index, or -1 when unavailable
  * @param int64 server_id -> authenticated server delivery sequence, or -1 when missing
+ *
  * @return void
  */
 void server_msg__chat__receive_text(desktop_session_t *session, int64 channel, int64 slot, const char *sender, const char *payload, int64 author_slot, int64 server_id)
@@ -154,13 +160,15 @@ void server_msg__chat__receive_text(desktop_session_t *session, int64 channel, i
 }
 
 /**
- * @brief updates one retained message only for its original author, conversation and connection.
+ * @brief updates one retained message only for its original author, conversation and connection
+ *
  * @param desktop_session_t* session -> worker-owned session
  * @param int64 channel -> channel route, ignored for private messages
  * @param int64 peer_slot -> private peer index, or -1 for a channel route
  * @param int64 author_slot -> authenticated sender index
  * @param int64 server_id -> server's monotonic delivery sequence
- * @param const cJSON* edit -> decrypted control body; invalid controls are silently discarded
+ * @param const cJSON* edit -> decrypted control body. Invalid controls are silently discarded
+ *
  * @return void
  */
 static void _server_chat_internal__edit(desktop_session_t *session, int64 channel, int64 peer_slot, int64 author_slot, int64 server_id, const cJSON *edit)
@@ -213,9 +221,11 @@ static void _server_chat_internal__edit(desktop_session_t *session, int64 channe
 }
 
 /**
- * @brief confirms original messages or edits using their distinct local delivery identifiers.
+ * @brief confirms original messages or edits using their distinct local delivery identifiers
+ *
  * @param desktop_session_t* session -> worker-owned session
  * @param const cJSON* message -> authenticated server acknowledgement
+ *
  * @return void
  */
 void server_msg__chat__acknowledge(desktop_session_t *session, const cJSON *message)
@@ -257,9 +267,11 @@ void server_msg__chat__acknowledge(desktop_session_t *session, const cJSON *mess
 }
 
 /**
- * @brief decrypts online private messages and accepts channel keys only from the current maintainer.
- * @param desktop_session_t* session -> session state; worker-owned unless this is a GUI entry point
+ * @brief decrypts online private messages and accepts channel keys only from the current maintainer
+ *
+ * @param desktop_session_t* session -> session state. Worker owned unless this is a GUI entry point
  * @param const cJSON* message -> borrowed authenticated server message
+ *
  * @return void
  */
 void server_msg__chat__process_direct(desktop_session_t *session, const cJSON *message)

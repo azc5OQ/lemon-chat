@@ -7,6 +7,15 @@
 #include "../msg/server/server_msg.h"
 #include <string.h>
 
+/**
+ * @brief encodes bytes as lowercase hexadecimal with a final zero byte
+ *
+ * @param const ubyte * bytes -> source bytes
+ * @param uint64 size -> source byte count
+ * @param char * output -> destination with at least twice size plus one bytes
+ *
+ * @return void
+ */
 static void auth_handshake__hex(const ubyte *bytes, uint64 size, char *output)
 {
     uint64 index = 0;
@@ -23,8 +32,16 @@ static void auth_handshake__hex(const ubyte *bytes, uint64 size, char *output)
     output[size * 2] = 0;
 }
 
-// Caller holds the clients lock. -1 rejects; 0 is legacy; 1 is negotiated;
-// 2 means a policy reply was sent and the client must submit its fresh mixes.
+// caller holds the clients lock. -1 rejects; 0 is legacy; 1 is negotiated;
+// 2 means a policy reply was sent and the client must submit its fresh mixes
+/**
+ * @brief validates handshake negotiation or sends the initial crypto policy
+ *
+ * @param client_t * client -> connection holding the negotiation nonce and policy
+ * @param cJSON * message -> incoming authentication message
+ *
+ * @return int64 -> -1 on rejection, 0 for legacy mode, 1 for a valid response, or 2 after sending policy
+ */
 int64 auth_handshake__prepare(client_t *client, cJSON *message)
 {
     cJSON *root = NULL_POINTER;
@@ -117,6 +134,17 @@ int64 auth_handshake__prepare(client_t *client, cJSON *message)
     return cJSON_IsString(mix) && strcmp(mix->valuestring, cJSON_GetArrayItem(mixes, 0)->valuestring) == 0 ? 1 : -1;
 }
 
+/**
+ * @brief derives session keys and adds the handshake proof to the reply
+ *
+ * @param const lemon_session_policy * policy -> negotiated session policy
+ * @param const ubyte [32] secret -> combined 32 byte shared secret
+ * @param const ubyte [32] transcript -> 32 byte handshake transcript hash
+ * @param crypto_session_keys_t * session -> session keys to replace and mark ready
+ * @param cJSON * reply -> reply receiving the proof and optional cipher probe
+ *
+ * @return boole -> TRUE when keys and reply fields are ready, otherwise FALSE with session keys cleared
+ */
 boole auth_handshake__finish(const lemon_session_policy *policy, const ubyte secret[32], const ubyte transcript[32], crypto_session_keys_t *session, cJSON *reply)
 {
     static const int64 candidates[] = { LEMON_AES256, LEMON_CHACHA20, LEMON_CAMELLIA256, LEMON_TWOFISH256, LEMON_SERPENT256, LEMON_TRIVIUM80 };

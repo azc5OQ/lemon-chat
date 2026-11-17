@@ -5,8 +5,9 @@
 #include "platform/hotkey.h"
 
 /**
- * @brief prepares the platform key adapter before the GUI starts.
- * @return boole -> 1; Windows key-state polling needs no initialization
+ * @brief prepares the platform key adapter before the GUI starts
+ *
+ * @return boole -> 1. Windows key state polling needs no initialization
  */
 boole desktop_hotkey__initialize(void)
 {
@@ -19,7 +20,8 @@ struct desktop_hotkey_t
 };
 
 /**
- * @brief creates a polling context for the user's chosen global push-to-talk key.
+ * @brief creates a polling context for the user's chosen global push to talk key
+ *
  * @return desktop_hotkey_t* -> owned context, or NULL on allocation failure
  */
 desktop_hotkey_t *desktop_hotkey__create(void)
@@ -28,8 +30,10 @@ desktop_hotkey_t *desktop_hotkey__create(void)
 }
 
 /**
- * @brief releases a push-to-talk context after its polling worker stops.
+ * @brief releases a push to talk context after its polling worker stops
+ *
  * @param desktop_hotkey_t* hotkey -> owned context, or NULL
+ *
  * @return void
  */
 void desktop_hotkey__destroy(desktop_hotkey_t *hotkey)
@@ -39,10 +43,12 @@ void desktop_hotkey__destroy(desktop_hotkey_t *hotkey)
 }
 
 /**
- * @brief reads the selected key on the input desktop, independently of window focus.
+ * @brief reads the selected key on the input desktop, independently of window focus
+ *
  * @param desktop_hotkey_t* hotkey -> initialized polling context
- * @param int64 key -> printable ASCII key or legacy F-key number
- * @return boole -> nonzero while the key is held; never consumes the key
+ * @param int64 key -> printable ASCII key or legacy F key number
+ *
+ * @return boole -> nonzero while the key is held. Never consumes the key
  */
 boole desktop_hotkey__down(desktop_hotkey_t *hotkey, int64 key)
 {

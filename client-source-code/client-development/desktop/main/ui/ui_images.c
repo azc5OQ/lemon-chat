@@ -25,13 +25,15 @@ static void _ui_images_internal__draw(gui_node_t *node, float scale);
 static void _ui_images_internal__layout(gui_node_t *node, float x, float y, float width, float height, float scale);
 
 /**
- * @brief computes a bounded aspect-correct image box using only GUI-owned texture metadata.
- * @param gui_node_t* node -> scene-owned label carrying a cache index
+ * @brief computes a bounded aspect correct image box using only GUI owned texture metadata
+ *
+ * @param gui_node_t* node -> scene owned label carrying a cache index
  * @param float x -> allocated origin
  * @param float y -> allocated origin
  * @param float width -> available physical width, negative during measurement
  * @param float height -> available physical height
  * @param float scale -> device display scale
+ *
  * @return void
  */
 static void _ui_images_internal__layout(gui_node_t *node, float x, float y, float width, float height, float scale)
@@ -71,9 +73,11 @@ static void _ui_images_internal__layout(gui_node_t *node, float x, float y, floa
 }
 
 /**
- * @brief draws an existing GUI-owned texture; image parsing and file access never occur during painting.
- * @param gui_node_t* node -> scene-owned image label
+ * @brief draws an existing GUI owned texture. Image parsing and file access never occur during painting
+ *
+ * @param gui_node_t* node -> scene owned image label
  * @param float scale -> device display scale
+ *
  * @return void
  */
 static void _ui_images_internal__draw(gui_node_t *node, float scale)
@@ -96,9 +100,11 @@ static void _ui_images_internal__draw(gui_node_t *node, float scale)
 }
 
 /**
- * @brief extends text drawing after audio icons have registered their own wrapper.
+ * @brief extends text drawing after audio icons have registered their own wrapper
+ *
  * @param desktop_attachments_t* attachments -> borrowed stable session manager
  * @param desktop_chat_preferences_t* preferences -> borrowed saved GUI settings
+ *
  * @return void
  */
 void desktop_ui_images__initialize(desktop_attachments_t *attachments, desktop_chat_preferences_t *preferences)
@@ -121,9 +127,11 @@ void desktop_ui_images__initialize(desktop_attachments_t *attachments, desktop_c
 }
 
 /**
- * @brief uploads a worker-decoded preview once and releases its temporary CPU copy after the synchronous upload.
- * @param gui_node_t* parent -> scene-owned chat row
+ * @brief uploads a worker decoded preview once and releases its temporary CPU copy after the synchronous upload
+ *
+ * @param gui_node_t* parent -> scene owned chat row
  * @param const desktop_attachment_t* attachment -> copied snapshot
+ *
  * @return void
  */
 void desktop_ui_images__append(gui_node_t *parent, const desktop_attachment_t *attachment)
@@ -191,8 +199,10 @@ void desktop_ui_images__append(gui_node_t *parent, const desktop_attachment_t *a
 }
 
 /**
- * @brief releases textures whose records were evicted or cleared, including a reconnect with no new pictures.
- * @param const desktop_attachments_view_t* view -> latest copied manager snapshot; GUI thread only
+ * @brief releases textures whose records were evicted or cleared, including a reconnect with no new pictures
+ *
+ * @param const desktop_attachments_view_t* view -> latest copied manager snapshot. GUI thread only
+ *
  * @return void
  */
 void desktop_ui_images__refresh(const desktop_attachments_view_t *view)
@@ -218,7 +228,8 @@ void desktop_ui_images__refresh(const desktop_attachments_view_t *view)
 }
 
 /**
- * @brief releases every application-owned texture while the renderer is still alive.
+ * @brief releases every application owned texture while the renderer is still alive
+ *
  * @return void
  */
 void desktop_ui_images__shutdown(void)

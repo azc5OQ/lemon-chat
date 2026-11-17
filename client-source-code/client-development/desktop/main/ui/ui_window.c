@@ -1,4 +1,4 @@
-// Main-window controls: connection form, chat tabs, channel/client selection and overlay preferences.
+// main window controls: connection form, chat tabs, channel/client selection and overlay preferences
 #include "ui/ui_window.h"
 #include "ui/ui_theme.h"
 #include "ui/ui_effects.h"
@@ -28,8 +28,8 @@
 #include "ui/member_view.h"
 #include "clib.h"
 
-// These pointers belong to main.c and remain valid until shutdown. Only the window
-// thread reads this copied session view or modifies these controls and preferences.
+// these pointers belong to main.c and remain valid until shutdown. Only the window
+// thread reads this copied session view or modifies these controls and preferences
 static desktop_session_t *g_session;
 static desktop_session_view_t *g_view;
 static desktop_overlay_controller_t *g_overlay;
@@ -51,12 +51,13 @@ static void _ui_window_internal__member_controls(void);
 static void _ui_window_internal__show_member(void);
 static void _ui_window_internal__join_channel(int64 id);
 
-// Selected clients and private conversations
+// selected clients and private conversations
 
 /**
- * @brief finds the selected client only if its ID and connection serial still match.
- * A new connection can reuse an old ID; actions must not target that new client.
- * @return const desktop_client_t* -> GUI-owned member snapshot, or NULL after disconnect
+ * @brief finds the selected client only if its ID and connection serial still match
+ * A new connection can reuse an old ID. Actions must not target that new client
+ *
+ * @return const desktop_client_t* -> GUI owned member snapshot, or NULL after disconnect
  */
 static const desktop_client_t *_ui_window_internal__member(void)
 {
@@ -74,7 +75,8 @@ static const desktop_client_t *_ui_window_internal__member(void)
 }
 
 /**
- * @brief updates the selected client's name and channel; disables Message and Mute after disconnect.
+ * @brief updates the selected client's name and channel. Disables Message and Mute after disconnect
+ *
  * @return void
  */
 static void _ui_window_internal__member_controls(void)
@@ -122,8 +124,10 @@ static void _ui_window_internal__member_controls(void)
 }
 
 /**
- * @brief opens a member's private conversation on primary click or their context menu on secondary click.
+ * @brief opens a member's private conversation on primary click or their context menu on secondary click
+ *
  * @param gui_event_t* event -> row click carrying an index into the displayed snapshot
+ *
  * @return void
  */
 static void _ui_window_internal__on_member(gui_event_t *event)
@@ -158,7 +162,8 @@ static void _ui_window_internal__on_member(gui_event_t *event)
 }
 
 /**
- * @brief opens information for the client selected in the channel tree.
+ * @brief opens information for the client selected in the channel tree
+ *
  * @return void
  */
 static void _ui_window_internal__show_member(void)
@@ -168,8 +173,10 @@ static void _ui_window_internal__show_member(void)
 }
 
 /**
- * @brief closes member actions without changing the selected conversation.
+ * @brief closes member actions without changing the selected conversation
+ *
  * @param gui_event_t* event -> unused click event
+ *
  * @return void
  */
 static void _ui_window_internal__on_close_member(gui_event_t *event)
@@ -179,8 +186,10 @@ static void _ui_window_internal__on_close_member(gui_event_t *event)
 }
 
 /**
- * @brief opens a private text tab while leaving the current voice channel unchanged.
+ * @brief opens a private text tab while leaving the current voice channel unchanged
+ *
  * @param gui_event_t* event -> unused click event
+ *
  * @return void
  */
 static void _ui_window_internal__on_private_message(gui_event_t *event)
@@ -202,8 +211,10 @@ static void _ui_window_internal__on_private_message(gui_event_t *event)
 }
 
 /**
- * @brief mutes or unmutes the selected client locally without affecting other listeners.
+ * @brief mutes or unmutes the selected client locally without affecting other listeners
+ *
  * @param gui_event_t* event -> unused click event
+ *
  * @return void
  */
 static void _ui_window_internal__on_mute_member(gui_event_t *event)
@@ -217,8 +228,10 @@ static void _ui_window_internal__on_mute_member(gui_event_t *event)
 }
 
 /**
- * @brief selects a channel/private text tab without moving the user between voice channels.
- * @param gui_event_t* event -> tab click carrying its one-based UI index
+ * @brief selects a channel/private text tab without moving the user between voice channels
+ *
+ * @param gui_event_t* event -> tab click carrying its one based UI index
+ *
  * @return void
  */
 static void _ui_window_internal__on_choose_conversation(gui_event_t *event)
@@ -235,8 +248,10 @@ static void _ui_window_internal__on_choose_conversation(gui_event_t *event)
 }
 
 /**
- * @brief closes the selected private tab and returns to channel text.
+ * @brief closes the selected private tab and returns to channel text
+ *
  * @param gui_event_t* event -> unused click event
+ *
  * @return void
  */
 static void _ui_window_internal__on_close_conversation(gui_event_t *event)
@@ -267,10 +282,10 @@ static void _ui_window_internal__on_close_conversation(gui_event_t *event)
     _ui_window_internal__request_render();
 }
 
-// Floating windows and connection details
+// floating windows and connection details
 
 /**
- * @brief shows or hides one panel without covering the chat with an input-blocking background.
+ * @brief shows or hides one panel without covering the chat with an input blocking background
  *
  * @param const char* id -> control ID in the current scene
  * @param boole visible -> nonzero to show the panel, zero to hide it
@@ -297,9 +312,9 @@ static void _ui_window_internal__panel(const char *id, boole visible)
 }
 
 /**
- * @brief opens the server connection panel.
+ * @brief opens the server connection panel
  *
- * @param gui_event_t* event -> UI event; unused by this handler
+ * @param gui_event_t* event -> UI event. Unused by this handler
  *
  * @return void
  */
@@ -311,9 +326,9 @@ static void _ui_window_internal__on_show_connection(gui_event_t *event)
 }
 
 /**
- * @brief closes the server connection panel.
+ * @brief closes the server connection panel
  *
- * @param gui_event_t* event -> UI event; unused by this handler
+ * @param gui_event_t* event -> UI event. Unused by this handler
  *
  * @return void
  */
@@ -324,9 +339,9 @@ static void _ui_window_internal__on_close_connection(gui_event_t *event)
 }
 
 /**
- * @brief opens the local game overlay settings panel.
+ * @brief opens the local game overlay settings panel
  *
- * @param gui_event_t* event -> UI event; unused by this handler
+ * @param gui_event_t* event -> UI event. Unused by this handler
  *
  * @return void
  */
@@ -337,9 +352,9 @@ static void _ui_window_internal__on_show_settings(gui_event_t *event)
 }
 
 /**
- * @brief closes settings without applying unsaved values.
+ * @brief closes settings without applying unsaved values
  *
- * @param gui_event_t* event -> UI event; unused by this handler
+ * @param gui_event_t* event -> UI event. Unused by this handler
  *
  * @return void
  */
@@ -350,7 +365,7 @@ static void _ui_window_internal__on_close_settings(gui_event_t *event)
 }
 
 /**
- * @brief copies text into a bounded control buffer and requests a redraw only when it changes.
+ * @brief copies text into a bounded control buffer and requests a redraw only when it changes
  *
  * @param const char* id -> control ID in the current scene
  * @param const char* text -> text buffer
@@ -373,9 +388,9 @@ static void _ui_window_internal__set_text(const char *id, const char *text)
 }
 
 /**
- * @brief saves connection details and starts a connection unless the Save button was used.
+ * @brief saves connection details and starts a connection unless the Save button was used
  *
- * @param gui_event_t* event -> Connect or Save button event; NULL connects
+ * @param gui_event_t* event -> connect or Save button event. NULL connects
  *
  * @return void
  */
@@ -487,9 +502,9 @@ label_finished:
 }
 
 /**
- * @brief cancels the active WebSocket connection.
+ * @brief cancels the active WebSocket connection
  *
- * @param gui_event_t* event -> UI event; unused by this handler
+ * @param gui_event_t* event -> UI event. Unused by this handler
  *
  * @return void
  */
@@ -499,11 +514,13 @@ static void _ui_window_internal__on_disconnect(gui_event_t *event)
     desktop_session__disconnect(g_session);
 }
 
-// Sending messages and joining channels
+// sending messages and joining channels
 
 /**
- * @brief queues a channel or private message and clears the input only when it is accepted.
+ * @brief queues a channel or private message and clears the input only when it is accepted
+ *
  * @param gui_event_t* event -> GUI event, or NULL for handlers that do not use its sender
+ *
  * @return void
  */
 static void _ui_window_internal__on_send_chat(gui_event_t *event)
@@ -525,7 +542,8 @@ static void _ui_window_internal__on_send_chat(gui_event_t *event)
 }
 
 /**
- * @brief submits the composer through the same handler used by its Send button.
+ * @brief submits the composer through the same handler used by its Send button
+ *
  * @return void
  */
 static void _ui_window_internal__submit(void)
@@ -534,8 +552,10 @@ static void _ui_window_internal__submit(void)
 }
 
 /**
- * @brief selects a channel row; joining and editing are explicit context-menu actions.
+ * @brief selects a channel row. Joining and editing are explicit context menu actions
+ *
  * @param gui_event_t* event -> GUI event, or NULL for handlers that do not use its sender
+ *
  * @return void
  */
 static void _ui_window_internal__on_join_channel(gui_event_t *event)
@@ -561,8 +581,10 @@ static void _ui_window_internal__on_join_channel(gui_event_t *event)
 }
 
 /**
- * @brief shares password-aware joining between the tree and channel context menu.
+ * @brief shares password aware joining between the tree and channel context menu
+ *
  * @param int64 id -> selected channel ID
+ *
  * @return void
  */
 static void _ui_window_internal__join_channel(int64 id)
@@ -611,8 +633,10 @@ static void _ui_window_internal__join_channel(int64 id)
 }
 
 /**
- * @brief submits the password without retaining it in local settings.
+ * @brief submits the password without retaining it in local settings
+ *
  * @param gui_event_t* event -> GUI event, or NULL for handlers that do not use its sender
+ *
  * @return void
  */
 static void _ui_window_internal__on_join_password(gui_event_t *event)
@@ -629,8 +653,10 @@ static void _ui_window_internal__on_join_password(gui_event_t *event)
 }
 
 /**
- * @brief closes the channel password panel without sending a request.
+ * @brief closes the channel password panel without sending a request
+ *
  * @param gui_event_t* event -> GUI event, or NULL for handlers that do not use its sender
+ *
  * @return void
  */
 static void _ui_window_internal__on_close_join(gui_event_t *event)
@@ -640,12 +666,12 @@ static void _ui_window_internal__on_close_join(gui_event_t *event)
     _ui_window_internal__panel("join-panel", 0);
 }
 
-// Game-overlay preferences
+// game overlay preferences
 
 /**
- * @brief toggles the explicitly marked sample channel and speaking members.
+ * @brief toggles the explicitly marked sample channel and speaking members
  *
- * @param gui_event_t* event -> UI event; unused by this handler
+ * @param gui_event_t* event -> UI event. Unused by this handler
  *
  * @return void
  */
@@ -660,9 +686,9 @@ static void _ui_window_internal__on_overlay_preview(gui_event_t *event)
 }
 
 /**
- * @brief saves the chosen game executable and whether to display the overlay inside that game.
+ * @brief saves the chosen game executable and whether to display the overlay inside that game
  *
- * @param gui_event_t* event -> UI event; unused by this handler
+ * @param gui_event_t* event -> UI event. Unused by this handler
  *
  * @return void
  */
@@ -707,7 +733,8 @@ static void _ui_window_internal__on_save_overlay(gui_event_t *event)
 }
 
 /**
- * @brief requests a frame on the event-driven Windows host; POSIX hosts draw each tick.
+ * @brief requests a frame on the event driven Windows host. POSIX hosts draw each tick
+ *
  * @return void
  */
 static void _ui_window_internal__request_render(void)
@@ -717,24 +744,38 @@ static void _ui_window_internal__request_render(void)
 #endif
 }
 
-// Window initialization, updates and cleanup
+// window initialization, updates and cleanup
 
 /**
- * @brief registers window actions and loads the controls from assets/main.ui.
- * The caller owns all four objects. Keep session, view and settings until shutdown,
- * even if initialization fails. Stop actions and updates before destroying overlay;
- * UI cleanup does not use it, so main can stop game detection first.
+ * @brief registers window actions and loads the controls from assets/main.ui
+ * the caller owns all four objects. Keep session, view and settings until shutdown,
+ * even if initialization fails. Stop actions and updates before destroying overlay
+ * UI cleanup does not use it, so main can stop game detection first
+ *
  * @param desktop_session_t* session -> connection and command queue owned by main
  * @param desktop_session_view_t* view -> main's copy of clients, channels and messages
  * @param desktop_settings_t* settings -> preferences kept alive for the whole application
  * @param desktop_overlay_controller_t* overlay -> object that finds the chosen game and supplies its overlay data
  * @param boole preview -> display example members until a connection is requested
  * @param boole native_devices -> allow access to the computer's audio devices
+ *
  * @return boole -> TRUE when controls and their input handlers are ready
  */
-// Call these functions on the window thread. The caller owns all four objects.
-// Keep session, view and settings alive through shutdown. The overlay must remain
-// alive while actions or updates run; main stops it before freeing UI resources.
+// call these functions on the window thread. The caller owns all four objects
+// keep session, view and settings alive through shutdown. The overlay must remain
+// alive while actions or updates run. Main stops it before freeing UI resources
+/**
+ * @brief binds the desktop UI and loads its theme and layout
+ *
+ * @param desktop_session_t* session -> session used by UI actions
+ * @param desktop_session_view_t* view -> session view used for rendering
+ * @param desktop_settings_t* settings -> saved client settings
+ * @param desktop_overlay_controller_t* overlay -> overlay controller
+ * @param boole preview -> whether the window is a preview
+ * @param boole native_devices -> whether to enumerate native audio devices
+ *
+ * @return boole -> true when pointer setup, theme loading, layout watching and input limits succeed
+ */
 boole desktop_ui_window__initialize(desktop_session_t *session, desktop_session_view_t *view, desktop_settings_t *settings, desktop_overlay_controller_t *overlay, boole preview, boole native_devices)
 {
     // store the arguments
@@ -787,22 +828,23 @@ boole desktop_ui_window__initialize(desktop_session_t *session, desktop_session_
     desktop_ui_context__initialize(g_session, g_view, _ui_window_internal__show_member, _ui_window_internal__join_channel);
 
     // each widget extension calls the implementation registered before it. voice
-    // indicators must precede images and tree rows; pointer handling comes last
-    // so right-clicks retain all of those drawing and input functions
+    // indicators must precede images and tree rows. Pointer handling comes last
+    // so right clicks retain all of those drawing and input functions
     if (!desktop_ui_pointer__initialize())
     {
         return FALSE;
     }
 
-    // register actions and widget extensions before parsing the layout that uses them.
+    // register actions and widget extensions before parsing the layout that uses them
     // keeping the stylesheet separate allows a theme change without replacing controls
     return desktop_ui_theme__load("") && hot_reload__watch_ui("assets/main.ui") && desktop_ui_input__limits();
 }
 
 /**
- * @brief restores connection fields and applies audio, chat and game-overlay preferences.
- * Call after loading settings and after the controls have been created. This fills
- * the connection form; it does not connect to the saved server automatically.
+ * @brief restores connection fields and applies audio, chat and game overlay preferences
+ * call after loading settings and after the controls have been created. This fills
+ * the connection form. It does not connect to the saved server automatically
+ *
  * @return void
  */
 void desktop_ui_window__apply_settings(void)
@@ -847,7 +889,8 @@ void desktop_ui_window__apply_settings(void)
 }
 
 /**
- * @brief reapplies theme, picture sizes and text limits after the layout file changes.
+ * @brief reapplies theme, picture sizes and text limits after the layout file changes
+ *
  * @return void
  */
 void desktop_ui_window__reload(void)
@@ -868,8 +911,10 @@ void desktop_ui_window__reload(void)
 }
 
 /**
- * @brief updates chat, client rows, open forms and microphone controls on the window thread.
+ * @brief updates chat, client rows, open forms and microphone controls on the window thread
+ *
  * @param boole changed -> the copied session or attachment data changed this iteration
+ *
  * @return void
  */
 void desktop_ui_window__update(boole changed)
@@ -879,7 +924,7 @@ void desktop_ui_window__update(boole changed)
     // update the chat format
     g_refresh |= desktop_ui_chat_format__tick();
 
-    // discard outdated picture textures before rebuilding rows that may use them.
+    // discard outdated picture textures before rebuilding rows that may use them
     // a local click can request a refresh even when no server message has arrived
     if (changed || g_refresh)
     {
@@ -927,9 +972,11 @@ void desktop_ui_window__update(boole changed)
 }
 
 /**
- * @brief displays the current channel and overlay status, or example members in preview mode.
+ * @brief displays the current channel and overlay status, or example members in preview mode
+ *
  * @param const desktop_overlay_snapshot_t* snapshot -> copied channel name and speaking states
  * @param const char* status -> game detection or overlay status to show in settings
+ *
  * @return void
  */
 void desktop_ui_window__overlay(const desktop_overlay_snapshot_t *snapshot, const char *status)
@@ -954,7 +1001,8 @@ void desktop_ui_window__overlay(const desktop_overlay_snapshot_t *snapshot, cons
 }
 
 /**
- * @brief reports whether the user is displaying example channel members for the overlay.
+ * @brief reports whether the user is displaying example channel members for the overlay
+ *
  * @return boole -> TRUE for preview data, FALSE for the current server connection
  */
 boole desktop_ui_window__preview(void)
@@ -963,9 +1011,10 @@ boole desktop_ui_window__preview(void)
 }
 
 /**
- * @brief releases window-owned images, conversation data and editable connection secrets.
- * The renderer must still exist while textures are released. The caller stops the
- * connection and frees the settings after these controls no longer use them.
+ * @brief releases window owned images, conversation data and editable connection secrets
+ * the renderer must still exist while textures are released. The caller stops the
+ * connection and frees the settings after these controls no longer use them
+ *
  * @return void
  */
 void desktop_ui_window__shutdown(void)

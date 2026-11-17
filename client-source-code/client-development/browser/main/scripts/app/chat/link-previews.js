@@ -1,7 +1,7 @@
-// This file adds a small card below a chat message that contains a website link.
-// The client sends the URL to its chat server, which looks up the page title,
-// description and picture. These requests and replies use the same metadata
-// encryption as channel names and other messages between client and server.
+// this file adds a small card below a chat message that contains a website link
+// the client sends the URL to its chat server, which looks up the page title,
+// description and picture. these requests and replies use the same metadata
+// encryption as channel names and other messages between client and server
 var g_link_previews =
 {
     observer: null,
@@ -11,6 +11,13 @@ var g_link_previews =
     urls: new Map()
 };
 
+/**
+ * @brief normalizes a bounded HTTP URL without credentials or a fragment
+ *
+ * @param string value -> URL to validate
+ *
+ * @return string|null -> normalized URL, or null when unsupported
+ */
 function link_previews__url(value)
 {
     try
@@ -29,6 +36,13 @@ function link_previews__url(value)
     }
 }
 
+/**
+ * @brief extracts up to two distinct URLs while trimming surrounding punctuation
+ *
+ * @param string text -> message text to scan
+ *
+ * @return array -> normalized URLs in message order
+ */
 function link_previews__extract(text)
 {
     let urls = [];
@@ -56,9 +70,16 @@ function link_previews__extract(text)
     return urls;
 }
 
-// Page text is displayed as text, never as HTML supplied by the website. The
-// picture must be image bytes returned by the server; it cannot be a remote
-// address that would make every reader contact the website separately.
+// render page text as text and use only image bytes returned by the server
+// a preview must not make each reader contact the website directly
+/**
+ * @brief replaces a message's preview cards using successful cached server results
+ *
+ * @param HTMLElement paragraph -> message text element
+ * @param object state -> message URLs and current preview card container
+ *
+ * @return void
+ */
 function link_previews__render(paragraph, state)
 {
     if (state.cards !== null)
@@ -100,8 +121,7 @@ function link_previews__render(paragraph, state)
                 card.appendChild(line);
             }
         }
-        if (typeof result.image === "string" && result.image.length <= 350000
-            && /^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(result.image))
+        if (typeof result.image === "string" && result.image.length <= 350000 && /^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(result.image))
         {
             let image = document.createElement("img");
             image.src = result.image;
@@ -127,6 +147,13 @@ function link_previews__render(paragraph, state)
     }
 }
 
+/**
+ * @brief removes a message's preview cards and tracked state
+ *
+ * @param HTMLElement paragraph -> message text element
+ *
+ * @return void
+ */
 function link_previews__forget(paragraph)
 {
     let state = g_link_previews.messages.get(paragraph);
@@ -140,6 +167,13 @@ function link_previews__forget(paragraph)
     }
 }
 
+/**
+ * @brief updates a changed message's URLs and queues uncached previews within the cache limit
+ *
+ * @param HTMLElement paragraph -> message text element
+ *
+ * @return void
+ */
 function link_previews__scan(paragraph)
 {
     let text = paragraph.textContent;
@@ -160,7 +194,7 @@ function link_previews__scan(paragraph)
     {
         if (!g_link_previews.urls.has(url))
         {
-            // Bound the stored images and requests even in a very long chat.
+            // bound the stored images and requests even in a very long chat
             if (g_link_previews.urls.size >= 64)
             {
                 let removed = false;
@@ -184,8 +218,13 @@ function link_previews__scan(paragraph)
     link_previews__render(paragraph, state);
 }
 
-// Send a few requests at a time. A missing reply must not keep the queue stuck
-// forever, for example when the connection drops during a website lookup.
+// send a few requests at a time. a missing reply must not keep the queue stuck
+// forever, for example when the connection drops during a website lookup
+/**
+ * @brief expires stalled requests and sends one needed preview while fewer than four are pending
+ *
+ * @return void
+ */
 function link_previews__pump()
 {
     if (!g_is_authenticated || !g_server_policy.is_link_preview_allowed)
@@ -237,6 +276,13 @@ function link_previews__pump()
     }
 }
 
+/**
+ * @brief accepts a matching preview response and refreshes messages using its URL
+ *
+ * @param object message -> server preview result with URL and request ID
+ *
+ * @return void
+ */
 function link_previews__resolved(message)
 {
     if (!message || !g_server_policy.is_link_preview_allowed)
@@ -259,6 +305,11 @@ function link_previews__resolved(message)
     }
 }
 
+/**
+ * @brief stops preview observation and clears pending requests and displayed cards
+ *
+ * @return void
+ */
 function link_previews__reset()
 {
     if (g_link_previews.observer)
@@ -275,6 +326,11 @@ function link_previews__reset()
     g_link_previews.urls.clear();
 }
 
+/**
+ * @brief starts or stops message observation and preview requests according to server policy
+ *
+ * @return void
+ */
 function link_previews__apply_policy()
 {
     if (!g_server_policy.is_link_preview_allowed)

@@ -1,9 +1,7 @@
-// ui.js is embedded in template.html along with the other client files
-// it is the UI object: rendering, themes, menus, dialogs and every click handler of the page
-// the feature files and messages.js call into it; it calls the builders in messages.js to send requests
+// provides page controls, themes, menus and dialogs
 
 // state private to this file
-var custom_key_count = 0; // no key field by default; the "add" button creates key 0, key 1, ... so connecting with zero keys matches a server configured with no extra metadata keys
+var custom_key_count = 0; // connection password fields are added on demand. empty means no metadata keys
 
 var pending_identity_file = null; // validated file contents, applied only after confirmation
 var identity_file_read_generation = 0; // ignores callbacks from a replaced or dismissed file selection
@@ -28,7 +26,8 @@ var channel_icon_picker_target_channel_id = null; // channel whose icon the curr
 var UI = {
 
     /**
-     * @brief Places the theme list against its button, including in a moved toolbar.
+     * @brief places the theme list against its button, including in a moved toolbar
+     *
      * @return void
      */
     position_theme_menu: function()
@@ -50,6 +49,11 @@ var UI = {
         menu.style.setProperty("--theme-menu-top", Math.max(8, top) + "px");
     },
 
+    /**
+     * @brief closes and unpins the theme list and clears the button expanded state
+     *
+     * @return void
+     */
     close_theme_menu: function()
     {
         let menu = document.getElementById("choose-theme-button-list");
@@ -59,7 +63,8 @@ var UI = {
     },
 
     /**
-     * @brief Updates the theme list position when it opens or the window changes size.
+     * @brief updates the theme list position when it opens or the window changes size
+     *
      * @return void
      */
     setup_theme_menu_positioning: function()
@@ -67,11 +72,16 @@ var UI = {
         let button = document.getElementById("choose-theme-button");
         let menu = document.getElementById("choose-theme-button-list");
         let close_timer = null;
-        // Filtered or transformed toolbars otherwise become a fixed-position containing block.
+        // filtered or transformed toolbars affect fixed positioning
         document.body.append(menu);
         menu.dataset.positioned = "true";
         button.setAttribute("aria-controls", menu.id);
         button.setAttribute("aria-expanded", "false");
+        /**
+         * @brief cancels delayed closing and positions the open theme list
+         *
+         * @return void
+         */
         function open()
         {
             clearTimeout(close_timer);
@@ -79,13 +89,17 @@ var UI = {
             button.setAttribute("aria-expanded", "true");
             UI.position_theme_menu();
         }
+        /**
+         * @brief closes the theme list after a short delay unless it is pinned, hovered or focused
+         *
+         * @return void
+         */
         function leave()
         {
             clearTimeout(close_timer);
             close_timer = setTimeout(function()
             {
-                if (!menu.dataset.pinned && !menu.matches(":hover") && !button.matches(":hover")
-                    && !menu.contains(document.activeElement) && document.activeElement !== button)
+                if (!menu.dataset.pinned && !menu.matches(":hover") && !button.matches(":hover") && !menu.contains(document.activeElement) && document.activeElement !== button)
                 {
                     UI.close_theme_menu();
                 }
@@ -145,8 +159,10 @@ var UI = {
     },
 
     /**
-     * @brief Shows one local settings section without changing its controls.
+     * @brief shows one local settings section without changing its controls
+     *
      * @param HTMLButtonElement selected_tab -> tab to open
+     *
      * @return void
      */
     select_local_settings_tab: function(selected_tab)
@@ -169,7 +185,8 @@ var UI = {
     },
 
     /**
-     * @brief Lets the local settings tabs open with a click or the arrow keys.
+     * @brief lets the local settings tabs open with a click or the arrow keys
+     *
      * @return void
      */
     setup_local_settings_tabs: function()
@@ -219,20 +236,32 @@ var UI = {
     },
 
     /**
-     * @brief Saves device-only chat scale and inline picture limits.
+     * @brief saves the interface size, the local chat scale and inline picture limits
+     *
      * @return void
      */
     setup_chat_display_settings: function()
     {
+        let ui_scale = document.getElementById("local-settings-ui-scale");
         let scale = document.getElementById("local-settings-chat-scale");
         let width = document.getElementById("local-settings-image-max-width");
         let height = document.getElementById("local-settings-image-max-height");
         let controls = [
+            [ui_scale, "lemon_ui_display_scale", 100],
             [scale, "lemon_chat_display_scale", 100],
             [width, "lemon_chat_image_max_width", 600],
             [height, "lemon_chat_image_max_height", 480]
         ];
 
+        /**
+         * @brief rounds a setting and clamps it to the input limits
+         *
+         * @param HTMLInputElement input -> control providing minimum and maximum values
+         * @param number|string|null value -> candidate value
+         * @param number fallback -> value used when the candidate is empty or not finite
+         *
+         * @return number -> rounded value inside the control limits
+         */
         function bounded_value(input, value, fallback)
         {
             let number = Number(value);
@@ -243,6 +272,11 @@ var UI = {
             return Math.max(Number(input.min), Math.min(Number(input.max), Math.round(number)));
         }
 
+        /**
+         * @brief applies chat and image sizes while preserving the bottom position or scroll fraction
+         *
+         * @return void
+         */
         function apply()
         {
             let chat = document.getElementById("chat-context-container");
@@ -250,6 +284,14 @@ var UI = {
             let at_bottom = scroll_range - chat.scrollTop < 4;
             let scroll_fraction = scroll_range > 0 ? chat.scrollTop / scroll_range : 0;
             let style = document.documentElement.style;
+
+            // interface size
+            style.setProperty("--ui-display-scale", Number(ui_scale.value) / 100);
+            document.getElementById("local-settings-ui-scale-value").value = ui_scale.value + "%";
+            ui_scale.setAttribute("aria-valuetext", ui_scale.value + "%");
+            utils__measure_position_scale();
+
+            // chat size
             style.setProperty("--chat-display-scale", Number(scale.value) / 100);
             style.setProperty("--chat-image-max-width", bounded_value(width, width.value, 600) + "px");
             style.setProperty("--chat-image-max-height", bounded_value(height, height.value, 480) + "px");
@@ -277,6 +319,14 @@ var UI = {
                 apply();
             });
         }
+        // measure after resizing
+        window.addEventListener("resize", utils__measure_position_scale);
+        document.getElementById("local-settings-ui-scale-reset").addEventListener("click", function()
+        {
+            ui_scale.value = 100;
+            utils__storage_set("lemon_ui_display_scale", "100");
+            apply();
+        });
         document.getElementById("local-settings-chat-scale-reset").addEventListener("click", function()
         {
             scale.value = 100;
@@ -287,11 +337,10 @@ var UI = {
     },
 
     /**
-     * @brief removes every open channel-list, add-group and chat-input context menu
-     *        clicks on add-group menu items are left alone, so their own handler still runs
+     * @brief closes context menus while allowing pending group menu clicks to finish
      *
      * @param boolean setbackgroundColor -> true also clears the row highlights
-     * @param boolean handle_group_contextmenu_click -> false skips the add-group click check
+     * @param boolean handle_group_contextmenu_click -> false skips checking for a pending group menu click
      *
      * @return void
      */
@@ -332,7 +381,7 @@ var UI = {
     },
 
     /**
-     * @brief removes every chat-message context menu and drops the hover class from local message rows
+     * @brief closes message menus and clears local message hover states
      *
      * @return void
      */
@@ -355,7 +404,7 @@ var UI = {
     },
 
     /**
-     * @brief the expand/collapse arrow on a channel row: flips is_channel_directly_collapsed in g_channel_list and toggles .collapsed on all subchannel rows and their client rows
+     * @brief toggles a channel's collapsed state and updates descendant rows
      *
      * @param object e -> the mouse event
      *
@@ -438,7 +487,7 @@ var UI = {
     },
 
     /**
-     * @brief left click on a channel row: closes any open context menus and their row highlights
+     * @brief clears context menus and row highlights on a channel click
      *
      * @param object event -> the mouse event
      *
@@ -451,7 +500,7 @@ var UI = {
     },
 
     /**
-     * @brief double click joins the channel: opens the password dialog if it needs one, otherwise sends join_channel_request straight away (no-op for the current channel)
+     * @brief joins a different channel, requesting its password when needed
      *
      * @param object event -> the mouse event
      *
@@ -474,8 +523,8 @@ var UI = {
     },
 
     /**
-     * @brief a chat tab was clicked: shows that context, highlights the tab, updates the receiver globals (g_current_chat_context_id and the rest) and clears a user tab's unread counter
-     *        this is the clicked tab
+     * @brief opens the clicked conversation tab and clears its unread count
+     * this is the selected tab
      *
      * @return void
      */
@@ -504,7 +553,44 @@ var UI = {
             document.getElementsByClassName("chat-context")[i].style.display = "none";
         }
 
-        if (selector_type == "user")
+        const selected_id = this.getAttribute("data-chat-context-selector-id") || "";
+        if (selector_type === "user" && selected_id.startsWith("offline-"))
+        {
+            id_to_find = "chat-context-" + selected_id;
+            const context_index = chat__get_chat_context_index_by_chat_context_id(id_to_find);
+            const element = document.getElementById(id_to_find);
+            if (context_index < 0 || element == null)
+            {
+                return;
+            }
+            const context = g_chat_context_array[context_index];
+            const identity_hash = context.peer_identity_hash || (context.peer_public_key ? "" : selected_id.slice("offline-".length));
+            const contact = g_offline_client_list.find(function(candidate)
+            {
+                return identity_hash && candidate.identity_hash === identity_hash && (!context.peer_public_key || candidate.public_key === context.peer_public_key);
+            });
+            element.style.display = "block";
+            chat_files__cancel_pending_read();
+            g_current_chat_context_id = id_to_find;
+            chat_replies__refresh();
+            g_chat_message_receiver_type = "user";
+            g_chat_message_receiver_id = -1;
+            g_offline_chat_recipient_identity_hash = contact ? identity_hash : "";
+            if (contact && contact.public_key)
+            {
+                context.peer_public_key = contact.public_key;
+                context.peer_identity_hash = identity_hash;
+                UI.enable_inputs();
+            }
+            else
+            {
+                // history remains readable without inventing a live or saved recipient
+                UI.disable_inputs();
+            }
+            const peer = {identity_hash: identity_hash, public_key: context.peer_public_key || ""};
+            chat__send_read_command(chat__peer_state_key(peer), peer);
+        }
+        else if (selector_type == "user")
         {
             UI.enable_inputs();
             id_to_find = "chat-context-pm-";
@@ -513,9 +599,7 @@ var UI = {
 
             document.getElementById(id_to_find).style.display = "block";
 
-            // opening the conversation is what marks it read, so the count is state.
-            // chat__render_unread_badge no-ops when the row is not painted, which is what the
-            // old custom_typeof guard was reaching for
+            // opening the conversation clears unread state even when its badge is not rendered
             chat__clear_unread_count(client_id);
             chat__render_unread_badge(client_id, false);
 
@@ -527,6 +611,7 @@ var UI = {
 
             g_chat_message_receiver_type = "user"; // from local user perspective
             g_chat_message_receiver_id = client_id; // from local user perspective
+            g_offline_chat_recipient_identity_hash = "";
         }
         else if (selector_type == "channel")
         {
@@ -559,7 +644,7 @@ var UI = {
             }
         }
 
-        // the member list marks the on-screen conversation with a ring on its circle
+        // mark the selected conversation with a ring in the member list
         groups__refresh_channel_controls();
         UI.schedule_member_list_sync();
 
@@ -567,7 +652,7 @@ var UI = {
     },
 
     /**
-     * @brief re-enables the chat text input, the send button and the uploads, and shows the font and color controls
+     * @brief enables message input, attachments and text styling controls
      *
      * @return void
      */
@@ -586,7 +671,7 @@ var UI = {
     },
 
     /**
-     * @brief disables the chat text input, the send button and the uploads, and hides the font and color controls
+     * @brief disables message input, attachments and text styling controls
      *
      * @return void
      */
@@ -605,8 +690,7 @@ var UI = {
 
 
     /**
-     * @brief the mic button: on desktop the checkbox turns the microphone on or off (sends microphone_usage, stops the audio tracks); on touch devices touchstart and touchend act as push-to-talk
-     *        in continuous mode turning the mic on IS the start of talking, until it is turned off again
+     * @brief handles microphone toggling and touch controls using the current voice mode
      *
      * @param object event -> the click or touch event
      *
@@ -620,15 +704,12 @@ var UI = {
             return;
         }
 
-        // if this got clicked on desktop
-        // or if this got touched on touchscreen device (only android supported)
+        // handle desktop clicks and touch activation
         if (event.currentTarget.checked || (g_is_microphone_enabled_on_touch_device == false && g_is_client_running_under_touch_device == true))
         {
             voice__activate_microphone();
 
-            // desktop, continuous mode: turning the mic on IS the start of talking,
-            // and it keeps going until it is turned off again. push-to-talk instead
-            // leaves it silent here and speaks only while the key is held
+            // continuous mode starts immediately. push to talk waits for the key
             if (g_is_continuous_mic_mode == true && g_is_client_running_under_touch_device == false)
             {
                 g_is_continuous_transmission_active = true;
@@ -690,7 +771,7 @@ var UI = {
 
             let ptt_button = document.getElementById("microphone-push-to-talk-button-touch-device");
 
-            // continuous mode: one tap starts, the next tap stops - the button shows which
+            // each tap toggles continuous transmission
             if (g_is_continuous_mic_mode == true)
             {
                 if (g_is_continuous_transmission_active == true)
@@ -726,7 +807,8 @@ var UI = {
     },
 
     /**
-     * @brief Removes a chat's image observers and reaction controls before removing its messages.
+     * @brief removes a chat's image observers and reaction controls before removing its messages
+     *
      * @param Element context -> chat panel being closed
      */
     chat_context_remove: function(context)
@@ -745,7 +827,7 @@ var UI = {
     },
 
     /**
-     * @brief Closes a chat tab and returns to the current channel's chat.
+     * @brief closes a chat tab and returns to the current channel's chat
      *
      * @param object event -> the mouse event
      *
@@ -765,13 +847,17 @@ var UI = {
         {
             let selector_id = this.getAttribute("data-chat-context-remove-selector-id");
             let client_id = selector_id.split("user-")[1];
+            const context_id = selector_id.startsWith("offline-") ? "chat-context-" + selector_id : "chat-context-pm-" + client_id;
 
-            // the other side learns that this window was closed, like in TeamSpeak 3
-            chat__send_direct_chat_closed_notice(parseInt(client_id));
+            // notify the peer that this conversation was closed
+            if (!selector_id.startsWith("offline-"))
+            {
+                chat__send_direct_chat_closed_notice(parseInt(client_id));
+            }
             document.querySelector('[data-chat-context-selector-id="' + selector_id + '"]').remove();
-            UI.chat_context_remove(document.getElementById("chat-context-pm-" + client_id));
+            UI.chat_context_remove(document.getElementById(context_id));
 
-            let chat_context_index_to_remove = chat__get_chat_context_index_by_chat_context_id("chat-context-pm-" + client_id);
+            let chat_context_index_to_remove = chat__get_chat_context_index_by_chat_context_id(context_id);
 
             if (chat_context_index_to_remove != -1)
             {
@@ -840,8 +926,7 @@ var UI = {
             UI.schedule_member_list_sync(); // active ring moves back to the channel circle
         }
 
-        // Closing a background tab also returns to the joined channel; hide the conversation
-        // that was visible before the close so only the selected destination remains on screen.
+        // hide the previous conversation when returning to the joined channel
         for (let context of document.getElementsByClassName("chat-context"))
         {
             context.style.display = context.id === g_current_chat_context_id ? "block" : "none";
@@ -849,10 +934,7 @@ var UI = {
     },
 
     /**
-     * @brief the mousedown handler of every connected-client row
-     *        a left click opens (or creates) the private chat with the person and fills the right-pane
-     *        profile; a right click builds the per-user context menu (mute, groups, kick and so on).
-     *        the join, connect and client-list handlers in messages.js attach it
+     * @brief opens a private chat or the selected user context menu
      *
      * @param object event -> the mouse event, or a synthetic one for a touch
      * @param boolean|null is_touch_event -> true when called for a touch
@@ -865,8 +947,7 @@ var UI = {
      */
     connected_user_onmousedown: function(event, is_touch_event = null, touch_clientX = null, touch_clientY = null, touch_current_target = null, is_short_click = false)
     {
-        // the mousedown handler of every connected-client row; the join, connect and client-list
-        // handlers in messages.js attach it
+        // handles rows created by connection and client list updates
 
         if (event && typeof event.stopPropagation === "function")
         {
@@ -911,8 +992,7 @@ var UI = {
             is_this_music_bot_client = true;
         }
 
-        // A bot is not a direct-message recipient. Keep its management menu on right click/hold,
-        // but a normal activation must not change the current chat or its recipient.
+        // bots allow management menus but cannot become message recipients
         if (is_this_music_bot_client && (event.which == 1 || is_touch_event == true && is_short_click == true))
         {
             return;
@@ -920,81 +1000,100 @@ var UI = {
 
         if (event.which == 1 || is_touch_event == true && is_short_click == true)
         {
-            UI.delete_contextmenus();
-            // remove color highlight from other clients
+            UI.activate_connected_user(currentTarget, is_this_music_bot_client);
+        }
+        else if (event.which == 3 || is_touch_event == true && is_short_click == false)
+        {
+            UI.show_connected_user_menu(currentTarget, clientX, clientY, is_this_idle_client, is_this_music_bot_client);
+        }
+    },
 
-            document.getElementById("current-channel-description").innerHTML = "";
-            for (let i = 0; i < document.getElementsByClassName('connected-client').length; i++)
+    /**
+     * @brief activates a user row and displays its profile
+     *
+     * @param Element currentTarget -> selected user row
+     * @param boolean is_this_music_bot_client -> whether the row represents a music bot
+     *
+     * @return void
+     */
+    activate_connected_user: function(currentTarget, is_this_music_bot_client)
+    {
+        UI.delete_contextmenus();
+        // remove color highlight from other clients
+
+        document.getElementById("current-channel-description").innerHTML = "";
+        for (let i = 0; i < document.getElementsByClassName('connected-client').length; i++)
+        {
+            document.getElementsByClassName('connected-client')[i].style.backgroundColor = "";
+        }
+
+
+        g_chat_message_receiver_id = currentTarget.getAttribute("data-connected-client-id");
+
+        if (g_chat_message_receiver_id != g_local_client_id && is_this_music_bot_client == false)
+        {
+            // select a private conversation only for another person
+
+            for (let i = 0; i < document.getElementsByClassName("chat-context-selector").length; i++)
             {
-                document.getElementsByClassName('connected-client')[i].style.backgroundColor = "";
+                document.getElementsByClassName("chat-context-selector")[i].style.backgroundColor = "";
             }
 
+            g_chat_message_receiver_type = "user";
 
-            g_chat_message_receiver_id = currentTarget.getAttribute("data-connected-client-id");
+            let data_username = channel_tree__get_display_name_by_client_id(g_chat_message_receiver_id);
+            let id_to_find = "chat-context-pm-" + g_chat_message_receiver_id;
+            chat_files__cancel_pending_read();
+            g_current_chat_context_id = id_to_find;
+            chat_replies__refresh();
+            g_offline_chat_recipient_identity_hash = ""; // this person is connected: normal direct path
+            UI.schedule_member_list_sync(); // ring the opened chat's circle in the strip
+            let is_found = document.getElementById(id_to_find);
 
-            if (g_chat_message_receiver_id != g_local_client_id && is_this_music_bot_client == false)
+            if (is_found == null)
             {
-                // change color of chat context selector only if client that is not local client is selected and it is not a music bot
-
-                for (let i = 0; i < document.getElementsByClassName("chat-context-selector").length; i++)
+                // make all elements invisible
+                for (let i = 0; i < document.getElementsByClassName("chat-context").length; i++)
                 {
-                    document.getElementsByClassName("chat-context-selector")[i].style.backgroundColor = "";
+                    document.getElementsByClassName("chat-context")[i].style.display = "none";
                 }
 
-                g_chat_message_receiver_type = "user";
-
-                let data_username = channel_tree__get_display_name_by_client_id(g_chat_message_receiver_id);
-                let id_to_find = "chat-context-pm-" + g_chat_message_receiver_id;
-                chat_files__cancel_pending_read();
-                g_current_chat_context_id = id_to_find;
-                chat_replies__refresh();
-                g_offline_chat_recipient_identity_hash = ""; // this person is connected: normal direct path
-                UI.schedule_member_list_sync(); // ring the opened chat's circle in the strip
-                let is_found = document.getElementById(id_to_find);
-
-                if (is_found == null)
-                {
-                    // make all elements invisible
-                    for (let i = 0; i < document.getElementsByClassName("chat-context").length; i++)
-                    {
-                        document.getElementsByClassName("chat-context")[i].style.display = "none";
-                    }
-
-                    let html_to_append = "<div class=\"chat-context\" id=\"" + id_to_find + "\">\n\
+                let html_to_append = "<div class=\"chat-context\" id=\"" + id_to_find + "\">\n\
                                                     <div class=\"single-server-message\">now talking to user: " + data_username + "</div>\n\
                                                     <div class=\"single-server-message server-message-public-key\">your public key: <span class=\"server-message-key\" title=\"click to expand\">" + g_rsa_public_key_string + "</span></div>\n\
                                                     <div class=\"single-server-message server-message-public-key\">his public key: <span class=\"server-message-key\" title=\"click to expand\">" + chat__sanitize_string(channel_tree__get_public_key_by_client_id(g_chat_message_receiver_id)) + "</span></div>\n\
                                                     <div class=\"single-server-message\"> </div>\n\
                                                 </div>";
 
-                    document.getElementById('chat-context-container').insertAdjacentHTML("beforeend", html_to_append);
+                document.getElementById('chat-context-container').insertAdjacentHTML("beforeend", html_to_append);
 
-                    let single_chat_context = {
-                        type: "user",
-                        chat_context_id: g_current_chat_context_id,
-                        last_known_message_sender_username: ""
-                    };
+                let single_chat_context = {
+                    type: "user",
+                    chat_context_id: g_current_chat_context_id,
+                    last_known_message_sender_username: ""
+                };
 
-                    g_chat_context_array.push(single_chat_context);
-                }
-                else
+                g_chat_context_array.push(single_chat_context);
+                chat__bind_private_contexts();
+            }
+            else
+            {
+                for (let i = 0; i < document.getElementsByClassName("chat-context").length; i++)
                 {
-                    for (let i = 0; i < document.getElementsByClassName("chat-context").length; i++)
-                    {
-                        document.getElementsByClassName("chat-context")[i].style.display = "none";
-                    }
-
-                    document.getElementById(id_to_find).style.display = "block";
-
-                    // opening the conversation marks it read
-                    chat__clear_unread_count(g_chat_message_receiver_id);
-                    chat__render_unread_badge(g_chat_message_receiver_id, false);
+                    document.getElementsByClassName("chat-context")[i].style.display = "none";
                 }
-                is_found = document.querySelector('[data-chat-context-selector-id="user-' + g_chat_message_receiver_id + '"]');
 
-                if (is_found == null)
-                {
-                    let to_append = "<div class=\"chat-context-selector\" data-chat-context-selector-type=\"user\" data-chat-context-selector-id=\"user-" + g_chat_message_receiver_id + "\">\n\
+                document.getElementById(id_to_find).style.display = "block";
+
+                // opening the conversation marks it read
+                chat__clear_unread_count(g_chat_message_receiver_id);
+                chat__render_unread_badge(g_chat_message_receiver_id, false);
+            }
+            is_found = document.querySelector('[data-chat-context-selector-id="user-' + g_chat_message_receiver_id + '"]');
+
+            if (is_found == null)
+            {
+                let to_append = "<div class=\"chat-context-selector\" data-chat-context-selector-type=\"user\" data-chat-context-selector-id=\"user-" + g_chat_message_receiver_id + "\">\n\
                                                 <div class=\"p-container\">\n\
                                                     <p>" + data_username + "</p>\n\
                                                 </div>\n\
@@ -1002,109 +1101,133 @@ var UI = {
                                                 </div>\n\
                                             </div>";
 
-                    document.getElementById("chat-context-selectors-container").insertAdjacentHTML("beforeend", to_append);
-                }
-
-                for (let x = 0; x < document.getElementsByClassName("remove-chat-context-selector").length; x++)
-                {
-                    document.getElementsByClassName("remove-chat-context-selector")[x].onclick = UI.chat_context_remove_onclick;
-                }
-
-                for (let x = 0; x < document.getElementsByClassName("chat-context-selector").length; x++)
-                {
-                    document.getElementsByClassName("chat-context-selector")[x].onclick = UI.chat_context_selector_onclick;
-                }
-
-                document.querySelector('[data-chat-context-selector-id="user-' + g_chat_message_receiver_id + '"]').style.backgroundColor = "#36393f";
-
-                UI.enable_inputs();
+                document.getElementById("chat-context-selectors-container").insertAdjacentHTML("beforeend", to_append);
             }
 
-            // remember which client the right-pane profile shows, so its avatar (if any) goes into
-            // the big #current-client-avatar when the response arrives
-            g_profile_avatar_client_id = parseInt(g_chat_message_receiver_id);
-
-            let message_object = {
-                message: {
-                    type: "request_avatar_for_client",
-                    client_id: parseInt(g_chat_message_receiver_id)
-                }
-            };
-
-            connection__send_message_object(message_object);
-
-            // whether we clicked on local client or not, still add groups to description..
-
-            document.getElementById("current-client-description").style.display = "block";
-            document.getElementById("current-channel-description").style.display = "none";
-            let client = channel_tree__get_client_by_client_id(g_chat_message_receiver_id);
-            let client_name = document.getElementById("current-client-description-client-name");
-            client_name.textContent = client.username;
-            if (Number(client.client_id) === Number(g_local_client_id))
+            for (let x = 0; x < document.getElementsByClassName("remove-chat-context-selector").length; x++)
             {
-                let self_label = document.createElement("span");
-                self_label.className = "client-profile-self-label";
-                self_label.textContent = " (you)";
-                client_name.appendChild(self_label);
+                document.getElementsByClassName("remove-chat-context-selector")[x].onclick = UI.chat_context_remove_onclick;
             }
-            document.getElementById("current-client-description-groups").innerHTML = "";
-            document.getElementById("current-client-avatar").style.backgroundImage = "";
-            document.getElementById("current-client-avatar").style.backgroundSize = "";
-            document.getElementById("current-client-avatar").style.width = "";
-            document.getElementById("current-client-avatar").style.height = "";
 
-            // the avatar box is a fixed circle, so with no picture it was a hole in the card.
-            // it holds the first letter until the requested avatar arrives, or instead of it
-            channel_tree__set_profile_avatar_monogram(client.username);
+            for (let x = 0; x < document.getElementsByClassName("chat-context-selector").length; x++)
+            {
+                document.getElementsByClassName("chat-context-selector")[x].onclick = UI.chat_context_selector_onclick;
+            }
 
-            document.getElementById("current-client-description-meta").textContent =
-                channel_tree__describe_client_for_profile(client);
+            document.querySelector('[data-chat-context-selector-id="user-' + g_chat_message_receiver_id + '"]').style.backgroundColor = "#36393f";
 
-            channel_groups__profile(client);
-            client_status__select("profile", client);
+            UI.enable_inputs();
         }
-        else if (event.which == 3 || is_touch_event == true && is_short_click == false)
+
+        // remember the profile target for the avatar response
+        g_profile_avatar_client_id = parseInt(g_chat_message_receiver_id);
+
+        let message_object = {
+            message: {
+                type: "request_avatar_for_client",
+                client_id: parseInt(g_chat_message_receiver_id)
+            }
+        };
+
+        connection__send_message_object(message_object);
+
+        // show profile groups for local and remote users
+
+        document.getElementById("current-client-description").style.display = "block";
+        document.getElementById("current-channel-description").style.display = "none";
+        let client = channel_tree__get_client_by_client_id(g_chat_message_receiver_id);
+        let client_name = document.getElementById("current-client-description-client-name");
+        client_name.textContent = client.username;
+        if (Number(client.client_id) === Number(g_local_client_id))
         {
-            g_selected_client_id = currentTarget.getAttribute("data-connected-client-id");
-            console.log("selected_client_id : " + g_selected_client_id);
+            let self_label = document.createElement("span");
+            self_label.className = "client-profile-self-label";
+            self_label.textContent = " (you)";
+            client_name.appendChild(self_label);
+        }
+        document.getElementById("current-client-description-groups").innerHTML = "";
+        document.getElementById("current-client-avatar").style.backgroundImage = "";
+        document.getElementById("current-client-avatar").style.backgroundSize = "";
+        document.getElementById("current-client-avatar").style.width = "";
+        document.getElementById("current-client-avatar").style.height = "";
 
-            let elements = document.getElementsByClassName('connected-client');
+        // show initials until an avatar is available
+        channel_tree__set_profile_avatar_monogram(client.username);
 
-            for (let i = 0; i < elements.length; i++)
+        document.getElementById("current-client-description-meta").textContent = channel_tree__describe_client_for_profile(client);
+
+        channel_groups__profile(client);
+        client_status__select("profile", client);
+    },
+
+    /**
+     * @brief checks whether the current theme offers user context menus
+     *
+     * @return boolean true when user menus are enabled
+     */
+    are_user_context_menus_enabled: function()
+    {
+        return getComputedStyle(document.documentElement).getPropertyValue("--user-context-menus").trim() !== "0";
+    },
+
+    /**
+     * @brief builds and wires the selected user menu when enabled by the theme
+     *
+     * @param Element currentTarget -> selected user row
+     * @param number clientX -> menu horizontal position
+     * @param number clientY -> menu vertical position
+     * @param boolean is_this_idle_client -> whether the row represents an idle client
+     * @param boolean is_this_music_bot_client -> whether the row represents a music bot
+     *
+     * @return void
+     */
+    show_connected_user_menu: function(currentTarget, clientX, clientY, is_this_idle_client, is_this_music_bot_client)
+    {
+        if (!UI.are_user_context_menus_enabled())
+        {
+            UI.delete_contextmenus(true);
+            return;
+        }
+        g_selected_client_id = currentTarget.getAttribute("data-connected-client-id");
+        console.log("selected_client_id : " + g_selected_client_id);
+
+        let elements = document.getElementsByClassName('connected-client');
+
+        for (let i = 0; i < elements.length; i++)
+        {
+            elements[i].style.backgroundColor = "";
+        }
+
+        let elements1 = document.getElementsByClassName('single-channel');
+        for (let i = 0; i < elements1.length; i++)
+        {
+            elements1[i].style.backgroundColor = "";
+        }
+
+        currentTarget.style.backgroundColor = "var(--row-rightclick-selection, #333030)";
+
+        UI.delete_contextmenus();
+
+        let contextmenu_useronclick = "";
+
+        if (g_selected_client_id != g_local_client_id)
+        {
+            let the_client = channel_tree__get_client_by_client_id(g_selected_client_id);
+
+            let string_to_append = "";
+
+            if (the_client.is_music_bot == false)
             {
-                elements[i].style.backgroundColor = "";
+                string_to_append += "<p class='context-menu-item' data-action='12'>kick</p>";
+            }
+            if (the_client.is_music_bot == false)
+            {
+                string_to_append += "<p class='context-menu-item' data-action='13'>ban</p>";
             }
 
-            let elements1 = document.getElementsByClassName('single-channel');
-            for (let i = 0; i < elements1.length; i++)
+            if (is_this_idle_client == true)
             {
-                elements1[i].style.backgroundColor = "";
-            }
-
-            currentTarget.style.backgroundColor = "var(--row-rightclick-selection, #333030)";
-
-            UI.delete_contextmenus();
-
-            let contextmenu_useronclick = "";
-
-            if (g_selected_client_id != g_local_client_id)
-            {
-                let the_client = channel_tree__get_client_by_client_id(g_selected_client_id);
-
-                let string_to_append = "";
-
-                if (the_client.is_music_bot == false)
-                {
-                    string_to_append += "<p class='context-menu-item' data-action='12'>kick</p>";
-                }
-                if (the_client.is_music_bot == false)
-                {
-                    string_to_append += "<p class='context-menu-item' data-action='13'>ban</p>";
-                }
-
-                if (is_this_idle_client == true)
-                {
-                    contextmenu_useronclick = "<div class=\"channel-list-context-menu\" style=\"top: " + clientY.toString() + "px; left:" + clientX.toString() + "px; \">\n\
+                contextmenu_useronclick = "<div class=\"channel-list-context-menu\" style=\"top: " + clientY.toString() + "px; left:" + clientX.toString() + "px; \">\n\
                                                 <div class='channel-list-context-menu-background'>\n\
                                                 </div>\n\
                                                 <div class='channel-list-context-menu-items'>\n\
@@ -1113,10 +1236,10 @@ var UI = {
                                                     "+ string_to_append +"\n\
                                                 </div>\n\
                                             </div>";
-                }
-                else if (is_this_music_bot_client == true)
-                {
-                    contextmenu_useronclick = "<div class=\"channel-list-context-menu\" style=\"top: " + clientY.toString() + "px; left:" + clientX.toString() + "px; \">\n\
+            }
+            else if (is_this_music_bot_client == true)
+            {
+                contextmenu_useronclick = "<div class=\"channel-list-context-menu\" style=\"top: " + clientY.toString() + "px; left:" + clientX.toString() + "px; \">\n\
                                                 <div class='channel-list-context-menu-background'>\n\
                                                 </div>\n\
                                                 <div class='channel-list-context-menu-items'>\n\
@@ -1128,10 +1251,10 @@ var UI = {
                                                     "+ string_to_append +"\n\
                                                 </div>\n\
                                             </div>";
-                }
-                else
-                {
-                    contextmenu_useronclick = "<div class=\"channel-list-context-menu\" style=\"top: " + clientY.toString() + "px; left:" + clientX.toString() + "px; \">\n\
+            }
+            else
+            {
+                contextmenu_useronclick = "<div class=\"channel-list-context-menu\" style=\"top: " + clientY.toString() + "px; left:" + clientX.toString() + "px; \">\n\
                                                 <div class='channel-list-context-menu-background'>\n\
                                                 </div>\n\
                                                 <div class='channel-list-context-menu-items'>\n\
@@ -1143,21 +1266,21 @@ var UI = {
                                                     "+ string_to_append +"\n\
                                                 </div>\n\
                                             </div>";
-                }
-
-                // <p class='context-menu-item " + ((channel_tree__is_local_client_admin() == false) ? 'context-menu-item-disabled' : '') + "' data-action='15'>kick</p>\n\
-                // <p class='context-menu-item " + ((channel_tree__is_local_client_admin() == false) ? 'context-menu-item-disabled' : '') + "' data-action='16'>ban</p>\n\
-
             }
-            else
-            {
-                let avatar_menu_html = "";
-                if (g_server_policy.is_avatar_upload_allowed == true)
-                {
-                    avatar_menu_html = "<label class='context-menu-item' data-action='10' id='custom-file-upload-avatar' for='choose_avatar_input'>set avatar<input id='choose_avatar_input' type='file' accept='.png,.jpg,.jpeg' style='display: none'></label><p class='context-menu-item' data-action='17'>delete avatar</p>";
-                }
 
-                contextmenu_useronclick = "<div class=\"channel-list-context-menu\" style=\"top: " + clientY.toString() + "px; left:" + clientX.toString() + "px; \">\n\
+            // <p class='context-menu-item " + ((channel_tree__is_local_client_admin() == false) ? 'context-menu-item-disabled' : '') + "' data-action='15'>kick</p>\n\
+            // <p class='context-menu-item " + ((channel_tree__is_local_client_admin() == false) ? 'context-menu-item-disabled' : '') + "' data-action='16'>ban</p>\n\
+
+        }
+        else
+        {
+            let avatar_menu_html = "";
+            if (g_server_policy.is_avatar_upload_allowed == true)
+            {
+                avatar_menu_html = "<label class='context-menu-item' data-action='10' id='custom-file-upload-avatar' for='choose_avatar_input'>set avatar<input id='choose_avatar_input' type='file' accept='.png,.jpg,.jpeg' style='display: none'></label><p class='context-menu-item' data-action='17'>delete avatar</p>";
+            }
+
+            contextmenu_useronclick = "<div class=\"channel-list-context-menu\" style=\"top: " + clientY.toString() + "px; left:" + clientX.toString() + "px; \">\n\
                                                 <div class='channel-list-context-menu-background'>\n\
                                                 </div>\n\
                                                 <div class='channel-list-context-menu-items'>\n\
@@ -1166,44 +1289,43 @@ var UI = {
                                                     <p class='context-menu-item' data-action='7'>info</p>\n\
                                                 </div>\n\
                                             </div>";
-            }
+        }
 
-            document.getElementById("contextmenus-container").insertAdjacentHTML("beforeend", contextmenu_useronclick);
-            let choose_avatar_input = document.getElementById("choose_avatar_input");
-            if (choose_avatar_input != null)
+        document.getElementById("contextmenus-container").insertAdjacentHTML("beforeend", contextmenu_useronclick);
+        let choose_avatar_input = document.getElementById("choose_avatar_input");
+        if (choose_avatar_input != null)
+        {
+            choose_avatar_input.onchange = UI.choose_avatar_input_onchange;
+        }
+        moderation__filter_music_menu();
+        document.getElementById("contextmenus-container").getElementsByClassName("channel-list-context-menu")[0].style.top = utils__position_px(clientY);
+        document.getElementById("contextmenus-container").getElementsByClassName("channel-list-context-menu")[0].style.left = utils__position_px(clientX);
+
+        let contextmenu_item_count = document.getElementsByClassName("context-menu-item").length;
+
+        for (let i = 0; i < contextmenu_item_count; i++)
+        {
+            let element = document.getElementsByClassName("context-menu-item")[i];
+            if (parseInt(element.getAttribute("data-action")) == 10)
             {
-                choose_avatar_input.onchange = UI.choose_avatar_input_onchange;
+                continue;
             }
-            moderation__filter_music_menu();
-            document.getElementById("contextmenus-container").getElementsByClassName("channel-list-context-menu")[0].style.top = clientY.toString();
-            document.getElementById("contextmenus-container").getElementsByClassName("channel-list-context-menu")[0].style.left = clientX.toString();
-
-            let contextmenu_item_count = document.getElementsByClassName("context-menu-item").length;
-
-            for (let i = 0; i < contextmenu_item_count; i++)
-            {
-                let element = document.getElementsByClassName("context-menu-item")[i];
-                if (parseInt(element.getAttribute("data-action")) == 10)
-                {
-                    continue;
-                }
-                document.getElementsByClassName("context-menu-item")[i].addEventListener("click", UI.contextmenuitem_onclick);
-
-            }
-            let client_menu = document.querySelector("#contextmenus-container .channel-list-context-menu");
-            let menu_client = channel_tree__get_client_by_client_id(Number(g_selected_client_id));
-            client_menu.dataset.contextClient = g_selected_client_id;
-            moderation__refresh_menu_access();
-            moderation__attach_client_menu(client_menu, menu_client);
-            groups__attach_assignment_menu(client_menu, menu_client);
-
-
+            document.getElementsByClassName("context-menu-item")[i].addEventListener("click", UI.contextmenuitem_onclick);
 
         }
+        let client_menu = document.querySelector("#contextmenus-container .channel-list-context-menu");
+        let menu_client = channel_tree__get_client_by_client_id(Number(g_selected_client_id));
+        client_menu.dataset.contextClient = g_selected_client_id;
+        moderation__refresh_menu_access();
+        moderation__attach_client_menu(client_menu, menu_client);
+        groups__attach_assignment_menu(client_menu, menu_client);
+
+
+
     },
 
     /**
-     * @brief a font item picked in the chat-input context menu: stores it in g_selected_font and swaps the input's css class so typing previews that font
+     * @brief applies the selected font to the message input
      *
      * @param object event -> the mouse event
      *
@@ -1224,7 +1346,7 @@ var UI = {
     },
 
     /**
-     * @brief a channel or user context menu item: the data-action attribute picks the job (create, edit, delete or join a channel, mute, ignore, poke, groups, kick, ban, info, rename and the rest)
+     * @brief handles the selected channel or user menu action
      *
      * @param object event -> the mouse event
      *
@@ -1236,8 +1358,7 @@ var UI = {
 
         let item = event.currentTarget || event.srcElement;
         let action = item.getAttribute("data-action");
-        if (item.getAttribute("aria-disabled") === "true"
-            || !moderation__menu_action_allowed(action, item.closest(".channel-list-context-menu")))
+        if (item.getAttribute("aria-disabled") === "true" || !moderation__menu_action_allowed(action, item.closest(".channel-list-context-menu")))
         {
             event.preventDefault?.();
             return;
@@ -1287,7 +1408,7 @@ var UI = {
                 }
             };
 
-            console.log(message_object);
+            // do not log request bodies: some contain passwords or private content
 
             connection__send_message_object(message_object);
             console.log("delete channel requested: channel_id=" + g_selected_channel_id);
@@ -1301,9 +1422,7 @@ var UI = {
             document.getElementById("create-channel-hidden-parent-id").value = g_selected_channel_id;
 
             let index = channel_tree__get_channel_index_in_array_by_channel_id(g_channel_list, g_selected_channel_id);
-            // assign the raw values: input.value is a property assignment, not an HTML sink, so it
-            // cannot execute markup, and escaping here would show entities (e.g. an apostrophe as
-            // &#039;) in the edit box and corrupt the value when the dialog is saved back
+            // assign raw input values. HTML escaping here would change the saved text
             document.getElementById("channel-properties-input-channel-name").value = g_channel_list[index].name;
             document.getElementById("channel-properties-input-channel-description").value = g_channel_list[index].description;
             UI.set_channel_password_inputs(g_channel_list[index].is_using_password === true);
@@ -1320,9 +1439,7 @@ var UI = {
             // same dialog as channel creation, so put its own name back
             document.querySelector("#channel-properties-edit .dialog-title").innerHTML = "Edit Channel";
 
-            // editing an existing channel: expose the channel-icon row and paint the current icon.
-            // the row shows for everyone (clicking the box opens the shared icon picker); the
-            // server decides whether a set_channel_icon request is actually allowed
+            // show the channel's current icon. the server authorizes icon changes
             g_channel_properties_edit_channel_id = parseInt(g_selected_channel_id);
             UI.refresh_channel_edit_icon_box(g_channel_list[index]);
         }
@@ -1341,6 +1458,17 @@ var UI = {
             }
 
             g_client_list[client_index].is_ignored_by_local_client = !g_client_list[client_index].is_ignored_by_local_client;
+            chat__remember_peer_state();
+            if (android_host__is_ui_only_runtime())
+            {
+                const client = g_client_list[client_index];
+                connection__send_local_command("set_local_ignore",
+                {
+                    identity_hash: client.identity_hash,
+                    public_key: client.public_key,
+                    ignored: client.is_ignored_by_local_client
+                });
+            }
             console.log("local ignore toggled: client_id=" + client_id_of_interest + " ignored=" + g_client_list[client_index].is_ignored_by_local_client);
 
             if (g_client_list[client_index].is_ignored_by_local_client == true)
@@ -1376,7 +1504,7 @@ var UI = {
             }
 
         }
-        else if (action == 7) // Public client details are already available. Other details require server permission.
+        else if (action == 7) // public client details are already available. other details require server permission
         {
             UI.show_client_info_popup(g_selected_client_id);
 
@@ -1389,11 +1517,13 @@ var UI = {
         else if (action == 18) // adjust this client's playback volume (local only)
         {
             let current_gain = g_client_volume_by_id[g_selected_client_id];
-            if (current_gain == null) { current_gain = 1.0; }
+            if (current_gain == null)
+            {
+                current_gain = 1.0;
+            }
             let percent = Math.round(current_gain * 100);
 
-            // remember which client the slider targets on the slider itself, so it can't drift if
-            // selected_client_id changes while the dialog is open
+            // keep the volume slider bound to this client if the menu selection changes
             document.getElementById("adjust-volume-slider").setAttribute("data-target-client-id", g_selected_client_id);
             document.getElementById("adjust-volume-slider").value = percent;
             document.getElementById("adjust-volume-value-label").innerHTML = percent + "%";
@@ -1408,12 +1538,15 @@ var UI = {
         }
         else if (action == 17) // delete your own avatar
         {
-            if (g_server_policy.is_avatar_upload_allowed == false) { return; }
+            if (g_server_policy.is_avatar_upload_allowed == false)
+            {
+                return;
+            }
 
             let message_object = { message: { type: "delete_avatar" } };
             connection__send_message_object(message_object);
 
-            // clear our own avatar in the ui immediately; the server's avatar_changed confirms
+            // clear the local avatar while awaiting server confirmation
             channel_tree__apply_avatar_to_ui(g_local_client_id, "");
         }
         else if (action == 11)
@@ -1444,9 +1577,7 @@ var UI = {
                 document.querySelector('.marquee-music-playing-container[data-marquee-music-playing-container-id="' + g_selected_client_id + '"]').style.display = "none";
             }, 14000);
 
-            // after 17 seconds hide it..
-            // if user accepts call, the marquee-music-playing-container gets deleted because he is switched to different channel and the html itself gets deleted
-            // so no need to take care of html in that case
+            // hide the call notice after 17 seconds if it still exists
 
             let message_object = {
                 message: {
@@ -1493,7 +1624,7 @@ var UI = {
 
             connection__send_message_object(message_object);
         }
-        else if (action == 20) // set a music bot's name; 17 belongs to "delete avatar" above, which used to swallow this
+        else if (action == 20) // rename the selected music bot
         {
             document.getElementById("input-set-new-username").value = channel_tree__get_client_by_client_id(g_selected_client_id).username;
             document.getElementById("set-new-username-enter-container").style.display = "block";
@@ -1501,8 +1632,9 @@ var UI = {
     },
 
     /**
-     * @brief Deletes a message or opens its editor from the message menu.
-     * @param event Selected message action.
+     * @brief deletes a message or opens its editor from the message menu
+     *
+     * @param event selected message action
      */
     chat_message_contextmenuitem_onclick: function(event)
     {
@@ -1535,7 +1667,7 @@ var UI = {
     },
 
     /**
-     * @brief right click on an own chat message: remembers its server message id in g_selected_server_chat_message_id and opens the delete/edit context menu at the cursor
+     * @brief opens edit and delete actions for the selected local message
      *
      * @param object event -> the mouse event
      *
@@ -1580,8 +1712,8 @@ var UI = {
                                             </div>";
 
             document.getElementById("contextmenus-container").insertAdjacentHTML("beforeend", contextmenu_html);
-            document.getElementById("contextmenus-container").getElementsByClassName("chat-message-context-menu")[0].style.top = event.clientY.toString();
-            document.getElementById("contextmenus-container").getElementsByClassName("chat-message-context-menu")[0].style.left = event.clientX.toString();
+            document.getElementById("contextmenus-container").getElementsByClassName("chat-message-context-menu")[0].style.top = utils__position_px(event.clientY);
+            document.getElementById("contextmenus-container").getElementsByClassName("chat-message-context-menu")[0].style.left = utils__position_px(event.clientX);
 
             let contextmenu_item_count = document.getElementsByClassName("chat-message-context-menu-item").length;
 
@@ -1594,7 +1726,7 @@ var UI = {
     },
 
     /**
-     * @brief sends the message; accepted sends clear their preview, while refused attachments stay visible for retry or removal
+     * @brief sends the draft and keeps refused attachments available for retry
      *
      * @return void
      */
@@ -1607,7 +1739,7 @@ var UI = {
     },
 
     /**
-     * @brief the connect button on the login form: gives the connect loop of connection.js a target
+     * @brief passes the connection form's target to the connect loop
      *
      * @return void
      */
@@ -1617,8 +1749,9 @@ var UI = {
     },
 
     /**
-     * @brief Sends on Enter before the textarea inserts a line break.
-     * @param event Key pressed in the chat input.
+     * @brief sends on Enter before the textarea inserts a line break
+     *
+     * @param event key pressed in the chat input
      */
     chat_input_on_keydown: function(event)
     {
@@ -1637,8 +1770,9 @@ var UI = {
     },
 
     /**
-     * @brief Handles keyboards that insert a line break without an Enter key event.
-     * @param event Pending change to the chat input.
+     * @brief handles keyboards that insert a line break without an Enter key event
+     *
+     * @param event pending change to the chat input
      */
     chat_input_on_beforeinput: function(event)
     {
@@ -1650,8 +1784,9 @@ var UI = {
     },
 
     /**
-     * @brief Updates the typing indicator after text input.
-     * @param event Key released in the chat input.
+     * @brief updates the typing indicator after text input
+     *
+     * @param event key released in the chat input
      */
     chat_input_on_keyup: function(event)
     {
@@ -1663,7 +1798,7 @@ var UI = {
     },
 
     /**
-     * @brief an image picked for the chat: the preview path is in chat_files__attach_chat_picture, shared with drag and drop
+     * @brief attaches a selected image through the shared picture preview path
      *
      * @return void
      */
@@ -1683,17 +1818,10 @@ var UI = {
     },
 
     /**
-     * @brief "add key" on the connect form: appends a "key N" label row and a value input (with its hover remove button) to the verification lists and bumps custom_key_count
-     *
-     * @return void
-     */
-    /**
-     * @brief appends one row to the key grid of the connect window: a "key N" label and a field with the type select, the
-     *        key input and the remove mark. the "add key" button appends an empty row; connection.js appends one filled row
-     *        per key the page wrote in (the server puts its keys into the page it serves), so the user sees which keys the
-     *        page logs in with and can change or remove them like any other row
+     * @brief adds a connection password row with its cipher selector and remove button
      *
      * @param key_string the key to show, "" for an empty row the user fills in
+     * @param cipher_type cipher selected for this password, defaulting to aes256
      *
      * @return void
      */
@@ -1713,7 +1841,7 @@ var UI = {
         field.className = "connect-window-field";
         field.setAttribute("data-key-id", custom_key_count);
 
-        // The selected cipher applies to this password's encryption layer.
+        // the selected cipher applies to this password's encryption layer
         const key_type = document.createElement("select");
         key_type.className = "connect-key-type";
         key_type.id = "input-key-type-" + custom_key_count;
@@ -1735,8 +1863,7 @@ var UI = {
         key_input.value = (typeof key_string === "string") ? key_string : "";
         field.appendChild(key_input);
 
-        // per-key remove mark (styled in flags.style so every theme gets it). it removes the label and the field of this
-        // key. connect-time collection iterates the surviving key inputs, so a gap in the numbering is harmless
+        // remove this password row. login collects the remaining inputs in DOM order
         const remove_button = document.createElement("div");
         remove_button.className = "remove-key-button";
         remove_button.textContent = "\u2715";
@@ -1750,8 +1877,7 @@ var UI = {
                 removed[i].remove();
             }
 
-            // renumber the visible "key N" labels so they stay 0..n-1 with no gaps
-            // (the inputs keep their unique ids; collection is by dom order)
+            // renumber visible labels without changing input IDs
             const remaining_labels = document.querySelectorAll('#connect-keys-grid label[data-key-id]');
             for (let j = 0; j < remaining_labels.length; j++)
             {
@@ -1765,7 +1891,11 @@ var UI = {
         custom_key_count++;
     },
 
-    /** @brief shows the key editor without changing the keys used for login. */
+    /**
+     * @brief shows or hides the key editor without changing the login keys
+     *
+     * @return void
+     */
     show_connection_advanced: function()
     {
         const checkbox = document.getElementById("connect-show-advanced");
@@ -1773,6 +1903,11 @@ var UI = {
         checkbox.setAttribute("aria-expanded", String(checkbox.checked));
     },
 
+    /**
+     * @brief adds an empty connection password row and scrolls it into view
+     *
+     * @return void
+     */
     add_key_button_on_click: function()
     {
         // one more empty row of the connect window's grid, scrolled into view
@@ -1798,7 +1933,7 @@ var UI = {
     },
 
     /**
-     * @brief Sends the entered username to the server.
+     * @brief sends the entered username to the server
      */
     connected_local_user_input_on_focusout: function()
     {
@@ -1816,14 +1951,20 @@ var UI = {
 
         g_client_list[index].username = new_username;
         g_local_username = new_username;
-        { let rename_input = document.getElementById('connected-local-client-input'); if (rename_input != null) { rename_input.setAttribute('value', g_local_username); } }
+        {
+            let rename_input = document.getElementById('connected-local-client-input');
+            if (rename_input != null)
+            {
+                rename_input.setAttribute('value', g_local_username);
+            }
+        }
 
         client_msg.send_change_client_username_request(new_username, g_local_client_id);
         console.log("local username changed");
     },
 
     /**
-     * @brief closes the import-identity dialog and its background overlay
+     * @brief closes the identity import dialog and its overlay
      *
      * @param object event -> the mouse event
      *
@@ -1837,8 +1978,10 @@ var UI = {
     },
 
     /**
-     * @brief Opens the channel menu after a stationary touch and keeps it open on release.
+     * @brief opens the channel menu after a stationary touch and keeps it open on release
+     *
      * @param HTMLElement row -> channel row to handle once
+     *
      * @return void
      */
     setup_channel_touch_events: function(row)
@@ -1855,12 +1998,22 @@ var UI = {
             let client_x = 0;
             let client_y = 0;
 
+            /**
+             * @brief cancels the pending channel long-press timer
+             *
+             * @return void
+             */
             function cancel_timer()
             {
                 window.clearTimeout(timer);
                 timer = null;
             }
 
+            /**
+             * @brief cancels the channel hold and removes its temporary input listeners
+             *
+             * @return void
+             */
             function finish_press()
             {
                 cancel_timer();
@@ -1877,6 +2030,13 @@ var UI = {
                 }
             }
 
+            /**
+             * @brief cancels the channel hold when the gesture stops being a single touch
+             *
+             * @param TouchEvent event -> current touch contacts
+             *
+             * @return void
+             */
             function cancel_multiple_touches(event)
             {
                 if (event.touches.length !== 1)
@@ -1885,11 +2045,18 @@ var UI = {
                 }
             }
 
+            /**
+             * @brief ends the channel hold and prevents its release from clicking a newly opened menu
+             *
+             * @param TouchEvent event -> touch release event
+             *
+             * @return void
+             */
             function end_press(event)
             {
                 if (menu_opened && event.cancelable)
                 {
-                    // Prevent the release from clicking the menu that the hold opened.
+                    // prevent the release from clicking the menu that the hold opened
                     event.preventDefault();
                 }
                 finish_press();
@@ -1918,8 +2085,7 @@ var UI = {
                 let channel_id = parseInt(row.getAttribute("data-channel-id"));
 
                 timer = null;
-                if (!row.isConnected || !g_is_authenticated || g_worker_connection_ended
-                    || channel_tree__get_channel_index_in_array_by_channel_id(g_channel_list, channel_id) === -1)
+                if (!row.isConnected || !g_is_authenticated || g_worker_connection_ended || channel_tree__get_channel_index_in_array_by_channel_id(g_channel_list, channel_id) === -1)
                 {
                     finish_press();
                     return;
@@ -1931,7 +2097,7 @@ var UI = {
     },
 
     /**
-     * @brief mousedown on a channel row: a left click shows the channel description in the right pane, a right click (or touch) highlights the row and opens the create/delete/edit/join menu
+     * @brief shows channel details or opens the channel menu
      *
      * @param object event -> the mouse event, or a synthetic one for a touch
      * @param boolean|null is_touch_event -> true when called for a touch
@@ -2008,15 +2174,12 @@ var UI = {
 
             UI.delete_contextmenus();
 
-            // the root channel can be renamed and edited, but never deleted - the
-            // server would have nowhere to put the clients standing in it
+            // the root channel can be edited but not deleted
             let selected_channel_index = channel_tree__get_channel_index_in_array_by_channel_id(g_channel_list, g_selected_channel_id);
             let delete_menu_item_html =
-                (selected_channel_index != -1 && g_channel_list[selected_channel_index].is_root_channel == true)
-                    ? "" : "<p class='context-menu-item' data-action='1'>delete</p>";
+                (selected_channel_index != -1 && g_channel_list[selected_channel_index].is_root_channel == true) ? "" : "<p class='context-menu-item' data-action='1'>delete</p>";
             let server_info_menu_item_html =
-                (selected_channel_index != -1 && g_channel_list[selected_channel_index].is_root_channel == true)
-                    ? "<p class='context-menu-item' data-action='server-info'>server info</p><p class='context-menu-item' data-action='server-moderation'>server moderation</p>" : "";
+                (selected_channel_index != -1 && g_channel_list[selected_channel_index].is_root_channel == true) ? "<p class='context-menu-item' data-action='server-info'>server info</p><p class='context-menu-item' data-action='server-moderation'>server moderation</p>" : "";
 
             let contextmenu_html = "<div class=\"channel-list-context-menu\" style=\"top: " + clientY + "px; left:" + clientX.toString() + "px; \">\n\
                                         <div class='channel-list-context-menu-background'>\n\
@@ -2033,8 +2196,8 @@ var UI = {
 
             document.getElementById("contextmenus-container").insertAdjacentHTML("beforeend", contextmenu_html);
             moderation__filter_music_menu();
-            document.getElementById("contextmenus-container").getElementsByClassName("channel-list-context-menu")[0].style.top = clientY.toString();
-            document.getElementById("contextmenus-container").getElementsByClassName("channel-list-context-menu")[0].style.left = clientX.toString();
+            document.getElementById("contextmenus-container").getElementsByClassName("channel-list-context-menu")[0].style.top = utils__position_px(clientY);
+            document.getElementById("contextmenus-container").getElementsByClassName("channel-list-context-menu")[0].style.left = utils__position_px(clientX);
 
             let contextmenu_item_count = document.getElementsByClassName("context-menu-item").length;
 
@@ -2055,7 +2218,7 @@ var UI = {
     },
 
     /**
-     * @brief the client-info popup, filled with what this client already knows (name, username, groups, last seen); restricted rows are cleared here and filled only after the server permits the request
+     * @brief shows known client details and requests restricted fields separately
      *
      * @param number client_id -> the client
      *
@@ -2064,7 +2227,10 @@ var UI = {
     show_client_info_popup: function(client_id)
     {
         let client = channel_tree__get_client_by_client_id(client_id);
-        if (client == null) { return; }
+        if (client == null)
+        {
+            return;
+        }
 
 
         UI.show_client_info_popup_shell();
@@ -2076,12 +2242,14 @@ var UI = {
         for (let i = 0; i < client.group_ids.length; i++)
         {
             let group = channel_tree__get_group_by_group_id(client.group_ids[i]);
-            if (group != null) { group_names.push(group.group_name); }
+            if (group != null)
+            {
+                group_names.push(group.group_name);
+            }
         }
         document.getElementById("client-info-groups").innerText = (group_names.length > 0) ? group_names.join(", ") : "-";
 
-        // this person is connected right now; the stored last-seen only matters once they leave
-        // connected right now, so the answer to "when were they last seen" is: now
+        // a connected user was last seen now
         let live_status = (client.is_idle == true) ? "idle" : "online";
         document.getElementById("client-info-status").innerText = live_status;
         document.getElementById("client-info-status").className = "client-info-status-" + live_status;
@@ -2099,9 +2267,7 @@ var UI = {
     },
 
     /**
-     * @brief the render half of merging an offline conversation into the live private chat
-     *        chat__promote_offline_chat_context_state has decided and mutated g_chat_context_array;
-     *        this only moves the markup to match, never re-deriving the decisions from the dom
+     * @brief moves conversation markup to match the completed offline history state change
      *
      * @param object promotion -> what the state half did
      * @param object client -> the connected client
@@ -2110,8 +2276,14 @@ var UI = {
      */
     promote_offline_chat_context_render: function(promotion, client)
     {
-        if (promotion == null || promotion.did_promote == false) { return; }
-        if (client == null) { return; }
+        if (promotion == null || promotion.did_promote == false)
+        {
+            return;
+        }
+        if (client == null)
+        {
+            return;
+        }
 
         let offline_context = document.getElementById(promotion.offline_context_id);
         let live_context = document.getElementById(promotion.live_context_id);
@@ -2135,7 +2307,7 @@ var UI = {
             offline_context.remove();
         }
 
-        // Move the saved conversation tab to the connected client.
+        // move the saved conversation tab to the connected client
         let offline_selector = document.querySelector('[data-chat-context-selector-id="offline-' + client.identity_hash + '"]');
         if (offline_selector != null)
         {
@@ -2147,12 +2319,14 @@ var UI = {
             {
                 offline_selector.setAttribute("data-chat-context-selector-id", "user-" + client.client_id);
                 let remove_button = offline_selector.querySelector(".remove-chat-context-selector");
-                if (remove_button != null) { remove_button.setAttribute("data-chat-context-remove-selector-id", "user-" + client.client_id); }
+                if (remove_button != null)
+                {
+                    remove_button.setAttribute("data-chat-context-remove-selector-id", "user-" + client.client_id);
+                }
             }
         }
 
-        // the receiver globals were already switched over by the state half; this only keeps
-        // the promoted thread on screen
+        // keep the promoted conversation visible after its recipient state changes
         if (promotion.was_open == true)
         {
             let live_element = document.getElementById(promotion.live_context_id);
@@ -2169,8 +2343,9 @@ var UI = {
     },
 
     /**
-     * @brief Opens the conversation for a saved identity and shows whether offline delivery is available.
-     * @param offline_contact Saved recipient to display.
+     * @brief opens the conversation for a saved identity and shows whether offline delivery is available
+     *
+     * @param offline_contact saved recipient to display
      */
     open_offline_chat_context: function(offline_contact)
     {
@@ -2180,11 +2355,8 @@ var UI = {
 
         if (document.getElementById(context_id) == null)
         {
-            // without their public key nothing can be encrypted for them, so say so here
-            // instead of letting somebody type a message that goes nowhere
-            let header_note = can_be_delivered
-                ? " (offline - they get this when they return)"
-                : " (offline messages unavailable)";
+            // a saved recipient needs a public key before messages can be encrypted
+            let header_note = can_be_delivered ? " (offline - they get this when they return)" : " (offline messages unavailable)";
 
             let html_to_append = "<div class=\"chat-context\" id=\"" + context_id + "\">\n\
                                     <div class=\"single-server-message\">now talking to user: " + chat__sanitize_string(offline_contact.username) + header_note + "</div>\n\
@@ -2194,6 +2366,9 @@ var UI = {
             g_chat_context_array.push({
                 type: "user",
                 chat_context_id: context_id,
+                peer_public_key: offline_contact.public_key || "",
+                peer_identity_hash: offline_contact.identity_hash,
+                peer_username: offline_contact.username,
                 last_known_message_sender_username: ""
             });
         }
@@ -2210,7 +2385,7 @@ var UI = {
         g_current_chat_context_id = context_id;
         chat_replies__refresh();
         g_chat_message_receiver_type = "user";
-        g_chat_message_receiver_id = -1;              // No connected recipient.
+        g_chat_message_receiver_id = -1;              // no connected recipient
         g_offline_chat_recipient_identity_hash = offline_contact.identity_hash;
 
         UI.enable_inputs();
@@ -2220,8 +2395,9 @@ var UI = {
     },
 
     /**
-     * @brief Shows the saved name, groups and last seen time of an offline user.
-     * @param identity_hash Saved identity to display.
+     * @brief shows the saved name, groups and last seen time of an offline user
+     *
+     * @param identity_hash saved identity to display
      */
     show_offline_contact_info_popup: function(identity_hash)
     {
@@ -2235,7 +2411,10 @@ var UI = {
             }
         }
 
-        if (stored_client == null) { return; }
+        if (stored_client == null)
+        {
+            return;
+        }
 
         UI.show_client_info_popup_shell();
 
@@ -2246,12 +2425,14 @@ var UI = {
         for (let i = 0; i < stored_client.group_ids.length; i++)
         {
             let group = channel_tree__get_group_by_group_id(stored_client.group_ids[i]);
-            if (group != null) { group_names.push(group.group_name); }
+            if (group != null)
+            {
+                group_names.push(group.group_name);
+            }
         }
         document.getElementById("client-info-groups").innerText = (group_names.length > 0) ? group_names.join(", ") : "-";
 
-        // "last seen" is a time or nothing: a zero stamp means the server does not record it
-        // (or never saw this identity leave); the offline state itself is the status row above
+        // a zero timestamp means no recorded departure time
         document.getElementById("client-info-status").innerText = "offline";
         document.getElementById("client-info-status").className = "client-info-status-offline";
         document.getElementById("client-info-last-seen").innerText = (stored_client.last_seen > 0) ? UI.format_time_ago(stored_client.last_seen) : "no data available";
@@ -2266,7 +2447,7 @@ var UI = {
     },
 
     /**
-     * @brief a unix timestamp as plain english: "just now", "5 minutes ago", "3 weeks ago"; how long ago means more to a person than the exact date
+     * @brief formats a timestamp as elapsed time, such as five minutes ago
      *
      * @param number unix_seconds -> the moment, in seconds
      *
@@ -2277,12 +2458,17 @@ var UI = {
         let seconds_ago = Math.floor(new Date().valueOf() / 1000) - unix_seconds;
 
         // clock skew between server and phone can put it slightly in the future
-        if (seconds_ago < 0) { seconds_ago = 0; }
+        if (seconds_ago < 0)
+        {
+            seconds_ago = 0;
+        }
 
-        if (seconds_ago < 60) { return "just now"; }
+        if (seconds_ago < 60)
+        {
+            return "just now";
+        }
 
-        // { seconds per unit, singular name } from smallest to largest; a month is the
-        // average 30.44 days and a year 365.25 days, so long gaps do not drift
+        // elapsed time units use average month and year lengths
         let units = [
             { seconds: 60, name: "minute" },
             { seconds: 3600, name: "hour" },
@@ -2295,7 +2481,10 @@ var UI = {
         let chosen = units[0];
         for (let i = 0; i < units.length; i++)
         {
-            if (seconds_ago >= units[i].seconds) { chosen = units[i]; }
+            if (seconds_ago >= units[i].seconds)
+            {
+                chosen = units[i];
+            }
         }
 
         let count = Math.floor(seconds_ago / chosen.seconds);
@@ -2303,7 +2492,7 @@ var UI = {
     },
 
     /**
-     * @brief "peter novak" -> "PN", "noobnoob" -> "NO", a stand-in avatar so people without a picture still get a circle worth looking at
+     * @brief builds avatar initials from a display name
      *
      * @param string name -> the name
      *
@@ -2312,9 +2501,15 @@ var UI = {
     initials_for_name: function(name)
     {
         let trimmed = ("" + name).trim();
-        if (trimmed.length == 0) { return "?"; }
+        if (trimmed.length == 0)
+        {
+            return "?";
+        }
 
-        let words = trimmed.split(/[\s._-]+/).filter(function(word) { return word.length > 0; });
+        let words = trimmed.split(/[\s._-]+/).filter(function(word)
+        {
+            return word.length > 0;
+        });
 
         if (words.length >= 2)
         {
@@ -2325,25 +2520,24 @@ var UI = {
     },
 
     /**
-     * @brief Creates the shared client information window.
+     * @brief creates the shared client information window
      */
     show_client_info_popup_shell: function()
     {
-        if (document.getElementById("client-info-extra-rows") != null) { return; }
+        if (document.getElementById("client-info-extra-rows") != null)
+        {
+            return;
+        }
 
         let content = document.getElementById("client-info-content");
         let extra_rows = document.createElement("div");
         extra_rows.id = "client-info-extra-rows";
-        extra_rows.innerHTML = "<p class='client-info-row'><span class='client-info-label'>status</span><span id='client-info-status'></span></p>"
-                                + "<p class='client-info-row' data-server-groups><span class='client-info-label'>server groups</span><span id='client-info-groups'></span></p>"
-                                + "<p class='client-info-row'><span class='client-info-label'>last seen</span><span id='client-info-last-seen'></span></p>";
+        extra_rows.innerHTML = "<p class='client-info-row'><span class='client-info-label'>status</span><span id='client-info-status'></span></p>" + "<p class='client-info-row' data-server-groups><span class='client-info-label'>server groups</span><span id='client-info-groups'></span></p>" + "<p class='client-info-row'><span class='client-info-label'>last seen</span><span id='client-info-last-seen'></span></p>";
         content.insertBefore(extra_rows, content.children[1]);
     },
 
     /**
-     * @brief activates a theme by unmuting its stylesheet (all others get an impossible media query) and rewires the member list
-     *        every sheet is "style-theme-<name>", light being the one exception, and an unknown name
-     *        (a removed theme still in localStorage) falls back to default
+     * @brief enables the chosen stylesheet and updates theme dependent controls
      *
      * @param string themename -> the theme
      * @param boolean persist -> false leaves localStorage alone
@@ -2375,36 +2569,39 @@ var UI = {
         chat__apply_theme_formatting();
         theme_effects__refresh();
 
-        // the connect form is a window in most themes and a page of its own in the member list themes: shaped again on every switch
+        // update the connection form layout for the selected theme
         if (typeof connection__apply_connect_window_mode === "function")
         {
             connection__apply_connect_window_mode();
         }
 
-        // the new theme may show or hide the right-pane member list; (re)attach its live mirror
-        // accordingly. driven off the computed style, so any theme that shows it gets the mirror
+        // maintain the member list mirror only when the theme displays it
         UI.refresh_member_list_state();
         UI.refresh_member_list_controls();
 
-        // persist defaults to true (user picks); the default set by the server passes false so it is never saved in localStorage
-        if (persist !== false) { utils__storage_set("lemon_theme", themename); }
+        // save user theme choices. server defaults pass persist=false
+        if (persist !== false)
+        {
+            utils__storage_set("lemon_theme", themename);
+        }
     },
 
     /**
-     * @brief the right-pane member list is a live clone of the left tree's user rows, maintained only while a theme makes it visible; other themes pay nothing, the observer is disconnected and the list cleared
-     *        the member list IS the avatar grid: when visible and the server allows avatars, the circles get avatars and everyone's is bulk-loaded
+     * @brief maintains the cloned member list only while the active theme displays it
      *
      * @return void
      */
     refresh_member_list_state: function()
     {
         let container = document.getElementById("member-list-container");
-        if (container == null) { return; }
+        if (container == null)
+        {
+            return;
+        }
 
         let is_visible = getComputedStyle(container).display != "none";
 
-        // the member list IS the avatar grid: when it's visible (a member list theme) and the
-        // server allows avatars, paint avatars into the circles and bulk-load everyone's.
+        // load avatars when the visible member list and server policy allow them
         let grid_now_visible = (is_visible == true && g_server_policy.is_avatar_upload_allowed == true);
         let grid_just_appeared = (grid_now_visible == true && g_avatar.grid_visible == false);
         g_avatar.grid_visible = grid_now_visible;
@@ -2413,7 +2610,10 @@ var UI = {
         {
             if (member_list_observer == null)
             {
-                member_list_observer = new MutationObserver(function() { UI.schedule_member_list_sync(); });
+                member_list_observer = new MutationObserver(function()
+                {
+                    UI.schedule_member_list_sync();
+                });
             }
 
             let tree = document.getElementById("channel-list-container");
@@ -2422,8 +2622,7 @@ var UI = {
                 member_list_observer.observe(tree, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "value"] });
             }
 
-            // idle people are in their own container next to the tree; without watching
-            // it too, an idle client disconnecting would stay in the member list
+            // watch idle rows too so departed clients disappear from the member list
             let idle_container = document.getElementById("idle-clients-container");
             if (idle_container != null)
             {
@@ -2433,7 +2632,10 @@ var UI = {
             UI.sync_member_list();
 
             // switching into a member list theme after connect: pull every avatar for the grid now
-            if (grid_just_appeared == true) { channel_tree__enqueue_all_avatars_for_loading(); }
+            if (grid_just_appeared == true)
+            {
+                channel_tree__enqueue_all_avatars_for_loading();
+            }
         }
         else
         {
@@ -2443,14 +2645,20 @@ var UI = {
             }
 
             let body = document.getElementById("member-list-body");
-            if (body != null) { body.innerHTML = ""; }
+            if (body != null)
+            {
+                body.innerHTML = "";
+            }
             let header = document.getElementById("member-list-header");
-            if (header != null) { header.textContent = ""; }
+            if (header != null)
+            {
+                header.textContent = "";
+            }
         }
     },
 
     /**
-     * @brief Updates the participant filter.
+     * @brief updates the participant filter
      */
     refresh_member_list_controls: function()
     {
@@ -2468,13 +2676,16 @@ var UI = {
     },
 
     /**
-     * @brief coalesces a burst of tree mutations (many rows added, a user toggling its speaking class) into at most one member-list rebuild per animation frame
+     * @brief schedules one member list refresh per animation frame
      *
      * @return void
      */
     schedule_member_list_sync: function()
     {
-        if (member_list_sync_scheduled == true) { return; }
+        if (member_list_sync_scheduled == true)
+        {
+            return;
+        }
         member_list_sync_scheduled = true;
         requestAnimationFrame(function()
         {
@@ -2484,9 +2695,7 @@ var UI = {
     },
 
     /**
-     * @brief rebuilds the member list from the current tree rows
-     *        clones are stripped of their ids (duplicate ids would break getElementById on the real
-     *        rows) and the local client's username input is rendered as plain text; the list is display-only
+     * @brief rebuilds member rows as clones without duplicate IDs or editable username fields
      *
      * @return void
      */
@@ -2494,45 +2703,37 @@ var UI = {
     {
         let body = document.getElementById("member-list-body");
         let header = document.getElementById("member-list-header");
-        if (body == null) { console.warn("sync_member_list: member-list-body missing; skipping"); return; }
+        if (body == null)
+        {
+            console.warn("sync_member_list: member-list-body missing; skipping");
+            return;
+        }
 
         let tree = document.getElementById("channel-list-container");
-        // idle people are MOVED out of the tree into #idle-clients-container, but they
-        // are still connected - the member list keeps showing them (their .idle-client class
-        // turns the presence dot amber)
+        // include idle clients from their separate container
         let rows = document.querySelectorAll("#channel-list-container .connected-client, #idle-clients-container .connected-client");
 
         let previous_scroll = body.scrollTop;
         let previous_scroll_left = body.scrollLeft;
         let previous_channel = body.querySelector(".member-list-channel");
-        let changed_channel = previous_channel != null
-            && previous_channel.getAttribute("data-member-list-channel-id") != String(g_current_channel_id);
-        let changed_conversation = previous_channel != null
-            && previous_channel.getAttribute("data-member-list-conversation-id") != String(g_current_chat_context_id);
+        let changed_channel = previous_channel != null && previous_channel.getAttribute("data-member-list-channel-id") != String(g_current_channel_id);
+        let changed_conversation = previous_channel != null && previous_channel.getAttribute("data-member-list-conversation-id") != String(g_current_chat_context_id);
         let focused_row = document.activeElement.closest(".member-list-channel, .member-list-client");
-        let focused_channel_control = document.activeElement.matches(".member-conversations-channel-switch")
-            ? ".member-list-channel-icon"
-            : document.activeElement.matches(".member-list-channel-name[role='button']") ? ".member-list-channel-name" : null;
-        let focus_attribute = focused_row == null ? null : focused_row.hasAttribute("data-member-list-channel-id")
-            ? "data-member-list-channel-id" : focused_row.hasAttribute("data-identity-hash")
-                ? "data-identity-hash" : "data-connected-client-id";
+        let focused_channel_control = document.activeElement.matches(".member-conversations-channel-switch") ? ".member-list-channel-icon" : document.activeElement.matches(".member-list-channel-name[role='button']") ? ".member-list-channel-name" : null;
+        let focus_attribute = focused_row == null ? null : focused_row.hasAttribute("data-member-list-channel-id") ? "data-member-list-channel-id" : focused_row.hasAttribute("data-identity-hash") ? "data-identity-hash" : "data-connected-client-id";
         let focus_value = focused_row == null ? null : focused_row.getAttribute(focus_attribute);
         let fragment = document.createDocumentFragment();
         let count = 0;
 
-        // which conversation is on screen decides which circle wears the active ring:
-        // a pm context rings that user's circle, anything else rings the channel circle
+        // mark the circle of the selected conversation
         let active_is_pm = (g_current_chat_context_id != null && g_current_chat_context_id.indexOf("chat-context-pm-") == 0);
         let active_pm_client_id = (active_is_pm == true) ? g_current_chat_context_id.split("chat-context-pm-")[1] : null;
 
-        // a conversation with somebody OFFLINE is a third kind of context. without this the
-        // ring stayed on the channel circle while you were writing to an offline person
+        // offline conversations select their saved identity circle
         let active_is_offline = (g_current_chat_context_id != null && g_current_chat_context_id.indexOf("chat-context-offline-") == 0);
         let active_offline_identity_hash = (active_is_offline == true) ? g_current_chat_context_id.substring("chat-context-offline-".length) : "";
 
-        // the current channel leads the member list as its own circle ("the room you are in").
-        // taps on it are forwarded at init (member list forwarding in main.js): tap = show the
-        // channel chat, hold = the channel switch list
+        // place the current channel first. main forwards its tap and hold actions
         let current_channel_row = (tree != null) ? tree.querySelector('.single-channel[data-channel-id="' + g_current_channel_id + '"]') : null;
         if (current_channel_row != null)
         {
@@ -2558,7 +2759,7 @@ var UI = {
             let channel_icon = document.createElement("div");
             channel_icon.className = "member-list-channel-icon";
 
-            // channels with an uploaded icon show it; the rest get the css "#" glyph
+            // use the uploaded channel icon or the theme's default glyph
             let tree_icon = current_channel_row.querySelector(".single-channel-icon");
             if (tree_icon != null && tree_icon.style.backgroundImage != "")
             {
@@ -2570,13 +2771,10 @@ var UI = {
             channel_name.className = "member-list-channel-name";
             channel_name.textContent = (channel_name_element != null) ? channel_name_element.textContent : "";
 
-            // unread counter on the circle itself. the member list themes hide the channel
-            // tree entirely, so the badge in those rows can never be seen there - this
-            // is the only channel element bluebell actually show
+            // show channel unread counts on its member list circle
             let channel_unread = document.createElement("p");
             let channel_unread_count = chat__get_channel_unread_count(g_current_channel_id);
-            channel_unread.className = "member-list-channel-unread"
-                + ((channel_unread_count > 0) ? "" : " unread-empty");
+            channel_unread.className = "member-list-channel-unread" + ((channel_unread_count > 0) ? "" : " unread-empty");
             channel_unread.textContent = channel_unread_count;
 
             channel_circle.appendChild(channel_icon);
@@ -2595,13 +2793,18 @@ var UI = {
                 clone.classList.add("member-list-context-active");
             }
 
-            if (clone.hasAttribute("id")) { clone.removeAttribute("id"); }
+            if (clone.hasAttribute("id"))
+            {
+                clone.removeAttribute("id");
+            }
             let ided = clone.querySelectorAll("[id]");
-            for (let j = 0; j < ided.length; j++) { ided[j].removeAttribute("id"); }
+            for (let j = 0; j < ided.length; j++)
+            {
+                ided[j].removeAttribute("id");
+            }
 
             clone.classList.remove("collapsed");
-            // distinct class so the right member list can be styled independently of the tree rows
-            // (re-added on every sync, since each clone is a fresh copy of a tree row)
+            // give clones their own styling class on every refresh
             clone.classList.add("member-list-client");
             if (clone.classList.contains("music-bot-client"))
             {
@@ -2614,7 +2817,7 @@ var UI = {
                 clone.setAttribute("role", "button");
             }
 
-            // the local-client row carries the name in an editable <input>; swap it for text
+            // replace the local username input with display text
             let inputs = clone.getElementsByTagName("input");
             while (inputs.length > 0)
             {
@@ -2625,8 +2828,7 @@ var UI = {
                 inp.parentNode.replaceChild(p, inp);
             }
 
-            // paint this client's avatar (if any) onto the clone's circle. avatars are shown only in
-            // the member list; the left tree keeps its plain circle + green dot + speaking ring
+            // apply the member list avatar without changing the source tree row
             if (g_server_policy.is_avatar_upload_allowed == true)
             {
                 let cid = rows[i].getAttribute("data-connected-client-id");
@@ -2642,8 +2844,7 @@ var UI = {
                 }
             }
 
-            // no avatar: fall back to the first letters of the display name, painted as a
-            // label on the circle. purely local decoration - nothing is sent or stored
+            // use display name initials when no avatar is available
             let clone_circle = clone.querySelector(".client-audio-state");
             if (clone_circle != null && clone_circle.style.backgroundImage == "")
             {
@@ -2651,9 +2852,7 @@ var UI = {
                 clone_circle.setAttribute("data-initials", UI.initials_for_name((clone_name_element != null) ? clone_name_element.textContent : ""));
             }
 
-            // second caption under the name: which channel this person is in
-            // (the member list is the only channel ui in those themes, so this is how you see
-            // where everyone is). offline contacts have no live channel - skipped.
+            // show each connected user's channel below their name
             let caption_client_object = channel_tree__get_client_by_client_id(rows[i].getAttribute("data-connected-client-id"));
             if (caption_client_object != null)
             {
@@ -2666,8 +2865,7 @@ var UI = {
                     clone.appendChild(channel_caption);
                 }
 
-                // the "neighbors only" toggle hides everyone outside
-                // the local client's channel - this class is what it keys on
+                // mark users outside the current channel for the neighbor filter
                 if (parseInt(caption_client_object.channel_id) == parseInt(g_current_channel_id))
                 {
                     clone.classList.add("in-current-channel");
@@ -2676,9 +2874,7 @@ var UI = {
 
             let presence = document.createElement("span");
             presence.className = "member-list-presence";
-            presence.textContent = clone.classList.contains("idle-client") ? "Idle"
-                : clone.querySelector(".client-audio-state-microphone-active") != null ? "Talking"
-                    : clone.classList.contains("in-current-channel") ? "In this channel" : "Online";
+            presence.textContent = clone.classList.contains("idle-client") ? "Idle" : clone.querySelector(".client-audio-state-microphone-active") != null ? "Talking" : clone.classList.contains("in-current-channel") ? "In this channel" : "Online";
             clone.appendChild(presence);
             fragment.appendChild(clone);
             count++;
@@ -2711,16 +2907,13 @@ var UI = {
                 row.tabIndex = 0;
                 row.setAttribute("role", "button");
 
-                // the conversation on screen is with this offline person: ring their circle,
-                // the same marker a channel or a live private chat gets
+                // mark the selected offline conversation
                 if (active_is_offline == true && stored_client.identity_hash == active_offline_identity_hash)
                 {
                     row.classList.add("member-list-context-active");
                 }
 
-                // cloned rows start with the tree's indent spacer, and themes hide that
-                // first child. without a spacer of our own the CIRCLE would be first and
-                // get hidden instead (that is exactly what happened in termix)
+                // keep the leading spacer so themes do not hide the avatar instead
                 let indent_spacer = document.createElement("div");
                 indent_spacer.style.width = "0px";
                 indent_spacer.style.height = "1px";
@@ -2748,8 +2941,7 @@ var UI = {
 
                 let presence = document.createElement("span");
                 presence.className = "member-list-presence";
-                presence.textContent = stored_client.last_seen > 0
-                    ? "Offline · last seen " + UI.format_time_ago(stored_client.last_seen) : "Offline";
+                presence.textContent = stored_client.last_seen > 0 ? "Offline · last seen " + UI.format_time_ago(stored_client.last_seen) : "Offline";
                 row.appendChild(presence);
 
                 fragment.appendChild(row);
@@ -2796,7 +2988,7 @@ var UI = {
     },
 
     /**
-     * @brief the flatten toggle (shown only by termix): flips a class on the tree; the theme's css zeroes every row's indent while it is set, so newly arriving channels render flat too
+     * @brief toggles flat channel indentation in themes that support it
      *
      * @return void
      */
@@ -2808,7 +3000,7 @@ var UI = {
     },
 
     /**
-     * @brief paints g_is_channel_list_flattened onto the tree (the class the css keys on) and onto the toggle button's active state
+     * @brief updates the flat channel class and toggle state
      *
      * @return void
      */
@@ -2817,15 +3009,27 @@ var UI = {
         let tree = document.getElementById("channel-list-container");
         if (tree != null)
         {
-            if (g_is_channel_list_flattened == true) { tree.classList.add("channels-flattened"); }
-            else { tree.classList.remove("channels-flattened"); }
+            if (g_is_channel_list_flattened == true)
+            {
+                tree.classList.add("channels-flattened");
+            }
+            else
+            {
+                tree.classList.remove("channels-flattened");
+            }
         }
 
         let button = document.getElementById("channel-flatten-toggle-button");
         if (button != null)
         {
-            if (g_is_channel_list_flattened == true) { button.classList.add("flatten-active"); }
-            else { button.classList.remove("flatten-active"); }
+            if (g_is_channel_list_flattened == true)
+            {
+                button.classList.add("flatten-active");
+            }
+            else
+            {
+                button.classList.remove("flatten-active");
+            }
         }
 
         // update the setting
@@ -2837,11 +3041,11 @@ var UI = {
     },
 
     /**
-     * @brief whether a theme may be used here: touch devices only get themes tagged data-mobile="true" in the picker, desktop anything
+     * @brief checks whether the theme is allowed on this device
      *
      * @param string themename -> the theme
      *
-     * @return boolean true when allowed; an unknown name is allowed on desktop and rejected on a phone
+     * @return boolean true when allowed. an unknown name is allowed on desktop and rejected on a phone
      */
     is_theme_allowed_on_this_device: function(themename)
     {
@@ -2862,7 +3066,7 @@ var UI = {
     },
 
     /**
-     * @brief a theme picked in the settings list: applied and persisted by its data-name
+     * @brief applies and saves the selected theme
      *
      * @param object event -> the mouse event
      *
@@ -2876,7 +3080,7 @@ var UI = {
     },
 
     /**
-     * @brief the hide/show-chat button: on touch devices it resizes the space-devider panels directly, on desktop it flips g_is_chat_hidden and layout__layout_apply rebalances the grid; swaps the icon
+     * @brief toggles chat visibility and updates the current layout
      *
      * @return void
      */
@@ -2906,8 +3110,7 @@ var UI = {
         {
             if (g_is_chat_hidden == false)
             {
-                // the grid layout hides the chat+input panels and rebalances the columns
-                // in layout__layout_apply(), called at the end of this function once the flag is set
+                // the grid applies visibility after the chat flag changes
                 document.getElementById("hide-chat-button").style.backgroundImage = "url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAAA2RpVFh0WE1MOmNvbS5hZG9iZS54bXAAAAAAADw/eHBhY2tldCBiZWdpbj0i77u/IiBpZD0iVzVNME1wQ2VoaUh6cmVTek5UY3prYzlkIj8+IDx4OnhtcG1ldGEgeG1sbnM6eD0iYWRvYmU6bnM6bWV0YS8iIHg6eG1wdGs9IkFkb2JlIFhNUCBDb3JlIDUuMC1jMDYwIDYxLjEzNDc3NywgMjAxMC8wMi8xMi0xNzozMjowMCAgICAgICAgIj4gPHJkZjpSREYgeG1sbnM6cmRmPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1zeW50YXgtbnMjIj4gPHJkZjpEZXNjcmlwdGlvbiByZGY6YWJvdXQ9IiIgeG1sbnM6eG1wTU09Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC9tbS8iIHhtbG5zOnN0UmVmPSJodHRwOi8vbnMuYWRvYmUuY29tL3hhcC8xLjAvc1R5cGUvUmVzb3VyY2VSZWYjIiB4bWxuczp4bXA9Imh0dHA6Ly9ucy5hZG9iZS5jb20veGFwLzEuMC8iIHhtcE1NOk9yaWdpbmFsRG9jdW1lbnRJRD0ieG1wLmRpZDpERDc0QzMwNzA5MjA2ODExQTRFMEQzRDI2RDUyMTgzQyIgeG1wTU06RG9jdW1lbnRJRD0ieG1wLmRpZDozRjA1RkVDNEZDMjIxMUUwQUE3NEQwMjJDRUE1NTVGNyIgeG1wTU06SW5zdGFuY2VJRD0ieG1wLmlpZDozRjA1RkVDM0ZDMjIxMUUwQUE3NEQwMjJDRUE1NTVGNyIgeG1wOkNyZWF0b3JUb29sPSJBZG9iZSBQaG90b3Nob3AgQ1M1IFdpbmRvd3MiPiA8eG1wTU06RGVyaXZlZEZyb20gc3RSZWY6aW5zdGFuY2VJRD0ieG1wLmlpZDoxRjhEQ0Y5MDhFRjNFMDExQTE2NUI2RjQzNUVGQkUzNyIgc3RSZWY6ZG9jdW1lbnRJRD0ieG1wLmRpZDpERDc0QzMwNzA5MjA2ODExQTRFMEQzRDI2RDUyMTgzQyIvPiA8L3JkZjpEZXNjcmlwdGlvbj4gPC9yZGY6UkRGPiA8L3g6eG1wbWV0YT4gPD94cGFja2V0IGVuZD0iciI/PieHf0QAAANvSURBVHja7FbfS1NRHD+7G9PpcAoOJ9Nhom4urg7aY6A4CqHnKIii8D8o6imIpF4SfTSEQhBMXw0mIxwkBD35A6bTKBR/TMTBdOoczk37fE/3rKtOSXSshx343nPO93vO+Xzu98e5V3N0dMRy2SSW45YnkCeQJ5AnkHMCurGxsdx7oKCggFVWVrKioqKsAwosvV7/xwP0sNvt10pLS9sPDw/HZ2ZmgltbW1kBNxqNzOVy2SRJulNeXv45EAiEuAfwRexH1wvDVH19fZtGo8kKAYfDcQMYPwlLq9UOpEOwtLSUUD7LeoPB0FddXa3Pguu1y8vLg5FIhJ+NsTFNYHt7uzMUCqWUtXU1NTXPLRbLhQAofxBKptPpMtpTqZQVYX67sLDgCwaDDEQ61WX4bXFxsQdKsf5NQ0NDB8LB4Kp/Am9ubnZWVFT0ozcLErSXko7m0MfxUi3on8Xj8bswezkBJB4jAcOXSEDf5uYmU3QfcGCv2+02wSOspKRE6E9JVVWVDLCvGD9GCP2yLJsJHMRMyWTSRnPSw95B66xW6y+xV+Pz+dQvYwDbL3jzm2azWejILR+J8cHBwTgRxKEsFotR8vJxNBodaGpqelhcXCz2BGD3zM/P25F4P6D3QyeTgfYh+z8lEokHNNeMjo6e9KgJ0odN92praxnipraFIcQ4SiAUWtIhob6vra35QUJW3SVkvw8ZFuB7e3sEHgS4B9N1TsDr9Z4VWhfkHYjcKisrYyaTiQvKKNPaVyDxPgOJdBPg8GIanF9EFIcz2jTk9s7OjgvSjnELwNtwOC8jcrfqvnhNrkU4PMhwPy4bWU2UQjU3Nxfc398/Bs49MDIycpFq0wt3Kh5Sl0gA+TOBhKsDySllbboK4QE3knwaHjj+MTrHA5laAjKhjCeOHYRSczqdZpTdMCrq5EWmhX6wsbHRMzs7u64mIZ1VWhcRKjkCLywspFKTSbe7u8smJyd5r6xzkh0kLLRe7JUoPpcVm812CpwSDnlxHX3gJAmst4i9EtzFLisrKyvdSDCZxkhYDo55K+Y88YgE6cmOuXN1dbVb7L2SPyIkWBcSLLyxscEQYyq1VuXO4HcHlR7pw+Ew2SPwTFe6CoaGhq7qg0fV8RTyQgWubnS1dkN6lBL/+0NyRY1uvifn2InUo//up/S3AAMAiJlus3so8OYAAAAASUVORK5CYII=)";
                 g_is_chat_hidden = true;
             }
@@ -2919,14 +3122,13 @@ var UI = {
             }
         }
 
-        // desktop runs the grid layout: it derives panel visibility and column sizes
-        // from g_is_chat_hidden. no-op on touch devices (the grid is inactive there)
+        // refresh the desktop grid. touch layouts ignore this call
         layout__layout_apply();
         main__sync_toolbar_state_classes();
     },
 
     /**
-     * @brief closes the channel-password dialog and its background overlay
+     * @brief closes the channel password dialog and its overlay
      *
      * @return void
      */
@@ -2937,7 +3139,7 @@ var UI = {
     },
 
     /**
-     * @brief closes the admin-password dialog and its background overlay
+     * @brief closes the admin password dialog and its overlay
      *
      * @return void
      */
@@ -2948,7 +3150,7 @@ var UI = {
     },
 
     /**
-     * @brief Connects the channel dialog controls to functions inside the client module.
+     * @brief connects the channel dialog controls to functions inside the client module
      */
     setup_channel_properties_controls: function()
     {
@@ -2991,8 +3193,7 @@ var UI = {
                 event.stopPropagation();
                 UI.channel_properties_closebutton_onclick();
             }
-            else if (event.key === "Enter" && !event.isComposing
-                && event.target.matches('input[type="text"], input[type="number"], input[type="password"]'))
+            else if (event.key === "Enter" && !event.isComposing && event.target.matches('input[type="text"], input[type="number"], input[type="password"]'))
             {
                 event.preventDefault();
                 event.stopPropagation();
@@ -3021,7 +3222,7 @@ var UI = {
     },
 
     /**
-     * @brief save in the edit-channel dialog: validates the name, sends edit_channel_request with all form fields for g_selected_channel_id, then closes and clears the dialog
+     * @brief validates and sends the edited channel settings, then clears the dialog
      *
      * @return void
      */
@@ -3096,7 +3297,7 @@ var UI = {
     },
 
     /**
-     * @brief create in the channel dialog: validates the name, sends create_channel_request under the stored parent channel id, then closes and clears the dialog
+     * @brief validates and creates a channel under the selected parent
      *
      * @return void
      */
@@ -3150,7 +3351,7 @@ var UI = {
             return;
         }
         Object.assign(message_object.message, powers);
-        console.log(message_object);
+        // do not log request bodies: some contain passwords or private content
 
         connection__send_message_object(message_object);
 
@@ -3162,7 +3363,7 @@ var UI = {
     },
 
     /**
-     * @brief the max-clients number is only shown while the "client limit" checkbox is ticked
+     * @brief shows maximum clients only while the channel limit is enabled
      *
      * @return void
      */
@@ -3173,7 +3374,8 @@ var UI = {
     },
 
     /**
-     * @brief Clears the password field and offers removal only when a password is set.
+     * @brief clears the password field and offers removal only when a password is set
+     *
      * @param has_password -> whether the existing channel has a password
      */
     set_channel_password_inputs: function(has_password)
@@ -3188,16 +3390,16 @@ var UI = {
     },
 
     /**
-     * @brief Prevents entering a replacement password while removal is selected.
+     * @brief prevents entering a replacement password while removal is selected
      */
     channel_password_removal_onchange: function()
     {
-        document.getElementById("channel-properties-input-channel-password").disabled
-            = document.getElementById("channel-properties-remove-password").checked;
+        document.getElementById("channel-properties-input-channel-password").disabled = document.getElementById("channel-properties-remove-password").checked;
     },
 
     /**
-     * @brief Shows the first invalid channel detail or client limit before saving.
+     * @brief shows the first invalid channel detail or client limit before saving
+     *
      * @return boolean -> whether the name and optional client limit are valid
      */
     validate_channel_general_inputs: function()
@@ -3220,7 +3422,7 @@ var UI = {
     },
 
     /**
-     * @brief Shows the powers a channel requires: for sending audio, video, messages, pictures and files, for viewing its members and description, and for creating a channel inside it.
+     * @brief fills the channel's sending, viewing and creation power requirements
      *
      * @param channel -> channel being edited, or null for a new channel
      *
@@ -3230,8 +3432,7 @@ var UI = {
     {
         for (let action of ["talk", "stream", "message", "picture", "file", "view", "create"])
         {
-            document.getElementById("channel-properties-required-" + action + "-power").value = channel
-                ? Number(channel["required_" + action + "_power"]) || 0 : 0;
+            document.getElementById("channel-properties-required-" + action + "-power").value = channel ? Number(channel["required_" + action + "_power"]) || 0 : 0;
         }
         let temporary = channel ? channel.is_temp_channel === true : !groups__has_permission("create_channel");
         let type = document.getElementById("channel-properties-type");
@@ -3259,7 +3460,9 @@ var UI = {
     },
 
     /**
-     * @brief Uses server-checked conversion rights; older servers keep the type read-only.
+     * @brief applies the channel conversion rights returned by the server
+     *
+     * @param number|null channel_id -> edited channel ID, or null for a new channel
      */
     refresh_channel_type_options: function(channel_id)
     {
@@ -3282,24 +3485,25 @@ var UI = {
         }
         let other = current === "temporary" ? "permanent" : "temporary";
         type.disabled = channel_id == null || !access || access["can_make_" + other] !== true;
-        type.title = channel_id == null
-            ? "New channel type follows your permission to create permanent or temporary channels."
-            : access && access[other + "_type_error"] || (type.disabled ? "Channel type changes are unavailable on this server or are still loading." : "Change between Permanent and Temporary.");
+        type.title = channel_id == null ? "New channel type follows your permission to create permanent or temporary channels." : access && access[other + "_type_error"] || (type.disabled ? "Channel type changes are unavailable on this server or are still loading." : "Change between Permanent and Temporary.");
         UI.describe_channel_type();
     },
 
+    /**
+     * @brief explains the selected channel lifetime and any ownership change when converting it
+     *
+     * @return void
+     */
     describe_channel_type: function()
     {
         let type = document.getElementById("channel-properties-type");
         let converting = type.value !== type.dataset.originalValue;
-        document.getElementById("channel-properties-type-description").textContent = type.value === "temporary"
-            ? converting ? "You become its owner. The channel is deleted when you leave or disconnect."
-                : "Deleted when its owner leaves or disconnects."
-            : "Stays on the server until deleted. Save server settings to keep changes after a restart.";
+        document.getElementById("channel-properties-type-description").textContent = type.value === "temporary" ? converting ? "You become its owner. The channel is deleted when you leave or disconnect." : "Deleted when its owner leaves or disconnects." : "Stays on the server until deleted. Save server settings to keep changes after a restart.";
     },
 
     /**
-     * @brief Opens one channel settings tab without clearing either tab's values.
+     * @brief opens one channel settings tab without clearing either tab's values
+     *
      * @param name -> channel, audio or permissions
      * @param focus -> whether to move keyboard focus to the tab
      */
@@ -3326,7 +3530,8 @@ var UI = {
     },
 
     /**
-     * @brief Lets keyboard users move between channel settings tabs.
+     * @brief lets keyboard users move between channel settings tabs
+     *
      * @param event -> key pressed on a tab
      */
     channel_properties_tab_onkeydown: function(event)
@@ -3338,13 +3543,13 @@ var UI = {
         event.preventDefault();
         let names = g_server_policy.is_permission_system_enabled ? ["channel", "audio", "permissions"] : ["channel", "audio"];
         let current = names.indexOf(event.currentTarget.id.replace("channel-properties-tab-", ""));
-        let next = event.key === "Home" ? 0 : event.key === "End" ? names.length - 1
-            : (current + (event.key === "ArrowRight" ? 1 : -1) + names.length) % names.length;
+        let next = event.key === "Home" ? 0 : event.key === "End" ? names.length - 1 : (current + (event.key === "ArrowRight" ? 1 : -1) + names.length) % names.length;
         UI.select_channel_properties_tab(names[next], true);
     },
 
     /**
-     * @brief Checks the channel power values before sending the channel settings.
+     * @brief checks the channel power values before sending the channel settings
+     *
      * @return object -> checked values, or null if a field is invalid
      */
     read_channel_power_inputs: function()
@@ -3371,7 +3576,7 @@ var UI = {
     },
 
     /**
-     * @brief recomputes the red "full" state of every channel (the count excludes music bots, matching the server); called whenever membership or a channel's limit changes
+     * @brief updates full channel indicators, excluding music bots from occupancy
      *
      * @return void
      */
@@ -3384,7 +3589,7 @@ var UI = {
 
             if (ch.is_client_limit_active == true && ch.max_client_count == 0)
             {
-                // a limit-active channel with capacity 0 is admin-only, so it is always shown as full
+                // a limit of zero permits only admins and displays as full
                 is_full = true;
             }
             else if (ch.is_client_limit_active == true)
@@ -3406,8 +3611,7 @@ var UI = {
                 continue;
             }
 
-            // chevron is shown only when the channel has a subchannel or a client
-            // (a leaf channel has no expand/collapse arrow). everything is linked by id in the objects.
+            // show a chevron only for channels with children or clients
             let has_children = false;
             for (let k = 0; k < g_channel_list.length; k++)
             {
@@ -3450,7 +3654,9 @@ var UI = {
     },
 
     /**
-     * @brief Opens an administration page while keeping the settings controls and their drafts.
+     * @brief opens an administration page while keeping the settings controls and their drafts
+     *
+     * @param object event -> click on the selected administration page
      *
      * @return void
      */
@@ -3549,7 +3755,7 @@ var UI = {
     },
 
     /**
-     * @brief join in the channel-password dialog: sends join_channel_request with the typed password
+     * @brief joins the selected channel using the entered password
      *
      * @return void
      */
@@ -3570,7 +3776,7 @@ var UI = {
     },
 
     /**
-     * @brief an avatar file picked: size-checked against g_server_policy.avatar_max_size, read as a data url and sent to the server as avatar_upload
+     * @brief validates an avatar's size and uploads its data URL
      *
      * @return void
      */
@@ -3610,7 +3816,7 @@ var UI = {
                     }
                 };
 
-                console.log(message_object);
+                // do not log request bodies: some contain passwords or private content
 
                 connection__send_message_object(message_object);
             };
@@ -3620,7 +3826,7 @@ var UI = {
     },
 
     /**
-     * @brief Connects the channel icon picker once.
+     * @brief connects the channel icon picker once
      *
      * @return void
      */
@@ -3637,7 +3843,10 @@ var UI = {
             picker.addEventListener("click", function(event)
             {
                 let option = event.target.closest(".group-icon-picker-option");
-                if (option == null) { return; }
+                if (option == null)
+                {
+                    return;
+                }
                 // the icon picker is shared: route the pick to whichever target opened it
                 if (channel_icon_picker_target_channel_id != null)
                 {
@@ -3654,17 +3863,31 @@ var UI = {
         // close the picker on Escape, or a click outside it that is not the click that opened it
         document.addEventListener("keydown", function(event)
         {
-            if (event.key == "Escape") { UI.close_group_icon_picker(); }
+            if (event.key == "Escape")
+            {
+                UI.close_group_icon_picker();
+            }
         });
         document.addEventListener("click", function(event)
         {
             let open_picker = document.getElementById("group-icon-picker-popup");
-            if (open_picker == null || open_picker.style.display == "none") { return; }
-            if (open_picker.contains(event.target)) { return; }
-            // the clicks that OPEN the picker also bubble here; without these exemptions the
-            // picker closes again in the same event, before it is ever painted
-            if (event.target.closest(".group-settings-entry-img") != null) { return; }
-            if (event.target.closest("#channel-properties-icon-box") != null) { return; }
+            if (open_picker == null || open_picker.style.display == "none")
+            {
+                return;
+            }
+            if (open_picker.contains(event.target))
+            {
+                return;
+            }
+            // do not close the picker on the same click that opened it
+            if (event.target.closest(".group-settings-entry-img") != null)
+            {
+                return;
+            }
+            if (event.target.closest("#channel-properties-icon-box") != null)
+            {
+                return;
+            }
             UI.close_group_icon_picker();
         });
 
@@ -3696,7 +3919,7 @@ var UI = {
     },
 
     /**
-     * @brief the same picker targeting a channel instead; selecting "none" clears the channel icon
+     * @brief opens the icon picker for a channel
      *
      * @param number channel_id -> the channel
      *
@@ -3705,7 +3928,10 @@ var UI = {
     open_channel_icon_picker: function(channel_id)
     {
         let popup = document.getElementById("group-icon-picker-popup");
-        if (popup == null) { return; }
+        if (popup == null)
+        {
+            return;
+        }
 
         channel_icon_picker_target_channel_id = channel_id;
         group_icon_picker_target_group_id = null;
@@ -3777,7 +4003,7 @@ var UI = {
         channel_icon_picker_target_channel_id = null;
     },
     /**
-     * @brief sends server_settings_set_group_icon; "none" omits icon_id, which clears the group's icon
+     * @brief assigns a group icon or clears it when none is selected
      *
      * @param number group_id -> the group
      * @param string|number picked_icon_id -> the icon id, or "none"
@@ -3786,16 +4012,22 @@ var UI = {
      */
     send_set_group_icon_request: function(group_id, picked_icon_id)
     {
-        if (group_id == null) { return; }
+        if (group_id == null)
+        {
+            return;
+        }
 
         let message = { type: "server_settings_set_group_icon", group_id: group_id };
-        if (picked_icon_id != "none") { message.icon_id = parseInt(picked_icon_id); } // absent icon_id clears the icon
+        if (picked_icon_id != "none")
+        {
+            message.icon_id = parseInt(picked_icon_id);
+        } // absent icon_id clears the icon
 
         let message_object = { message: message };
         connection__send_message_object(message_object);
     },
     /**
-     * @brief sends set_channel_icon; "none" omits icon_id, which clears the channel's icon
+     * @brief assigns a channel icon or clears it when none is selected
      *
      * @param number channel_id -> the channel
      * @param string|number picked_icon_id -> the icon id, or "none"
@@ -3804,17 +4036,23 @@ var UI = {
      */
     send_set_channel_icon_request: function(channel_id, picked_icon_id)
     {
-        if (channel_id == null) { console.warn("set channel icon: channel_id is null; request not sent"); return; }
+        if (channel_id == null)
+        {
+            console.warn("set channel icon: channel_id is null; request not sent");
+            return;
+        }
 
         let message = { type: "set_channel_icon", channel_id: parseInt(channel_id) };
-        if (picked_icon_id != "none") { message.icon_id = parseInt(picked_icon_id); } // absent icon_id clears the icon
+        if (picked_icon_id != "none")
+        {
+            message.icon_id = parseInt(picked_icon_id);
+        } // absent icon_id clears the icon
 
         let message_object = { message: message };
         connection__send_message_object(message_object);
     },
     /**
-     * @brief paints (or clears) a channel row's icon box from the channel's has_channel_icon and channel_icon_id
-     *        the box is styled here rather than in theme css, so it works in every theme with no css edit
+     * @brief updates a channel row's icon from the current channel record
      *
      * @param object channel -> the channel from g_channel_list
      *
@@ -3822,10 +4060,16 @@ var UI = {
      */
     refresh_channel_icon: function(channel)
     {
-        if (channel == null) { return; }
+        if (channel == null)
+        {
+            return;
+        }
 
         let holder = document.querySelector('.single-channel-icon[data-channel-icon-for="' + channel.channel_id + '"]');
-        if (holder == null) { return; }
+        if (holder == null)
+        {
+            return;
+        }
 
         let icon = (channel.has_channel_icon == true) ? channel_tree__get_icon_by_icon_id(channel.channel_icon_id) : null;
 
@@ -3869,7 +4113,10 @@ var UI = {
     refresh_channel_edit_icon_box: function(channel)
     {
         let box = document.getElementById("channel-properties-icon-box");
-        if (box == null) { return; }
+        if (box == null)
+        {
+            return;
+        }
 
         let icon = (channel != null && channel.has_channel_icon == true) ? channel_tree__get_icon_by_icon_id(channel.channel_icon_id) : null;
         box.style.backgroundImage = (icon != null) ? ("url(" + icon.base64_icon + ")") : "";
@@ -3879,7 +4126,7 @@ var UI = {
     },
 
     /**
-     * @brief an mp3 picked for streaming: size-checked (40 MB), microphone_usage=1 announced to the server, then the file is read and its buffer handed to g_minimp3_worker for decoding
+     * @brief reads an accepted MP3 and sends its bytes to the decoding worker
      *
      * @return void
      */
@@ -3896,8 +4143,28 @@ var UI = {
             return;
         }
 
+        // switch microphone on
         if (g_is_microphone_enabled == false)
         {
+            // the song is sent through the audio connection of the voice, which exists only while the
+            // microphone is on. switch it on as the talk button does, then continue with the same file
+            voice__activate_microphone();
+            let waited_ms = 0;
+            let timer = setInterval(function()
+            {
+                waited_ms += 200;
+                if (g_is_microphone_enabled)
+                {
+                    clearInterval(timer);
+                    UI.choose_song_file_input_onchange();
+                }
+                else if (waited_ms >= 10000)
+                {
+                    clearInterval(timer);
+                    document.getElementById('choose-song-file-input').value = "";
+                    utils__custom_alert("the microphone could not be switched on, so the song cannot be streamed. the song is sent through the same audio connection as the voice");
+                }
+            }, 200);
             return;
         }
 
@@ -3920,43 +4187,47 @@ var UI = {
 
             g_selected_song_name = fileInput.files[0].name;
 
-            let file_extension = chat__get_file_extension(g_selected_song_name);
-
-            g_is_microphone_active = true;
-            let message_object = {
-                message: {
-                    type: "microphone_usage",
-                    value: 1,
-                }
-            };
-
-            is_playing_music = true;
-
-            connection__send_message_object(message_object);
-            g_last_sent_value_microphone_usage = 1;
+            /**
+             * @brief marks this client as streaming a song: tells the server and shows the stop button
+             *
+             * @return void
+             */
+            function mark_song_stream_started()
+            {
+                g_is_microphone_active = true;
+                is_playing_music = true;
+                connection__send_message_object({ message: { type: "microphone_usage", value: 1 } });
+                g_last_sent_value_microphone_usage = 1;
+                document.getElementById("custom-file-upload-button-song").style.display = "none";
+                document.getElementById("stop-song").style.display = "block";
+            }
 
             fileReader.onload = function (event)
             {
                 if (!groups__can_send_to_channel("talk", g_current_channel_id))
                 {
                     groups__notify_channel_power_denied("talk");
-                    is_playing_music = false;
-                    g_is_microphone_active = false;
                     return;
                 }
-                if (file_extension == "mp3")
+                let arrayBuffer = fileReader.result;
+
+                // refuse other formats
+                if (!voice__is_mp3_data(new Uint8Array(arrayBuffer, 0, Math.min(4, arrayBuffer.byteLength))))
                 {
-                    document.getElementById("custom-file-upload-button-song").style.display = "none";
-                    document.getElementById("stop-song").style.display = "block";
-
-                    let arrayBuffer = fileReader.result;
-
-                    g_minimp3_worker.postMessage({
-                        type: "decode",
-                        value: arrayBuffer
-                    });
+                    utils__custom_alert("only MP3 files can be streamed. this file contains another audio format (for example AAC in an .m4a file), even when the file chooser lists it as MP3 audio");
+                    return;
                 }
+
+                // decode the mp3
+                mark_song_stream_started();
+                g_minimp3_worker.postMessage({
+                    type: "decode",
+                    value: arrayBuffer
+                });
             };
+
+            // allow the same file again
+            fileInput.value = "";
         }
     },
 
@@ -3973,7 +4244,7 @@ var UI = {
     },
 
     /**
-     * @brief opens the admin-password dialog and its background overlay
+     * @brief opens the admin password dialog and its overlay
      *
      * @return void
      */
@@ -3984,7 +4255,7 @@ var UI = {
     },
 
     /**
-     * @brief closes the secret-identity dialog and removes the shown identity string from the dom
+     * @brief closes identity export and clears its displayed passphrase
      *
      * @return void
      */
@@ -3996,7 +4267,7 @@ var UI = {
     },
 
     /**
-     * @brief clears the visible chat: removes every chat and server message element and resets the last-known-sender tracking of the current context
+     * @brief clears visible messages and resets the current conversation's sender tracking
      *
      * @return void
      */
@@ -4007,7 +4278,7 @@ var UI = {
             chat_history__trim(context, 0);
             chat_replies.pending.delete(context);
         }
-        // Remove empty/legacy wrappers too, using a snapshot rather than a live collection.
+        // remove empty/legacy wrappers too, using a snapshot rather than a live collection
         for (const element of document.querySelectorAll(".single-chat-message, .single-server-message"))
         {
             element.remove();
@@ -4032,7 +4303,7 @@ var UI = {
 
 
     /**
-     * @brief Saves the eight settings pages and country-list draft together.
+     * @brief saves the eight settings pages and country block draft together
      *
      * @param object event -> the mouse event
      *
@@ -4057,7 +4328,7 @@ var UI = {
     },
 
     /**
-     * @brief saves only the log tab; save_server_settings applies just the fields present, so the general values are left untouched
+     * @brief saves the log settings without changing general settings
      *
      * @param object event -> the mouse event
      *
@@ -4088,7 +4359,7 @@ var UI = {
     },
 
     /**
-     * @brief asks the server to clear the admin log; it stamps who did it and replies with the fresh log on its own
+     * @brief requests clearing the server log and a refreshed log response
      *
      * @param object event -> the mouse event
      *
@@ -4101,35 +4372,68 @@ var UI = {
     },
 
     /**
-     * @brief becomes the given identity: asks the worker to derive the rsa keypair from the passphrase and, when connected, drops the socket to reconnect as it
-     *        the shared tail of the identity-file and the raw-passphrase import paths; the caller has already validated the string
+     * @brief applies an imported identity through the current identity owner
      *
-     * @param string identity_passphrase_string -> the complete passphrase
-     * @param number|null rsa_key_bits -> the file's key size; null keeps the current setting for raw passphrases
+     * @param string|null identity_passphrase_string -> passphrase, or null for a native key size change
+     * @param number|null rsa_key_bits -> the file's key size. null keeps the current setting for raw passphrases
      *
-     * @return void
+     * @return boolean|undefined native save result, or undefined for other paths
      */
     identity_apply_passphrase: function(identity_passphrase_string, rsa_key_bits = null)
     {
-        if (rsa_key_bits !== null)
+        const selected_bits = rsa_key_bits === null ? g_rsa_key_bits : rsa_key_bits;
+        if (!G_ALLOWED_RSA_KEY_BITS.includes(selected_bits))
         {
-            if (!G_ALLOWED_RSA_KEY_BITS.includes(rsa_key_bits))
+            utils__custom_alert("This identity uses an unsupported RSA key size.");
+            return;
+        }
+        if (typeof Android !== "undefined" && Android != null)
+        {
+            const resizing = identity_passphrase_string === null;
+            if ((!resizing && typeof Android.JavaExportReplaceIdentity !== "function") || (resizing && typeof Android.JavaExportResizeIdentity !== "function"))
             {
-                utils__custom_alert("This identity uses an unsupported RSA key size.");
+                utils__custom_alert("This Android runtime does not support identity import. Update the app before importing.");
                 return;
             }
-            g_rsa_key_bits = rsa_key_bits;
-            utils__storage_set("lemon_rsa_key_bits", String(rsa_key_bits));
-            g_rsa_key_too_weak_prompted_for_bits = 0;
-            document.getElementById("local-settings-rsa-key-bits").value = String(rsa_key_bits);
+            const operation_bytes = new Uint8Array(16);
+            crypto.getRandomValues(operation_bytes);
+            const operation_id = Array.from(operation_bytes, function(value)
+            {
+                return value.toString(16).padStart(2, "0");
+            }).join("");
+            try
+            {
+                const response = resizing ? Android.JavaExportResizeIdentity(selected_bits, operation_id, g_identity_revision) : Android.JavaExportReplaceIdentity(identity_passphrase_string, selected_bits, operation_id, g_identity_revision);
+                const result = JSON.parse(response);
+                if (result == null || result.ok !== true)
+                {
+                    throw new Error(result != null && typeof result.error === "string" ? result.error : "The identity could not be saved. Your current identity was kept.");
+                }
+                g_identity_revision = result.identity_revision;
+                g_identity_import_expected_revision = result.identity_revision;
+                g_is_identity_import_pending = true;
+                document.getElementById("identity-string-use-textarea").value = "";
+                UI.identity_clear_file_selection();
+                document.getElementById("identity-string-use-container").style.display = "none";
+                document.getElementById("background-container").style.display = "none";
+                document.getElementById("another-buttons-sub-loading-container").style.display = "block";
+                document.getElementById("another-buttons-sub-container").style.display = "none";
+                return true;
+            }
+            catch (error)
+            {
+                utils__custom_alert(error.message);
+            }
+            return false;
         }
         UI.identity_clear_file_selection();
+        document.getElementById("identity-string-use-textarea").value = "";
 
         document.getElementById("identity-string-use-container").style.display = "none";
         document.getElementById("background-container").style.display = "none";
-        if (identity_passphrase_string === g_identity_string && UI.identity_current_rsa_key_bits() === g_rsa_key_bits)
+        if (identity_passphrase_string === g_identity_string && UI.identity_current_rsa_key_bits() === selected_bits)
         {
-            // A duplicate key request has no worker completion event; finish this import directly.
+            // a duplicate generation request has no completion event. finish it here
             document.getElementById("another-buttons-sub-loading-container").style.display = "none";
             document.getElementById("another-buttons-sub-container").style.display = "";
             connection__identity_imported();
@@ -4139,26 +4443,17 @@ var UI = {
         // the result is announced when the key pair exists (connection__identity_imported)
         g_is_identity_import_pending = true;
 
-        // clears the identity slot; the connect loop connects again only once the new keypair exists
-        connection__request_identity(identity_passphrase_string);
+        // clear the identity slot until the new key pair is ready
+        connection__request_identity(identity_passphrase_string, selected_bits);
 
         document.getElementById("another-buttons-sub-loading-container").style.display = "block";
         document.getElementById("another-buttons-sub-container").style.display = "none";
 
-        // while connected: drop the connection and, once the socket is down and the new keypair
-        // exists, reconnect as that identity (g_is_authenticated is the live signal)
-        if (g_is_authenticated == true)
-        {
-            // deliberate close; the user asked for this reconnect, so it is a button-class
-            // request and connects again once the new identity slot fills
-            g_is_identity_switch_in_progress = true;
-            g_websocket_worker.postMessage({ type: "close" });
-            connection__request_connect("button");
-        }
+        // the session owner closes the old connection before it posts generation work
     },
 
     /**
-     * @brief confirm on the raw-passphrase side of the import dialog: validates the 200-character passphrase and applies it
+     * @brief validates and imports the entered identity passphrase
      *
      * @return void
      */
@@ -4172,17 +4467,21 @@ var UI = {
 
             if (identity_passphrase_string.length < 199)
             {
-                utils__custom_alert("[error] Cannot import identity. This is not identity passphrase. Identity passphrase is 200 characters long. For your own protection public/private keypair from this 'passphrase' will not be created");
+                utils__custom_alert("An identity passphrase must contain at least 199 characters. Paste the complete passphrase without changing its whitespace.");
                 return;
             }
-
-            textarea.value = "";
-            UI.identity_apply_passphrase(identity_passphrase_string);
+            const selected_bits = Number(document.getElementById("identity-import-rsa-key-bits").value);
+            if (!G_ALLOWED_RSA_KEY_BITS.includes(selected_bits))
+            {
+                utils__custom_alert("Choose this identity's original key size before importing the passphrase.");
+                return;
+            }
+            UI.identity_apply_passphrase(identity_passphrase_string, selected_bits);
         }
     },
 
     /**
-     * @brief the name of the exported identity file: the current username with unsafe characters replaced, "identity" when there is none
+     * @brief builds a safe identity filename from the current username
      *
      * @return string the file name, ending in .lmn
      */
@@ -4200,8 +4499,9 @@ var UI = {
     },
 
     /**
-     * @brief Finds the generation size of the identity currently in use, independently of the next-key preference.
-     * @return number Supported generation size, or zero while no valid identity is ready.
+     * @brief reads the current identity's generation size, separately from the next key preference
+     *
+     * @return number supported generation size, or zero while no valid identity is ready
      */
     identity_current_rsa_key_bits: function()
     {
@@ -4209,29 +4509,13 @@ var UI = {
         {
             return 0;
         }
-        try
-        {
-            let key = lemon_crypto.publicKeyFromString(g_rsa_public_key_string);
-            let modulus_bits = key.n.toString(2).length;
-            // The product of two generated primes may have N-1 bits; the seed must be regenerated with N.
-            for (let size of G_ALLOWED_RSA_KEY_BITS)
-            {
-                if (modulus_bits === size || modulus_bits === size - 1)
-                {
-                    return size;
-                }
-            }
-        }
-        catch (error)
-        {
-            return 0;
-        }
-        return 0;
+        return identity_file__generation_size(g_rsa_public_key_string);
     },
 
     /**
-     * @brief Serializes both inputs needed to reproduce the current identity.
-     * @return string Versioned UTF-8 JSON file contents.
+     * @brief serializes both inputs needed to reproduce the current identity
+     *
+     * @return string versioned UTF-8 JSON file contents
      */
     identity_export_file_content: function()
     {
@@ -4240,68 +4524,26 @@ var UI = {
         {
             throw new Error("The identity is not ready yet. Wait for key generation to finish, then try again.");
         }
-        let content = JSON.stringify(
-        {
-            format: "lemon-chat-identity",
-            version: 1,
-            rsa_key_bits: rsa_key_bits,
-            passphrase: g_identity_string
-        }, null, 2) + "\n";
-        if (new TextEncoder().encode(content).length > 65536)
-        {
-            throw new Error("This passphrase is too large for an identity file. Keep a copy of the passphrase and its key size instead.");
-        }
-        return content;
+        return identity_file__serialize(g_identity_string, rsa_key_bits);
     },
 
     /**
-     * @brief Validates a versioned identity file or an older raw-passphrase file without applying either.
-     * @param string content UTF-8 file text.
-     * @return object Passphrase, optional key size, and whether the file is a legacy export.
+     * @brief validates a versioned or legacy identity file without applying it
+     *
+     * @param string content UTF-8 file text
+     *
+     * @return object passphrase, optional key size, and whether the file is a legacy export
      */
     identity_parse_file_content: function(content)
     {
-        if (typeof content !== "string" || new TextEncoder().encode(content).length > 65536)
-        {
-            throw new Error("Choose an identity file no larger than 64 KB.");
-        }
-        let text = content.replace(/^\uFEFF/, "").trim();
-        let looks_like_json = /^[{[\"]/.test(text);
-        if (!looks_like_json && (text.length === 199 || text.length === 200))
-        {
-            return { passphrase: text, rsa_key_bits: null, legacy: true };
-        }
-
-        let record;
-        try
-        {
-            record = JSON.parse(text);
-        }
-        catch (error)
-        {
-            throw new Error("This is not a valid identity file. Choose a .lmn file saved by Export Identity.");
-        }
-        if (record === null || typeof record !== "object" || Array.isArray(record)
-            || record.format !== "lemon-chat-identity")
-        {
-            throw new Error("This file is not a Lemon Chat identity.");
-        }
-        if (record.version !== 1)
-        {
-            throw new Error("This identity file version is not supported by this client.");
-        }
-        if (!Number.isInteger(record.rsa_key_bits) || !G_ALLOWED_RSA_KEY_BITS.includes(record.rsa_key_bits))
-        {
-            throw new Error("This identity file uses an unsupported RSA key size.");
-        }
-        if (typeof record.passphrase !== "string" || record.passphrase.length < 199)
-        {
-            throw new Error("This identity file does not contain a complete passphrase.");
-        }
-        return { passphrase: record.passphrase, rsa_key_bits: record.rsa_key_bits, legacy: false };
+        return identity_file__parse(content);
     },
 
-    /** @brief Invalidates a pending file read and its confirmation without changing the current identity. */
+    /**
+     * @brief clears a pending identity file selection without changing the current identity
+     *
+     * @return void
+     */
     identity_clear_file_selection: function()
     {
         identity_file_read_generation++;
@@ -4311,7 +4553,7 @@ var UI = {
     },
 
     /**
-     * @brief Saves the passphrase and actual key size as a versioned <username>.lmn identity file.
+     * @brief saves the passphrase and actual key size as a versioned <username>.lmn identity file
      *
      * @param object event -> the mouse event
      *
@@ -4320,6 +4562,27 @@ var UI = {
     export_identity_file_button_onclick: function(event)
     {
         event.stopPropagation();
+
+        if (typeof Android !== "undefined" && Android != null)
+        {
+            try
+            {
+                if (typeof Android.JavaExportExportIdentity !== "function")
+                {
+                    throw new Error("Update the Android app before exporting this identity.");
+                }
+                const result = JSON.parse(Android.JavaExportExportIdentity(UI.identity_export_file_name()));
+                if (result == null || result.ok !== true)
+                {
+                    throw new Error(result != null && typeof result.error === "string" ? result.error : "The identity file could not be saved.");
+                }
+            }
+            catch (error)
+            {
+                utils__custom_alert(error.message);
+            }
+            return;
+        }
 
         let content;
         try
@@ -4334,7 +4597,7 @@ var UI = {
 
         let file_name = UI.identity_export_file_name();
 
-        // the android webview cannot save a blob url; java writes it into Downloads
+        // Java saves Android exports to Downloads
         if (typeof Android !== "undefined" && Android != null && typeof Android.JavaExportSaveFile === "function")
         {
             Android.JavaExportSaveFile(file_name, "application/octet-stream", utils__bytesToBase64String(new TextEncoder().encode(content)));
@@ -4351,11 +4614,14 @@ var UI = {
         anchor.click();
         anchor.remove();
 
-        setTimeout(function() { URL.revokeObjectURL(url); }, 60000);
+        setTimeout(function()
+        {
+            URL.revokeObjectURL(url);
+        }, 60000);
     },
 
     /**
-     * @brief opens the hidden identity-file input's picker
+     * @brief opens the identity file picker
      *
      * @param object event -> the mouse event
      *
@@ -4368,7 +4634,7 @@ var UI = {
     },
 
     /**
-     * @brief an identity file was picked: reads it, then resets the input so the same file fires a change event again
+     * @brief reads the selected identity file and resets the file input
      *
      * @return void
      */
@@ -4388,7 +4654,7 @@ var UI = {
     },
 
     /**
-     * @brief Reads and validates a picked file; only its confirmation can change the identity or key size.
+     * @brief reads and validates a picked file. only its confirmation can change the identity or key size
      *
      * @param File file -> the file
      *
@@ -4424,10 +4690,8 @@ var UI = {
             }
             try
             {
-                pending_identity_file = UI.identity_parse_file_content(reader.result);
-                status_line.textContent = pending_identity_file.legacy
-                    ? file.name + " — legacy file: key size is not stored. Choose the original size in Local settings → Identity before importing."
-                    : file.name + " — " + pending_identity_file.rsa_key_bits + "-bit identity ready to import.";
+                pending_identity_file = UI.identity_parse_file_content(identity_file__decode(reader.result));
+                status_line.textContent = pending_identity_file.legacy ? file.name + " — legacy file: key size is not stored. Choose the original size in Local settings → Identity before importing." : file.name + " — " + pending_identity_file.rsa_key_bits + "-bit identity ready to import.";
                 confirm_button.disabled = false;
             }
             catch (error)
@@ -4444,11 +4708,11 @@ var UI = {
             }
         };
 
-        reader.readAsText(file);
+        reader.readAsArrayBuffer(file);
     },
 
     /**
-     * @brief confirm on the file side of the import dialog: applies the passphrase the file held
+     * @brief applies the confirmed identity file's passphrase and key size
      *
      * @param object event -> the mouse event
      *
@@ -4469,7 +4733,7 @@ var UI = {
     },
 
     /**
-     * @brief flips the import dialog between its file side and the raw-passphrase side
+     * @brief switches identity import between file and passphrase entry
      *
      * @param object event -> the mouse event
      *
@@ -4491,7 +4755,7 @@ var UI = {
     },
 
     /**
-     * @brief the font-size slider: stores g_selected_font_size and applies it to the chat input
+     * @brief saves the selected font size and applies it to the message input
      *
      * @param object event -> the input event
      *
@@ -4530,15 +4794,14 @@ var UI = {
         document.getElementById("secret-identity-string-container").style.display = "block";
         document.getElementById("background-container").style.display = "block";
         document.getElementById("p-secret-identity-string").value = g_identity_string || "";
+        document.getElementById("identity-export-passphrase-fields").style.display = typeof Android !== "undefined" && Android != null ? "none" : "";
         document.getElementById("export-identity-file-name").textContent = UI.identity_export_file_name();
         let rsa_key_bits = UI.identity_current_rsa_key_bits();
-        document.getElementById("identity-export-hint").textContent = rsa_key_bits
-            ? "To use this passphrase without a file, choose " + rsa_key_bits + " bits under Local settings → Identity → Identity key size on the other device, then paste it in Import Identity."
-            : "Wait for identity key generation to finish before exporting or copying this identity.";
+        document.getElementById("identity-export-hint").textContent = rsa_key_bits ? "To use this passphrase without a file, paste it in Import Identity on the other device and choose " + rsa_key_bits + " bits as its original key size." : "Wait for identity key generation to finish before exporting or copying this identity.";
     },
 
     /**
-     * @brief Opens server settings for an admin and selects the general settings tab.
+     * @brief opens server settings for an admin and selects the general settings tab
      *
      * @param object event -> the mouse event
      *
@@ -4550,8 +4813,7 @@ var UI = {
 
         console.log("enter_server_settings_onclick");
 
-        // the button is always visible now, but server settings are admin-only: a
-        // non-admin click does nothing (the server would reject the requests anyway)
+        // only admins may open server settings
         if (channel_tree__is_local_client_admin() == false)
         {
             return;
@@ -4559,16 +4821,15 @@ var UI = {
 
         if (is_server_settings_tab_visible == false)
         {
-            // center it on every open (clearing any position left over from a previous drag),
-            // by measured pixels - the same scheme the popup dialogs use
+            // clear the previous drag position and center the window
             let tab = document.getElementById("server-settings-tab");
             tab.style.position = "fixed";
             tab.style.margin = "0";
             tab.style.transform = "none";
             tab.style.display = "block";
             let rect = tab.getBoundingClientRect();
-            tab.style.left = Math.max(0, Math.round((window.innerWidth - rect.width) / 2)) + "px";
-            tab.style.top = Math.max(0, Math.round((window.innerHeight - rect.height) / 2)) + "px";
+            tab.style.left = utils__position_px(Math.max(0, Math.round((utils__viewport_width() - rect.width) / 2)));
+            tab.style.top = utils__position_px(Math.max(0, Math.round((utils__viewport_height() - rect.height) / 2)));
             is_server_settings_tab_visible = true;
 
             document.querySelector('.server-settings-tab-li[data-action="2"]').click();
@@ -4596,20 +4857,47 @@ var UI = {
     },
 
     /**
-     * @brief opens the import-identity dialog on its file side, nothing picked yet
+     * @brief opens identity import with no file selected
      *
      * @return void
      */
     import_identity_button_onclick: function()
     {
-        // fresh walk-through every time: file side first, nothing picked yet
+        // start with file import and no selection
         UI.identity_clear_file_selection();
         document.getElementById("identity-file-mode").style.display = "block";
         document.getElementById("identity-string-mode").style.display = "none";
         document.getElementById("identity-mode-toggle-link").textContent = "Paste a passphrase instead";
+        document.getElementById("identity-import-rsa-key-bits").value = String(g_rsa_key_bits);
+        document.getElementById("identity-passphrase-hint").textContent = "Copy the complete passphrase from Export Identity.";
 
         document.getElementById("identity-string-use-container").style.display = "block";
         document.getElementById("background-container").style.display = "block";
+    },
+
+    /**
+     * @brief opens identity import with the saved passphrase and recovery reason when available
+     *
+     * @param object recovery -> optional passphrase and reason the identity could not be restored
+     *
+     * @return void
+     */
+    identity_show_saved_recovery: function(recovery)
+    {
+        UI.import_identity_button_onclick();
+        if (typeof recovery.passphrase === "string")
+        {
+            document.getElementById("identity-file-mode").style.display = "none";
+            document.getElementById("identity-string-mode").style.display = "block";
+            document.getElementById("identity-mode-toggle-link").textContent = "Choose a file instead";
+            document.getElementById("identity-string-use-textarea").value = recovery.passphrase;
+            document.getElementById("identity-import-rsa-key-bits").value = "";
+            document.getElementById("identity-passphrase-hint").textContent = recovery.reason;
+        }
+        else
+        {
+            document.getElementById("identity-file-status").textContent = recovery.reason;
+        }
     },
 
     /**
@@ -4640,7 +4928,7 @@ var UI = {
     },
 
     /**
-     * @brief right click on the chat input: opens the font-selection context menu above the cursor
+     * @brief opens the font menu above the pointer
      *
      * @param object event -> the mouse event
      *
@@ -4695,7 +4983,7 @@ var UI = {
     },
 
     /**
-     * @brief send in the poke dialog: sends poke_client with the typed message to g_selected_client_id (an empty message does nothing) and closes the dialog
+     * @brief sends a nonempty poke to the selected client and closes the dialog
      *
      * @param object event -> the mouse event
      *
@@ -4728,7 +5016,7 @@ var UI = {
 
 
     /**
-     * @brief toggles g_are_sound_effects_enabled, swaps the button icon, tells the android wrapper (when present) and refreshes the toolbar state classes
+     * @brief toggles sound effects and synchronizes native settings and toolbar state
      *
      * @return void
      */
@@ -4750,16 +5038,14 @@ var UI = {
             Android.JavaExportSetSoundEffectsStatus(g_are_sound_effects_enabled);
         }
 
-        // authoritative mute at the Audio-object level: the per-call-site
-        // g_are_sound_effects_enabled checks missed at least one play(), so gate the
-        // sound itself - a leaked play() on a muted element makes no noise
+        // mute the Audio objects so every playback path follows the preference
         sounds__apply_sound_effects_muted();
 
         main__sync_toolbar_state_classes();
     },
 
     /**
-     * @brief the always-on microphone toggle: flips g_is_microphone_always_on and applies the effects
+     * @brief toggles microphone availability and applies the current voice mode
      *
      * @return void
      */
@@ -4770,8 +5056,7 @@ var UI = {
     },
 
     /**
-     * @brief the effects of the always-on toggle once the flag is set: the android bridge, the microphone (on activates it with a headphones warning, off restores the push-to-talk button and stops sending) and the repaint
-     *        separate from the click handler so the android settings push can apply them without flipping the flag
+     * @brief applies the current continuous voice setting to capture, native settings and controls
      *
      * @return void
      */
@@ -4784,7 +5069,7 @@ var UI = {
 
         if (g_is_microphone_always_on)
         {
-            // on speakers an always-open mic picks the others up and sends it back, so they hear themselves
+            // an open microphone can send speaker playback back to other users
             utils__custom_alert("use headphones with continuous transmission, otherwise everyone else hears their own echo");
             voice__activate_microphone();
         }
@@ -4800,7 +5085,7 @@ var UI = {
     },
 
     /**
-     * @brief send in the set-username dialog: requests the rename for g_selected_client_id and, when that is the local client, updates g_client_list, g_local_username and the inline input now
+     * @brief requests a username change and updates local display state when renaming oneself
      *
      * @param object event -> the mouse event
      *
@@ -4819,13 +5104,19 @@ var UI = {
 
         client_msg.send_change_client_username_request(new_username, parseInt(g_selected_client_id));
 
-        // client objects have no is_local_client field, so this never fired (ported from the fix repo)
+        // identify the local client by its ID
         if (parseInt(g_selected_client_id) == g_local_client_id)
         {
             let index = channel_tree__get_client_index_in_array_by_client_id(g_local_client_id);
             g_client_list[index].username = new_username;
             g_local_username = new_username;
-            { let rename_input = document.getElementById('connected-local-client-input'); if (rename_input != null) { rename_input.setAttribute('value', g_local_username); } }
+            {
+                let rename_input = document.getElementById('connected-local-client-input');
+                if (rename_input != null)
+                {
+                    rename_input.setAttribute('value', g_local_username);
+                }
+            }
         }
 
         document.getElementById("set-new-username-enter-container").style.display = "none";
@@ -4858,7 +5149,7 @@ var UI = {
     },
 
     /**
-     * @brief rebuilds the server-settings ban list: one row per ban with ip, country, identity and a remove button, a "no bans" placeholder when empty
+     * @brief lists server bans and their removal controls
      *
      * @param array bans -> the bans from server_settings_values
      *
@@ -4922,7 +5213,7 @@ var UI = {
     },
 
     /**
-     * @brief the remove button on a ban row: sends remove_ban for that ip and optimistically drops the row
+     * @brief requests removing a ban and removes its visible row
      *
      * @param object event -> the mouse event
      *
@@ -4947,7 +5238,7 @@ var UI = {
 
         connection__send_message_object(message_object);
 
-        // optimistically remove the row; reopening settings re-fetches the authoritative list
+        // remove the visible row. reopening settings fetches the server list
         let row = event.currentTarget.parentNode;
         if (row != null && row.parentNode != null)
         {
@@ -4956,7 +5247,7 @@ var UI = {
     },
 
     /**
-     * @brief closes the set-username dialog
+     * @brief closes the username dialog
      *
      * @param object event -> the mouse event
      *
@@ -4969,7 +5260,7 @@ var UI = {
     },
 
     /**
-     * @brief the stop-song button: restores the upload button and asks the server to stop the song stream
+     * @brief stops the song stream and restores the upload control
      *
      * @param object event -> the mouse event
      *
@@ -5019,7 +5310,7 @@ var UI = {
     },
 
     /**
-     * @brief upload in the music bot dialog: size-checks the mp3 (10 MB), reads it, strips the data-url prefix and streams it to the selected bot in 400-character parts through chat__send_file_by_parts
+     * @brief validates the MP3 size and uploads it to the selected music bot
      *
      * @param object event -> the mouse event
      *
@@ -5048,9 +5339,7 @@ var UI = {
                 let reader = new FileReader();
                 reader.onload = function (event)
                 {
-                    // use a LOCAL for the song bytes - reusing base64_picture_string_to_send left
-                    // the song sitting in the chat picture buffer, so the next text message saw a
-                    // non-empty picture and re-uploaded the whole song
+                    // keep song bytes separate from the pending chat picture
                     let song_base64 = chat__remove_data_url_prefix_from_base64_string(event.target.result);
                     let total_bytes_length = song_base64.length;
                     let parts = chat__split_upload_into_chunks(song_base64);
@@ -5096,7 +5385,7 @@ var webrtc = {
                 }
             };
 
-            console.log(message_object);
+            // do not log request bodies: some contain passwords or private content
 
             connection__send_message_object(message_object);
         }
@@ -5148,7 +5437,7 @@ var webrtc = {
     },
 
     /**
-     * @brief logs that negotiation is needed; no renegotiation is started here
+     * @brief logs that negotiation is needed. no renegotiation is started here
      *
      * @param object event -> the event
      *
@@ -5173,9 +5462,7 @@ var webrtc = {
     },
 
     /**
-     * @brief the datachannel opened by the server: stored in g_datachannel, its handlers attached, and the microphone activated right away in always-on mode
-     *        only the current peer connection may install it; a replaced pc finishing its handshake
-     *        late used to overwrite g_datachannel and set the connected flag wrongly
+     * @brief attaches handlers only to a data channel from the current peer connection
      *
      * @param object event -> the RTCDataChannelEvent
      *
@@ -5183,17 +5470,21 @@ var webrtc = {
      */
     peerconnection_on_datachannel_receive: function(event)
     {
-        // only the current peer connection may install the channel: a replaced pc finishing
-        // its handshake late used to overwrite g_datachannel and set the connected flag wrongly
+        // reject data channels from replaced peer connections
         if (event.currentTarget !== g_peer_connection_with_server)
         {
             console.log("datachannel from a replaced peer connection ignored");
-            try { event.channel.close(); } catch (stale_channel_close_error) { }
+            try
+            {
+                event.channel.close();
+            }
+            catch (stale_channel_close_error)
+            {
+            }
             return;
         }
 
-        // the server opens two channels on this peer connection: the audio one and, after it, the
-        // video one (label "video", see video.js); the latter must not replace g_datachannel
+        // keep the video data channel separate from the audio channel
         if (event.channel.label == "video")
         {
             video__on_datachannel_received(event.channel);
@@ -5208,7 +5499,7 @@ var webrtc = {
         event.channel.binaryType = "arraybuffer";
         g_is_webrtc_datachannel_connected = true;
 
-        // the capture starts early; frames are only sent once a connection carries the audio
+        // capture may start before the audio connection is ready
         if (g_is_microphone_always_on && g_audio_transport.mode !== "none" && g_audio_transport.ready === false)
         {
             voice__activate_microphone();
@@ -5216,7 +5507,7 @@ var webrtc = {
     },
 
     /**
-     * @brief the datachannel is open: shows the push-to-talk or toggle microphone control for this device type and sets the local client's audio state to microphone disabled
+     * @brief initializes microphone controls when the audio data channel opens
      *
      * @return void
      */
@@ -5227,8 +5518,7 @@ var webrtc = {
     },
 
     /**
-     * @brief the datachannel closed: hides the microphone controls, drops the connected flag and restarts the connection check, so a silent server-side teardown cannot strand us
-     *        a replaced or already-torn-down channel closing late must not touch current state
+     * @brief clears a closed current data channel and schedules connection recovery
      *
      * @param object event -> the event
      *
@@ -5238,8 +5528,7 @@ var webrtc = {
     {
         console.log("daatachannel_onclose");
 
-        // a replaced or already-torn-down channel closing late must not touch current state
-        // (android_host__enter_deep_idle and pc replacement both null g_datachannel before closing)
+        // ignore close events from replaced or cleared channels
         if (event != null && event.target !== g_datachannel)
         {
             return;
@@ -5252,12 +5541,10 @@ var webrtc = {
             document.getElementById("toggle-microphone-label").style.display = "none";
         }
 
-        // the server's disabled-audio broadcast was the only recovery trigger here, and that
-        // edge can be lost when the server slot is cleared first - recover from our own close too
+        // recover on local close even if the server's audio status update was missed
         g_is_webrtc_datachannel_connected = false;
 
-        if (g_is_voice_chat_allowed_by_server == true && g_is_deep_idle == false
-            && g_is_webrtc_datachannel_check_running == false)
+        if (g_is_voice_chat_allowed_by_server == true && g_is_deep_idle == false && g_is_webrtc_datachannel_check_running == false)
         {
             g_is_webrtc_datachannel_check_running = true;
             voice__webrtc_datachannel_connection_check(true);
@@ -5265,8 +5552,7 @@ var webrtc = {
     },
 
     /**
-     * @brief a voice or music frame from the datachannel: [4B sender id][encrypted opus], counted into the session bytes and handed to the opus decoder worker unless the sender is muted or ignored
-     *        old servers mark every music bot frame with the constant -2; new servers send the bot's real client id, so each bot gets its own decoder
+     * @brief passes the current audio data channel frame to the shared receive path
      *
      * @param object event -> the MessageEvent, event.data is the ArrayBuffer
      *

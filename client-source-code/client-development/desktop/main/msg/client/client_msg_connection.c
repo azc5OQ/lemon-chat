@@ -3,9 +3,11 @@
 #include "client_msg.h"
 
 /**
- * @brief sends the existing public identity and ephemeral mix before authentication.
+ * @brief sends the existing public identity and ephemeral mix before authentication
+ *
  * @param desktop_session_t* session -> worker-owned connection
  * @param const char* public_mix -> decimal ephemeral public mix
+ *
  * @return boole -> 1 when the complete request was accepted by transport
  */
 boole client_msg__connection__send_public_key(desktop_session_t *session, const char *public_mix)
@@ -16,9 +18,11 @@ boole client_msg__connection__send_public_key(desktop_session_t *session, const 
 }
 
 /**
- * @brief sends the decrypted identity challenge using the newly established metadata keys.
+ * @brief sends the decrypted identity challenge using the newly established metadata keys
+ *
  * @param desktop_session_t* session -> worker-owned connection
  * @param const char* challenge -> verified RSA challenge plaintext
+ *
  * @return boole -> 1 when accepted by transport
  */
 boole client_msg__connection__send_challenge_response(desktop_session_t *session, const char *challenge)
@@ -29,8 +33,10 @@ boole client_msg__connection__send_challenge_response(desktop_session_t *session
 }
 
 /**
- * @brief maintains the authenticated TCP session without running networking on the GUI thread.
+ * @brief maintains the authenticated TCP session without running networking on the GUI thread
+ *
  * @param desktop_session_t* session -> worker-owned connection
+ *
  * @return boole -> 1 when accepted by transport
  */
 boole client_msg__connection__send_keepalive(desktop_session_t *session)

@@ -1117,7 +1117,7 @@ body.android-app #verification-system {
     display: flex !important;
     flex-direction: column;
     align-items: center;
-    padding-top: calc(10vh + 44px);
+    padding-top: calc(calc(10vh / var(--ui-display-scale, 1)) + 44px);
 }
 
 body.android-app #verification-system::before {
@@ -1135,7 +1135,7 @@ body.android-app #verification-system::after {
     line-height: 1.5;
 }
 
-body.android-app #verification-system > div[style*="25vmin"] {
+body.android-app #verification-system > div[style*="calc(25vmin / var(--ui-display-scale, 1))"] {
     display: none;
 }
 
@@ -1265,7 +1265,7 @@ body.android-app #android-server-settings-button {
 }
 
 body.android-app #verification-system {
-    padding-top: calc(6vh + 44px);
+    padding-top: calc(calc(6vh / var(--ui-display-scale, 1)) + 44px);
 }
 
 body.android-app #verification-system::before {
@@ -1333,7 +1333,7 @@ a-toast {
     visibility: hidden;
     z-index: 50;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.45);
-    max-width: 90vw;
+    max-width: calc(90vw / var(--ui-display-scale, 1));
 }
 
 :root #contextmenus-container
@@ -1364,7 +1364,7 @@ a-toast {
     box-shadow: 0 8px 28px rgba(0, 0, 0, 0.6), 0 0 18px rgba(123, 108, 246, 0.15);
     z-index: 31;
     min-width: 170px;
-    max-width: 80vw;
+    max-width: calc(80vw / var(--ui-display-scale, 1));
     overflow: hidden;
 }
 
@@ -1456,7 +1456,7 @@ a-toast {
     border-radius: 16px;
     box-shadow: 0 10px 36px rgba(0, 0, 0, 0.6), 0 0 24px rgba(123, 108, 246, 0.18);
     padding: 12px 14px 14px 14px;
-    max-width: 94vw;
+    max-width: calc(94vw / var(--ui-display-scale, 1));
 }
 
 #client-info-enter[style*="position: fixed"],
@@ -1599,11 +1599,11 @@ a-toast {
 }
 
 #poke-client-input-container .text-input-not-pretty {
-    max-width: calc(94vw - 60px);
+    max-width: calc(calc(94vw / var(--ui-display-scale, 1)) - 60px);
 }
 
 #adjust-volume-slider {
-    max-width: 78vw;
+    max-width: calc(78vw / var(--ui-display-scale, 1));
 }
 
 #adjust-volume-container > div[style*="position: fixed"] {
@@ -2428,8 +2428,8 @@ div#local-settings-container .local-settings-row-select input[type="button"]:not
     left: 50%;
     top: 50%;
     transform: translate(-50%, -50%);
-    max-width: calc(100vw - 20px);
-    max-height: calc(100dvh - 20px);
+    max-width: calc(calc(100vw / var(--ui-display-scale, 1)) - 20px);
+    max-height: calc(calc(100dvh / var(--ui-display-scale, 1)) - 20px);
     overflow: auto;
     background: var(--set-panel);
     color: var(--set-text);
@@ -2499,9 +2499,7 @@ div#local-settings-container .local-settings-row-select input[type="button"]:not
     display: none !important;
 }
 
-/* The stop button of a song is shown only while a song plays: ui.js then writes "display: block" into
-   its style attribute. The Default theme has this rule; it was missing here, so the stop button was
-   always shown and the two buttons shared the 44px of one. Each button keeps its full width now. */
+/* Show the song stop button only when JavaScript marks it visible. */
 :root #stop-song
 {
     display: none;
@@ -2546,12 +2544,7 @@ div#local-settings-container .local-settings-row-select input[type="button"]:not
     display: none;
 }
 
-/* The row of pictures stands in the middle of its band. Every entry is as high as its picture and its
-   name, and the band places the entries in its middle. The line with the channel of a person hangs under
-   the name and takes no room, so the picture of a channel and the pictures of people stay in one line.
-   Before, every entry was as high as the band and its content began at the top: 8px were above a picture
-   and 27px under the name of a channel. The column of pictures at the left edge ("people on the side") is
-   not changed. */
+/* Center pictures and names in the horizontal member strip. Position channel captions below names without shifting the pictures. The vertical list keeps its own layout. */
 body:not(.msgr-vertical) #member-list-body
 {
     display: flex;

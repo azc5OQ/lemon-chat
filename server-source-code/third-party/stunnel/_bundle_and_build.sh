@@ -20,7 +20,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 STUNNEL_DIR="$HERE/stunnel-5.75"
 SSL_PREFIX="$HERE/openssl"          # the bundle (include/ + lib/) kept in the dir
-BUILD_ROOT="/tmp/openssl-src"       # fast native-fs build area
+BUILD_ROOT="${LEMON_OPENSSL_BUILD_ROOT:-/tmp/openssl-src}"
 NJOBS="${NJOBS:-2}"
 step()
 {

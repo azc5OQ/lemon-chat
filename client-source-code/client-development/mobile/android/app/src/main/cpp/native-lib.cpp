@@ -1,12 +1,4 @@
-// Starts the embedded node runtime (nodejs-mobile's prebuilt libnode.so) on a thread owned by the
-// foreground service.
-//
-// node::Start() BLOCKS until the node event loop exits, so the java side must call this from its own
-// thread and treat a return as "node died".
-//
-// Node 18 has no console/stdout of its own on android - anything written to fd 1/2 goes nowhere - so
-// a small pump thread copies both into logcat under the tag "lemonchat-node". Without it, every
-// console.log from the client bundle is invisible, which makes the first bring-up impossible to debug.
+// starts node on the service runtime thread and sends its output to logcat
 
 #include <jni.h>
 #include <android/log.h>
@@ -14,6 +6,8 @@
 #include <unistd.h>
 #include <cstdlib>
 #include <cstring>
+#include <poll.h>
+#include <errno.h>
 
 #include "node.h"
 
@@ -21,82 +15,134 @@
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
-static int g_stdout_pipe[2];
-static int g_stderr_pipe[2];
+static int g_stdout_pipe[2] = { -1, -1 };
+static int g_stderr_pipe[2] = { -1, -1 };
 static pthread_t g_log_thread;
 static bool g_logging_started = false;
 
 static void* log_pump(void*)
 {
     char buffer[1024];
+    pollfd streams[2] = { { g_stdout_pipe[0], POLLIN, 0 }, { g_stderr_pipe[0], POLLIN, 0 } };
 
-    while (true)
+    while (streams[0].fd >= 0 || streams[1].fd >= 0)
     {
-        ssize_t count = read(g_stdout_pipe[0], buffer, sizeof(buffer) - 1);
-
-        if (count > 0)
+        int ready = poll(streams, 2, -1);
+        if (ready < 0)
         {
-            // node writes its own newlines; strip a trailing one so logcat does not double-space
-            if (buffer[count - 1] == '\n') { count--; }
-            buffer[count] = 0;
-            LOGI("%s", buffer);
-            continue;
-        }
-
-        count = read(g_stderr_pipe[0], buffer, sizeof(buffer) - 1);
-
-        if (count > 0)
-        {
-            if (buffer[count - 1] == '\n') { count--; }
-            buffer[count] = 0;
-            LOGE("%s", buffer);
-            continue;
-        }
-
-        if (count <= 0)
-        {
+            if (errno == EINTR)
+            {
+                continue;
+            }
             break;
         }
+        for (int i = 0; i < 2; i++)
+        {
+            if (streams[i].fd < 0 || !(streams[i].revents & (POLLIN | POLLHUP | POLLERR | POLLNVAL)))
+            {
+                continue;
+            }
+            ssize_t count = read(streams[i].fd, buffer, sizeof(buffer) - 1);
+            if (count > 0)
+            {
+                if (buffer[count - 1] == '\n')
+                {
+                    count--;
+                }
+                buffer[count] = 0;
+                __android_log_print(i == 0 ? ANDROID_LOG_INFO : ANDROID_LOG_ERROR, LOG_TAG, "%s", buffer);
+            }
+            else if (count == 0 || errno != EINTR)
+            {
+                close(streams[i].fd);
+                streams[i].fd = -1;
+            }
+        }
     }
-
+    for (int i = 0; i < 2; i++)
+    {
+        if (streams[i].fd >= 0)
+        {
+            close(streams[i].fd);
+        }
+    }
     return nullptr;
 }
 
-static void start_logging_if_needed()
+static bool start_logging_if_needed()
 {
     if (g_logging_started)
     {
-        return;
+        return true;
     }
-
-    g_logging_started = true;
 
     // line buffering, so a console.log shows up when it happens rather than when the buffer fills
     setvbuf(stdout, nullptr, _IOLBF, 0);
     setvbuf(stderr, nullptr, _IONBF, 0);
 
-    if (pipe(g_stdout_pipe) != 0 || pipe(g_stderr_pipe) != 0)
+    int original_out = dup(STDOUT_FILENO);
+    int original_error = dup(STDERR_FILENO);
+    bool ready = false;
+    if (original_out >= 0 && original_error >= 0 && pipe(g_stdout_pipe) == 0 && pipe(g_stderr_pipe) == 0)
     {
-        LOGE("could not create log pipes, node output will be invisible");
-        return;
+        if (dup2(g_stdout_pipe[1], STDOUT_FILENO) >= 0 && dup2(g_stderr_pipe[1], STDERR_FILENO) >= 0)
+        {
+            ready = pthread_create(&g_log_thread, nullptr, log_pump, nullptr) == 0;
+        }
     }
-
-    dup2(g_stdout_pipe[1], STDOUT_FILENO);
-    dup2(g_stderr_pipe[1], STDERR_FILENO);
-
-    if (pthread_create(&g_log_thread, nullptr, log_pump, nullptr) != 0)
+    if (!ready)
     {
-        LOGE("could not start log pump thread");
-        return;
+        if (original_out >= 0)
+        {
+            if (dup2(original_out, STDOUT_FILENO) < 0)
+            {
+                LOGE("could not restore stdout after log setup failure");
+            }
+        }
+        if (original_error >= 0)
+        {
+            if (dup2(original_error, STDERR_FILENO) < 0)
+            {
+                LOGE("could not restore stderr after log setup failure");
+            }
+        }
     }
-
-    pthread_detach(g_log_thread);
+    for (int i = 0; i < 2; i++)
+    {
+        if (g_stdout_pipe[i] >= 0 && (!ready || i == 1))
+        {
+            close(g_stdout_pipe[i]);
+            g_stdout_pipe[i] = -1;
+        }
+        if (g_stderr_pipe[i] >= 0 && (!ready || i == 1))
+        {
+            close(g_stderr_pipe[i]);
+            g_stderr_pipe[i] = -1;
+        }
+    }
+    if (original_out >= 0)
+    {
+        close(original_out);
+    }
+    if (original_error >= 0)
+    {
+        close(original_error);
+    }
+    if (ready)
+    {
+        pthread_detach(g_log_thread);
+        g_logging_started = true;
+    }
+    return ready;
 }
 
 extern "C" JNIEXPORT jint JNICALL
 Java_com_lemonchat_NodeRuntime_nativeStartNode(JNIEnv* env, jobject /* this */, jobjectArray arguments)
 {
-    start_logging_if_needed();
+    if (arguments == nullptr || !start_logging_if_needed())
+    {
+        return -1;
+    }
 
     jsize argument_count = env->GetArrayLength(arguments);
 
@@ -113,12 +159,25 @@ Java_com_lemonchat_NodeRuntime_nativeStartNode(JNIEnv* env, jobject /* this */, 
     for (jsize i = 0; i < argument_count; i++)
     {
         jstring argument = static_cast<jstring>(env->GetObjectArrayElement(arguments, i));
-        const char* utf8 = env->GetStringUTFChars(argument, nullptr);
-
-        argv[i] = strdup(utf8);
-
-        env->ReleaseStringUTFChars(argument, utf8);
-        env->DeleteLocalRef(argument);
+        const char* utf8 = argument != nullptr ? env->GetStringUTFChars(argument, nullptr) : nullptr;
+        if (utf8 != nullptr)
+        {
+            argv[i] = strdup(utf8);
+            env->ReleaseStringUTFChars(argument, utf8);
+        }
+        if (argument != nullptr)
+        {
+            env->DeleteLocalRef(argument);
+        }
+        if (argv[i] == nullptr || env->ExceptionCheck())
+        {
+            for (jsize allocated = 0; allocated <= i; allocated++)
+            {
+                free(argv[allocated]);
+            }
+            free(argv);
+            return -1;
+        }
     }
 
     LOGI("starting node with %d argument(s)", static_cast<int>(argument_count));

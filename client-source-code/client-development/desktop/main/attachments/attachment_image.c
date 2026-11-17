@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include "mbedtls/platform_util.h"
 
-// Private instances of the decoders already vendored with Meek UI.
+// private instances of the decoders already vendored with Meek UI
 #define nuint meek_ui_nuint
 #define nint meek_ui_nint
 #define STB_IMAGE_STATIC
@@ -20,9 +20,11 @@
 #undef nuint
 
 /**
- * @brief identifies supported image bytes without trusting the filename or supplied MIME type.
+ * @brief identifies supported image bytes without trusting the filename or supplied MIME type
+ *
  * @param const ubyte* bytes -> borrowed file bytes
  * @param uint64 size -> available byte count
+ *
  * @return const char* -> static MIME string, or NULL
  */
 const char *desktop_attachment_image__mime(const ubyte *bytes, uint64 size)
@@ -66,12 +68,14 @@ const char *desktop_attachment_image__mime(const ubyte *bytes, uint64 size)
 }
 
 /**
- * @brief checks dimensions before decoding and retains an aspect-correct preview of at most 1024 pixels per side.
+ * @brief checks dimensions before decoding and retains an aspect correct preview of at most 1024 pixels per side
+ *
  * @param const ubyte* bytes -> bounded original image bytes
  * @param uint64 size -> byte count, at most the native picture limit
  * @param int64* width -> preview width on success
  * @param int64* height -> preview height on success
- * @return ubyte* -> owned RGBA preview, or NULL; release with free
+ *
+ * @return ubyte* -> owned RGBA preview, or NULL. Release with free
  */
 ubyte *desktop_attachment_image__decode(const ubyte *bytes, uint64 size, int64 *width, int64 *height)
 {
@@ -79,13 +83,15 @@ ubyte *desktop_attachment_image__decode(const ubyte *bytes, uint64 size, int64 *
 }
 
 /**
- * @brief decodes a picture with caller-supplied dimension and preview bounds, before allocating pixels.
+ * @brief decodes a picture with caller supplied dimension and preview bounds, before allocating pixels
+ *
  * @param const ubyte* bytes -> borrowed encoded bytes
  * @param uint64 size -> available bytes
  * @param int64* width -> output preview width
  * @param int64* height -> output preview height
  * @param int64 maximum -> maximum input dimension, at most 8192
  * @param int64 preview_limit -> maximum retained dimension, at most 1024
+ *
  * @return ubyte* -> owned RGBA pixels, cleared by the caller before free
  */
 ubyte *desktop_attachment_image__decode_bounded(const ubyte *bytes, uint64 size, int64 *width, int64 *height, int64 maximum, int64 preview_limit)

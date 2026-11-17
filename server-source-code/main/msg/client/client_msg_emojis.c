@@ -1,5 +1,5 @@
 #include "../../clib/clib.h"
-// This file handles requests to view, upload and delete server emojis.
+// this file handles requests to view, upload and delete server emojis
 #include "client_msg.h"
 #include "../server/server_msg.h"
 #include "../../core/emojis.h"
@@ -11,11 +11,12 @@
 static void _client_msg_emojis_internal__process(cJSON *json_root, uint64 client_id, ws_cli_conn_t *socket, cstring operation);
 
 /**
- * @brief Checks the connection and permissions before handling an emoji request.
- * @param json_root Parsed request.
- * @param client_id Client slot that received the request.
- * @param socket Connection that sent the request.
- * @param operation Request message type.
+ * @brief checks the connection and permissions before handling an emoji request
+ *
+ * @param json_root Parsed request
+ * @param client_id Client slot that received the request
+ * @param socket Connection that sent the request
+ * @param operation Request message type
  */
 static void _client_msg_emojis_internal__process(cJSON *json_root, uint64 client_id, ws_cli_conn_t *socket, cstring operation)
 {
@@ -101,10 +102,11 @@ static void _client_msg_emojis_internal__process(cJSON *json_root, uint64 client
 }
 
 /**
- * @brief Handles a request for available server emoji names.
- * @param json_root Parsed request.
- * @param client_id Requesting client slot.
- * @param socket Connection that sent the request.
+ * @brief handles a request for available server emoji names
+ *
+ * @param json_root Parsed request
+ * @param client_id Requesting client slot
+ * @param socket Connection that sent the request
  */
 void client_msg__emojis__process_list(cJSON *json_root, uint64 client_id, ws_cli_conn_t *socket)
 {
@@ -112,10 +114,11 @@ void client_msg__emojis__process_list(cJSON *json_root, uint64 client_id, ws_cli
 }
 
 /**
- * @brief Handles a request for one server emoji image.
- * @param json_root Parsed request.
- * @param client_id Requesting client slot.
- * @param socket Connection that sent the request.
+ * @brief handles a request for one server emoji image
+ *
+ * @param json_root Parsed request
+ * @param client_id Requesting client slot
+ * @param socket Connection that sent the request
  */
 void client_msg__emojis__process_image(cJSON *json_root, uint64 client_id, ws_cli_conn_t *socket)
 {
@@ -123,10 +126,11 @@ void client_msg__emojis__process_image(cJSON *json_root, uint64 client_id, ws_cl
 }
 
 /**
- * @brief Handles an administrator's named image upload.
- * @param json_root Parsed request.
- * @param client_id Requesting client slot.
- * @param socket Connection that sent the request.
+ * @brief handles an administrator's named image upload
+ *
+ * @param json_root Parsed request
+ * @param client_id Requesting client slot
+ * @param socket Connection that sent the request
  */
 void client_msg__emojis__process_upload(cJSON *json_root, uint64 client_id, ws_cli_conn_t *socket)
 {
@@ -134,10 +138,11 @@ void client_msg__emojis__process_upload(cJSON *json_root, uint64 client_id, ws_c
 }
 
 /**
- * @brief Handles an administrator's request to delete an emoji.
- * @param json_root Parsed request.
- * @param client_id Requesting client slot.
- * @param socket Connection that sent the request.
+ * @brief handles an administrator's request to delete an emoji
+ *
+ * @param json_root Parsed request
+ * @param client_id Requesting client slot
+ * @param socket Connection that sent the request
  */
 void client_msg__emojis__process_delete(cJSON *json_root, uint64 client_id, ws_cli_conn_t *socket)
 {

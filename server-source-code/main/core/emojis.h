@@ -5,7 +5,7 @@
 #include "../../third-party/dave-g-json/cJSON.h"
 #include "server_settings.h"
 
-// Keep room in the settings document for channels, identities, groups and icons.
+// keep room in the settings document for channels, identities, groups and icons
 #define SERVER_EMOJI_STORAGE_MAX_BYTES (SERVER_SETTINGS_MAX_FILE_BYTES / 2)
 
 cstring emojis__add(cstring name, cstring base64, char *id);

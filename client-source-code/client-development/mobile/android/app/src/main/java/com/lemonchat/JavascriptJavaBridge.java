@@ -22,6 +22,9 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 
+/**
+ * Exposes native operations to the trusted bundled page.
+ */
 public class JavascriptJavaBridge
 {
 	private Context mContext;
@@ -30,6 +33,13 @@ public class JavascriptJavaBridge
 
 	BackgroundService backgroundServiceInstance;
 
+	/**
+	 * Connects the page interface to the service and settings.
+	 *
+	 * @param context service context for storage and feedback
+	 * @param settings shared settings owner
+	 * @param backgroundServiceInstance the service that owns the trusted page
+	 */
 	JavascriptJavaBridge(Context context, ChatSettings settings, BackgroundService backgroundServiceInstance)
 	{
 		this.mContext = context;
@@ -37,24 +47,150 @@ public class JavascriptJavaBridge
 		this.backgroundServiceInstance = backgroundServiceInstance;
 	}
 
+	/**
+	 * Replaces the identity for the trusted page.
+	 *
+	 * @param passphrase the exact identity passphrase
+	 * @param rsaKeyBits the supported RSA modulus size
+	 * @param operationId the caller's unique operation identifier
+	 * @param expectedRevision the identity revision the caller expects to replace
+	 * @return JSON containing the committed revision or an error code
+	 */
+	@JavascriptInterface public String JavaExportReplaceIdentity(String passphrase, int rsaKeyBits, String operationId, long expectedRevision)
+	{
+		if (!this.backgroundServiceInstance.isTrustedPage())
+		{
+			return "{\"ok\":false,\"error\":\"untrusted_page\"}";
+		}
+		return this.settings.replaceIdentity(passphrase, rsaKeyBits, operationId, expectedRevision);
+	}
+
+	/**
+	 * Saves the identity as an {@code .lmn} file in format version 1.
+	 *
+	 * @param fileName name to sanitize and give an {@code .lmn} suffix
+	 * @return JSON containing {@code ok}, with an error code if export or storage fails
+	 */
+	@JavascriptInterface public String JavaExportExportIdentity(String fileName)
+	{
+		if (!this.backgroundServiceInstance.isTrustedPage())
+		{
+			return "{\"ok\":false,\"error\":\"untrusted_page\"}";
+		}
+		try
+		{
+			byte[] file = this.settings.exportIdentity().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+			String name = sanitizeFileName(fileName);
+			if (!name.endsWith(".lmn"))
+			{
+				name += ".lmn";
+			}
+			boolean saved = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+				? this.saveToMediaStoreDownloads(name, "application/json", file)
+				: this.saveToAppDownloads(name, "application/json", file);
+			return saved ? "{\"ok\":true}" : "{\"ok\":false,\"error\":\"storage_failed\"}";
+		}
+		catch (Exception failed)
+		{
+			return "{\"ok\":false,\"error\":\"export_failed\"}";
+		}
+	}
+
+	/**
+	 * Changes the RSA size while preserving the identity passphrase.
+	 *
+	 * @param rsaKeyBits the new supported RSA modulus size
+	 * @param operationId the caller's unique operation identifier
+	 * @param expectedRevision the identity revision to replace
+	 * @return JSON containing the committed revision or an error code
+	 */
+	@JavascriptInterface public String JavaExportResizeIdentity(int rsaKeyBits, String operationId, long expectedRevision)
+	{
+		if (!this.backgroundServiceInstance.isTrustedPage())
+		{
+			return "{\"ok\":false,\"error\":\"untrusted_page\"}";
+		}
+		return this.settings.resizeIdentity(rsaKeyBits, operationId, expectedRevision);
+	}
+
+	/**
+	 * Sends Connect through the native control channel.
+	 */
+	@JavascriptInterface public void JavaExportConnect()
+	{
+		if (!this.backgroundServiceInstance.isTrustedPage())
+		{
+			return;
+		}
+		final long generation = this.backgroundServiceInstance.getPageGeneration();
+		final android.webkit.WebView webView = this.backgroundServiceInstance.webView;
+		if (webView == null)
+		{
+			return;
+		}
+		webView.post(() ->
+		{
+			MainActivity owner = MainActivity.instance;
+			if (owner != null && owner.isMediaActivityVisible() && this.backgroundServiceInstance.isTrustedPage() && generation == this.backgroundServiceInstance.getPageGeneration() && webView == this.backgroundServiceInstance.webView)
+			{
+				owner.requestConnection();
+			}
+		});
+	}
+
+	/**
+	 * Shows a short message requested by the trusted page.
+	 *
+	 * @param toast the text to display
+	 */
 	@JavascriptInterface public void JavaExport(String toast)
 	{
+		if (!this.backgroundServiceInstance.isTrustedPage())
+		{
+			return;
+		}
 		Toast.makeText(this.mContext, toast, Toast.LENGTH_SHORT).show();
 	}
 
 	/**
-	 * the download button of a chat file. the webview cannot save a blob url, so the page hands the
-	 * decoded bytes over and they land in Downloads: MediaStore on api 29+, below that the app's own
-	 * downloads folder registered with the DownloadManager so the Downloads app lists it.
+	 * Sends Disconnect through the native control channel.
+	 */
+	@JavascriptInterface public void JavaExportDisconnect()
+	{
+		if (!this.backgroundServiceInstance.isTrustedPage())
+		{
+			return;
+		}
+		NodeBridge bridge = this.backgroundServiceInstance.nodeBridge;
+		if (this.backgroundServiceInstance.isTrustedPage() && bridge != null)
+		{
+			bridge.sendDisconnect();
+		}
+	}
+
+	/**
+	 * Decodes and saves a chat file, then shows the result.
+	 *
+	 * @param fileName the requested file name, sanitized before saving
+	 * @param mimeType media type, or empty or {@code null} for {@code application/octet-stream}
+	 * @param base64 file bytes encoded as base64
 	 */
 	@JavascriptInterface public void JavaExportSaveFile(String fileName, String mimeType, String base64)
 	{
+		if (!this.backgroundServiceInstance.isTrustedPage())
+		{
+			return;
+		}
 		String safeName = sanitizeFileName(fileName);
 		String safeMime = (mimeType == null || mimeType.isEmpty()) ? "application/octet-stream" : mimeType;
 		byte[] bytes;
 
 		try
 		{
+			if (base64 == null)
+			{
+				throw new IllegalArgumentException("missing file data");
+			}
 			bytes = android.util.Base64.decode(base64, android.util.Base64.DEFAULT);
 		}
 		catch (IllegalArgumentException badBase64)
@@ -73,7 +209,12 @@ public class JavascriptJavaBridge
 		}
 	}
 
-	/** no path separators or control characters, never empty */
+	/**
+	 * Removes path separators and control characters from a file name.
+	 *
+	 * @param fileName the requested name, which may be {@code null}
+	 * @return a name of at most 200 characters, or {@code file} if the input is unusable
+	 */
 	private static String sanitizeFileName(String fileName)
 	{
 		String name = (fileName == null) ? "" : fileName.replaceAll("[\\\\/\\p{Cntrl}]", "_").trim();
@@ -91,80 +232,124 @@ public class JavascriptJavaBridge
 		return name;
 	}
 
-	/** api 29+: a pending MediaStore row, filled, then published. a duplicate name is renamed by the system */
-	private void saveToMediaStoreDownloads(String safeName, String safeMime, byte[] bytes)
+	/**
+	 * Saves to MediaStore Downloads and removes the pending entry on failure.
+	 *
+	 * @param safeName the sanitized display name
+	 * @param safeMime the media type
+	 * @param bytes the complete decoded file contents
+	 * @return {@code true} if the entry was published
+	 */
+	@androidx.annotation.RequiresApi(Build.VERSION_CODES.Q)
+	private boolean saveToMediaStoreDownloads(String safeName, String safeMime, byte[] bytes)
 	{
 		ContentResolver resolver = this.mContext.getContentResolver();
-		ContentValues values = new ContentValues();
-		values.put(MediaStore.Downloads.DISPLAY_NAME, safeName);
-		values.put(MediaStore.Downloads.MIME_TYPE, safeMime);
-		values.put(MediaStore.Downloads.IS_PENDING, 1);
-
-		Uri uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
-
-		if (uri == null)
+		Uri uri = null;
+		try
 		{
-			this.showToastOnMainThread("could not save " + safeName + " into Downloads");
-			return;
-		}
-
-		try (OutputStream out = resolver.openOutputStream(uri))
-		{
-			if (out == null)
+			ContentValues values = new ContentValues();
+			values.put(MediaStore.Downloads.DISPLAY_NAME, safeName);
+			values.put(MediaStore.Downloads.MIME_TYPE, safeMime);
+			values.put(MediaStore.Downloads.IS_PENDING, 1);
+			uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
+			if (uri == null)
 			{
-				throw new IOException("no output stream");
+				throw new IOException("storage unavailable");
 			}
-
-			out.write(bytes);
+			try (OutputStream out = resolver.openOutputStream(uri))
+			{
+				if (out == null)
+				{
+					throw new IOException("storage unavailable");
+				}
+				out.write(bytes);
+			}
+			values.clear();
+			values.put(MediaStore.Downloads.IS_PENDING, 0);
+			if (resolver.update(uri, values, null, null) != 1)
+			{
+				throw new IOException("file publication failed");
+			}
+			this.showToastOnMainThread("Saved to Downloads/" + safeName);
+			return true;
 		}
-		catch (IOException writeFailed)
+		catch (IOException | RuntimeException failed)
 		{
-			Log.e("Info", "[lemonchat] saving chat file failed", writeFailed);
-			resolver.delete(uri, null, null);
-			this.showToastOnMainThread("could not save " + safeName + " into Downloads");
-			return;
+			if (uri != null)
+			{
+				try
+				{
+					resolver.delete(uri, null, null);
+				}
+				catch (RuntimeException cleanupFailed)
+				{
+					Log.w("lemonchat", "unfinished download cleanup failed");
+				}
+			}
+			this.showToastOnMainThread("Could not save " + safeName + " into Downloads");
+			return false;
 		}
-
-		values.clear();
-		values.put(MediaStore.Downloads.IS_PENDING, 0);
-		resolver.update(uri, values, null, null);
-
-		this.showToastOnMainThread("saved to Downloads/" + safeName);
 	}
 
-	/** api 26-28: the app's external downloads folder needs no permission; the DownloadManager entry makes it visible */
+	/**
+	 * Saves a uniquely named file in the app's external downloads directory.
+	 *
+	 * <p>Failed writes remove the reserved file. Failed DownloadManager registration keeps it.</p>
+	 *
+	 * @param safeName the sanitized requested name
+	 * @param safeMime media type for DownloadManager registration
+	 * @param bytes the complete decoded file contents
+	 * @return {@code true} if the file was written and closed successfully
+	 */
 	@SuppressWarnings("deprecation")
-	private void saveToAppDownloads(String safeName, String safeMime, byte[] bytes)
+	private boolean saveToAppDownloads(String safeName, String safeMime, byte[] bytes)
 	{
 		File directory = this.mContext.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS);
 
 		if (directory == null)
 		{
 			this.showToastOnMainThread("could not save " + safeName + ": no storage available");
-			return;
+			return false;
 		}
 
 		File target = new File(directory, safeName);
 		int counter = 1;
+		boolean created = false;
 
-		while (target.exists())
+		try
 		{
-			int dot = safeName.lastIndexOf('.');
-			String stem = (dot > 0) ? safeName.substring(0, dot) : safeName;
-			String extension = (dot > 0) ? safeName.substring(dot) : "";
-			target = new File(directory, stem + " (" + counter + ")" + extension);
-			counter++;
+			while (!target.createNewFile())
+			{
+				int dot = safeName.lastIndexOf('.');
+				String stem = (dot > 0) ? safeName.substring(0, dot) : safeName;
+				String extension = (dot > 0) ? safeName.substring(dot) : "";
+				target = new File(directory, stem + " (" + counter + ")" + extension);
+				counter++;
+			}
+			created = true;
+			try (FileOutputStream out = new FileOutputStream(target))
+			{
+				out.write(bytes);
+			}
 		}
-
-		try (FileOutputStream out = new FileOutputStream(target))
+		catch (IOException | RuntimeException writeFailed)
 		{
-			out.write(bytes);
-		}
-		catch (IOException writeFailed)
-		{
-			Log.e("Info", "[lemonchat] saving chat file failed", writeFailed);
+			if (created)
+			{
+				try
+				{
+					if (!target.delete())
+					{
+						Log.w("lemonchat", "unfinished download cleanup failed");
+					}
+				}
+				catch (SecurityException cleanupFailed)
+				{
+					Log.w("lemonchat", "unfinished download cleanup failed");
+				}
+			}
 			this.showToastOnMainThread("could not save " + safeName);
-			return;
+			return false;
 		}
 
 		DownloadManager downloadManager = (DownloadManager) this.mContext.getSystemService(Context.DOWNLOAD_SERVICE);
@@ -182,11 +367,18 @@ public class JavascriptJavaBridge
 		}
 
 		this.showToastOnMainThread("saved: " + target.getAbsolutePath());
+		return true;
 	}
 
+	/**
+	 * Posts storage or settings feedback to the main thread.
+	 *
+	 * @param text the message to display
+	 */
 	private void showToastOnMainThread(final String text)
 	{
-		new Handler(Looper.getMainLooper()).post(new Runnable() {
+		new Handler(Looper.getMainLooper()).post(new Runnable()
+		{
 			@Override public void run()
 			{
 				Toast.makeText(JavascriptJavaBridge.this.mContext, text, Toast.LENGTH_LONG).show();
@@ -194,118 +386,197 @@ public class JavascriptJavaBridge
 		});
 	}
 
+	/**
+	 * Saves the continuous microphone preference without replacing unrelated settings.
+	 *
+	 * @param isActive whether continuous microphone capture is selected
+	 */
 	@JavascriptInterface public void JavaExportSetContinousAudioBroadcastStatus(boolean isActive)
 	{
-		this.settings.setContinousAudioBroadcastEnabled(isActive);
-		this.settings.JavascriptJavaBridgeOnSaveSettings();
+		if (!this.backgroundServiceInstance.isTrustedPage())
+		{
+			return;
+		}
+		if (!this.settings.updateSetting("is_microphone_always_on", isActive))
+		{
+			this.showToastOnMainThread("Microphone preference could not be saved");
+		}
 	}
 
+	/**
+	 * Saves the sound effects preference and reports a failed save.
+	 *
+	 * @param isActive whether application sound effects should be enabled
+	 */
 	@JavascriptInterface public void JavaExportSetSoundEffectsStatus(boolean isActive)
 	{
-		this.settings.setAreAudioEffectsEnabled(isActive);
-		this.settings.JavascriptJavaBridgeOnSaveSettings();
+		if (!this.backgroundServiceInstance.isTrustedPage())
+		{
+			return;
+		}
+		if (!this.settings.updateSetting("is_audio_effect_enabled", isActive))
+		{
+			this.showToastOnMainThread("Sound preference could not be saved");
+		}
 	}
 
-	//total unread messages (channels + private). launchers show it on the app icon
+	/**
+	 * Updates the legacy unread badge only when no Node bridge owns the count.
+	 *
+	 * @param unreadCount total unread channel and private messages
+	 */
 	@JavascriptInterface public void JavaExportSetUnreadBadge(int unreadCount)
 	{
-		if (this.backgroundServiceInstance != null)
+		if (!this.backgroundServiceInstance.isTrustedPage())
+		{
+			return;
+		}
+		if (this.backgroundServiceInstance != null && this.backgroundServiceInstance.nodeBridge == null)
 		{
 			this.backgroundServiceInstance.showUnreadBadge(unreadCount);
 		}
 	}
 
-	//gets ran at the moment client connects to server
-	//sets the default username. the microphone and sound effect settings used to be sent from
-	//here too, but they belong to the local settings panel now and arrive with the settings
+	/**
+	 * Keeps the legacy login callback without changing state.
+	 */
 	@JavascriptInterface public void JavaExportOnConnected()
 	{
-		//will throw exception if not called inside webView thread
-
-		//JavaExportOnConnected is called by client.html in end of process_client_list_from_server
-		//its safe to change username after client list is received
-
-		this.backgroundServiceInstance.webView.post(new Runnable() {
-			@Override public void run()
-			{
-				String defaultUsername = JavascriptJavaBridge.this.settings.getDefaultUsername();
-				if (defaultUsername.length() > 0)
-				{
-					//JSONObject.quote, not '...' concat: one apostrophe in a username made the
-					//injected line a syntax error that evaluateJavascript swallowed silently
-					JavascriptJavaBridge.this.backgroundServiceInstance.webView.evaluateJavascript("JavascriptJavaBridge__set_username_on_connect(" + JSONObject.quote(defaultUsername) + ");", null);
-				}
-			}
-		});
+		if (!this.backgroundServiceInstance.isTrustedPage())
+		{
+			return;
+		}
+		// Node applies the saved name during login.
 	}
 
+	/**
+	 * Ignores the legacy call request because Node owns incoming calls.
+	 *
+	 * @param callerName the unused legacy caller name
+	 * @param channelId the unused legacy channel identifier
+	 */
 	@JavascriptInterface public void JavaExportStartCall(String callerName, int channelId)
 	{
-		Log.d("Info", "[lemonchat] received call request from " + callerName);
-		IBinder service;
-		this.backgroundServiceInstance.showIncomingCall(callerName, channelId);
+		if (!this.backgroundServiceInstance.isTrustedPage())
+		{
+			return;
+		}
+		// Node supplies the current call capability.
 	}
 
-	/** the single on/off switch for the log file, used by the checkbox in local settings. */
+	/**
+	 * Saves the logging preference before updating the service and Node.
+	 *
+	 * @param isEnabled whether file logging should be enabled
+	 */
 	@JavascriptInterface public void JavaExportSetFileLogging(boolean isEnabled)
 	{
+		if (!this.backgroundServiceInstance.isTrustedPage())
+		{
+			return;
+		}
 		Log.d("Info", "[lemonchat] JavaExportSetFileLogging " + isEnabled);
 
-		//save it first, then update the fast copy the console hook reads on every line
-		this.settings.setFileLoggingEnabled(isEnabled);
+		// Save before updating the copy used by the console hook.
+		if (!this.settings.setFileLoggingEnabled(isEnabled))
+		{
+			this.showToastOnMainThread("Logging preference could not be saved");
+			return;
+		}
 		BackgroundService.isFileLoggingEnabled = isEnabled;
 
-		if (this.backgroundServiceInstance.nodeBridge != null)
+		NodeBridge bridge = this.backgroundServiceInstance.nodeBridge;
+		if (bridge != null)
 		{
-			this.backgroundServiceInstance.nodeBridge.sendLoggingEnabled(isEnabled);
+			bridge.sendLoggingEnabled(isEnabled);
 		}
 	}
 
+	/**
+	 * Opens native settings if the requesting page is still current and the activity is available.
+	 */
 	@JavascriptInterface public void JavaExportGoToSettings()
 	{
-		Log.d("Info", "[lemonchat] JavaExportGoToSettings");
-		this.backgroundServiceInstance.webView.post(new Runnable() {
+		if (!this.backgroundServiceInstance.isTrustedPage())
+		{
+			return;
+		}
+		final long generation = this.backgroundServiceInstance.getPageGeneration();
+		final android.webkit.WebView webView = this.backgroundServiceInstance.webView;
+		if (webView == null)
+		{
+			return;
+		}
+		webView.post(new Runnable()
+		{
 			@Override public void run()
 			{
-				MainActivity.instance.showSettings();
+				MainActivity activity = MainActivity.instance;
+				if (activity != null && !activity.isFinishing() && JavascriptJavaBridge.this.backgroundServiceInstance.isTrustedPage()
+					&& generation == JavascriptJavaBridge.this.backgroundServiceInstance.getPageGeneration())
+				{
+					activity.showSettings();
+				}
 			}
 		});
 	}
 
 	public static boolean settingsAlreadyLoaded = false;
 
-	// guards the one-shot fallback that answers the settings request without loopback fields
-	// if node never announces (crashed) - the webview then connects directly as a degraded mode
+	// Retained for compatibility. The page cannot connect directly to a server.
 	public static boolean settingsDeferFallbackArmed = false;
 
 	/**
-	 * a poke arrived. the page shows its own alert, but that is invisible while the app is in the
-	 * background - which is precisely when being poked matters - so raise a real notification.
-	 * skipped when the activity is on screen: the in-page alert already covers that case.
+	 * Shows a legacy background poke notification when no Node bridge owns notifications.
+	 *
+	 * @param senderName the sender's display name
+	 * @param pokeMessage the text shown in the notification
 	 */
 	@JavascriptInterface public void JavaExportShowPokeNotification(String senderName, String pokeMessage)
 	{
+		if (!this.backgroundServiceInstance.isTrustedPage())
+		{
+			return;
+		}
 		Log.d("Info", "[lemonchat] JavaExportShowPokeNotification");
 
 		if (MainActivity.instance != null)
 		{
-			return; //app is in the foreground, the page's own alert is enough
+			return; // The foreground page shows its own alert.
+		}
+		if (this.backgroundServiceInstance.nodeBridge != null)
+		{
+			return;
 		}
 
 		JavascriptJavaBridge.this.backgroundServiceInstance.showPokeNotification(senderName, pokeMessage);
 	}
 
+	/**
+	 * Gives the current trusted page settings without the passphrase once Node is ready.
+	 */
 	@JavascriptInterface public void JavaExportRequestCurrentSettingsFromAndroid()
 	{
-		Log.d("Info", "[lemonchat] JavaExportRequestCurrentSettingsFromAndroid");
-		this.backgroundServiceInstance.webView.post(new Runnable() {
+		if (!this.backgroundServiceInstance.isTrustedPage())
+		{
+			return;
+		}
+		final long generation = this.backgroundServiceInstance.getPageGeneration();
+		final android.webkit.WebView webView = this.backgroundServiceInstance.webView;
+		if (webView == null)
+		{
+			return;
+		}
+		webView.post(new Runnable()
+		{
 			@Override public void run()
 			{
-				// LoadSettings populates the native settings panel, so it needs a live activity.
-				// the json answer must NOT: the page asks exactly once, at page load, and on a
-				// first run that moment often falls while the user is off in the overlay/battery
-				// permission screens (activity paused, MainActivity.instance == null). dropping
-				// the whole answer there left the page waiting forever - no theme, no autoconnect
+				if (!JavascriptJavaBridge.this.backgroundServiceInstance.isTrustedPage()
+					|| generation != JavascriptJavaBridge.this.backgroundServiceInstance.getPageGeneration())
+				{
+					return;
+				}
+				// Only the native panel needs an activity. The page still needs its reply while paused.
 				if (MainActivity.instance != null && JavascriptJavaBridge.settingsAlreadyLoaded == false)
 				{
 					JavascriptJavaBridge.settingsAlreadyLoaded = true;
@@ -314,25 +585,16 @@ public class JavascriptJavaBridge
 
 				String jsonSettings = JavascriptJavaBridge.this.settings.getJsonSettings();
 
-				// node is the connection authority: when its loopback is up, point the webview at it.
-				// the real host stays in the json - client.html still needs it for stun/turn
+				// Node owns the connection. Keep the real host for STUN and TURN.
 				NodeBridge nodeBridge = JavascriptJavaBridge.this.backgroundServiceInstance.nodeBridge;
 
-				// the webview must never connect directly while node is coming up - that made two
-				// connections with one identity and the server kicked one. defer until the loopback
-				// announce re-invokes this; the one-shot fallback covers a node that never comes up
-				if (nodeBridge != null && nodeBridge.getLoopbackPort() == 0 && JavascriptJavaBridge.settingsDeferFallbackArmed == false)
+				// Wait for the loopback announcement to retry. Show recovery if Node is unavailable.
+				if (nodeBridge == null || nodeBridge.getLoopbackPort() == 0)
 				{
-					JavascriptJavaBridge.settingsDeferFallbackArmed = true;
-
-					JavascriptJavaBridge.this.backgroundServiceInstance.webView.postDelayed(new Runnable() {
-						@Override public void run()
-						{
-							JavascriptJavaBridge.this.JavaExportRequestCurrentSettingsFromAndroid();
-						}
-					}, 8000);
-
-					Log.i("Info", "[lemonchat] deferring settings until node announces its loopback");
+					if (nodeBridge != null)
+					{
+						nodeBridge.pushConnectionPhaseToWebview();
+					}
 					return;
 				}
 
@@ -341,6 +603,7 @@ public class JavascriptJavaBridge
 					try
 					{
 						JSONObject augmented = new JSONObject(jsonSettings);
+						augmented.remove("identity_string");
 						augmented.put("loopback_port", nodeBridge.getLoopbackPort());
 						augmented.put("loopback_token", nodeBridge.getLoopbackToken());
 						jsonSettings = augmented.toString();
@@ -353,17 +616,13 @@ public class JavascriptJavaBridge
 
 				if (jsonSettings.length() > 0)
 				{
-					// hand the json over as a PROPERLY QUOTED js string literal. pasting it between
-					// single quotes was a silent trap: one apostrophe in a username, host or key
-					// (or a backslash) makes the injected line a syntax error, evaluateJavascript
-					// swallows it, and the page simply never receives its settings - no theme, no
-					// autoconnect details, no identity, with nothing logged anywhere
+					// Quote the JSON so user values cannot break the JavaScript string.
 					String javascript_argument = JSONObject.quote(jsonSettings);
 
 					JavascriptJavaBridge.this.backgroundServiceInstance.webView.evaluateJavascript(
 						"JavascriptJavaBridge__accept_current_settings_from_android(" + javascript_argument + ");", null);
 
-					//the phase node reported before this page loaded (e.g. key generation)
+					// Restore the phase Node reported before this page loaded.
 					if (nodeBridge != null)
 					{
 						nodeBridge.pushConnectionPhaseToWebview();

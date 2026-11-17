@@ -5,10 +5,14 @@ import android.app.job.JobService;
 import android.content.Intent;
 import android.util.Log;
 
-// the second autostart path: the system runs this a few minutes after boot and about every
-// 15 minutes, restarting the service if it is not running (registered in BackgroundService)
+/** Checks the service through the job registered by {@link BackgroundService}. */
 public class RestartJobService extends JobService
 {
+	/**
+	 * Starts the service if its running flag is clear.
+	 * @param parameters scheduled job
+	 * @return {@code false} because the check is complete
+	 */
 	@Override public boolean onStartJob(JobParameters parameters)
 	{
 		if (BackgroundService.isRunning == false)
@@ -20,15 +24,19 @@ public class RestartJobService extends JobService
 			}
 			catch (Exception startRefused)
 			{
-				// android 12+ may refuse a foreground start from a job; the boot receiver
-				// stays the allowed path there
+				// Android can refuse a service start from a job.
 				Log.w("lemonchat", "restart job: start refused", startRefused);
 			}
 		}
 
-		return false; //nothing keeps running, the check above was the whole job
+		return false; // The job has no remaining work.
 	}
 
+	/**
+	 * Leaves later checks to the existing periodic schedule.
+	 * @param parameters stopped job
+	 * @return {@code false} to avoid a separate retry
+	 */
 	@Override public boolean onStopJob(JobParameters parameters)
 	{
 		return false;

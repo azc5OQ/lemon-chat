@@ -1,4 +1,4 @@
-// Native clients, the server and the browser's WebAssembly use the same primitives.
+// native clients, the server and the browser's WebAssembly use the same primitives
 #include "ciphers.h"
 #include "cipher_aes.h"
 #include "cipher_camellia.h"
@@ -9,6 +9,14 @@
 #include "mbedtls/sha256.h"
 #include <string.h>
 
+/**
+ * @brief clears sensitive bytes through a volatile pointer
+ *
+ * @param void* data -> buffer to clear
+ * @param size_t size -> number of bytes in the buffer
+ *
+ * @return void
+ */
 void ciphers__clear(void* data, size_t size)
 {
     volatile unsigned char* bytes = data;
@@ -19,6 +27,13 @@ void ciphers__clear(void* data, size_t size)
     }
 }
 
+/**
+ * @brief finds the protocol name of a supported cipher
+ *
+ * @param int type -> cipher identifier
+ *
+ * @return const char* -> static name, or NULL for an unsupported cipher
+ */
 const char* ciphers__name(int type)
 {
     switch (type)
@@ -40,6 +55,13 @@ const char* ciphers__name(int type)
     }
 }
 
+/**
+ * @brief finds a cipher by its exact protocol name
+ *
+ * @param const char* name -> cipher name, or NULL
+ *
+ * @return int -> cipher identifier, or 0 for an unknown name
+ */
 int ciphers__type(const char* name)
 {
     if (name != NULL)
@@ -72,12 +94,30 @@ int ciphers__type(const char* name)
     return 0;
 }
 
+/**
+ * @brief calculates a SHA256 digest
+ *
+ * @param const unsigned char* data -> bytes to hash
+ * @param size_t size -> number of input bytes
+ * @param unsigned char[32] output -> receives the digest
+ *
+ * @return int -> 1 on success, otherwise 0
+ */
 int ciphers__sha256(const unsigned char* data, size_t size, unsigned char output[32])
 {
     return mbedtls_sha256(data, size, output, 0) == 0;
 }
 
-/** @brief HMAC-SHA256 with the protocol's fixed 32-byte keys; no heap allocation. */
+/**
+ * @brief calculates HMAC using SHA256 without heap allocation
+ *
+ * @param const unsigned char key[32] -> authentication key
+ * @param const unsigned char* data -> message bytes
+ * @param size_t size -> message length
+ * @param unsigned char output[32] -> receives the tag
+ *
+ * @return int -> 1 if hashing succeeded, otherwise 0
+ */
 int ciphers__hmac(const unsigned char key[32], const unsigned char* data, size_t size, unsigned char output[32])
 {
     mbedtls_sha256_context context;
@@ -109,7 +149,17 @@ int ciphers__hmac(const unsigned char key[32], const unsigned char* data, size_t
     return status;
 }
 
-/** @brief Applies a cipher symmetrically in place. Trivium-80 compatibility deliberately ignores the message IV. */
+/**
+ * @brief applies a cipher in place. Trivium compatibility ignores the message IV
+ *
+ * @param int type -> cipher identifier
+ * @param const unsigned char key[32] -> encryption key
+ * @param const unsigned char iv[16] -> initialization vector
+ * @param unsigned char* data -> bytes to transform
+ * @param size_t size -> number of bytes
+ *
+ * @return int -> 1 if cipher processing succeeded, otherwise 0
+ */
 int ciphers__crypt(int type, const unsigned char key[32], const unsigned char iv[16], unsigned char* data, size_t size)
 {
     if (key == NULL || iv == NULL || data == NULL)

@@ -1,4 +1,4 @@
-// Native clients, the server and the browser's WebAssembly use the same primitives.
+// native clients, the server and the browser's WebAssembly use the same primitives
 #include "ciphers.h"
 #include "cipher_aes.h"
 #include "cipher_camellia.h"
@@ -9,6 +9,14 @@
 #include "mbedtls/sha256.h"
 #include <string.h>
 
+/**
+ * @brief overwrites sensitive bytes through volatile writes
+ *
+ * @param void * data -> writable memory, valid whenever size is nonzero
+ * @param uint64 size -> number of bytes to clear
+ *
+ * @return void
+ */
 void ciphers__clear(void *data, uint64 size)
 {
     volatile ubyte *bytes = data;
@@ -21,6 +29,13 @@ void ciphers__clear(void *data, uint64 size)
     }
 }
 
+/**
+ * @brief resolves a supported cipher identifier to its wire name
+ *
+ * @param int64 type -> cipher identifier
+ *
+ * @return const char * -> static name or NULL for an unsupported identifier
+ */
 const char *ciphers__name(int64 type)
 {
     // convert type to name
@@ -43,6 +58,13 @@ const char *ciphers__name(int64 type)
     }
 }
 
+/**
+ * @brief resolves an exact wire name to a cipher identifier
+ *
+ * @param const char * name -> cipher name or NULL
+ *
+ * @return int64 -> supported identifier or zero when unknown
+ */
 int64 ciphers__type(const char *name)
 {
     // convert name to type
@@ -78,12 +100,30 @@ int64 ciphers__type(const char *name)
     return 0;
 }
 
+/**
+ * @brief hashes a byte range using SHA256
+ *
+ * @param const ubyte * data -> source bytes
+ * @param uint64 size -> source byte count
+ * @param ubyte [32] output -> receives the 32 byte digest
+ *
+ * @return boole -> TRUE when the length fits and hashing succeeds
+ */
 boole ciphers__sha256(const ubyte *data, uint64 size, ubyte output[32])
 {
     return size <= SIZE_MAX && mbedtls_sha256(data, size, output, 0) == 0;
 }
 
-/** @brief HMAC-SHA256 with the protocol's fixed 32-byte keys; no heap allocation. */
+/**
+ * @brief calculates HMAC SHA256 without allocating heap memory
+ *
+ * @param const ubyte* key -> authentication key containing 32 bytes
+ * @param const ubyte* data -> bytes to authenticate
+ * @param uint64 size -> number of input bytes
+ * @param ubyte* output -> buffer receiving the 32 byte tag
+ *
+ * @return boole -> TRUE if the tag was calculated successfully
+ */
 boole ciphers__hmac(const ubyte key[32], const ubyte *data, uint64 size, ubyte output[32])
 {
     mbedtls_sha256_context context = { 0 };
@@ -124,7 +164,17 @@ boole ciphers__hmac(const ubyte key[32], const ubyte *data, uint64 size, ubyte o
     return status;
 }
 
-/** @brief Applies a cipher symmetrically in place. Trivium-80 compatibility deliberately ignores the message IV. */
+/**
+ * @brief encrypts or decrypts the buffer in place using the selected cipher
+ *
+ * @param int64 type -> cipher identifier
+ * @param const ubyte* key -> key buffer containing 32 bytes
+ * @param const ubyte* iv -> starting value containing 16 bytes. Legacy Trivium ignores its contents
+ * @param ubyte* data -> buffer to transform
+ * @param uint64 size -> number of buffer bytes
+ *
+ * @return boole -> TRUE if the cipher completed successfully
+ */
 boole ciphers__crypt(int64 type, const ubyte key[32], const ubyte iv[16], ubyte *data, uint64 size)
 {
     // check arguments

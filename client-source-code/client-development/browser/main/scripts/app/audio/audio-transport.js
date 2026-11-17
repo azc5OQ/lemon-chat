@@ -1,66 +1,42 @@
-// voice travels either over the webrtc datachannel or over a second websocket on the chat port.
-// mode is the connection this client prefers, "webrtc" or "websocket", from the user's preference
-// (g_audio_connection_preference) within what the server allows (g_server_policy); "none" only when
-// the server serves no audio connection at all, which is the server's decision, never the client's.
-// when the preferred connection has not come up for AUDIO_TRANSPORT_FALLBACK_AFTER_MS, the other
-// allowed one is tried as well, and whichever is up carries the audio (audio_transport__active).
-// once the preferred one comes up again it takes over. the chat connection negotiates a websocket
-// session; audio packets then use the /audio socket.
-// the server sends an empty frame to an idle audio socket every few seconds and this client answers it,
-// so no timer is needed to keep the socket. a session request that leads to no attached socket is
-// repeated with a growing delay, from AUDIO_TRANSPORT_REQUEST_INTERVAL_MS up to the maximum below.
-// after every attach the client reports its audio state (talking, microphone ready or listening),
-// because the server resets that state when a connection attaches.
-// the data channel is probed with a one-byte frame, which the server echoes, after a few seconds of
-// silence; when nothing comes back for AUDIO_TRANSPORT_DATACHANNEL_DEAD_MS the channel is rebuilt, and
-// the websocket is tried at once, instead of waiting for the browser to notice the lost transport.
-// every frame on either connection is encrypted a second time with this client's two session keys and
-// carries an authentication code, so that a frame on a plain websocket can neither be read nor forged on
-// the network path; keys.js (the block "the encryption of audio and video frames") and crypto_media.c on
-// the server explain it. the voice itself stays under the channel keys, which the server does not have.
+// carries voice through WebRTC or the /audio WebSocket, within server policy
+// try the allowed fallback when the preferred transport stays down. return to the preferred transport when it recovers
+// the chat connection requests WebSocket sessions. failed attachments retry with increasing delays
+// echo empty WebSocket keepalives and probe quiet data channels to detect stalled connections
+// report the local microphone state after attachment because the server resets it to listening
+// session encryption authenticates each frame. channel encryption keeps voice contents private from the server
+// keys.js and server crypto_media.c define the encryption and frame layout
 var AUDIO_TRANSPORT_FALLBACK_AFTER_MS = 10000;
 var AUDIO_TRANSPORT_REQUEST_INTERVAL_MS = 10000;
 var AUDIO_TRANSPORT_REQUEST_INTERVAL_MAX_MS = 60000;
 var AUDIO_TRANSPORT_DATACHANNEL_PROBE_MS = 5000;
 var AUDIO_TRANSPORT_DATACHANNEL_DEAD_MS = 15000;
-// the largest frame content; with the 29 bytes the encryption adds, a frame stays under the server's limit of 4132 bytes
+// maximum frame content. encryption adds 29 bytes within the server's 4132 byte limit
 var AUDIO_TRANSPORT_MAX_CONTENT_BYTES = 4080;
 
-var g_audio_transport =
-{
-    mode: "webrtc",
-    url: "",
-    socket: null,
-    ready: false,              // the websocket is attached and authenticated
-    pending_until: 0,          // no new session request before this time
-    request_attempts: 0,       // session requests since the last attached socket; sets the delay to the next one
-    preferred_down_since: 0,   // when the preferred connection was last up, or when the attempt began
-    last_received: 0,
-    datachannel_last_received: 0, // the last frame of any kind from the data channel
-    datachannel_last_probe: 0,
-    frame_counter: null,       // counts the frames this client sent; part of every counter block of a frame's encryption (keys.js)
-    timer: null
-};
-
 /**
- * @brief whether the server has audio on at all: voice or music bot audio
+ * @brief checks whether the server enables voice or music bot audio
  *
- * @return boolean
+ * @return boolean true when voice chat or music bot audio is enabled
  */
 function audio_transport__is_audio_on()
 {
     return g_server_policy.is_voice_chat_active === true || g_server_policy.is_music_bot_audio_active === true;
 }
 
+/**
+ * @brief checks whether the voice data channel is open
+ *
+ * @return boolean -> true when the data channel is open
+ */
 function audio_transport__is_datachannel_open()
 {
     return g_datachannel != null && g_datachannel.readyState === "open";
 }
 
 /**
- * @brief whether the preferred connection has been down long enough for the other one to be tried
+ * @brief checks whether the preferred transport has been down long enough to try a fallback
  *
- * @return boolean
+ * @return boolean true when the preferred transport has been down long enough
  */
 function audio_transport__is_fallback_due()
 {
@@ -68,12 +44,7 @@ function audio_transport__is_fallback_due()
 }
 
 /**
- * @brief the connection that carries the audio right now
- *
- *        the preferred one whenever it is up, otherwise the other one when it is up and the server
- *        allows voice over it (the fallback time only decides when the other one is established).
- *        the server relays to a client over its websocket whenever one is attached, so a fallback
- *        websocket is dropped as soon as the preferred datachannel is back (see audio_transport__tick).
+ * @brief chooses the ready preferred audio connection or an allowed fallback
  *
  * @return string "webrtc", "websocket" or null
  */
@@ -109,17 +80,16 @@ function audio_transport__active()
 }
 
 /**
- * @brief whether the datachannel should be kept up: voice over webrtc, the fallback of a websocket that does not come up, or video streaming
+ * @brief checks whether voice or video still requires the WebRTC connection
  *
- * @return boolean
+ * @return boolean true when video, preference or fallback requires WebRTC
  */
 function audio_transport__wants_webrtc()
 {
     let state = g_audio_transport;
 
     // video keeps the peer connection only while it does not prefer the video websocket (video-transport.js)
-    if (g_server_policy.is_video_streaming_allowed === true
-        && (typeof video_transport__prefers_websocket !== "function" || video_transport__prefers_websocket() === false))
+    if (g_server_policy.is_video_streaming_allowed === true && (typeof video_transport__prefers_websocket !== "function" || video_transport__prefers_websocket() === false))
     {
         return true;
     }
@@ -129,14 +99,13 @@ function audio_transport__wants_webrtc()
         return true;
     }
 
-    return state.mode === "websocket" && g_server_policy.is_audio_over_webrtc_allowed === true
-        && state.ready === false && audio_transport__is_fallback_due();
+    return state.mode === "websocket" && g_server_policy.is_audio_over_webrtc_allowed === true && state.ready === false && audio_transport__is_fallback_due();
 }
 
 /**
- * @brief whether a websocket session should be requested: voice over websocket, or the fallback of a datachannel that does not come up
+ * @brief checks whether policy and preference require an audio WebSocket
  *
- * @return boolean
+ * @return boolean true when policy and preference or fallback require a WebSocket
  */
 function audio_transport__wants_websocket()
 {
@@ -156,20 +125,18 @@ function audio_transport__wants_websocket()
 }
 
 /**
- * @brief starts the datachannel connection loop when the datachannel is wanted and no loop runs
+ * @brief starts the WebRTC connection loop when needed and not already running
  *
  * @return void
  */
 function audio_transport__start_webrtc_if_wanted()
 {
-    // nothing to start while the data channel is up or being set up: the loop would only log and leave
+    // keep one connection attempt running at a time
     if (g_is_webrtc_datachannel_connected === true || audio_transport__is_datachannel_open())
     {
         return;
     }
-    if (audio_transport__wants_webrtc() === false || g_is_webrtc_datachannel_check_running == true
-        || g_is_deep_idle == true || g_is_authenticated == false || g_is_voice_chat_allowed_by_server != true
-        || typeof RTCPeerConnection === "undefined")
+    if (audio_transport__wants_webrtc() === false || g_is_webrtc_datachannel_check_running == true || g_is_deep_idle == true || g_is_authenticated == false || g_is_voice_chat_allowed_by_server != true || typeof RTCPeerConnection === "undefined")
     {
         return;
     }
@@ -179,7 +146,7 @@ function audio_transport__start_webrtc_if_wanted()
 }
 
 /**
- * @brief the datachannel opened: a fallback websocket gives way to it, and the microphone controls follow
+ * @brief activates the opened data channel and updates fallback and microphone state
  *
  * @return void
  */
@@ -203,10 +170,8 @@ function audio_transport__on_datachannel_open()
 }
 
 /**
- * @brief a frame from the data channel: an answer to a probe (one byte) or audio, which is played
- *
- *        the server relays to this client over one connection at a time, its choice, so whatever
- *        arrives here is played
+ * @brief records data channel activity and plays frames other than probe replies
+ * accept server audio from either transport while a switch is in progress
  *
  * @param ArrayBuffer data -> the frame
  *
@@ -223,12 +188,9 @@ function audio_transport__on_datachannel_message(data)
 }
 
 /**
- * @brief keeps watch over an open data channel: a probe after a quiet spell, a rebuild when nothing comes back
+ * @brief probes a quiet data channel and rebuilds it when the server stops responding
  *
- *        a transport whose udp path died stays "open" in the browser until its consent checks time out,
- *        which takes about half a minute; the probe shortens that to AUDIO_TRANSPORT_DATACHANNEL_DEAD_MS
- *
- * @param number now -> Date.now()
+ * @param number now -> date.now()
  *
  * @return void
  */
@@ -255,16 +217,13 @@ function audio_transport__probe_datachannel(now)
         }
         catch (error)
         {
-            // a channel that refuses the probe is as good as silent; the silence check above takes it from here
+            // a failed probe remains subject to the silence deadline
         }
     }
 }
 
 /**
- * @brief drops a data channel the server no longer answers on and starts the connection loop for a new one
- *
- *        the lost channel is detached first, so its late close event cannot touch the new state. in webrtc
- *        mode the websocket fallback is due at once: the silence limit already passed.
+ * @brief detaches an unresponsive data channel and starts recovery
  *
  * @param string reason -> for the log
  *
@@ -304,11 +263,7 @@ function audio_transport__restart_datachannel(reason)
 }
 
 /**
- * @brief picks the audio connection from the user's preference and the server's policy, and applies a change
- *
- *        the preference names the first choice; the other allowed connection is the second. a
- *        websocket that the new choice no longer wants is dropped; the tick and the datachannel
- *        callbacks then establish the chosen one.
+ * @brief applies the audio connection preference within the server's allowed transports
  *
  * @return void
  */
@@ -320,7 +275,7 @@ function audio_transport__select_mode()
     let is_webrtc_allowed = (g_server_policy.is_audio_over_webrtc_allowed === true);
     let mode = "none";
 
-    // the preference only orders the two connections; whether audio is served at all is the server's call
+    // the preference orders transports. server policy determines whether audio is available
     if (g_audio_connection_preference === "websocket")
     {
         mode = is_websocket_allowed ? "websocket" : (is_webrtc_allowed ? "webrtc" : "none");
@@ -343,8 +298,7 @@ function audio_transport__select_mode()
         return;
     }
 
-    // no audio at all, or back to the datachannel by choice: the websocket goes. a fallback socket
-    // that is now the chosen connection stays
+    // close a WebSocket that is no longer selected or needed as a fallback
     if (g_audio_transport.socket != null && (mode === "none" || (mode === "webrtc" && previous === "websocket")))
     {
         audio_transport__drop_socket();
@@ -376,15 +330,14 @@ function audio_transport__set_preference(preference)
 }
 
 /**
- * @brief shows or hides the microphone controls according to whether an audio connection is usable now
+ * @brief shows microphone controls while an audio transport is usable
  *
  * @return void
  */
 function audio_transport__refresh_ui()
 {
     // the headless node runtime has no webaudio and no microphone controls
-    if (typeof window === "undefined" || (typeof window.AudioContext !== "function" && typeof window.webkitAudioContext !== "function")
-        || document.getElementById("toggle-microphone-label") == null)
+    if (typeof window === "undefined" || (typeof window.AudioContext !== "function" && typeof window.webkitAudioContext !== "function") || document.getElementById("toggle-microphone-label") == null)
     {
         return;
     }
@@ -401,11 +354,7 @@ function audio_transport__refresh_ui()
 }
 
 /**
- * @brief reports this client's audio state to the server: talking, microphone ready, or listening only
- *
- *        the server sets a client to "listening" when an audio connection attaches and to "audio disabled"
- *        when its last one drops, so the current state is reported after every attach: a push-to-talk key
- *        that is still held keeps talking across a handover
+ * @brief reports whether this client is talking, microphone ready or listening only
  *
  * @return void
  */
@@ -435,6 +384,16 @@ function audio_transport__report_audio_state()
     });
 }
 
+/**
+ * @brief decodes an audio session key with the required byte length
+ *
+ * @param string text -> hexadecimal key text
+ * @param number length -> required decoded byte count
+ *
+ * @return Uint8Array -> decoded key bytes
+ *
+ * @throws Error -> the text is not hexadecimal of the required length
+ */
 function audio_transport__hex_bytes(text, length)
 {
     if (typeof text !== "string" || text.length !== length * 2 || !/^[0-9a-f]+$/i.test(text))
@@ -449,11 +408,21 @@ function audio_transport__hex_bytes(text, length)
     return bytes;
 }
 
+/**
+ * @brief checks whether either allowed audio connection is ready
+ *
+ * @return boolean -> true when an active audio transport is available
+ */
 function audio_transport__ready()
 {
     return audio_transport__active() != null;
 }
 
+/**
+ * @brief detaches callbacks and closes the current audio socket
+ *
+ * @return void
+ */
 function audio_transport__drop_socket()
 {
     let socket = g_audio_transport.socket;
@@ -469,6 +438,11 @@ function audio_transport__drop_socket()
     }
 }
 
+/**
+ * @brief stops audio retries and resets both audio and video sockets
+ *
+ * @return void
+ */
 function audio_transport__reset()
 {
     if (g_audio_transport.timer != null)
@@ -486,6 +460,13 @@ function audio_transport__reset()
     }
 }
 
+/**
+ * @brief sends an audio packet only while the socket is ready and its queue has room
+ *
+ * @param ArrayBuffer|Uint8Array data -> packet to send
+ *
+ * @return boolean -> true when the packet was passed to the socket
+ */
 function audio_transport__send_packet(data)
 {
     let state = g_audio_transport;
@@ -493,7 +474,7 @@ function audio_transport__send_packet(data)
     {
         return false;
     }
-    // The browser owns the TCP queue. Do not add old voice behind a stalled send.
+    // the browser owns the TCP queue. do not add old voice behind a stalled send
     if (state.socket.bufferedAmount > 8192)
     {
         return false;
@@ -503,12 +484,7 @@ function audio_transport__send_packet(data)
 }
 
 /**
- * @brief sends one voice frame of this client over the connection that carries the audio right now
- *
- *        the frame content ([2 bytes sequence number][opus]) is encrypted with the channel keys, then with
- *        the server keys, and then a second time with this client's session keys plus an authentication code
- *        (keys.js explains the layers). every frame gets the next value of the frame counter, so no two
- *        frames are ever encrypted with the same counter block
+ * @brief encrypts and sends one voice frame through the active audio connection
  *
  * @param Uint8Array sequenced_chunk -> [2 bytes sequence number, least significant first][opus packet]
  *
@@ -520,8 +496,7 @@ function audio_transport__send_voice(sequenced_chunk)
     let session_layer = keys__media_session_layer();
     let active = audio_transport__active();
 
-    if (sequenced_chunk == null || sequenced_chunk.byteLength < 2 || sequenced_chunk.byteLength > AUDIO_TRANSPORT_MAX_CONTENT_BYTES
-        || g_is_deep_idle || active == null || session_layer == null || g_current_channel_keys == null || g_local_client_id < 0)
+    if (sequenced_chunk == null || sequenced_chunk.byteLength < 2 || sequenced_chunk.byteLength > AUDIO_TRANSPORT_MAX_CONTENT_BYTES || g_is_deep_idle || active == null || session_layer == null || g_current_channel_keys == null || g_local_client_id < 0)
     {
         return;
     }
@@ -548,6 +523,11 @@ function audio_transport__send_voice(sequenced_chunk)
     }
 }
 
+/**
+ * @brief checks connection health and requests a fallback session when its retry window opens
+ *
+ * @return void
+ */
 function audio_transport__tick()
 {
     let state = g_audio_transport;
@@ -583,7 +563,7 @@ function audio_transport__tick()
             audio_transport__refresh_ui();
             return;
         }
-        // the server's keepalive frames refresh last_received; a socket without any frame for this long no longer works
+        // keepalive frames refresh last_received. close a socket that stays silent too long
         if (now - state.last_received > 15000)
         {
             audio_transport__drop_socket();
@@ -615,8 +595,7 @@ function audio_transport__tick()
     {
         return;
     }
-    // a request that leads nowhere is repeated with a growing delay, so a blocked /audio path costs the
-    // server one session per minute at most; an attached socket resets the delay
+    // increase the delay after failed attachments. a successful attachment resets it
     state.pending_until = now + Math.min(AUDIO_TRANSPORT_REQUEST_INTERVAL_MS * Math.pow(2, state.request_attempts), AUDIO_TRANSPORT_REQUEST_INTERVAL_MAX_MS);
     state.request_attempts++;
     connection__send_message_object(
@@ -628,6 +607,11 @@ function audio_transport__tick()
     });
 }
 
+/**
+ * @brief starts audio connection checks and video transport on devices with audio support
+ *
+ * @return void
+ */
 function audio_transport__start()
 {
     if (typeof window.AudioContext !== "function" && typeof window.webkitAudioContext !== "function")
@@ -647,12 +631,17 @@ function audio_transport__start()
     }
 }
 
+/**
+ * @brief authenticates a requested audio socket and ignores callbacks from replaced sockets
+ *
+ * @param object message -> audio session reply with the client ID, ticket and authentication key
+ *
+ * @return void
+ */
 function audio_transport__session(message)
 {
     let state = g_audio_transport;
-    if (state.timer == null || g_is_deep_idle || !g_is_authenticated || state.socket != null
-        || state.mode === "none" || g_server_policy.is_audio_over_websocket_allowed !== true
-        || Date.now() > state.pending_until || message.client_id !== g_local_client_id)
+    if (state.timer == null || g_is_deep_idle || !g_is_authenticated || state.socket != null || state.mode === "none" || g_server_policy.is_audio_over_websocket_allowed !== true || Date.now() > state.pending_until || message.client_id !== g_local_client_id)
     {
         return;
     }
@@ -753,7 +742,7 @@ function audio_transport__session(message)
         {
             if (state.socket === socket)
             {
-                // a socket that was attached is requested again soon; one that never attached keeps the delay its request set
+                // retry soon after losing an attached socket. keep the existing delay when attachment never succeeded
                 let was_ready = state.ready;
                 audio_transport__drop_socket();
                 if (was_ready)
@@ -765,7 +754,7 @@ function audio_transport__session(message)
         };
         socket.onerror = function()
         {
-            // onclose handles reconnection.
+            // onclose handles reconnection
         };
     }
     catch (error)
@@ -775,6 +764,11 @@ function audio_transport__session(message)
     }
 }
 
+/**
+ * @brief updates microphone controls and reports the local audio state after attachment
+ *
+ * @return void
+ */
 function audio_transport__on_ready()
 {
     console.log("datachannelonopen");
@@ -803,8 +797,7 @@ function audio_transport__on_ready()
 
     if (local_index != -1)
     {
-        g_client_list[local_index].audio_state = g_is_microphone_active
-            ? G_AUDIO_STATE.PUSH_TO_TALK_ACTIVE : G_AUDIO_STATE.PUSH_TO_TALK_DISABLED_BUT_CAN_RECEIVE_AUDIO_FROM_OTHERS;
+        g_client_list[local_index].audio_state = g_is_microphone_active ? G_AUDIO_STATE.PUSH_TO_TALK_ACTIVE : G_AUDIO_STATE.PUSH_TO_TALK_DISABLED_BUT_CAN_RECEIVE_AUDIO_FROM_OTHERS;
     }
 
     if (target_element.classList.contains("client-audio-state-completely-disabled"))
@@ -819,13 +812,7 @@ function audio_transport__on_ready()
 }
 
 /**
- * @brief a frame that arrived over the websocket or the data channel: checked, decrypted and handed to the decoder worker
- *
- *        first the authentication code is checked and the server's encryption removed (keys.js); that gives the
- *        sender id and the sender counter. a sender that is muted, ignored, in another channel, or this client
- *        itself is dropped. then the server keys come off, and either the music bot's keys (a bot) or the
- *        channel keys (a member). what is left, [2 bytes sequence number][opus], goes to the decoder worker
- *        behind the sender id
+ * @brief validates and decrypts a received audio frame before sending it to the decoder
  *
  * @param ArrayBuffer buffer -> the frame as received
  *
@@ -892,11 +879,17 @@ function audio_transport__receive(buffer)
     }, [decoded.buffer]);
 }
 
+/**
+ * @brief replaces playback keys only for a music bot in the current channel
+ *
+ * @param object message -> bot ID, channel ID, encryption mode and playback keys
+ *
+ * @return void
+ */
 function audio_transport__set_music_bot_key(message)
 {
     let index = channel_tree__get_client_index_in_array_by_client_id(message.client_id);
-    if (index < 0 || !g_client_list[index].is_music_bot
-        || message.channel_id !== g_current_channel_id || g_client_list[index].channel_id !== message.channel_id)
+    if (index < 0 || !g_client_list[index].is_music_bot || message.channel_id !== g_current_channel_id || g_client_list[index].channel_id !== message.channel_id)
     {
         return;
     }
@@ -906,11 +899,7 @@ function audio_transport__set_music_bot_key(message)
 }
 
 /**
- * @brief removes a music bot's own encryption from a frame content
- *
- *        the server encrypts every bot frame with the bot's four keys under the counter block of the bot id
- *        and the bot's counter (crypto_media.c). the four keys reach the client over the encrypted chat
- *        connection; a client that does not have them yet asks for them, once per second at most
+ * @brief removes the music bot's encryption or requests its missing keys
  *
  * @param object bot -> the bot's entry in g_client_list
  * @param number sender_id -> the bot's client id, from the frame
@@ -960,7 +949,9 @@ function audio_transport__decrypt_music_bot(bot, sender_id, counter_bytes, inner
 }
 
 /**
- * @brief Hides audio controls when the server disables audio without changing local preferences.
+ * @brief hides audio controls when the server disables audio without changing local preferences
+ *
+ * @return void
  */
 function audio_transport__apply_policy_to_ui()
 {

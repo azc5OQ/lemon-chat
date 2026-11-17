@@ -1,77 +1,164 @@
-// connection.js is included in template.html with the other client files, and in the node bundle
-// that the android app runs.
-// this file opens and keeps the connection to the server. it decides when a connection attempt
-// starts: the connect button, a page with built-in server settings, settings sent by the android
-// app, the return from idle, a retry, or attaching to a session the node client already holds.
-// only one attempt runs at a time. the file knows which identity (key pair) and which server
-// address the attempt uses.
-// it also runs the heartbeat loop (the regular message that tells the server the client is still
-// there), the fast reconnect (bounded retries after a short connection loss, keeping the
-// identity), the hold on the connect page (the page stays hidden for a moment while an automatic
-// attempt runs, so it does not appear for a moment), and the saved server bookmarks (the server list on the
-// connect page).
-// other files do not connect on their own: ui.js (connect button) and android-host.js (settings
-// and resume from the android app) ask for a connection with connection__request_connect and a
-// trigger name, and dispatch.js passes on what the websocket worker reports (opened, closed,
-// error, server messages) by calling the connection__* functions in this file.
+// manages server connections, identity changes, recovery and saved servers
 
 var port = 0;
 
 var FAST_RECONNECT_DEADLINE_MS = 60000;
 var pending_upload_send_cancel = null;
+var connection_desired_generation = 0;
+var connection_attempt_cancellations = new Set();
+var connection_local_request_sequence = 0;
+var connection_local_uploads = new Map();
+var connection_loopback_ready = false;
+var connection_ui_connect_pending = false;
+var connection_ui_disconnect_pending = false;
+
+/**
+ * @brief sends the pending Connect or Disconnect when the local socket is ready
+ */
+function connection__flush_local_connect_intent()
+{
+    if (!g_connection_status.runtime_failure_reason && connection_loopback_ready && connection_ui_disconnect_pending)
+    {
+        connection_ui_disconnect_pending = false;
+        connection__send_local_command("disconnect");
+        return;
+    }
+    if (!g_connection_status.runtime_failure_reason && connection_loopback_ready && connection_ui_connect_pending)
+    {
+        connection_ui_connect_pending = false;
+        connection__send_local_command("connect");
+    }
+}
+
+/**
+ * @brief cancels connection attempts and upload waits for the previous target
+ */
+function connection__invalidate_pending_attempts()
+{
+    connection_desired_generation++;
+    for (const cancel of Array.from(connection_attempt_cancellations))
+    {
+        cancel();
+    }
+    connection__cancel_upload_send();
+}
+
+/**
+ * @brief checks whether an attempt still has permission to connect
+ *
+ * @param generation attempt generation to check
+ *
+ * @return true when the attempt is current and connecting is allowed
+ */
+function connection__attempt_is_current(generation)
+{
+    return generation === connection_desired_generation && !is_connection_ended_by_user && g_node_connection_wanted !== false && !g_connection_status.runtime_failure_reason;
+}
+
+/**
+ * @brief waits for the identity unless the connection attempt is cancelled
+ *
+ * @param generation attempt generation to wait for
+ *
+ * @return Promise resolving to the identity or null when cancelled
+ */
+function connection__wait_for_identity(generation)
+{
+    return new Promise(function(resolve)
+    {
+        const finish = function(identity)
+        {
+            connection_attempt_cancellations.delete(cancel);
+            const index = g_identity_slot.waiters.indexOf(finish);
+            if (index >= 0)
+            {
+                g_identity_slot.waiters.splice(index, 1);
+            }
+            resolve(identity);
+        };
+        const cancel = function()
+        {
+            finish(null);
+        };
+        if (!connection__attempt_is_current(generation))
+        {
+            finish(null);
+        }
+        else if (g_identity_slot.is_set)
+        {
+            finish(g_identity_slot.value);
+        }
+        else
+        {
+            connection_attempt_cancellations.add(cancel);
+            g_identity_slot.waiters.push(finish);
+        }
+    });
+}
+
+/**
+ * @brief sends a command to the local Node owner
+ *
+ * @param action local command name
+ * @param arguments_value command arguments or an empty object
+ */
+function connection__send_local_command(action, arguments_value)
+{
+    connection__send_message_object(
+    {
+        message:
+        {
+            type: "local_command",
+            request_id: String(++connection_local_request_sequence),
+            action: action,
+            arguments: arguments_value || {}
+        }
+    });
+}
 
 var VERIFICATION_MESSAGE = "welcome";
 
-// where to connect, as { kind: "loopback", port, token } or { kind: "server", host, port, wss_port }
+// the current server or local Node connection target
 var target_slot = connection__make_slot();
 
-// the identity slot is declared in globals.js (dispatch.js fills it); the slot itself is built here, where its type lives
+// holds the identity supplied by the worker
 g_identity_slot = connection__make_slot();
 
-// one keygen per passphrase, because a repeat request for the same identity must be a no-op.
-// the size is part of the key: the same passphrase at a new size is a different identity,
-// so it has to be part of what makes a request a repeat
+// the passphrase and key size identify duplicate requests
+
 var identity_requested_for = null;
 var identity_requested_bits = 0;
 
-// set by "disconnect" in the connections menu (connection__disconnect_by_user): the connect loop then waits for the next
-// connect request instead of connecting again on its own, and a fast reconnect is refused while it is set
+// stops retries after the user disconnects
+
 var is_connection_ended_by_user = false;
 
-// the server the user chose instead of the one written into the page, { host, port }, or null: the last bookmark chosen in
-// the bookmarks menu, or an address and port changed in the connect window and connected to with its button. a page with
-// the server written into it connects to that server instead of its own from then on, until the page is loaded again or
-// the window's values are changed back to the page's own
+// the server selected in the connect form or bookmarks
+
 var connection_chosen_target = null;
 
-// true once the connect window of a page with the server written into it shows the address and the port in its fields
-// (connection__show_predefined_details_in_connect_window); the connect button then reads the fields
+// tracks whether the configured server fields are visible
+
 var is_written_in_target_shown_in_window = false;
 
-// resolved by the websocket close and error handlers. the connect loop (connection__connect_loop,
-// below) waits for this while a socket exists, whether the handshake is still running or the
-// connection has been open for a long time
+// waiters resolved when the socket closes or fails
+
 var connection_closed_resolvers = [];
 
-// a request to connect at once, which skips the retry countdown; it comes from the connect button
-// or from new connection details. a request that
-// arrives while the connect loop still waits for the old socket to close is kept, not lost: an
-// identity switch closes the socket and sends the request at the same time, before the close has
-// been seen
+// retains a connect request until the loop can consume it
+
 var connect_loop_wake_resolver = null;
 var is_connect_loop_wake_pending = false;
 
 var is_connect_loop_running = false;
 
-// webview only: true when connect was pressed before node announced its loopback port
+// retains a WebView connect request until Node provides its port
 var ui_connect_requested = false;
 
-// ---- the connect loop ----
-
 /**
- * @brief a slot holds one async value: set() stores it and wakes everyone who called wait()
+ * @brief creates a shared value that callers can await
  *
- * @return object the slot, with set(new_value) and wait(), which returns a promise of the value
+ * @return object slot with set and wait methods
  */
 function connection__make_slot()
 {
@@ -102,60 +189,142 @@ function connection__make_slot()
             return Promise.resolve(slot.value);
         }
 
-        return new Promise(function(resolve) { slot.waiters.push(resolve); });
+        return new Promise(function(resolve)
+        {
+            slot.waiters.push(resolve);
+        });
     };
 
     return slot;
 }
 
+var identity_request_sequence = 0;
+var identity_active_request = null;
+var identity_pending_request = null;
+
 /**
- * @brief asks the data-processing worker for the identity keypair: derived from the passphrase when one is given (199 characters or more), random otherwise
- *        the same request twice is ignored; without a worker yet the request is dropped, and the
- *        next settings push retries it
+ * @brief starts identity generation in the data worker
  *
- * @param string|null passphrase_or_null -> the passphrase, null or anything short for a random key
- *
- * @return void
+ * @param request passphrase, key size and identity revision
  */
-function connection__request_identity(passphrase_or_null)
+function connection__start_identity_request(request)
 {
-    let requested_key = (typeof passphrase_or_null === "string" && passphrase_or_null.length >= 199)
-        ? passphrase_or_null : "(random)";
-
-    if (identity_requested_for === requested_key && identity_requested_bits === g_rsa_key_bits)
+    identity_active_request = request;
+    g_data_processing_worker.postMessage(
     {
-        return;
-    }
-
-    // settings can arrive before the workers exist; the next settings push retries this
-    if (g_data_processing_worker == null)
-    {
-        console.log("connect-path: no worker yet, keypair request dropped");
-        return;
-    }
-
-    identity_requested_for = requested_key;
-    identity_requested_bits = g_rsa_key_bits;
-    g_identity_slot.is_set = false;
-    g_is_rsa_key_generated = false;
-
-    console.log("connect-path: keypair requested (" + (requested_key === "(random)" ? "random" : "from passphrase") + ", " + g_rsa_key_bits + " bits)");
-
-    g_data_processing_worker.postMessage({
         type: "mainthread__generate_rsa_keypair",
-        from_identity_string: requested_key !== "(random)",
-        identity_passphrase_string: requested_key === "(random)" ? null : requested_key,
-        rsa_key_bits: g_rsa_key_bits
+        from_identity_string: request.passphrase !== null,
+        identity_passphrase_string: request.passphrase,
+        rsa_key_bits: request.bits,
+        identity_request_id: request.id,
+        identity_revision: request.revision
     });
-
-    // the derive can take minutes on a phone, so the status says what the wait actually is
-    connection__report_connection_status("connecting", "generating the identity key (takes a while on first start)");
 }
 
 /**
- * @brief tells whether the page options ask for a secure websocket (wss) although the page was
- *        not loaded over https. that is a page opened from a file (sent by email, built with
- *        tools/configure-client.py) that connects to a server behind a tls proxy
+ * @brief accepts the current identity result or starts its pending replacement
+ *
+ * @param result completed worker identity request
+ *
+ * @return true when the result is current and has no queued replacement
+ */
+function connection__accept_identity_result(result)
+{
+    if (identity_active_request == null || result.identity_request_id !== identity_active_request.id || result.identity_revision !== identity_active_request.revision || result.rsa_key_bits !== identity_active_request.bits)
+    {
+        return false;
+    }
+    identity_active_request = null;
+    if (identity_pending_request != null)
+    {
+        const pending = identity_pending_request;
+        identity_pending_request = null;
+        connection__start_identity_request(pending);
+        return false;
+    }
+    g_identity_revision = result.identity_revision;
+    g_identity_rsa_key_bits = result.rsa_key_bits;
+    return true;
+}
+
+/**
+ * @brief requests an identity derived from a passphrase or generated randomly
+ *
+ * @param string|null passphrase_or_null -> passphrase with at least 199 characters or null for a random identity
+ * @param requested_bits requested RSA key size
+ * @param requested_revision native identity revision
+ *
+ * @return void
+ */
+function connection__request_identity(passphrase_or_null, requested_bits, requested_revision)
+{
+    const passphrase = typeof passphrase_or_null === "string" && passphrase_or_null.length >= 199 ? passphrase_or_null : null;
+    const bits = G_ALLOWED_RSA_KEY_BITS.indexOf(requested_bits) >= 0 ? requested_bits : g_rsa_key_bits;
+    const revision = Number.isSafeInteger(requested_revision) && requested_revision >= 0 ? requested_revision : g_identity_revision;
+    const requested_key = passphrase === null ? "(random)" : passphrase;
+    const latest_revision = identity_pending_request != null ? identity_pending_request.revision : (identity_active_request != null ? identity_active_request.revision : g_identity_revision);
+    if (identity_requested_for === requested_key && identity_requested_bits === bits && latest_revision === revision && (identity_active_request != null || g_is_rsa_key_generated))
+    {
+        if (g_is_rsa_key_generated && identity_active_request == null && identity_pending_request == null && typeof g_node_frame_listener === "function")
+        {
+            // acknowledge a repeated import of the current identity
+            g_node_frame_listener(JSON.stringify(
+            {
+                message:
+                {
+                    type: "local_identity_result",
+                    identity_revision: g_identity_revision,
+                    public_key_string: g_rsa_public_key_string,
+                    rsa_key_bits: g_identity_rsa_key_bits,
+                    success: true
+                }
+            }));
+        }
+        return;
+    }
+    if (g_data_processing_worker == null)
+    {
+        return;
+    }
+    const keep_connection_intent = target_slot.is_set && !is_connection_ended_by_user && g_node_connection_wanted !== false && (g_is_authenticated || (g_connection_status.state === "connecting" && g_worker_connection_generation > 0 && !g_worker_connection_ended));
+    // invalidate the previous session before replacing its identity
+    connection__invalidate_pending_attempts();
+    g_is_identity_switch_in_progress = true;
+    if (g_is_authenticated || g_connection_status.state === "connecting")
+    {
+        g_is_authenticated = false;
+        connection__reset_chat_app_keep_identity();
+    }
+    identity_requested_for = requested_key;
+    identity_requested_bits = bits;
+    g_identity_slot.is_set = false;
+    g_is_rsa_key_generated = false;
+    const request =
+    {
+        id: ++identity_request_sequence,
+        passphrase: passphrase,
+        bits: bits,
+        revision: revision
+    };
+    if (identity_active_request != null)
+    {
+        identity_pending_request = request;
+    }
+    else
+    {
+        connection__start_identity_request(request);
+    }
+    connection__report_connection_status("connecting", "generating the identity key (takes a while on first start)");
+    if (keep_connection_intent)
+    {
+        // keep an existing connection request when changing its identity
+
+        connection__wake_connect_loop();
+    }
+}
+
+/**
+ * @brief checks whether the page requests a secure WebSocket
  *
  * @return boolean true when window.__SERVER_CONFIG__.is_secure_websocket_used is true
  */
@@ -165,8 +334,7 @@ function connection__is_secure_websocket_requested_by_page()
 }
 
 /**
- * @brief the key pair of an identity the user imported exists now: a notice and a log line say
- *        so and the sound of a finished import is played
+ * @brief reports that the imported identity is ready
  *
  * @return void
  */
@@ -179,7 +347,7 @@ function connection__identity_imported()
 }
 
 /**
- * @brief Leaves a failed identity request retryable without publishing a keypair or leaving its controls busy.
+ * @brief releases a failed identity request so it can be retried
  */
 function connection__identity_generation_failed()
 {
@@ -207,16 +375,19 @@ function connection__identity_generation_failed()
     }
 }
 
-// An error can be followed by a close for the same socket; announce it once.
+// play the disconnect sound once per socket
 var connection_sound_closed_generation = -1;
 var G_SERVER_CLOSE_KICKED = 4001;
 var G_SERVER_CLOSE_BANNED = 4002;
 
+/**
+ * @brief plays the connection outcome once for the ended socket
+ *
+ * @param close_code server close code when available
+ */
 function connection__play_disconnect_sound(close_code)
 {
-    if (!g_is_authenticated || g_is_identity_switch_in_progress
-        || android_host__is_ui_only_runtime()
-        || connection_sound_closed_generation === g_worker_connection_generation)
+    if (!g_is_authenticated || g_is_identity_switch_in_progress || android_host__is_ui_only_runtime() || connection_sound_closed_generation === g_worker_connection_generation)
     {
         return;
     }
@@ -236,7 +407,7 @@ function connection__play_disconnect_sound(close_code)
 }
 
 /**
- * @brief wakes everyone awaiting connection__connection_closed(): the socket is gone
+ * @brief resolves callers waiting for the socket to close
  *
  * @return void
  */
@@ -253,17 +424,20 @@ function connection__signal_connection_closed()
 }
 
 /**
- * @brief a promise for the next connection close; the connect loop waits for it between attempts
+ * @brief waits for the next socket closure
  *
- * @return promise resolves when the connection closes
+ * @return Promise resolved when the socket closes
  */
 function connection__connection_closed()
 {
-    return new Promise(function(resolve) { connection_closed_resolvers.push(resolve); });
+    return new Promise(function(resolve)
+    {
+        connection_closed_resolvers.push(resolve);
+    });
 }
 
 /**
- * @brief wakes the connect loop out of its retry wait, or remembers the connect request for a wait that has not started yet
+ * @brief wakes the connect loop or retains the request until it waits
  *
  * @return void
  */
@@ -281,11 +455,11 @@ function connection__wake_connect_loop()
 }
 
 /**
- * @brief the countdown between retries: shows the failure text every second and ends early when a connect request arrives
+ * @brief waits between retries unless another connect request arrives
  *
- * @param number seconds -> how long to wait
+ * @param number seconds -> retry delay in seconds
  *
- * @return promise resolves when the countdown ended or a connect request ended it early
+ * @return Promise resolved when the wait ends
  */
 async function connection__connect_loop_retry_wait(seconds)
 {
@@ -296,7 +470,10 @@ async function connection__connect_loop_retry_wait(seconds)
         return;
     }
 
-    let nudged = new Promise(function(resolve) { connect_loop_wake_resolver = resolve; });
+    let nudged = new Promise(function(resolve)
+    {
+        connect_loop_wake_resolver = resolve;
+    });
 
     for (let remaining = seconds; remaining > 0; remaining--)
     {
@@ -310,7 +487,13 @@ async function connection__connect_loop_retry_wait(seconds)
             }
         }
 
-        let done = await Promise.race([utils__sleep(1000).then(function() { return false; }), nudged.then(function() { return true; })]);
+        let done = await Promise.race([utils__sleep(1000).then(function()
+        {
+            return false;
+        }), nudged.then(function()
+        {
+            return true;
+        })]);
 
         if (done == true)
         {
@@ -323,11 +506,9 @@ async function connection__connect_loop_retry_wait(seconds)
 }
 
 /**
- * @brief the wait after "disconnect" in the connections menu: the loop stays here until a connect request arrives
- *        a request that arrived already (the connect button pressed while connected ends the old connection first)
- *        ends the wait at once
+ * @brief waits for a connect request after the user disconnects
  *
- * @return promise resolves when the loop may connect again
+ * @return Promise resolved when connecting is allowed
  */
 async function connection__wait_after_user_disconnect()
 {
@@ -340,16 +521,17 @@ async function connection__wait_after_user_disconnect()
 
     connection__set_connect_button_pending(false);
     connection__report_connection_status("idle", g_last_disconnect_reason || "disconnected");
-    await new Promise(function(resolve) { connect_loop_wake_resolver = resolve; });
+    await new Promise(function(resolve)
+    {
+        connect_loop_wake_resolver = resolve;
+    });
     is_connection_ended_by_user = false;
 }
 
 /**
- * @brief the connect loop, the one loop that starts connection attempts
- *        waits for a target and an identity, attempts once, waits for the close, then waits out a
- *        countdown and tries again; runs once per page and never returns
+ * @brief runs connection attempts and waits between retries
  *
- * @return promise never resolves
+ * @return Promise that remains active for this runtime
  */
 async function connection__connect_loop()
 {
@@ -365,14 +547,14 @@ async function connection__connect_loop()
     {
         let target = await target_slot.wait();
 
-        // "disconnect" was chosen: nothing connects until the next connect request
+        // wait for an explicit request after Disconnect
         if (is_connection_ended_by_user == true)
         {
             await connection__wait_after_user_disconnect();
             continue;
         }
 
-        // the node host keeps the connection closed on purpose while the app goes idle (g_node_connection_wanted)
+        // keep Node disconnected while its owner requests idle
         if (g_node_connection_wanted == false)
         {
             await utils__sleep(1000);
@@ -380,33 +562,57 @@ async function connection__connect_loop()
         }
 
         let identity = null;
+        const attempt_generation = connection_desired_generation;
 
         if (target.kind === "server")
         {
             console.log("connect-path: target " + target.host + ":" + target.port + ", waiting for keypair");
-            identity = await g_identity_slot.wait();
+            identity = await connection__wait_for_identity(attempt_generation);
         }
         else
         {
             console.log("connect-path: target loopback :" + target.port);
         }
 
-        let closed = connection__connection_closed();
+        if (!connection__attempt_is_current(attempt_generation) || target !== target_slot.value)
+        {
+            continue;
+        }
+        let close_resolver;
+        const closed = new Promise(function(resolve)
+        {
+            close_resolver = resolve;
+            connection_closed_resolvers.push(resolve);
+        });
 
         g_last_disconnect_reason = "";
         connection__report_connection_status("connecting");
 
-        // an attempt uses up any pending connect request; one kept from before must not skip a later countdown
+        // consume the pending request for this attempt
         is_connect_loop_wake_pending = false;
-        await connection__attempt_connection(target, identity);
+        const started = await connection__attempt_connection(target, identity, attempt_generation);
+        if (started === false)
+        {
+            connection_closed_resolvers = connection_closed_resolvers.filter(function(resolve)
+            {
+                return resolve !== close_resolver;
+            });
+            continue;
+        }
 
-        // wait for the socket to close. an attempt that could not even create a socket never
-        // reports a close, so a wait without a login also has a deadline
+        // limit the wait when an attempt never reaches login
+
         while (true)
         {
             let outcome = await Promise.race([
-                closed.then(function() { return "closed"; }),
-                utils__sleep(45000).then(function() { return "deadline"; })
+                closed.then(function()
+                {
+                    return "closed";
+                }),
+                utils__sleep(45000).then(function()
+                {
+                    return "deadline";
+                })
             ]);
 
             if (outcome === "closed")
@@ -416,8 +622,8 @@ async function connection__connect_loop()
 
             if (g_is_authenticated == false)
             {
-                // the loopback socket is fine, node just has not logged in yet
-                // a new attempt now would end a working reattach, so keep waiting
+                // keep the local socket while Node completes login
+
                 if (target.kind === "loopback")
                 {
                     console.log("connect-path: loopback attached, still waiting for node's login");
@@ -429,15 +635,15 @@ async function connection__connect_loop()
             }
         }
 
-        // the user ended the connection: no countdown and no fast reconnect, the loop waits for the next connect request
+        // skip retries after the user disconnects
         if (is_connection_ended_by_user == true)
         {
             await connection__wait_after_user_disconnect();
             continue;
         }
 
-        // Retry temporary transport failures within the original recovery deadline.
-        // Yield between attempts so an unavailable proxy cannot cause a tight loop.
+        // keep retries within the original recovery deadline
+        // yield between recovery attempts
         if (g_is_authenticated == false && g_fast_reconnect.in_progress == true)
         {
             await connection__connect_loop_retry_wait(2);
@@ -453,8 +659,8 @@ async function connection__connect_loop()
 
         if (g_is_authenticated == false && g_is_autoconnect_without_user_action_active == false)
         {
-            // manual mode means one attempt per button press: state the failure and
-            // wait until the connect button sends a connect request, with no countdown
+            // manual mode waits for another Connect request
+
             if (is_connect_loop_wake_pending == true)
             {
                 is_connect_loop_wake_pending = false;
@@ -463,21 +669,22 @@ async function connection__connect_loop()
             }
 
             connection__set_connect_button_pending(false);
-            connection__report_connection_status("idle",
-                (g_last_disconnect_reason !== "") ? g_last_disconnect_reason : "the connection attempt did not complete");
-            await new Promise(function(resolve) { connect_loop_wake_resolver = resolve; });
+            connection__report_connection_status("idle", (g_last_disconnect_reason !== "") ? g_last_disconnect_reason : "the connection attempt did not complete");
+            await new Promise(function(resolve)
+            {
+                connect_loop_wake_resolver = resolve;
+            });
             continue;
         }
 
-        // connecting to node on this device costs nothing, so the loopback retries after 2 s; the
-        // 30 s wait is for a remote server that may be down
+        // retry local sockets after 2 seconds and remote servers after 30 seconds
+
         let retry_seconds = (target.kind === "loopback") ? 2 : 30;
 
         if (g_is_authenticated == false)
         {
             g_connection_status.next_retry_at = new Date().valueOf() + retry_seconds * 1000;
-            connection__report_connection_status("waiting_retry",
-                (g_last_disconnect_reason !== "") ? g_last_disconnect_reason : "the connection attempt did not complete");
+            connection__report_connection_status("waiting_retry", (g_last_disconnect_reason !== "") ? g_last_disconnect_reason : "the connection attempt did not complete");
         }
 
         await connection__connect_loop_retry_wait(retry_seconds);
@@ -485,24 +692,49 @@ async function connection__connect_loop()
 }
 
 /**
- * @brief the one place that may start a connection, and the whole policy of when to connect
- *        "button", "bookmark" and "attach" always connect, "settings", "resume" and "retry" only under
- *        autoconnect, and "resume" also reattaches when node already holds a session
+ * @brief applies connection policy and queues an allowed attempt
  *
- * @param string trigger -> "button", "bookmark", "attach", "settings", "resume" or "retry"
- * @param object bookmark_target -> with "bookmark": the server of the bookmark as { host, port }; ignored otherwise
+ * @param string trigger -> source of the connection request
+ * @param object bookmark_target -> server selected by a bookmark request
  *
  * @return void
  */
 function connection__request_connect(trigger, bookmark_target)
 {
+    if (g_connection_status.runtime_failure_reason)
+    {
+        connection__render_connection_status();
+        connection__reveal_connect_page();
+        return;
+    }
+    const explicit_request = trigger === "button" || trigger === "bookmark";
+    if (is_connection_ended_by_user && !explicit_request)
+    {
+        return;
+    }
+    if (explicit_request)
+    {
+        is_connection_ended_by_user = false;
+        g_node_connection_wanted = true;
+        connection_ui_disconnect_pending = false;
+        if (android_host__is_ui_only_runtime())
+        {
+            const native_connect = typeof Android !== "undefined" && Android != null && typeof Android.JavaExportConnect === "function";
+            connection_ui_connect_pending = !native_connect;
+            if (native_connect)
+            {
+                Android.JavaExportConnect();
+            }
+            connection__flush_local_connect_intent();
+            if (target_slot.is_set && target_slot.value.kind === "loopback" && !g_worker_connection_ended)
+            {
+                return;
+            }
+        }
+    }
+    const previous_target = target_slot.value;
     let is_wanted =
-        (trigger === "button")
-        || (trigger === "bookmark")
-        || (trigger === "attach")
-        || (g_is_autoconnect_without_user_action_active == true)
-        || (ui_connect_requested == true)
-        || (trigger === "resume" && g_connection_status.state === "connected");
+        (trigger === "button") || (trigger === "bookmark") || (trigger === "attach") || (g_is_autoconnect_without_user_action_active == true) || (ui_connect_requested == true) || (trigger === "resume" && g_connection_status.state === "connected");
 
     console.log("connect-path: connection__request_connect(" + trigger + ") -> " + (is_wanted ? "dial" : "ignored"));
 
@@ -511,10 +743,9 @@ function connection__request_connect(trigger, bookmark_target)
         return;
     }
 
-    // the window of a page with the server written into it shows the address and the port after a chosen disconnect, and the
-    // user may change them: a press of the connect button then takes the window's values as the target from now on, like a
-    // bookmark's. values changed back to the page's own make the page's details (with their wss port) the target again
-    if (trigger === "button" && g_are_server_details_predefined == true && is_written_in_target_shown_in_window == true)
+    // use edited server fields until the configured address is restored
+
+    if (G_HAS_DOM && trigger === "button" && g_are_server_details_predefined == true && is_written_in_target_shown_in_window == true)
     {
         let address_in_window = document.getElementById("input-ip-address").value.trim();
         let port_in_window = document.getElementById("input-port-number").value.trim();
@@ -529,12 +760,12 @@ function connection__request_connect(trigger, bookmark_target)
         }
     }
 
-    // derive the target from where we run and what the page knows
+    // choose the target for this runtime
     if (android_host__is_ui_only_runtime())
     {
         if (g_loopback_port <= 0)
         {
-            // node has not announced its port yet; the settings push that follows finishes this
+            // wait for Node to provide its local port
             if (trigger === "button")
             {
                 ui_connect_requested = true;
@@ -546,8 +777,8 @@ function connection__request_connect(trigger, bookmark_target)
         ui_connect_requested = false;
         target_slot.set({ kind: "loopback", port: g_loopback_port, token: g_loopback_token });
 
-        // a button press keeps the page exactly as it is, only the button itself
-        // fades; every other trigger connects behind the spinner page
+        // keep the page visible for a button request
+
         if (trigger !== "button")
         {
             connection__hold_back_connect_page();
@@ -555,16 +786,15 @@ function connection__request_connect(trigger, bookmark_target)
     }
     else if (trigger === "bookmark" && bookmark_target != null && typeof bookmark_target.host === "string" && bookmark_target.host.length > 0)
     {
-        // a bookmark names its own server; the fields show it (head-menu.js), and a page with the server written into it
-        // keeps connecting to the bookmark from now on (the retry countdown and the connect button use the same target)
+        // keep the selected bookmark as the connection target
+
         connection_chosen_target = { host: bookmark_target.host, port: bookmark_target.port };
         target_slot.set({ kind: "server", host: bookmark_target.host, port: bookmark_target.port });
     }
     else if (g_are_server_details_predefined == true && connection_chosen_target == null)
     {
-        // a partial first-run json has no host yet, and that must never become a target
-        if (typeof g_autoconnect_details.host !== "string" || g_autoconnect_details.host.length == 0
-            || (parseInt(g_autoconnect_details.port) > 0) == false)
+        // ignore settings that do not yet contain a host
+        if (typeof g_autoconnect_details.host !== "string" || g_autoconnect_details.host.length == 0 || (parseInt(g_autoconnect_details.port) > 0) == false)
         {
             console.log("connect-path: no server details yet, waiting");
             return;
@@ -586,17 +816,21 @@ function connection__request_connect(trigger, bookmark_target)
         });
     }
 
+    if (JSON.stringify(previous_target) !== JSON.stringify(target_slot.value))
+    {
+        connection__invalidate_pending_attempts();
+    }
     connection__wake_connect_loop();
 }
 
 /**
- * @brief the connect button; it keeps its own name for the onclick wiring
+ * @brief handles the connect button
  *
  * @return void
  */
 function connection__submit_connection_target_from_ui()
 {
-    // the button is disabled while connected (connection__refresh_connect_button_state); a stray press changes nothing
+    // ignore Connect while already authenticated
     if (g_is_authenticated == true)
     {
         return;
@@ -606,13 +840,11 @@ function connection__submit_connection_target_from_ui()
 }
 
 /**
- * @brief turns a node socket error code into something a person can act on
- *        the codes are the difference between your wifi being off and the server rejecting you;
- *        without them an unreachable network used to be reported as a login rejection
+ * @brief describes a socket error for the connect page
  *
- * @param string error_code -> the node error code, "ECONNREFUSED" and the like
+ * @param string error_code -> Node socket error code
  *
- * @return string the text for the connect page
+ * @return string connection failure text
  */
 function connection__describe_socket_error(error_code)
 {
@@ -621,8 +853,7 @@ function connection__describe_socket_error(error_code)
         return "no network connection (wifi and mobile data are off)";
     }
 
-    if (error_code === "ENETUNREACH" || error_code === "EHOSTUNREACH"
-        || error_code === "EAI_AGAIN" || error_code === "ENOTFOUND")
+    if (error_code === "ENETUNREACH" || error_code === "EHOSTUNREACH" || error_code === "EAI_AGAIN" || error_code === "ENOTFOUND")
     {
         return "no route to the server (network down, or the address is unreachable)";
     }
@@ -646,35 +877,93 @@ function connection__describe_socket_error(error_code)
 }
 
 /**
- * @brief records a connection status change in g_connection_status, tells the listeners and repaints the connect page
+ * @brief stores connection status, notifies listeners and updates the page
  *
- * @param string state -> the new state
- * @param string reason -> the text that explains it, "" for none
+ * @param string state -> new connection state
+ * @param string reason -> explanation of the state
  *
  * @return void
  */
 function connection__report_connection_status(state, reason)
 {
+    if (g_connection_status.runtime_failure_reason)
+    {
+        state = "runtime_failed";
+        reason = g_connection_status.runtime_failure_reason;
+    }
     g_connection_status.state = state;
     g_connection_status.reason = (reason != null) ? reason : "";
 
     for (let i = 0; i < g_connection_status_listeners.length; i++)
     {
-        try { g_connection_status_listeners[i](g_connection_status); } catch (e) { }
+        try
+        {
+            g_connection_status_listeners[i](g_connection_status);
+        }
+        catch (e)
+        {
+        }
     }
 
     connection__render_connection_status();
 }
 
 /**
- * @brief paints the login page extras from g_connection_status
- *        the ticker recalls it every second so the countdown and the "ago" times stay live; safe
- *        headless, because the stand-in window object takes the dom calls
+ * @brief stops connection attempts and displays the native runtime failure
+ *
+ * @param reason failure message to display
+ */
+function connection__handle_runtime_failure(reason)
+{
+    const already_failed = !!g_connection_status.runtime_failure_reason;
+    const failure_reason = typeof reason === "string" && reason ? reason : "The app runtime stopped. Force-stop Lemon Chat, then open it again.";
+    g_connection_status.runtime_failure_reason = failure_reason;
+    g_last_disconnect_reason = failure_reason;
+    g_connection_status.next_retry_at = 0;
+    connection_ui_connect_pending = false;
+    connection_ui_disconnect_pending = false;
+    connection_loopback_ready = false;
+    ui_connect_requested = false;
+    is_connect_loop_wake_pending = false;
+    is_connection_ended_by_user = true;
+    g_node_connection_wanted = false;
+    g_loopback_port = 0;
+    g_loopback_token = "";
+    if (!already_failed)
+    {
+        connection__invalidate_pending_attempts();
+        if (g_websocket_worker != null && g_data_processing_worker != null)
+        {
+            connection__reset_chat_app_keep_identity();
+        }
+        g_is_authenticated = false;
+        g_is_websocket_connected = false;
+        g_worker_connection_ended = true;
+        connection__signal_connection_closed();
+        if (connect_loop_wake_resolver != null)
+        {
+            const resolve = connect_loop_wake_resolver;
+            connect_loop_wake_resolver = null;
+            resolve();
+        }
+    }
+    connection__report_connection_status("runtime_failed", failure_reason);
+    connection__reveal_connect_page();
+}
+
+/**
+ * @brief updates the connect page from the current status
  *
  * @return void
  */
 function connection__render_connection_status()
 {
+    if (g_connection_status.runtime_failure_reason)
+    {
+        g_connection_status.state = "runtime_failed";
+        g_connection_status.reason = g_connection_status.runtime_failure_reason;
+        g_connection_status.next_retry_at = 0;
+    }
     let reason_element = document.getElementById("connection-status-reason");
     let countdown_element = document.getElementById("connection-status-countdown");
     let lastseen_element = document.getElementById("connection-status-lastseen");
@@ -686,8 +975,8 @@ function connection__render_connection_status()
 
     let reason_text = g_connection_status.reason;
 
-    // the page knows the device's connectivity; node cannot see it
-    if (typeof navigator !== "undefined" && navigator.onLine === false)
+    // read network availability from the browser
+    if (!g_connection_status.runtime_failure_reason && typeof navigator !== "undefined" && navigator.onLine === false)
     {
         reason_text = "no network connection (wifi off?)";
     }
@@ -696,8 +985,8 @@ function connection__render_connection_status()
 
     let countdown_text = "";
 
-    // only the retry countdown belongs here, because the loading line above already
-    // says "connecting to <host>" and printing it twice read as two separate states
+    // show the retry countdown below the connection status
+
     if (g_connection_status.state === "waiting_retry" && g_connection_status.next_retry_at > 0)
     {
         let seconds_left = Math.max(0, Math.ceil((g_connection_status.next_retry_at - new Date().valueOf()) / 1000));
@@ -711,15 +1000,14 @@ function connection__render_connection_status()
     if (g_connection_status.state !== "connected" && g_connection_status.last_connected_at > 0)
     {
         let minutes_ago = Math.round((new Date().valueOf() - g_connection_status.last_connected_at) / 60000);
-        lastseen_text = (minutes_ago < 1) ? "last connected under a minute ago"
-            : "last connected " + minutes_ago + " min ago";
+        lastseen_text = (minutes_ago < 1) ? "last connected under a minute ago" : "last connected " + minutes_ago + " min ago";
     }
 
     lastseen_element.textContent = lastseen_text;
 }
 
 /**
- * @brief one repaint per second keeps the countdown and the "ago" times moving
+ * @brief starts the timer that refreshes connection status each second
  *
  * @return void
  */
@@ -728,14 +1016,12 @@ function connection__start_connection_status_ticker()
     window.setInterval(connection__render_connection_status, 1000);
 }
 
-// ---- connection attempt and heartbeat ----
-
 /**
- * @brief the heartbeat loop's sleep; android_host__exit_deep_idle resolves it early so the first check after idle goes out at once
+ * @brief waits between heartbeat checks with support for an early wake
  *
- * @param number ms -> the sleep in milliseconds
+ * @param number ms -> delay in milliseconds
  *
- * @return promise resolves after the sleep or on the early wake
+ * @return Promise resolved when the wait ends
  */
 function connection__connection_check_sleep(ms)
 {
@@ -747,8 +1033,8 @@ function connection__connection_check_sleep(ms)
             resolve();
         }, ms);
 
-        // early wake used by android_host__exit_deep_idle: cancel this sleep's timer so an old
-        // (long) timeout can never run later and overwrite a newer sleep's resolver
+        // cancel the old sleep timer when waking early
+
         g_connection_check.sleep_resolve = function()
         {
             clearTimeout(timer_id);
@@ -758,24 +1044,34 @@ function connection__connection_check_sleep(ms)
     });
 }
 
-// The regular heartbeat loop and Android's backup timer must both respect the
-// server's setting. Android waits another 15 seconds before its backup takes over.
+// respect the server timeout setting in both heartbeat timers
+// the Android backup timer adds 15 seconds
+/**
+ * @brief checks the server timeout policy and heartbeat deadline
+ *
+ * @param timestamp_now current timestamp in milliseconds
+ * @param extra_wait_ms additional grace period in milliseconds
+ *
+ * @return true when the connection has exceeded its heartbeat deadline
+ */
 function connection__has_keepalive_timed_out(timestamp_now, extra_wait_ms = 0)
 {
-    return g_worker_connection_active === false
-        && g_server_policy.is_connection_check_enforced !== false
-        && g_connection_check.last_response_timestamp > 0
-        && g_connection_check.last_response_timestamp + g_connection_check.lost_threshold_ms + extra_wait_ms < timestamp_now;
+    return g_worker_connection_active === false && g_server_policy.is_connection_check_enforced !== false && g_connection_check.last_response_timestamp > 0 && g_connection_check.last_response_timestamp + g_connection_check.lost_threshold_ms + extra_wait_ms < timestamp_now;
 }
 
-// Keep sending checks even when timeout enforcement is disabled. Their replies
-// still measure latency, and a real socket closure still follows the usual cleanup.
+// send heartbeats even when timeout enforcement is disabled
+// replies still update connection latency
+/**
+ * @brief sends heartbeats and detects connection loss until stopped
+ *
+ * @return Promise resolved when heartbeat checking stops
+ */
 async function connection__websocket_connection_check()
 {
     while (g_should_connection_check_be_running == true)
     {
-        // one exception in here must not end the loop: it runs BOTH the heartbeat and
-        // the loss detection, and a stopped loop means a lost connection that nobody notices
+        // keep heartbeat and loss detection running after an error
+
         try
         {
             let timestamp_now = new Date().valueOf();
@@ -791,7 +1087,7 @@ async function connection__websocket_connection_check()
                 let silence_ms = timestamp_now - g_connection_check.last_response_timestamp;
                 console.error("loss detector: no valid server message for " + silence_ms + "ms");
 
-                // the resume path ends this loop; the login that follows starts a fresh one
+                // the next login starts a new heartbeat loop
                 if (connection__try_start_fast_reconnect("no valid server message for " + silence_ms + " ms") == true)
                 {
                     break;
@@ -802,7 +1098,7 @@ async function connection__websocket_connection_check()
                 connection__reset_chat_app_keep_identity();
             }
 
-            g_session.ping_sent_at = timestamp_now; // the response handler turns this into the round-trip time
+            g_session.ping_sent_at = timestamp_now; // used to measure response latency
 
             let message_object = {
                 message: {
@@ -822,22 +1118,21 @@ async function connection__websocket_connection_check()
 }
 
 /**
- * @brief fast reconnect: the socket is gone but the page keeps everything (lists, chat, channel, keys) and the connect loop retries with the same identity for up to 60 seconds, asking the server to adopt the session
+ * @brief starts recovery while retaining the session and identity
  *
- * @param string reason -> why the socket went, for the log
+ * @param string reason -> connection loss reason
  *
- * @return boolean false when a resume is not possible, so the caller runs the full reset instead
+ * @return boolean false when the session cannot be resumed
  */
 function connection__try_start_fast_reconnect(reason)
 {
-    // node owns the real connection in the webview, and only a logged-in session can be resumed
-    if (g_server_policy.is_fast_reconnect_allowed == false || g_is_authenticated == false || is_connection_ended_by_user == true
-        || g_is_identity_switch_in_progress == true || android_host__is_ui_only_runtime() == true)
+    // only the runtime that owns an authenticated session can resume it
+    if (g_server_policy.is_fast_reconnect_allowed == false || g_is_authenticated == false || is_connection_ended_by_user == true || g_is_identity_switch_in_progress == true || android_host__is_ui_only_runtime() == true)
     {
         return false;
     }
 
-    // The original deadline is shared by all retries after this loss.
+    // reuse the original recovery deadline
     if (g_fast_reconnect.in_progress == true)
     {
         return false;
@@ -849,13 +1144,13 @@ function connection__try_start_fast_reconnect(reason)
     {
         server_info__reset();
     }
-    // Pending website replies belong to the old connection. Ask again after
-    // login so an interrupted lookup does not leave its message without a card.
+    // retry interrupted website lookups after login
+
     link_previews__reset();
     g_fast_reconnect.resumed = false;
     g_fast_reconnect.pending_lists = null;
 
-    // the connect loop reads this flag; the page itself is left exactly as it is
+    // request recovery without clearing the page
     g_is_authenticated = false;
     groups__apply_server_mode();
     if (typeof server_emojis__reset === "function")
@@ -867,7 +1162,7 @@ function connection__try_start_fast_reconnect(reason)
     g_worker_connection_ended = true;
     channel_tree__stop_avatar_prefetch();
 
-    // the worker goes back to handshake mode; it keeps the identity and the channel keys
+    // restart the handshake while retaining identity and channel keys
     keys__cancel_channel_key_creation();
     g_data_processing_worker.postMessage({ type: "mainthread_reset_data", preserve_channel_keys: true });
 
@@ -884,15 +1179,15 @@ function connection__try_start_fast_reconnect(reason)
         connection__fast_reconnect_failed("no adopted session within " + (FAST_RECONNECT_DEADLINE_MS / 1000) + " s");
     }, FAST_RECONNECT_DEADLINE_MS);
 
-    // wakes the connect loop out of its wait on the old socket; it connects again instead of staying idle
+    // wake the loop waiting on the previous socket
     connection__signal_connection_closed();
     return true;
 }
 
 /**
- * @brief the one failure of a fast reconnect: the usual "connection lost" notice and the full reset
+ * @brief reports failed recovery and resets the session
  *
- * @param string reason -> why it failed, for the log
+ * @param string reason -> recovery failure reason
  *
  * @return void
  */
@@ -922,9 +1217,7 @@ function connection__fast_reconnect_failed(reason)
 }
 
 /**
- * @brief the server adopted the session: everything on this page is still valid
- *        the complete lists follow as on a login and are held back until the last one, see
- *        connection__fast_reconnect_buffer_list
+ * @brief marks the session resumed and waits for refreshed lists
  *
  * @return void
  */
@@ -936,12 +1229,12 @@ function connection__fast_reconnect_succeeded()
 }
 
 /**
- * @brief holds back one of the four lists (channel, client, icon, group) a resume refreshes, so they are applied together in one repaint and nothing on screen flickers
+ * @brief buffers resumed session lists until all required lists arrive
  *
- * @param string kind -> "channel", "client", "icon" or "group"
- * @param object value -> the list message
+ * @param string kind -> channel, client, icon or group list
+ * @param object value -> list message
  *
- * @return boolean true when the list was buffered, false when no resume is in progress
+ * @return boolean true when the list was buffered
  */
 function connection__fast_reconnect_buffer_list(kind, value)
 {
@@ -957,9 +1250,7 @@ function connection__fast_reconnect_buffer_list(kind, value)
 
     g_fast_reconnect.pending_lists[kind] = value;
 
-    if (g_fast_reconnect.pending_lists.channel != null && g_fast_reconnect.pending_lists.client != null
-        && (!g_server_policy.is_permission_system_enabled
-            || (g_fast_reconnect.pending_lists.icon != null && g_fast_reconnect.pending_lists.group != null)))
+    if (g_fast_reconnect.pending_lists.channel != null && g_fast_reconnect.pending_lists.client != null && (!g_server_policy.is_permission_system_enabled || (g_fast_reconnect.pending_lists.icon != null && g_fast_reconnect.pending_lists.group != null)))
     {
         connection__fast_reconnect_apply_lists();
     }
@@ -968,12 +1259,13 @@ function connection__fast_reconnect_buffer_list(kind, value)
 }
 
 /**
- * @brief Replaces the saved lists after the server has sent every list enabled for this connection.
+ * @brief applies all lists received for the resumed session
  *
  * @return void
  */
 function connection__fast_reconnect_apply_lists()
 {
+    chat__remember_peer_state();
     let lists = g_fast_reconnect.pending_lists;
 
     g_fast_reconnect.pending_lists = null;
@@ -981,7 +1273,7 @@ function connection__fast_reconnect_apply_lists()
     clearTimeout(g_fast_reconnect.deadline_timer);
     g_fast_reconnect.deadline_timer = null;
 
-    // the old lists go in the same task the new ones are built: one repaint, already complete
+    // replace all lists before repainting
     g_map_client_id_to_array_index.clear();
     g_client_list.length = 0;
     g_channel_list.length = 0;
@@ -1016,14 +1308,27 @@ function connection__fast_reconnect_apply_lists()
 }
 
 /**
- * @brief tears the session down to the connect screen while keeping the rsa identity
- *        closes the socket, clears the client and channel DOM and resets nearly all
- *        connection, chat and voice state
+ * @brief clears connection, chat and media state while retaining the identity
+ *
+ * @param boolean preserve_loopback -> true to keep the local Node socket and worker connection alive
  *
  * @return void
  */
-function connection__reset_chat_app_keep_identity()
+function connection__reset_chat_app_keep_identity(preserve_loopback = false)
 {
+    unreceipted_messages_by_sender = {};
+    seen_receipts_already_sent = {};
+    seen_state_by_context = {};
+    chat_peer_local_state.clear();
+    chat_last_delivery_by_context.clear();
+    node_current_call = null;
+    dispatch_failed_deliveries.clear();
+    dispatch_processed_deliveries.clear();
+    if (typeof dispatch_discarded_deliveries !== "undefined")
+    {
+        dispatch_discarded_deliveries.clear();
+    }
+    dispatch_accepted_deliveries.clear();
     if (G_HAS_DOM)
     {
         utils__hide_custom_alert("", "fast-reconnect");
@@ -1035,7 +1340,10 @@ function connection__reset_chat_app_keep_identity()
     g_fast_reconnect.in_progress = false;
     g_fast_reconnect.resumed = false;
     g_fast_reconnect.pending_lists = null;
-    g_worker_connection_ended = true;
+    if (!preserve_loopback)
+    {
+        g_worker_connection_ended = true;
+    }
     if (typeof server_info__reset === "function")
     {
         server_info__reset();
@@ -1048,27 +1356,28 @@ function connection__reset_chat_app_keep_identity()
     groups_window.access = null;
     g_server_policy.is_link_preview_allowed = false;
     g_server_policy.is_connection_check_enforced = true;
-    // no connection, nobody is typing - drop the notices and the ticker with them
+    // clear typing notices and their timer
     g_typing.state = {};
     chat__render_typing_indicator();
 
-    // whatever triggered the reset, the socket must really be gone: a reconnect stalls for as long
-    // as an old authenticated socket lives on. closing a closed socket is a no-op, and the onclose
-    // it fires re-enters this reset harmlessly (g_is_authenticated is already false)
-    g_websocket_worker.postMessage({ type: "close" });
+    // close any socket that still belongs to this session
+
+    if (!preserve_loopback)
+    {
+        g_websocket_worker.postMessage({type: "close"});
+    }
 
     chat_files__clear_pending_chat_file();
     chat_files__clear_pending_chat_picture();
     UI.clear_chat_button_onclick();
 
-    // the list goes with the map. they used to be emptied 55 lines apart, and a frame
-    // arriving in between found an empty map next to a full list
+    // clear the client list and its index together
+
     g_map_client_id_to_array_index.clear();
     g_client_list.length = 0;
 
-    // the session is over, so the stored login frame is a lie. the loopback replays it
-    // to any ui that attaches, which showed "connected" and played the sound on every
-    // reconnect attempt against a server that was not there
+    // discard login data from the ended session
+
     g_node_cached_auth_frame = null;
 
     document.getElementById("another-buttons-sub-container").style.display = "";
@@ -1077,8 +1386,8 @@ function connection__reset_chat_app_keep_identity()
     connection__set_connect_button_pending(false);
     g_is_microphone_available = false;
 
-    // the connect form comes back on its own only where it is a page of its own (android, the member list themes); as a
-    // window it stays closed until "connect" in the connections menu, so a lost connection leaves the background and the head menu
+    // restore the connect page when the theme uses one
+
     if (connection__is_connect_window_mode() == false)
     {
         document.getElementById('verification-system').style.display = "block";
@@ -1086,18 +1395,18 @@ function connection__reset_chat_app_keep_identity()
     document.getElementById('communication-system-container').style.display = "none";
     connection__mark_connected_ui_hidden(true);
 
-    // after the page switch, otherwise the mic is repainted while the old screen is still up
+    // refresh the microphone after switching pages
     voice__update_microphone_button();
 
-    // the "disconnect" entry of the head menu follows (head-menu.js, which the node bundle does not have)
+    // refresh the Disconnect menu entry when available
     if (typeof head_menu__refresh_connections_items === "function")
     {
         head_menu__refresh_connections_items();
     }
     connection__refresh_connect_button_state();
 
-    // back on the connect screen: the in-flow "server settings" button owns this
-    // state, a second gear in the bar would only confuse - it returns on connect
+    // hide the toolbar settings button on the connect page
+
     if (g_is_running_in_android_webview)
     {
         document.getElementById("android-settings-button").style.display = "none";
@@ -1110,9 +1419,10 @@ function connection__reset_chat_app_keep_identity()
     }
 
     keys__cancel_channel_key_creation();
-    g_data_processing_worker.postMessage({
-        type: "mainthread_reset_data"
-    });
+    if (!preserve_loopback)
+    {
+        g_data_processing_worker.postMessage({type: "mainthread_reset_data"});
+    }
 
     g_base64_picture_string_to_send = "" ;
     g_is_websocket_connected = false;
@@ -1130,15 +1440,15 @@ function connection__reset_chat_app_keep_identity()
     }
     g_should_connection_check_be_running = false;
 
-    // the avatar prefetch timer must not outlive the session - its client ids are meaningless
-    // after a reconnect (they are slot indices), and it would keep sending requests on a closed socket
+    // stop avatar requests for the previous session
+
     channel_tree__stop_avatar_prefetch();
 
-    // if the connection died while backgrounded-idle, re-enter idle automatically after reconnect
+    // restore background idle after the next login
     g_is_deep_idle_pending = (g_is_deep_idle == true) || g_is_deep_idle_pending;
     g_is_deep_idle = false;
     g_connection_check.interval_ms = 10 * 1000;
-    g_connection_check.lost_threshold_ms = 35 * 1000; // keep in sync with the startup value
+    g_connection_check.lost_threshold_ms = 35 * 1000; // matches the startup timeout
     g_current_channel_id = 0;
     g_current_chat_context_id = "chat-context-channel-0";
     chat_replies__refresh();
@@ -1152,8 +1462,8 @@ function connection__reset_chat_app_keep_identity()
     g_audio_transport.mode = "webrtc";
     g_is_webrtc_datachannel_connected = false;
 
-    // emptied in place, not reassigned: a fresh array would leave anything still
-    // holding the old one reading stale clients. the client list is already cleared above
+    // clear shared arrays in place
+
     g_icons.length = 0;
     g_icon_upload_queue.length = 0;
     g_icon_upload_in_flight_base64 = null;
@@ -1163,12 +1473,12 @@ function connection__reset_chat_app_keep_identity()
     g_offline_client_list = [];
 
     g_is_chat_hidden = false;
-    layout__layout_apply(); // re-sync the grid (panel visibility) with the reset flag; no-op on touch
+    layout__layout_apply(); // refresh panel visibility
     g_local_message_id = 0;
     g_selected_font = "custom-font-usage-default";
     g_selected_font_color = "#ffffff";
     g_selected_font_size = 12;
-    g_is_microphone_enabled_on_touch_device = false;  // for touch devices
+    g_is_microphone_enabled_on_touch_device = false;  // reset touch microphone state
 
     g_connection_check.last_response_timestamp = 0;
 
@@ -1184,7 +1494,7 @@ function connection__reset_chat_app_keep_identity()
         }
     ];
 
-    // for voice chat
+    // clear voice buffers
 
     g_peer_connection_with_server = null;
 
@@ -1194,7 +1504,7 @@ function connection__reset_chat_app_keep_identity()
     g_is_client_microphone_allowed_by_server = false;
     g_is_microphone_enabled = false;
 
-    // a stream we sent or watched is gone with the connection
+    // stop streams from the ended session
     if (typeof video__reset_on_disconnect === "function")
     {
         video__reset_on_disconnect();
@@ -1207,16 +1517,15 @@ function connection__reset_chat_app_keep_identity()
         if (g_local_audio_stream.getTracks() != null)
         {
             g_local_audio_stream.getTracks()[0].enabled = false;
-            // g_local_audio_stream = null; careful
+
         }
     }
 }
 
 /**
- * @brief the spinner that covers the held-back connect page, so the user never stares at a blank screen
- *        opaque, in the theme's color when one paints body/html; a dark fallback keeps page one solid otherwise
+ * @brief shows or hides the connection loading overlay
  *
- * @param boolean is_visible -> true to show it
+ * @param boolean is_visible -> true to show the overlay
  *
  * @return void
  */
@@ -1226,8 +1535,8 @@ function connection__set_connect_holdback_loader_visible(is_visible)
 
     if (loader != null)
     {
-        // opaque, in the theme's color when one paints body/html; some themes (bluebell)
-        // paint only inner containers, then a dark fallback keeps page one solid
+        // use a dark fallback when the theme background is transparent
+
         if (is_visible == true && typeof getComputedStyle === "function")
         {
             let page_background = getComputedStyle(document.body).backgroundColor;
@@ -1250,8 +1559,7 @@ function connection__set_connect_holdback_loader_visible(is_visible)
 }
 
 /**
- * @brief hides the connect page behind the spinner while node is still connecting for the webview
- *        a deadline reveals the page anyway, because nothing arrives at all if node is wedged
+ * @brief hides the connect page while Node connects, subject to a deadline
  *
  * @return void
  */
@@ -1272,12 +1580,12 @@ function connection__hold_back_connect_page()
         setTimeout(connection__connect_holdback_check, 250);
     }
 
-    // nothing arrives at all if node is wedged, so the page cannot stay blank forever
+    // reveal the page if Node does not respond
     g_connect_holdback_deadline = new Date().valueOf() + 2500;
 }
 
 /**
- * @brief node reporting "still working on it" keeps the spinner up a little longer, capped so a looping connect attempt can never hide the page forever
+ * @brief extends the loading overlay without exceeding its maximum deadline
  *
  * @return void
  */
@@ -1299,7 +1607,7 @@ function connection__extend_connect_page_holdback()
 }
 
 /**
- * @brief the holdback timer: reveals the connect page once the deadline passed, else looks again in 250 ms
+ * @brief reveals the connect page when its loading deadline expires
  *
  * @return void
  */
@@ -1320,7 +1628,7 @@ function connection__connect_holdback_check()
 }
 
 /**
- * @brief shows the held-back connect page and drops the spinner
+ * @brief shows the connect page and removes the loading overlay
  *
  * @return void
  */
@@ -1338,8 +1646,7 @@ function connection__reveal_connect_page()
 }
 
 /**
- * @brief the connect button is disabled while a connection exists: the window may be open then ("connections" -> "connect"
- *        shows where the connection went), and a press would be meaningless. enabled again by the reset after a disconnect
+ * @brief disables Connect while a session is authenticated
  *
  * @return void
  */
@@ -1357,7 +1664,7 @@ function connection__refresh_connect_button_state()
 }
 
 /**
- * @brief fades the connect button while an attempt runs; hiding rows caused a layout flicker
+ * @brief updates the connect button's progress appearance
  *
  * @param boolean is_pending -> true while an attempt is running
  *
@@ -1374,24 +1681,37 @@ function connection__set_connect_button_pending(is_pending)
 }
 
 /**
- * @brief one connection attempt, started only by connection__connect_loop(): builds the ws/wss connection string and has the websocket worker open the socket with the right opening frame
+ * @brief opens one socket with the selected target and identity
  *
- * @param object target -> the host, port and keys to connect to
- * @param object identity -> the identity to present
+ * @param object target -> server or local Node connection settings
+ * @param object identity -> identity used for login
+ * @param number|undefined desired_generation -> connection intent to apply, or the current intent when omitted
  *
- * @return promise resolves when the attempt has ended, either way
+ * @return Promise<boolean|undefined> resolves when the attempt ends
  */
-async function connection__attempt_connection(target, identity)
+async function connection__attempt_connection(target, identity, desired_generation)
 {
+    if (desired_generation == null)
+    {
+        desired_generation = connection_desired_generation;
+    }
+    if (!connection__attempt_is_current(desired_generation))
+    {
+        return false;
+    }
     let worker_channel = null;
 
     g_worker_connection_ended = false;
-    g_worker_connection_active = target.kind !== "loopback"
-        && typeof process === "undefined" && typeof MessageChannel === "function";
+    g_worker_connection_generation++;
+    g_data_processing_worker.postMessage(
+    {
+        type: "mainthread__begin_connection",
+        connection_generation: g_worker_connection_generation
+    });
+    g_worker_connection_active = target.kind !== "loopback" && typeof process === "undefined" && typeof MessageChannel === "function";
     if (g_worker_connection_active)
     {
         worker_channel = new MessageChannel();
-        g_worker_connection_generation++;
         g_data_processing_worker.postMessage(
         {
             type: "mainthread__connect_socket_port",
@@ -1402,7 +1722,7 @@ async function connection__attempt_connection(target, identity)
 
     if (android_host__is_ui_only_runtime())
     {
-        // the page stays exactly as it is; only the button signals the running attempt
+        // keep the page visible while the button shows progress
         connection__set_connect_button_pending(true);
     }
     else
@@ -1412,13 +1732,14 @@ async function connection__attempt_connection(target, identity)
         document.getElementById("another-buttons-loading-container-p").innerHTML = "connecting to server...";
     }
 
-    // a new attempt is running - the failure text only shows after this one resolves
+    // clear the previous attempt's failure text
     g_last_connect_attempt_failed = false;
 
-    // loopback: connect to node on this device, token as the opening frame, no dh.
-    // stun/turn still point at the real server, so keep the real host for webrtc
+    // authenticate the local socket with its token
+    // keep the remote host for STUN and TURN
     if (target.kind === "loopback")
     {
+        connection_loopback_ready = false;
         g_host = g_autoconnect_details.host;
         port = g_autoconnect_details.port;
         g_audio_transport.url = "ws://" + (g_host.indexOf(":") >= 0 && g_host[0] !== "[" ? "[" + g_host + "]" : g_host) + ":" + port + "/";
@@ -1426,22 +1747,20 @@ async function connection__attempt_connection(target, identity)
         let loopback_connection_string = "ws://127.0.0.1:" + target.port + "/";
         console.log("connection_string -> " + loopback_connection_string + " (loopback)");
 
-        // name the SERVER being joined, not the local connection to node - and never print an
-        // unknown one ("connecting to :0" when the settings have not arrived yet)
-        document.getElementById("another-buttons-loading-container-p").innerHTML =
-            (typeof g_host === "string" && g_host.length > 0)
-                ? "connecting to " + chat__sanitize_string(g_host) + ":" + chat__sanitize_string("" + port)
-                : "connecting...";
+        // show the remote server address only when it is known
+
+        document.getElementById("another-buttons-loading-container-p").innerHTML = (typeof g_host === "string" && g_host.length > 0) ? "connecting to " + chat__sanitize_string(g_host) + ":" + chat__sanitize_string("" + port) : "connecting...";
 
         g_websocket_worker.postMessage({
             type: "create_websocket_object",
+            connection_generation: g_worker_connection_generation,
             value: {
                 connection_string: loopback_connection_string,
                 onopen_data: target.token
             }
         });
 
-        return;
+        return true;
     }
 
     g_host = target.host;
@@ -1453,16 +1772,30 @@ async function connection__attempt_connection(target, identity)
     while (g_keys_init_status == false)
     {
         await utils__sleep(100);
+        if (!connection__attempt_is_current(desired_generation))
+        {
+            if (worker_channel != null)
+            {
+                worker_channel.port1.close();
+                worker_channel.port2.close();
+            }
+            return false;
+        }
+    }
+
+    if (!connection__attempt_is_current(desired_generation))
+    {
+        return false;
     }
 
     let protocol_part_of_connection_string = "ws://";
     let connection_port = port;
 
-    // use secure websocket
+    // select a secure WebSocket when required
     if (document.location.protocol == "https:" || connection__is_secure_websocket_requested_by_page() == true)
     {
         protocol_part_of_connection_string = "wss://";
-        // an https page must use wss, on the separate stunnel wss port (not the plain ws port)
+        // use the separate secure WebSocket port for HTTPS
         if (target.wss_port)
         {
             connection_port = target.wss_port;
@@ -1473,10 +1806,8 @@ async function connection__attempt_connection(target, identity)
     g_audio_transport.url = connection_string;
     console.log("connection_string -> " + connection_string);
 
-    // say WHERE we are connecting: only now are the real host/port known
-    document.getElementById("another-buttons-loading-container-p").innerHTML =
-        "connecting to " + chat__sanitize_string(g_host) + ":" + chat__sanitize_string("" + connection_port)
-        + "<br>using " + ((protocol_part_of_connection_string == "wss://") ? "secure websocket (wss)" : "websocket (ws)");
+    // show the selected server and transport
+    document.getElementById("another-buttons-loading-container-p").innerHTML = "connecting to " + chat__sanitize_string(g_host) + ":" + chat__sanitize_string("" + connection_port) + "<br>using " + ((protocol_part_of_connection_string == "wss://") ? "secure websocket (wss)" : "websocket (ws)");
 
     let dh_public_mix = keys__get_public_mix().toString();
     connection_crypto__begin(identity.public_key_string, dh_public_mix);
@@ -1503,31 +1834,39 @@ async function connection__attempt_connection(target, identity)
             onopen_data: data
         }
     }, worker_channel == null ? [] : [worker_channel.port2]);
+    return true;
 }
 
 /**
- * @brief hands encrypted data to the websocket worker for sending; also counts the bytes into g_session.bytes_sent for the session-info card
+ * @brief sends an encrypted frame through the socket worker and counts its bytes
  *
- * @param string data_to_send -> the frame to send
+ * @param string data_to_send -> encrypted frame to send
  *
  * @return void
  */
 function connection__websocket_worker_send(data_to_send)
 {
-    if (data_to_send != null && data_to_send.length > 0) { g_session.bytes_sent += data_to_send.length; }
+    if (data_to_send != null && data_to_send.length > 0)
+    {
+        g_session.bytes_sent += data_to_send.length;
+    }
 
     g_websocket_worker.postMessage({
         type: "send",
-        connection_generation: g_worker_connection_active ? g_worker_connection_generation : undefined,
+        connection_generation: g_worker_connection_generation,
         value: data_to_send
     });
 }
 
 /**
- * @brief Cancels an upload chunk waiting on the old session or a refused upload.
+ * @brief cancels a pending upload chunk
  */
 function connection__cancel_upload_send()
 {
+    for (const finish of Array.from(connection_local_uploads.values()))
+    {
+        finish(false);
+    }
     if (pending_upload_send_cancel != null)
     {
         pending_upload_send_cancel();
@@ -1543,16 +1882,48 @@ function connection__cancel_upload_send()
 }
 
 /**
- * @brief Sends one upload chunk only when the browser socket has room for it.
- * @param object message_object -> the file_send message for this chunk
- * @return Promise<boolean> -> true when queued on the current socket, false when cancelled
+ * @brief sends an upload chunk when the socket has capacity
+ *
+ * @param object message_object -> file upload message
+ *
+ * @return Promise resolving to true when queued or false when cancelled
  */
 function connection__send_upload_message(message_object)
 {
-    if (!g_worker_connection_active)
+    if (android_host__is_ui_only_runtime())
     {
-        connection__send_message_object(message_object);
-        return Promise.resolve(true);
+        if (connection_local_uploads.size > 0 || g_worker_connection_ended)
+        {
+            return Promise.resolve(false);
+        }
+        const request_id = String(++connection_local_request_sequence);
+        const generation = g_worker_connection_generation;
+        return new Promise(function(resolve)
+        {
+            const finish = function(accepted)
+            {
+                if (!connection_local_uploads.delete(request_id))
+                {
+                    return;
+                }
+                clearTimeout(timer);
+                resolve(accepted && generation === g_worker_connection_generation && !g_worker_connection_ended);
+            };
+            const timer = setTimeout(function()
+            {
+                finish(false);
+            }, 125000);
+            connection_local_uploads.set(request_id, finish);
+            connection__send_message_object(
+            {
+                message:
+                {
+                    type: "local_upload_request",
+                    request_id: request_id,
+                    request: message_object
+                }
+            });
+        });
     }
     if (pending_upload_send_cancel != null)
     {
@@ -1562,7 +1933,38 @@ function connection__send_upload_message(message_object)
     const generation = g_worker_connection_generation;
     return new Promise(function(resolve)
     {
-        const channel = new MessageChannel();
+        let channel;
+        if (typeof process !== "undefined")
+        {
+            channel =
+            {
+                port1:
+                {
+                    onmessage: null,
+                    close: function()
+                    {
+                        channel.port1.onmessage = null;
+                    }
+                },
+                port2:
+                {
+                    postMessage: function(data)
+                    {
+                        if (channel.port1.onmessage != null)
+                        {
+                            channel.port1.onmessage({data: data});
+                        }
+                    },
+                    close: function()
+                    {
+                    }
+                }
+            };
+        }
+        else
+        {
+            channel = new MessageChannel();
+        }
         let finished = false;
         const finish = function(sent)
         {
@@ -1612,9 +2014,9 @@ function connection__send_upload_message(message_object)
 }
 
 /**
- * @brief builds, encrypts and ships one client -> server message, the process/encrypt/send triple that used to be pasted at every call site
+ * @brief serializes, encrypts and sends a client message
  *
- * @param object message_object -> { message: { type, ... } }
+ * @param object message_object -> message to send
  *
  * @return void
  */
@@ -1626,39 +2028,31 @@ function connection__send_message_object(message_object)
 }
 
 /**
- * @brief logs the outgoing message type and serialises the message
+ * @brief logs the outgoing message type and serializes its body
  *
- * @param object message_object -> { message: { type, ... } }
+ * @param object message_object -> message to serialize
  *
- * @return string the message as json
+ * @return string serialized message
  */
 function connection__process_message_before_sending(message_object)
 {
     let outgoing_type = message_object.message.type;
 
-    if (outgoing_type != "ice_candidate" && outgoing_type != "sdp_answer"
-        && outgoing_type != "client_connection_check" && outgoing_type != "create_new_webrtc_datachannel_connection")
+    if (outgoing_type != "ice_candidate" && outgoing_type != "sdp_answer" && outgoing_type != "client_connection_check" && outgoing_type != "create_new_webrtc_datachannel_connection")
     {
         utils__custom_log('[S] msg.message.type : ' + outgoing_type);
     }
     return JSON.stringify(message_object);
 }
 
-// ---- the connect window ----
-// the connect form (#verification-system holds it, #container-2 is the box) is a window in the desktop themes and in the
-// mobile theme: a dialog with a title bar, movable by it (main.js), closeable. on android and in the two member list
-// themes (bluebell) it stays a page of its own, the way it has always been: there the stylesheets hide the
-// title bar and the head menu entries, and the page shows itself again after every disconnect
-
 /**
- * @brief whether the connect form is a closeable window (desktop themes, the mobile theme) rather than a page of its own (android, the member list theme bluebell)
- *        false as well in the node runtime, which has no page
+ * @brief checks whether the theme uses a connect dialog instead of a page
  *
- * @return boolean
+ * @return boolean true when the active theme uses a separate connect dialog
  */
 function connection__is_connect_window_mode()
 {
-    if (g_is_running_in_android_webview == true || typeof document === "undefined" || typeof document.getElementsByClassName !== "function")
+    if (!G_HAS_DOM || g_is_running_in_android_webview == true || typeof document === "undefined" || typeof document.getElementsByClassName !== "function")
     {
         return false;
     }
@@ -1669,9 +2063,9 @@ function connection__is_connect_window_mode()
 }
 
 /**
- * @brief the name of the theme in use: the one theme sheet without a media attribute (UI.apply_theme in ui.js switches the sheets that way)
+ * @brief reads the active theme name
  *
- * @return string the theme name, "default" when none is found
+ * @return string theme name or default when no active sheet is found
  */
 function connection__current_theme_name()
 {
@@ -1689,7 +2083,7 @@ function connection__current_theme_name()
 }
 
 /**
- * @brief shows the connect window: "connect" in the connections menu, a bookmark, and the first show at start-up (connection__reveal_connect_page)
+ * @brief shows the connect dialog
  *
  * @return void
  */
@@ -1707,7 +2101,7 @@ function connection__show_connect_window()
 }
 
 /**
- * @brief hides the connect window (its close button); whatever the connection is doing goes on behind it
+ * @brief hides the connect dialog without interrupting its connection
  *
  * @return void
  */
@@ -1722,11 +2116,9 @@ function connection__hide_connect_window()
 }
 
 /**
- * @brief marks on the body whether the connected interface is hidden, for the theme sheets: the hybrid theme paints a page
- *        background of its own while only the connect window, or nothing, is shown. the page starts with the mark set
- *        (template.html); the login path clears it (dispatch.js), a disconnect sets it again
+ * @brief updates the body flag used to style a hidden connected interface
  *
- * @param is_hidden true while no connected interface is shown
+ * @param is_hidden true when the connected interface is hidden
  *
  * @return void
  */
@@ -1741,14 +2133,17 @@ function connection__mark_connected_ui_hidden(is_hidden)
 }
 
 /**
- * @brief gives the connect form the shape of the mode in use: a window pinned to the middle of the screen, or a page in its own flow
- *        called on every show and on every theme switch, because the mode depends on the theme. the generic centering of
- *        main.js is switched off for this box, because that one centers on every show and knows nothing about the modes
+ * @brief applies the theme's connect dialog or page layout
  *
  * @return void
  */
 function connection__apply_connect_window_mode()
 {
+    if (!G_HAS_DOM)
+    {
+        return;
+    }
+
     let box = (typeof document !== "undefined") ? document.getElementById("container-2") : null;
     let page = (typeof document !== "undefined") ? document.getElementById("verification-system") : null;
 
@@ -1759,8 +2154,8 @@ function connection__apply_connect_window_mode()
 
     box.setAttribute("data-recenter-on-open", "false");
 
-    // the saved servers: as a window, the bookmarks menu holds them, so the row inside the form is hidden; as a page the
-    // row stays, there is no menu. a page with the server written into it has no use for the row either way (main.js hides it)
+    // show saved servers in the form only when no bookmarks menu is used
+
     let bookmarks_row = document.getElementById("server-bookmarks-container");
 
     if (bookmarks_row != null && g_are_server_details_predefined == false)
@@ -1778,8 +2173,8 @@ function connection__apply_connect_window_mode()
         return;
     }
 
-    // the window must paint above the spacer that follows it in the page: the default theme positions every div, so a
-    // later sibling without this would cover the title bar and swallow the clicks on it and on the close mark
+    // keep the dialog above its following spacer
+
     box.style.zIndex = "5";
 
     if (page.style.display == "none")
@@ -1791,24 +2186,22 @@ function connection__apply_connect_window_mode()
     connection__refresh_connect_button_state();
     connection__refresh_connect_window_sections();
 
-    // a page without a size yet (a tab that is still hidden while it loads) is centered once it has one
+    // wait for page dimensions before centering
     if (window.innerWidth == 0 || window.innerHeight == 0 || box.offsetWidth == 0)
     {
         window.setTimeout(connection__apply_connect_window_mode, 250);
         return;
     }
 
-    // measured as laid out, then pinned to the middle of the screen; a drag by the title bar moves it from there (main.js)
+    // center the dialog before allowing it to be dragged
     box.style.position = "fixed";
     box.style.margin = "0";
-    box.style.left = Math.max(0, Math.round((window.innerWidth - box.offsetWidth) / 2)) + "px";
-    box.style.top = Math.max(0, Math.round((window.innerHeight - box.offsetHeight) / 2)) + "px";
+    box.style.left = Math.max(0, Math.round((utils__viewport_css_width() - box.offsetWidth) / 2)) + "px";
+    box.style.top = Math.max(0, Math.round((utils__viewport_css_height() - box.offsetHeight) / 2)) + "px";
 }
 
 /**
- * @brief a page with the server written into it (window.__SERVER_CONFIG__, main.js) hides the address and port fields, because
- *        they are never read; in the window they are shown anyway, filled with that server and not editable, so the user sees
- *        where the connection goes and, after a disconnect, where it went
+ * @brief shows configured server details and editable keys in the connect dialog
  *
  * @return void
  */
@@ -1829,9 +2222,8 @@ function connection__show_predefined_details_in_connect_window()
         return;
     }
 
-    // the fields are filled once, with the server the page names, and left alone from then on: after a chosen disconnect
-    // they show where the connection went (a bookmark writes them itself, head-menu.js), and the user may change them; the
-    // connect button takes changed values as the target (connection__request_connect)
+    // fill configured server fields once so later edits remain intact
+
     if (is_written_in_target_shown_in_window == false && typeof g_autoconnect_details.host === "string" && g_autoconnect_details.host.length > 0)
     {
         address_field.value = g_autoconnect_details.host;
@@ -1844,9 +2236,8 @@ function connection__show_predefined_details_in_connect_window()
     grid.style.display = "";
     grid.style.visibility = "visible";
 
-    // the keys the page wrote in, one row each (ui.js), built once: the window shows, after a chosen disconnect too, which
-    // keys the page logs in with and of what type, and the user may change or remove them. keys.js reads the rows from then
-    // on, also when none is left; the mark on the grid tells it so
+    // build editable rows for the configured keys once
+
     if (keys_grid.getAttribute("data-written-in-keys-built") !== "true" && typeof UI !== "undefined" && typeof UI.add_key_row === "function")
     {
         if (Array.isArray(g_autoconnect_details.keys))
@@ -1861,15 +2252,14 @@ function connection__show_predefined_details_in_connect_window()
         keys_grid.setAttribute("data-written-in-keys-built", "true");
     }
 
-    // such a page connects by itself and keeps its connect button and its key button invisible (main.js); after a chosen
-    // disconnect the connect button is the way back
+    // show Connect after the user disconnects
+
     document.getElementById("connect-button").style.visibility = "visible";
     document.getElementById("add-key-button").style.visibility = "visible";
 }
 
 /**
- * @brief fills the identity section of the connect window: a short fingerprint of this client's public key (the first twelve hex
- *        digits of its sha-256). called on every show and when a key pair arrives
+ * @brief shows the first twelve hexadecimal digits of the public key fingerprint
  *
  * @return void
  */
@@ -1894,14 +2284,29 @@ function connection__refresh_connect_window_sections()
 }
 
 /**
- * @brief "disconnect" in the connections menu, and the connect button while connected: ends the connection and keeps the
- *        connect loop from connecting again on its own. nothing connects until a connect request arrives (the connect
- *        button, a bookmark); under autoconnect the retry countdown does not run either
+ * @brief disconnects and stops retries until another connection is requested
  *
  * @return void
  */
 function connection__disconnect_by_user()
 {
+    if (android_host__is_ui_only_runtime())
+    {
+        connection_ui_connect_pending = false;
+        const native_disconnect = typeof Android !== "undefined" && Android != null && typeof Android.JavaExportDisconnect === "function";
+        connection_ui_disconnect_pending = !native_disconnect;
+        if (native_disconnect)
+        {
+            Android.JavaExportDisconnect();
+        }
+        connection__flush_local_connect_intent();
+        return;
+    }
+    connection__invalidate_pending_attempts();
+    if (typeof process !== "undefined")
+    {
+        g_node_connection_wanted = false;
+    }
     if (G_HAS_DOM)
     {
         utils__hide_custom_alert("", "fast-reconnect");
@@ -1912,13 +2317,13 @@ function connection__disconnect_by_user()
 
     if (g_fast_reconnect.in_progress || g_fast_reconnect.resumed)
     {
-        // Cancel the recovery deadline as well as its UI: an explicit disconnect must not
-        // produce another loss alert when the old deadline expires.
+        // cancel recovery before its deadline can report another loss
+
         g_is_authenticated = false;
         connection__reset_chat_app_keep_identity();
         connection__show_connect_window();
-        // End an active retry delay without queuing a new connect request. An active
-        // socket instead wakes the loop through its close event.
+        // end the retry delay without requesting a connection
+
         if (connect_loop_wake_resolver != null)
         {
             let resolver = connect_loop_wake_resolver;
@@ -1928,7 +2333,7 @@ function connection__disconnect_by_user()
         return;
     }
 
-    // the window comes back, so the user sees where the connection went; the reset that follows the close leaves it open
+    // show the connect window before closing the socket
     if (connection__is_connect_window_mode() == true)
     {
         connection__show_connect_window();
@@ -1936,20 +2341,20 @@ function connection__disconnect_by_user()
 
     if (g_is_authenticated == true || g_connection_status.state === "connecting")
     {
-        // the socket closes; the close handler in dispatch.js runs the usual reset, and the connect loop, which waits for
-        // that close, then waits for the next connect request (a fast reconnect is refused while the flag is set)
+        // let the socket close handler reset the session
+
         g_websocket_worker.postMessage({ type: "close" });
         return;
     }
 
-    // no socket: the loop sits in its retry countdown or waits for the button; woken, it reaches the same wait
+    // wake the loop so it observes the disconnected state
     connection__wake_connect_loop();
 }
 
 /**
- * @brief the saved server configurations, kept on this device only
+ * @brief reads server bookmarks from local storage
  *
- * @return array the bookmarks as [{ name, host, port }], [] when none or unreadable
+ * @return array saved bookmarks or an empty array
  */
 function connection__read_server_bookmarks()
 {
@@ -1958,13 +2363,16 @@ function connection__read_server_bookmarks()
         let stored = JSON.parse(utils__storage_get("lemon_server_bookmarks"));
         return Array.isArray(stored) ? stored : [];
     }
-    catch (e) { return []; }
+    catch (e)
+    {
+        return [];
+    }
 }
 
 /**
- * @brief persists the server bookmarks to localStorage
+ * @brief writes server bookmarks to local storage
  *
- * @param array bookmarks -> the bookmarks as [{ name, host, port }]
+ * @param array bookmarks -> server names, hosts and ports to save
  *
  * @return void
  */
@@ -1974,7 +2382,7 @@ function connection__write_server_bookmarks(bookmarks)
 }
 
 /**
- * @brief repaints the bookmark dropdown; the option value is the index into the stored array
+ * @brief updates the server bookmark dropdown
  *
  * @return void
  */
@@ -1982,7 +2390,10 @@ function connection__render_server_bookmarks()
 {
     let select_element = document.getElementById("server-bookmark-select");
 
-    if (select_element == null) { return; }
+    if (select_element == null)
+    {
+        return;
+    }
 
     let bookmarks = connection__read_server_bookmarks();
     select_element.innerHTML = "";
@@ -2000,7 +2411,7 @@ function connection__render_server_bookmarks()
         select_element.appendChild(option);
     }
 
-    // the bookmarks menu in the head menu shows the same list (head-menu.js, which the node bundle does not have)
+    // refresh the bookmarks menu when available
     if (typeof head_menu__render_bookmarks === "function")
     {
         head_menu__render_bookmarks();
@@ -2008,13 +2419,13 @@ function connection__render_server_bookmarks()
 }
 
 /**
- * @brief saves a server under a name, or replaces the bookmark of that name; the window's row and the bookmarks menu both call it
+ * @brief saves or replaces a named server bookmark
  *
- * @param string name -> the name typed for the server
- * @param string host -> the address
- * @param string port -> the port, as typed
+ * @param string name -> bookmark name
+ * @param string host -> server address
+ * @param string port -> server port
  *
- * @return boolean true when the bookmark was written
+ * @return boolean true when the bookmark was saved
  */
 function connection__save_server_bookmark(name, host, port)
 {
@@ -2025,16 +2436,33 @@ function connection__save_server_bookmark(name, host, port)
     host = (host || "").trim();
     port = (port || "").trim();
 
-    if (name.length === 0) { utils__custom_alert("give this server a name first"); return false; }
-    if (host.length === 0 || port.length === 0) { utils__custom_alert("fill in the address and port first"); return false; }
+    if (name.length === 0)
+    {
+        utils__custom_alert("give this server a name first");
+        return false;
+    }
+    if (host.length === 0 || port.length === 0)
+    {
+        utils__custom_alert("fill in the address and port first");
+        return false;
+    }
 
     for (let x = 0; x < bookmarks.length; x++)
     {
-        if (bookmarks[x].name.toLowerCase() === name.toLowerCase()) { existing = x; }
+        if (bookmarks[x].name.toLowerCase() === name.toLowerCase())
+        {
+            existing = x;
+        }
     }
 
-    if (existing === -1) { bookmarks.push({ name: name, host: host, port: port }); }
-    else { bookmarks[existing] = { name: name, host: host, port: port }; }
+    if (existing === -1)
+    {
+        bookmarks.push({ name: name, host: host, port: port });
+    }
+    else
+    {
+        bookmarks[existing] = { name: name, host: host, port: port };
+    }
 
     connection__write_server_bookmarks(bookmarks);
     connection__render_server_bookmarks();
@@ -2042,7 +2470,7 @@ function connection__save_server_bookmark(name, host, port)
 }
 
 /**
- * @brief wires the bookmark dropdown and its buttons on the connect page: picking one loads it into the address and port fields, ready to connect
+ * @brief connects the bookmark dropdown and buttons to their actions
  *
  * @return void
  */
@@ -2050,36 +2478,48 @@ function connection__wire_server_bookmarks()
 {
     let select_element = document.getElementById("server-bookmark-select");
 
-    if (select_element == null) { return; }
+    if (select_element == null)
+    {
+        return;
+    }
 
     connection__render_server_bookmarks();
 
-    // picking one loads it into the address and port fields, ready to connect
+    // load the selected server into the form
     select_element.onchange = function()
     {
-        if (this.value === "") { return; }
+        if (this.value === "")
+        {
+            return;
+        }
 
         let bookmark = connection__read_server_bookmarks()[parseInt(this.value)];
 
-        if (bookmark == null) { return; }
+        if (bookmark == null)
+        {
+            return;
+        }
 
         document.getElementById("input-ip-address").value = bookmark.host;
         document.getElementById("input-port-number").value = bookmark.port;
         document.getElementById("server-bookmark-name").value = bookmark.name;
     };
 
-    // saving under a name that already exists overwrites it, so this doubles as "update"
+    // replace an existing bookmark with the same name
     document.getElementById("server-bookmark-save").onclick = function()
     {
-        connection__save_server_bookmark(document.getElementById("server-bookmark-name").value,
-            document.getElementById("input-ip-address").value, document.getElementById("input-port-number").value);
+        connection__save_server_bookmark(document.getElementById("server-bookmark-name").value, document.getElementById("input-ip-address").value, document.getElementById("input-port-number").value);
     };
 
     document.getElementById("server-bookmark-delete").onclick = function()
     {
         let selected = document.getElementById("server-bookmark-select").value;
 
-        if (selected === "") { utils__custom_alert("pick a saved server to delete"); return; }
+        if (selected === "")
+        {
+            utils__custom_alert("pick a saved server to delete");
+            return;
+        }
 
         let bookmarks = connection__read_server_bookmarks();
         bookmarks.splice(parseInt(selected), 1);

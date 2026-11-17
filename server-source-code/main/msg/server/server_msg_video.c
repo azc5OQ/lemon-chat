@@ -1,15 +1,12 @@
 #include "../../util.h"
-// This file tells clients about video streams, viewing requests and requests for a complete video frame.
+// this file tells clients about video streams, viewing requests and requests for a complete video frame
 
 #include "server_msg.h"
 #include "../../base.h"
 #include "../../../third-party/rxi-log/log.h"
 
 /**
- * @brief tells every client in a channel that a video stream started or ended there, with what the
- *        streamer announced while it runs the streamer gets it too, that is how its popup confirms
- *        the start; late joiners to the server learn about a running stream from is_streaming_video
- *        in the client list instead
+ * @brief announces a video stream starting or ending to channel members, including its streamer
  *
  * @param uint64 channel_id -> the channel
  * @param boole is_active -> TRUE for a start, FALSE for an end
@@ -133,10 +130,8 @@ void server_msg__video__send_viewer_request_to_single_client(client_t *receiver,
 }
 
 /**
- * @brief tells one client that a viewer connected or disconnected. the streamer counts its viewers
- *        from it and sends a keyframe for a new one; a member the streamer allowed marks the
- *        watching row in its channel tree. video_channel.c sends it to those clients only, so a
- *        member that was not allowed never learns who watches
+ * @brief reports a viewer joining or leaving to the streamer or an authorized member
+ *        the caller limits recipients so other members cannot learn who is watching
  *
  * @param client_t* receiver -> the streamer, or a member the streamer allowed
  * @param uint64 viewer_client_id -> the viewer

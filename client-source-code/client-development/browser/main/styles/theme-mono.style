@@ -4,6 +4,7 @@
 {
     color-scheme: light;
     --member-conversations: 1;
+    --user-context-menus: 0;
     --member-conversations-auto-open: 1;
     --mono-bg: #ffffff;
     --mono-surface: #f4f4f5;
@@ -906,7 +907,7 @@
     bottom: calc(var(--mono-bottom) + 8px);
     width: auto;
     min-width: 0;
-    max-height: min(65dvh, 480px);
+    max-height: min(calc(65dvh / var(--ui-display-scale, 1)), 480px);
     overflow: auto;
     padding: 8px;
     border: 1px solid var(--mono-line);
@@ -939,8 +940,8 @@
 
 :root .channel-list-context-menu
 {
-    max-width: calc(100vw - 16px);
-    max-height: 70dvh;
+    max-width: calc(calc(100vw / var(--ui-display-scale, 1)) - 16px);
+    max-height: calc(70dvh / var(--ui-display-scale, 1));
     overflow: auto;
     border: 1px solid var(--mono-line);
     border-radius: 14px;
@@ -981,7 +982,7 @@
     width: 100%;
     max-width: none;
     min-width: 0;
-    height: 100dvh;
+    height: calc(100dvh / var(--ui-display-scale, 1));
     max-height: none;
     padding: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px);
     border: 0;
@@ -1234,8 +1235,8 @@
 
 :root #container-2
 {
-    max-width: calc(100vw - 24px);
-    max-height: calc(100dvh - 24px);
+    max-width: calc(calc(100vw / var(--ui-display-scale, 1)) - 24px);
+    max-height: calc(calc(100dvh / var(--ui-display-scale, 1)) - 24px);
     border: 1px solid var(--mono-line);
     border-radius: 16px;
     background: var(--mono-bg);
@@ -1245,8 +1246,8 @@
 :root #channel-properties-edit,
 :root #video-stream-popup
 {
-    max-width: calc(100vw - 16px);
-    max-height: calc(100dvh - 16px);
+    max-width: calc(calc(100vw / var(--ui-display-scale, 1)) - 16px);
+    max-height: calc(calc(100dvh / var(--ui-display-scale, 1)) - 16px);
     background: var(--mono-bg);
     color: var(--mono-text);
     border: 1px solid var(--mono-line);
@@ -1796,9 +1797,7 @@ body.msgr-neighbors-only #member-list-body .member-list-client:not(.in-current-c
     font: 13px/20px var(--set-font);
 }
 
-/* The window that asks for the password of a channel, in the colours of this theme. theme-default.style, which
-   this theme includes first, draws the window dark grey with a yellow close button, and the title had this
-   theme's dark text colour on that dark window. The arrangement of the parts is in layout.style. */
+/* Apply Mono colors to the channel password dialog. layout.style controls its arrangement. */
 :root body div#channel-password-enter
 {
     border: 1px solid var(--mono-line);

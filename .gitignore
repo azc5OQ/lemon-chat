@@ -72,6 +72,7 @@ compile_commands.json
 .DS_Store
 Thumbs.db
 desktop.ini
+._*
 
 # Python bytecode caches, including repository tools.
 __pycache__/
@@ -80,6 +81,8 @@ __pycache__/
 
 # ---- Project notes (local, not tracked) ----
 notes/
+!/server-source-code/third-party/libtom/libtomcrypt/notes/
+!/server-source-code/third-party/libtom/libtomcrypt/notes/**
 buildresult/
 
 # gradle
@@ -96,6 +99,7 @@ client-source-code/client-development/mobile/android/app/src/main/cpp/nodejs-mob
 
 # ---- generated at build time by the gradle copyNodeProject task ----
 client-source-code/client-development/mobile/android/app/src/main/assets/nodejs-project/
+client-source-code/client-development/mobile/android/app/src/main/assets/client.html
 
 # written by the java bridge on device / the desktop bridge test
 client-source-code/client-development/mobile/nodejs-client/bridge.json
@@ -227,6 +231,24 @@ selfhosting-tools/wireguard/lemon-wg0.conf
 /server-source-code/third-party/stunnel/stunnel-5.75/src/env.lo
 /server-source-code/third-party/stunnel/stunnel-5.75/src/libstunnel.la
 /server-source-code/third-party/stunnel/stunnel-5.75/src/stunnel
+/server-source-code/third-party/libdatachannel-0.24.2/LibDataChannelConfigVersion.cmake
+/server-source-code/third-party/libdatachannel-0.24.2/LibDataChannelConfig.cmake
+/server-source-code/third-party/libdatachannel-0.24.2/LibJuiceConfigVersion.cmake
+/server-source-code/third-party/libdatachannel-0.24.2/LibJuiceConfig.cmake
+/server-source-code/third-party/libdatachannel-0.24.2/deps/usrsctp/usrsctplib/usrsctp.pc
+/server-source-code/third-party/libviolet-0.5.4/LibJuiceConfigVersion.cmake
+/server-source-code/third-party/libviolet-0.5.4/LibJuiceConfig.cmake
+/server-source-code/third-party/libtom/libtommath/CPackConfig.cmake
+/server-source-code/third-party/libtom/libtommath/CPackSourceConfig.cmake
+/server-source-code/third-party/libtom/libtommath/libtommath-config.cmake
+/server-source-code/third-party/libtom/libtommath/libtommath-config-version.cmake
+/server-source-code/third-party/libmaxminddb-1.12.2/cmake_uninstall.cmake
+/server-source-code/third-party/libmaxminddb-1.12.2/generated/
+/server-source-code/third-party/libmaxminddb-1.12.2/include/maxminddb_config.h
+/server-source-code/third-party/libmaxminddb-1.12.2/src/libmaxminddb.pc
+/server-source-code/third-party/mbedtls-3.6.6/cmake/MbedTLSConfig.cmake
+/server-source-code/third-party/mbedtls-3.6.6/cmake/MbedTLSConfigVersion.cmake
+/server-source-code/third-party/mbedtls-3.6.6/cmake/MbedTLSTargets.cmake
 /client-source-code/client-development/desktop/third-party/freetype-2.15.0/docs/oldlogs/
 /client-source-code/client-development/desktop/third-party/freetype-2.15.0/tests/
 

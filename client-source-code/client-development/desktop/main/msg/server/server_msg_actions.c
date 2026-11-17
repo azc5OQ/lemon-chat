@@ -3,9 +3,11 @@
 #include "msg/server/server_msg.h"
 
 /**
- * @brief accepts permission hints only for the matching identity and current channel.
+ * @brief accepts permission hints only for the matching identity and current channel
+ *
  * @param desktop_session_t* session -> authenticated worker-owned connection
  * @param const cJSON* message -> borrowed authenticated server message
+ *
  * @return void
  */
 void server_msg__actions__receive(desktop_session_t *session, const cJSON *message)

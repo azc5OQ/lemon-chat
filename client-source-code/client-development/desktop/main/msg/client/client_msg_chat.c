@@ -12,12 +12,15 @@ static boole _client_chat_internal__channel(desktop_session_t *session, int64 ch
 static boole _client_chat_internal__direct(desktop_session_t *session, int64 peer, uint64 serial, const char *payload, uint64 local_id, boole is_closed_notice);
 
 /**
- * @brief creates the text wrapper understood by browser clients inside channel/private encryption.
+ * @brief creates the text wrapper understood by browser clients inside channel/private encryption
+ *
  * @param desktop_session_t* session -> worker-owned secure random source
  * @param const char* text -> plain user text
- * @param char* id -> caller-owned identifier output
+ * @param char* id -> caller owned identifier output
  * @param uint64 capacity -> identifier output capacity including terminator
- * @return char* -> owned JSON, or NULL; release with crypto_session__free_text
+ * @param const desktop_chat_format_t* format -> formatting copied into the encrypted message
+ *
+ * @return char* -> owned JSON, or NULL. Release with crypto_session__free_text
  */
 static char *_client_chat_internal__text(desktop_session_t *session, const char *text, char *id, uint64 capacity, const desktop_chat_format_t *format)
 {
@@ -56,11 +59,13 @@ static char *_client_chat_internal__text(desktop_session_t *session, const char 
 }
 
 /**
- * @brief encrypts serialized text or edit content with current channel keys, never plaintext.
+ * @brief encrypts serialized text or edit content with current channel keys, never plaintext
+ *
  * @param desktop_session_t* session -> worker-owned connection with current channel keys
  * @param int64 channel -> channel captured when the GUI queued the text
  * @param const char* payload -> borrowed serialized content
  * @param uint64 local_id -> fresh delivery identifier
+ *
  * @return boole -> TRUE when the encrypted message was queued
  */
 static boole _client_chat_internal__channel(desktop_session_t *session, int64 channel, const char *payload, uint64 local_id)
@@ -96,11 +101,11 @@ static boole _client_chat_internal__channel(desktop_session_t *session, int64 ch
 }
 
 /**
- * @brief encrypts one private text or edit with fresh content keys protected for the exact recipient.
+ * @brief encrypts one private text or edit with fresh content keys protected for the exact recipient
  *
  * @param desktop_session_t* session -> worker-owned authenticated session
  * @param int64 peer -> recipient client ID
- * @param uint64 serial -> recipient lifetime captured by the GUI; rejects disconnect/ID reuse
+ * @param uint64 serial -> recipient lifetime captured by the GUI. Rejects disconnect/ID reuse
  * @param const char* payload -> serialized content placed inside direct_chat_message.value
  * @param uint64 local_id -> fresh delivery identifier
  * @param boole is_closed_notice -> TRUE sends the notice that this user closed the conversation: content without text, no status line on failure
@@ -174,9 +179,12 @@ static boole _client_chat_internal__direct(desktop_session_t *session, int64 pee
 }
 
 /**
- * @brief records the local author's identity on the message just appended by this worker.
+ * @brief records the local author's identity on the message just appended by this worker
+ *
  * @param desktop_session_t* session -> worker-owned session with a retained outgoing message
  * @param const char* id -> identifier included in its encrypted content
+ * @param const desktop_chat_format_t* format -> formatting to retain with the message
+ *
  * @return void
  */
 static void _client_chat_internal__remember(desktop_session_t *session, const char *id, const desktop_chat_format_t *format)
@@ -197,10 +205,13 @@ static void _client_chat_internal__remember(desktop_session_t *session, const ch
 }
 
 /**
- * @brief sends an original channel message and retains its stable encrypted-content identity.
+ * @brief sends an original channel message and retains its stable encrypted content identity
+ *
  * @param desktop_session_t* session -> worker-owned session
  * @param int64 channel -> selected channel
  * @param const char* text -> borrowed bounded plain text
+ * @param const desktop_chat_format_t* format -> formatting to encrypt and retain locally
+ *
  * @return void
  */
 void client_msg__chat__send_channel_message(desktop_session_t *session, int64 channel, const char *text, const desktop_chat_format_t *format)
@@ -223,11 +234,14 @@ void client_msg__chat__send_channel_message(desktop_session_t *session, int64 ch
 }
 
 /**
- * @brief sends an original private message under the recipient's current connection lifetime.
+ * @brief sends an original private message under the recipient's current connection lifetime
+ *
  * @param desktop_session_t* session -> worker-owned session
  * @param int64 peer -> recipient client ID
  * @param uint64 serial -> captured recipient lifetime
  * @param const char* text -> borrowed bounded plain text
+ * @param const desktop_chat_format_t* format -> formatting to encrypt and retain locally
+ *
  * @return void
  */
 void client_msg__chat__send_direct_message(desktop_session_t *session, int64 peer, uint64 serial, const char *text, const desktop_chat_format_t *format)
@@ -249,8 +263,8 @@ void client_msg__chat__send_direct_message(desktop_session_t *session, int64 pee
 }
 
 /**
- * @brief tells one client that the local user closed the private conversation with that client.
- *        The notice is an encrypted direct message without text, so the server cannot read what it is.
+ * @brief tells one client that the local user closed the private conversation with that client
+ *        the notice is an encrypted direct message without text, so the server cannot read what it is
  *
  * @param desktop_session_t* session -> worker-owned session
  * @param int64 peer -> client ID of the other side of the conversation
@@ -264,11 +278,13 @@ void client_msg__chat__send_direct_closed_notice(desktop_session_t *session, int
 }
 
 /**
- * @brief sends an encrypted replacement while preserving the original message identifier and row.
+ * @brief sends an encrypted replacement while preserving the original message identifier and row
+ *
  * @param desktop_session_t* session -> sole protocol worker
  * @param uint64 sequence -> original retained message sequence
  * @param uint64 connection_serial -> connection captured when editing began
  * @param const char* text -> bounded replacement text
+ *
  * @return void
  */
 void client_msg__chat__send_edit(desktop_session_t *session, uint64 sequence, uint64 connection_serial, const char *text)

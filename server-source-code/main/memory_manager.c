@@ -13,13 +13,13 @@
 #endif
 #endif
 
-// Each allocation records its size and a value used to detect damaged headers.
+// each allocation records its size and a value used to detect damaged headers
 #define MEMORYMANAGER_GUARD_LIVE 0xA110C0DEu
 #define MEMORYMANAGER_GUARD_FREED 0xDEADBEEFu
 
-// The size lets free clear the whole allocation. Optional list pointers let
+// the size lets free clear the whole allocation. Optional list pointers let
 // debug builds print allocations that have not been freed. Both layouts keep
-// the returned address aligned to 16 bytes on 64-bit systems.
+// the returned address aligned to 16 bytes on 64-bit systems
 typedef struct memorymanager_header_t
 {
 #if LEMON_TRACK_ALLOCATIONS
@@ -27,7 +27,7 @@ typedef struct memorymanager_header_t
     struct memorymanager_header_t *next;
 #endif
     uint64 size;
-    // Fixed header fields keep payloads aligned to 16 bytes.
+    // fixed header fields keep payloads aligned to 16 bytes
     uint type;
     uint guard;
 } memorymanager_header_t;
@@ -41,6 +41,14 @@ static pthread_mutex_t g_memorymanager_lock = PTHREAD_MUTEX_INITIALIZER;
 static atomic_uint_fast64_t g_upload_bytes;
 static atomic_uint_fast64_t g_music_bytes;
 
+/**
+ * @brief selects the allocation counter and limit for a memory category
+ *
+ * @param uint64 type -> allocation category
+ * @param uint64 * limit -> receives the byte limit for a budgeted category
+ *
+ * @return atomic_uint_fast64_t * -> counter for uploads or music, or NULL_POINTER for an unbudgeted category
+ */
 static atomic_uint_fast64_t *_budget(uint64 type, uint64 *limit)
 {
     // choose the upload limit
@@ -61,6 +69,14 @@ static atomic_uint_fast64_t *_budget(uint64 type, uint64 *limit)
     return NULL_POINTER;
 }
 
+/**
+ * @brief atomically reserves bytes within the category budget
+ *
+ * @param uint64 size -> bytes to reserve
+ * @param uint64 type -> allocation category
+ *
+ * @return boole -> TRUE when reserved or the category has no budget
+ */
 static boole _reserve(uint64 size, uint64 type)
 {
     uint64 limit = 0;
@@ -85,6 +101,14 @@ static boole _reserve(uint64 size, uint64 type)
     return TRUE;
 }
 
+/**
+ * @brief releases previously reserved bytes from the category budget
+ *
+ * @param uint64 size -> reserved bytes to release
+ * @param uint64 type -> allocation category
+ *
+ * @return void
+ */
 static void _release(uint64 size, uint64 type)
 {
     uint64 limit = 0;
@@ -193,12 +217,12 @@ void memorymanager__init(void)
 }
 
 /**
- * @brief Allocates zeroed bytes and records the block if allocation tracking is enabled.
+ * @brief allocates zeroed bytes and records the block if allocation tracking is enabled
  *
  * @param uint64 size -> number of bytes the caller asked for
  * @param uint64 type -> caller-defined MEMALLOC_* tag identifying the allocation site
  *
- * @attention Only builds with allocation tracking take the shared list lock.
+ * @attention only builds with allocation tracking take the shared list lock
  *
  * @return nuint address of the zeroed block, or 0 on allocation failure
  */
@@ -255,12 +279,12 @@ nuint memorymanager__allocate(uint64 size, uint64 type)
 }
 
 /**
- * @brief Resizes an allocation, keeping the old block valid if resizing fails.
+ * @brief resizes an allocation, keeping the old block valid if resizing fails
  *
  * @param nuint address -> address of the existing allocation
  * @param uint64 newsize -> new size in bytes
  *
- * @attention The caller must own a live allocation; nobody else may free or resize it.
+ * @attention the caller must own a live allocation; nobody else may free or resize it
  *
  * @return nuint address of the resized block, or 0 if the address was not tracked or realloc failed
  */
@@ -328,11 +352,11 @@ nuint memorymanager__realloc(nuint address, uint64 newsize)
 }
 
 /**
- * @brief Clears and frees an allocation, removing it from the optional tracking list.
+ * @brief clears and frees an allocation, removing it from the optional tracking list
  *
  * @param nuint address -> address of the allocation to free
  *
- * @attention The caller must own a live allocation; freeing the same address twice is invalid.
+ * @attention the caller must own a live allocation; freeing the same address twice is invalid
  *
  * @return boole TRUE if the address was a live tracked block, FALSE otherwise
  */

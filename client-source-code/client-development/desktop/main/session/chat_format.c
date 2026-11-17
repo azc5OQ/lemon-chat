@@ -1,7 +1,13 @@
 #include "session/chat_format.h"
 #include "cJSON.h"
 
-/** @brief Selects readable desktop text within the browser's supported size range. */
+/**
+ * @brief selects the default font, theme color and size of 14 pixels
+ *
+ * @param desktop_chat_format_t* format -> receives the default format
+ *
+ * @return void
+ */
 void desktop_chat_format__default(desktop_chat_format_t *format)
 {
     // clear and set font
@@ -11,7 +17,13 @@ void desktop_chat_format__default(desktop_chat_format_t *format)
     format->size = 14;
 }
 
-/** @brief Accepts a bounded font token, opaque RGB color and the browser's 12-30px size range. */
+/**
+ * @brief checks the font token, optional RGB color and size from 12 through 30 pixels
+ *
+ * @param const desktop_chat_format_t* format -> format to validate, or NULL
+ *
+ * @return boole -> TRUE if every field is valid
+ */
 boole desktop_chat_format__valid(const desktop_chat_format_t *format)
 {
     int64 length = 0;
@@ -53,7 +65,14 @@ boole desktop_chat_format__valid(const desktop_chat_format_t *format)
     return TRUE;
 }
 
-/** @brief Reads validated formatting without treating remote font names or colors as markup. */
+/**
+ * @brief reads valid formatting fields and keeps defaults for invalid fields
+ *
+ * @param desktop_chat_format_t* format -> receives the resulting format
+ * @param const cJSON* object -> JSON message containing formatting fields
+ *
+ * @return void
+ */
 void desktop_chat_format__read(desktop_chat_format_t *format, const cJSON *object)
 {
     desktop_chat_format_t candidate;
@@ -86,7 +105,14 @@ void desktop_chat_format__read(desktop_chat_format_t *format, const cJSON *objec
     }
 }
 
-/** @brief Adds the same formatting fields used by the browser to encrypted message content. */
+/**
+ * @brief adds formatting fields to a message before encryption
+ *
+ * @param const desktop_chat_format_t* format -> requested format, or NULL to use defaults
+ * @param cJSON* object -> JSON message to update
+ *
+ * @return boole -> TRUE if all fields were added
+ */
 boole desktop_chat_format__write(const desktop_chat_format_t *format, cJSON *object)
 {
     desktop_chat_format_t fallback;

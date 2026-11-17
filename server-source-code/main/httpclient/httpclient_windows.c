@@ -1,13 +1,13 @@
 #include "../clib/clib.h"
-// This file provides the Windows connections used for URL previews when a
+// this file provides the Windows connections used for URL previews when a
 // client posts a website link in chat. The feature must be enabled in the
 // server settings. It lets the server download the page and preview picture
-// that will be shown below the message.
+// that will be shown below the message
 //
-// The connection code comes from the supplied winhttpc client. Winsock opens
+// the connection code comes from the supplied winhttpc client. Winsock opens
 // the connection to the website. Schannel, the Windows TLS library, checks the
 // website's certificate and encrypts HTTPS traffic using Windows' trusted
-// certificates.
+// certificates
 #define SECURITY_WIN32
 #define SCHANNEL_USE_BLACKLISTS
 #include "httpclient_internal.h"
@@ -43,8 +43,8 @@ static httpclient_error_t _httpclient_internal__read(https_connection_t *connect
 static httpclient_error_t _httpclient_internal__connect(https_connection_t *connection, const char *host, const char *port, uint64 timeout);
 
 /**
- * @brief Waits until a URL preview socket is ready for reading or writing, within its existing time
- *        limit.
+ * @brief waits until a URL preview socket is ready for reading or writing, within its existing time
+ *        limit
  *
  * @param https_connection_t* connection -> the socket, deadline and response error field to use
  * @param boole writing -> nonzero to wait for writing, or zero to wait for reading
@@ -108,7 +108,7 @@ static httpclient_error_t _httpclient_internal__wait(https_connection_t *connect
 }
 
 /**
- * @brief Sends all supplied bytes through the Windows socket before the URL preview deadline.
+ * @brief sends all supplied bytes through the Windows socket before the URL preview deadline
  *
  * @param https_connection_t* connection -> the open socket and time limit to use
  * @param const void* data -> the bytes to send; this function does not encrypt them
@@ -159,8 +159,8 @@ static httpclient_error_t _httpclient_internal__send(https_connection_t *connect
 }
 
 /**
- * @brief Reads more socket bytes into the connection buffer without discarding bytes already
- *        waiting there.
+ * @brief reads more socket bytes into the connection buffer without discarding bytes already
+ *        waiting there
  *
  * @param https_connection_t* connection -> the socket, input buffer and time limit to use
  * @param boole* eof -> set to 1 when the socket closes normally, or 0 while it remains open
@@ -212,9 +212,9 @@ static httpclient_error_t _httpclient_internal__receive(https_connection_t *conn
 }
 
 /**
- * @brief Establishes or continues the encrypted HTTPS connection used to download a URL preview.
+ * @brief establishes or continues the encrypted HTTPS connection used to download a URL preview
  *
- * Unread bytes stay in the connection buffer; the response records the TLS version.
+ * unread bytes stay in the connection buffer; the response records the TLS version
  *
  * @param https_connection_t* connection -> the socket, Schannel state, website name and time limit
  * @param boole initial -> nonzero for the first TLS handshake, or zero to continue an existing TLS connection
@@ -231,7 +231,7 @@ static httpclient_error_t _httpclient_internal__handshake(https_connection_t *co
     TimeStamp expiry;
     int64 status = SEC_E_OK;
     int64 completed = SEC_E_OK;
-    ULONG attributes = 0; // Schannel writes a ULONG
+    ULONG attributes = 0; // schannel writes a ULONG
     uint64 flags = ISC_REQ_ALLOCATE_MEMORY | ISC_REQ_CONFIDENTIALITY | ISC_REQ_REPLAY_DETECT | ISC_REQ_SEQUENCE_DETECT | ISC_REQ_STREAM | ISC_REQ_EXTENDED_ERROR | ISC_REQ_USE_SUPPLIED_CREDS;
     uint64 extra = 0;
     uint64 index = 0;
@@ -379,7 +379,7 @@ static httpclient_error_t _httpclient_internal__handshake(https_connection_t *co
 }
 
 /**
- * @brief Encrypts request bytes with Schannel and sends all resulting HTTPS data.
+ * @brief encrypts request bytes with Schannel and sends all resulting HTTPS data
  *
  * @param https_connection_t* connection -> the established TLS connection and its time limit
  * @param const void* data -> the unencrypted request bytes to send
@@ -467,9 +467,9 @@ static httpclient_error_t _httpclient_internal__encrypt(https_connection_t *conn
 }
 
 /**
- * @brief Decrypts HTTPS response bytes and passes the resulting page data to the HTTP parser.
+ * @brief decrypts HTTPS response bytes and passes the resulting page data to the HTTP parser
  *
- * TLS control messages can be handled without adding page bytes.
+ * TLS control messages can be handled without adding page bytes
  *
  * @param https_connection_t* connection -> the established TLS connection and any received bytes still waiting
  * @param http_parser_t* parser -> receives the decrypted headers and body bytes
@@ -588,7 +588,7 @@ static httpclient_error_t _httpclient_internal__read(https_connection_t *connect
 }
 
 /**
- * @brief Resolves a website name and opens a Windows socket for its URL preview download.
+ * @brief resolves a website name and opens a Windows socket for its URL preview download
  *
  * @param https_connection_t* connection -> receives the open socket and shared connection deadline
  * @param const char* host -> the hostname or numeric IP address to resolve
@@ -705,7 +705,7 @@ static httpclient_error_t _httpclient_internal__connect(https_connection_t *conn
 }
 
 /**
- * @brief Closes a Windows URL preview connection and frees its socket and TLS resources.
+ * @brief closes a Windows URL preview connection and frees its socket and TLS resources
  *
  * @param https_connection_t* connection -> the connection to release, including one that only partly opened, or NULL
  *
@@ -746,9 +746,9 @@ void httpclient_transport__close(https_connection_t *connection)
 }
 
 /**
- * @brief Opens a connection to a website and prepares TLS when a URL preview uses HTTPS.
+ * @brief opens a connection to a website and prepares TLS when a URL preview uses HTTPS
  *
- * Always close *output, even on failure, to release any partly initialized resources.
+ * always close *output, even on failure, to release any partly initialized resources
  *
  * @param const httpclient_request_t* request -> the timeout, allowed-address policy and other connection options
  * @param const httpclient_url_t* url -> the parsed hostname, port and HTTPS flag
@@ -836,7 +836,7 @@ httpclient_error_t httpclient_transport__open(const httpclient_request_t *reques
 }
 
 /**
- * @brief Sends all request bytes for a URL preview, encrypting them when the connection uses HTTPS.
+ * @brief sends all request bytes for a URL preview, encrypting them when the connection uses HTTPS
  *
  * @param httpclient_connection_t* connection -> the open connection and the time limit shared by the request
  * @param const void* data -> the request bytes, kept alive by the caller until this function returns
@@ -863,10 +863,10 @@ httpclient_error_t httpclient_transport__write(httpclient_connection_t *connecti
 }
 
 /**
- * @brief Reads URL preview response data, decrypts HTTPS data if needed and continues parsing the
- *        response.
+ * @brief reads URL preview response data, decrypts HTTPS data if needed and continues parsing the
+ *        response
  *
- * HTTPS socket closure without a TLS close notification is reported as truncated.
+ * HTTPS socket closure without a TLS close notification is reported as truncated
  *
  * @param httpclient_connection_t* connection -> the open connection and its response object
  * @param http_parser_t* parser -> the reading state and buffers for the HTTP response

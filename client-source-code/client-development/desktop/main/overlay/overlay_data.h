@@ -22,7 +22,7 @@ typedef struct desktop_overlay_member_t
     char name[DESKTOP_OVERLAY_NAME];
 } desktop_overlay_member_t;
 
-/* Fixed-size values only: no pointers, audio, credentials, or allocator ownership across processes. */
+/* Fixed size values only: no pointers, audio, credentials, or allocator ownership across processes. */
 typedef struct desktop_overlay_snapshot_t
 {
     uint magic;

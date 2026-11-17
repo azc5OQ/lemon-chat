@@ -1,29 +1,8 @@
-// why this file exists
-// --------------------
-// a video stream normally travels over the webrtc data channel. a client that cannot or does not want to
-// use webrtc already gets its voice over a second websocket (audio-transport.js); this file gives video the
-// same second way: a websocket at /video on the chat port. the server passes a streamer's packets on to
-// every viewer over whichever of the two connections that viewer has, so a client on the websocket and a
-// client on webrtc see each other's streams.
-//
-// how the choice is made
-// ----------------------
-// video follows audio. when this client's audio travels over the websocket right now, or when the server
-// does not allow webrtc at all, video uses the video socket too; otherwise it uses the video data channel
-// of the webrtc peer connection. the choice is looked at once a second (video_transport__tick). while
-// video is in use, that is while this client streams or watches a stream, and the socket is wanted but not
-// attached, a session is requested from the server; when the socket is attached but no longer wanted, it
-// is closed, and the server then relays over the data channel again. a session request that leads to no
-// attached socket is repeated with a growing delay. the socket is attached with the same ticket and proof
-// frame as the audio socket (the server handles video connections in video_websocket.c).
-//
-// what travels over the socket
-// ----------------------------
-// video packets, each encrypted the same way as a voice frame: with the channel keys, the server keys, and
-// a second time with this client's session keys plus an authentication code (keys.js, the block "the
-// encryption of audio and video frames"). the video worker (video-worker.js) does that encryption and
-// decryption; this file only moves the finished frames. the server sends an empty frame to an idle socket
-// every few seconds and this client answers it with an empty frame, like on the audio socket.
+// carries video through /video when audio uses WebSocket or server policy disallows WebRTC
+// otherwise video uses the peer connection data channel. the server can relay between both transports
+// while streaming or viewing, request missing sessions with increasing retry delays
+// attachment uses the same ticket and proof format as audio. echo empty keepalives
+// the video worker encrypts and decrypts frames. this module only moves them
 var VIDEO_TRANSPORT_REQUEST_INTERVAL_MS = 5000;
 var VIDEO_TRANSPORT_REQUEST_INTERVAL_MAX_MS = 60000;
 // bytes waiting in the browser's send buffer of the socket above which a packet is dropped instead of queued
@@ -34,19 +13,15 @@ var g_video_transport =
     socket: null,
     ready: false,              // the websocket is attached and acknowledged
     pending_until: 0,          // no new session request before this time
-    request_attempts: 0,       // session requests since the last attached socket; sets the delay to the next one
-    last_received: 0,          // the server's keepalive frames refresh it; a socket without any frame for 15 s is dead
+    request_attempts: 0,       // failed attachment count used to calculate the next retry delay
+    last_received: 0,          // last received frame time. keepalives count toward the silence deadline
     timer: null
 };
 
 /**
- * @brief whether video should travel over the websocket rather than the webrtc data channel right now
+ * @brief chooses video transport from server policy and the current audio preference
  *
- *        the websocket must be allowed by the server. then: when the server allows no webrtc, the socket is
- *        the only way; when the audio travels over the websocket at the moment, video goes the same way;
- *        when no audio connection is up, the client's preference decides, which is also what audio does
- *
- * @return boolean
+ * @return boolean true when the allowed video transport should use a WebSocket
  */
 function video_transport__prefers_websocket()
 {
@@ -71,9 +46,9 @@ function video_transport__prefers_websocket()
 }
 
 /**
- * @brief whether the webrtc peer connection has to be kept up for video: video is allowed and does not prefer the websocket
+ * @brief checks whether video still requires the WebRTC connection
  *
- * @return boolean
+ * @return boolean true when video is allowed and does not prefer a WebSocket
  */
 function video_transport__wants_webrtc()
 {
@@ -81,9 +56,9 @@ function video_transport__wants_webrtc()
 }
 
 /**
- * @brief whether this client sends or receives video right now: it streams, or it watches a stream
+ * @brief checks whether this client is streaming or watching
  *
- * @return boolean
+ * @return boolean true while streaming or actively watching
  */
 function video_transport__is_in_use()
 {
@@ -109,7 +84,7 @@ function video_transport__active()
 }
 
 /**
- * @brief how many bytes wait in the send buffer of the active connection; the streamer skips frames when it grows too large
+ * @brief how many bytes wait in the send buffer of the active connection. the streamer skips frames when it grows too large
  *
  * @return number bytes, 0 without a connection
  */
@@ -161,6 +136,11 @@ function video_transport__send(frame)
     return false;
 }
 
+/**
+ * @brief detaches callbacks and closes the current video socket
+ *
+ * @return void
+ */
 function video_transport__drop_socket()
 {
     let socket = g_video_transport.socket;
@@ -176,6 +156,11 @@ function video_transport__drop_socket()
     }
 }
 
+/**
+ * @brief stops video retries and clears the current socket
+ *
+ * @return void
+ */
 function video_transport__reset()
 {
     if (g_video_transport.timer != null)
@@ -189,7 +174,7 @@ function video_transport__reset()
 }
 
 /**
- * @brief starts the once-a-second check; called when the audio transport starts (audio_transport__start)
+ * @brief starts the periodic video transport check
  *
  * @return void
  */
@@ -202,7 +187,7 @@ function video_transport__start()
 }
 
 /**
- * @brief the once-a-second check: requests a session when the socket is wanted and missing, drops the socket when it is not wanted or no longer answers
+ * @brief requests needed sessions and closes unwanted or unresponsive video sockets
  *
  * @return void
  */
@@ -211,8 +196,7 @@ function video_transport__tick()
     let state = g_video_transport;
     let now = Date.now();
 
-    if (!g_is_authenticated || g_is_deep_idle || g_server_policy.is_video_streaming_allowed !== true
-        || video_transport__is_in_use() === false || video_transport__prefers_websocket() === false)
+    if (!g_is_authenticated || g_is_deep_idle || g_server_policy.is_video_streaming_allowed !== true || video_transport__is_in_use() === false || video_transport__prefers_websocket() === false)
     {
         if (state.socket != null)
         {
@@ -222,7 +206,7 @@ function video_transport__tick()
     }
     if (state.ready)
     {
-        // the server's keepalive frames refresh last_received; a socket without any frame for this long no longer works
+        // close the socket when no frame or keepalive arrives before the deadline
         if (now - state.last_received > 15000)
         {
             video_transport__drop_socket();
@@ -242,7 +226,7 @@ function video_transport__tick()
     {
         return;
     }
-    // a request that leads nowhere is repeated with a growing delay; an attached socket resets the delay
+    // increase failed attachment delays. reset the delay after a successful attachment
     state.pending_until = now + Math.min(VIDEO_TRANSPORT_REQUEST_INTERVAL_MS * Math.pow(2, state.request_attempts), VIDEO_TRANSPORT_REQUEST_INTERVAL_MAX_MS);
     state.request_attempts++;
     connection__send_message_object(
@@ -255,13 +239,7 @@ function video_transport__tick()
 }
 
 /**
- * @brief the server issued a video session (the message video_websocket_session): the socket is opened and attached with the proof frame
- *
- *        the proof frame is [1][4 bytes client id][16 bytes ticket][32 bytes HMAC-SHA256 with the session key
- *        over the first 21 bytes]; the server answers with [2][16 bytes ticket][32 bytes HMAC-SHA256 over the
- *        first 17 bytes], which is checked here, so the socket talks to the server that issued the session.
- *        after that every frame from the socket is a video packet for video__on_media_frame, and an empty
- *        frame is the server's keepalive, answered at once
+ * @brief opens the issued video socket and verifies its attachment proof
  *
  * @param object message -> client_id, auth_key (hex), ticket (hex)
  *
@@ -270,9 +248,7 @@ function video_transport__tick()
 function video_transport__session(message)
 {
     let state = g_video_transport;
-    if (state.timer == null || g_is_deep_idle || !g_is_authenticated || state.socket != null
-        || g_server_policy.is_audio_over_websocket_allowed !== true
-        || Date.now() > state.pending_until || message.client_id !== g_local_client_id)
+    if (state.timer == null || g_is_deep_idle || !g_is_authenticated || state.socket != null || g_server_policy.is_audio_over_websocket_allowed !== true || Date.now() > state.pending_until || message.client_id !== g_local_client_id)
     {
         return;
     }
@@ -338,8 +314,8 @@ function video_transport__session(message)
                     state.ready = true;
                     state.pending_until = 0;
                     state.request_attempts = 0;
-                    // Losing the previous socket clears the server's watch flag. Restore current
-                    // viewing intent only after this attachment has been authenticated.
+                    // losing the previous socket clears the server's watch flag. restore current
+                    // viewing intent only after this attachment has been authenticated
                     if (g_video_stream.role === "viewer" && g_video_stream.is_watching === true)
                     {
                         connection__send_message_object(
@@ -374,7 +350,7 @@ function video_transport__session(message)
         {
             if (state.socket === socket)
             {
-                // a socket that was attached is requested again soon; one that never attached keeps the delay its request set
+                // retry soon after losing an attached socket. keep the existing delay when attachment never succeeded
                 let was_ready = state.ready;
                 video_transport__drop_socket();
                 if (was_ready)

@@ -1,5 +1,4 @@
-// This file adds reactions to channel and private chat messages.
-// Reactions use the same encrypted connection as the message they refer to.
+// adds reactions inside encrypted channel or private chat message bodies
 
 var chat_reactions =
 {
@@ -14,7 +13,8 @@ var chat_reactions =
 };
 
 /**
- * @brief Gives a message an identifier that stays the same for every recipient.
+ * @brief gives a message an identifier that stays the same for every recipient
+ *
  * @return string -> random message identifier
  */
 function chat_reactions__new_id()
@@ -28,7 +28,8 @@ function chat_reactions__new_id()
 }
 
 /**
- * @brief Adds reaction controls to a displayed text message.
+ * @brief adds reaction controls to a displayed text message
+ *
  * @param Element element -> message paragraph
  * @param string id -> identifier inside the encrypted message
  * @param string author -> public key of the message author
@@ -37,8 +38,7 @@ function chat_reactions__new_id()
  */
 function chat_reactions__register(element, id, author, name, quote)
 {
-    if (!G_HAS_DOM || !element || typeof id !== "string" || !/^[a-f0-9]{32}$/.test(id)
-        || typeof author !== "string" || !author || chat_reactions.entries.has(element))
+    if (!G_HAS_DOM || !element || typeof id !== "string" || !/^[a-f0-9]{32}$/.test(id) || typeof author !== "string" || !author || chat_reactions.entries.has(element))
     {
         return;
     }
@@ -76,12 +76,13 @@ function chat_reactions__register(element, id, author, name, quote)
 }
 
 /**
- * @brief Gives an own picture or file the same menu for deleting its message.
- * @param element Delivered attachment displayed in a conversation.
+ * @brief gives an own picture or file the same menu for deleting its message
+ *
+ * @param element delivered attachment displayed in a conversation
  */
 function chat_reactions__register_attachment(element)
 {
-    if (chat_reactions.entries.has(element))
+    if (!G_HAS_DOM || !element || chat_reactions.entries.has(element))
     {
         return;
     }
@@ -113,7 +114,8 @@ function chat_reactions__register_attachment(element)
 }
 
 /**
- * @brief Draws counts and a keyboard accessible choice of reactions.
+ * @brief draws counts and a keyboard accessible choice of reactions
+ *
  * @param object state -> message and its recorded reactions
  */
 function chat_reactions__render(state)
@@ -171,6 +173,13 @@ function chat_reactions__render(state)
             };
             state.tools.appendChild(state.more_button);
         }
+        /**
+         * @brief opens message actions while leaving text selection and embedded controls alone
+         *
+         * @param PointerEvent|MouseEvent event -> message activation event
+         *
+         * @return void
+         */
         state.open_tools = function(event)
         {
             let selection = window.getSelection();
@@ -180,23 +189,34 @@ function chat_reactions__render(state)
                 chat_reactions__close_actions(false);
                 return;
             }
-            if (event.defaultPrevented || event.button !== 0
-                || event.target.isContentEditable
-                || event.target.closest("a, button, input, textarea, select, label, summary, video, audio, img, [role=button], [data-action]"))
+            if (event.defaultPrevented || event.button !== 0 || event.target.isContentEditable || event.target.closest("a, button, input, textarea, select, label, summary, video, audio, img, [role=button], [data-action]"))
             {
                 return;
             }
             chat_reactions__show_actions(state, event);
         };
+        /**
+         * @brief opens message actions for keyboard activation on the message itself
+         *
+         * @param KeyboardEvent event -> message key event
+         *
+         * @return void
+         */
         state.open_tools_with_keyboard = function(event)
         {
-            if ((event.target === state.block || event.target === state.element) && !state.element.isContentEditable
-                && (event.key === "Enter" || event.key === " "))
+            if ((event.target === state.block || event.target === state.element) && !state.element.isContentEditable && (event.key === "Enter" || event.key === " "))
             {
                 event.preventDefault();
                 chat_reactions__show_actions(state, null);
             }
         };
+        /**
+         * @brief opens actions on pointer hover after clearing suppression on real movement
+         *
+         * @param PointerEvent event -> pointer entry or movement
+         *
+         * @return void
+         */
         state.hover_tools = function(event)
         {
             if (event.type === "pointermove" && (event.movementX || event.movementY))
@@ -208,10 +228,22 @@ function chat_reactions__render(state)
                 chat_reactions__show_actions(state, event, true);
             }
         };
+        /**
+         * @brief schedules the current message actions to close
+         *
+         * @return void
+         */
         state.leave_tools = function()
         {
             chat_reactions__schedule_close(state);
         };
+        /**
+         * @brief opens the attachment actions menu in place of the browser context menu
+         *
+         * @param MouseEvent event -> attachment context menu request
+         *
+         * @return void
+         */
         state.open_attachment_menu = function(event)
         {
             event.preventDefault();
@@ -284,9 +316,7 @@ function chat_reactions__render(state)
             });
             return client ? channel_tree__get_display_name_by_client_id(client.client_id, client.username) : "A user";
         });
-        button.title = names.join(", ") + (active.length > 4 ? " and " + (active.length - 4) + " others" : "")
-            + " reacted with " + emoji_name + ". "
-            + (own && own.active ? "Click to remove your reaction." : "Click to react.");
+        button.title = names.join(", ") + (active.length > 4 ? " and " + (active.length - 4) + " others" : "") + " reacted with " + emoji_name + ". " + (own && own.active ? "Click to remove your reaction." : "Click to react.");
         button.onclick = function()
         {
             chat_reactions__send(state, emoji);
@@ -301,16 +331,17 @@ function chat_reactions__render(state)
 }
 
 /**
- * @brief Checks that an own message can still be changed in its original conversation.
- * @param state Message selected for editing or deletion.
- * @return Whether the connection and recipient still match.
+ * @brief checks that an own message can still be changed in its original conversation
+ *
+ * @param state message selected for editing or deletion
+ *
+ * @return whether the connection and recipient still match
  */
 function chat_reactions__can_modify(state)
 {
     let value = state.element.getAttribute("data-single-chat-message-server-message-id");
     let id = Number(value);
-    if (!state.own || !g_is_authenticated || g_worker_connection_ended || state.generation !== g_worker_connection_generation
-        || !state.element.isConnected || !value || !/^\d+$/.test(value) || !Number.isSafeInteger(id) || id < 0)
+    if (!state.own || !g_is_authenticated || g_worker_connection_ended || state.generation !== g_worker_connection_generation || !state.element.isConnected || !value || !/^\d+$/.test(value) || !Number.isSafeInteger(id) || id < 0)
     {
         return false;
     }
@@ -322,8 +353,9 @@ function chat_reactions__can_modify(state)
 }
 
 /**
- * @brief Starts editing a message while remembering its original recipient.
- * @param state Own text message selected by the user.
+ * @brief starts editing a message while remembering its original recipient
+ *
+ * @param state own text message selected by the user
  */
 function chat_reactions__edit(state)
 {
@@ -352,8 +384,9 @@ function chat_reactions__edit(state)
 }
 
 /**
- * @brief Deletes the selected own message in its original conversation.
- * @param state Own message selected by the user.
+ * @brief deletes the selected own message in its original conversation
+ *
+ * @param state own message selected by the user
  */
 function chat_reactions__delete(state)
 {
@@ -375,17 +408,16 @@ function chat_reactions__delete(state)
 }
 
 /**
- * @brief Gives the pointer time to move from the message into its actions.
- * @param state Message that the pointer or keyboard focus left.
+ * @brief gives the pointer time to move from the message into its actions
+ *
+ * @param state message that the pointer or keyboard focus left
  */
 function chat_reactions__schedule_close(state)
 {
     clearTimeout(chat_reactions.close_timer);
     chat_reactions.close_timer = setTimeout(function()
     {
-        if (chat_reactions.action_state === state && !state.pinned && !state.menu && !chat_reactions.picker
-            && !state.block.matches(":hover") && !state.tools.matches(":hover")
-            && !state.tools.contains(document.activeElement))
+        if (chat_reactions.action_state === state && !state.pinned && !state.menu && !chat_reactions.picker && !state.block.matches(":hover") && !state.tools.matches(":hover") && !state.tools.contains(document.activeElement))
         {
             chat_reactions__close_actions(false);
         }
@@ -393,9 +425,10 @@ function chat_reactions__schedule_close(state)
 }
 
 /**
- * @brief Closes the additional actions for a message.
- * @param state Message whose menu is closing.
- * @param restore_focus Whether to focus the More button.
+ * @brief closes the additional actions for a message
+ *
+ * @param state message whose menu is closing
+ * @param restore_focus whether to focus the More button
  */
 function chat_reactions__close_more(state, restore_focus)
 {
@@ -412,8 +445,9 @@ function chat_reactions__close_more(state, restore_focus)
 }
 
 /**
- * @brief Opens the additional actions for an own message.
- * @param state Message selected by the user.
+ * @brief opens the additional actions for an own message
+ *
+ * @param state message selected by the user
  */
 function chat_reactions__toggle_more(state)
 {
@@ -450,8 +484,7 @@ function chat_reactions__toggle_more(state)
         if (event.key === "ArrowDown" || event.key === "ArrowUp" || event.key === "Home" || event.key === "End")
         {
             event.preventDefault();
-            index = event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1
-                : (index + (event.key === "ArrowDown" ? 1 : -1) + buttons.length) % buttons.length;
+            index = event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1 : (index + (event.key === "ArrowDown" ? 1 : -1) + buttons.length) % buttons.length;
             if (buttons[index])
             {
                 buttons[index].focus();
@@ -478,8 +511,9 @@ function chat_reactions__toggle_more(state)
 }
 
 /**
- * @brief Updates message actions from ownership and the local preferences.
- * @param state Message whose available controls changed.
+ * @brief updates message actions from ownership and the local preferences
+ *
+ * @param state message whose available controls changed
  */
 function chat_reactions__update_message_access(state)
 {
@@ -504,16 +538,16 @@ function chat_reactions__update_message_access(state)
 }
 
 /**
- * @brief Shows actions at the upper right of a message.
- * @param state Message selected by the user.
- * @param event Click position, or null when opened with the keyboard.
- * @param hover Whether pointer movement opened the toolbar.
+ * @brief shows actions at the upper right of a message
+ *
+ * @param state message selected by the user
+ * @param event click position, or null when opened with the keyboard
+ * @param hover whether pointer movement opened the toolbar
  */
 function chat_reactions__show_actions(state, event, hover)
 {
     let selection = window.getSelection();
-    if ((!state.own && !chat_reactions.enabled && !chat_replies.enabled) || !state.element.isConnected
-        || state.element.isContentEditable || (selection && !selection.isCollapsed))
+    if ((!state.own && !chat_reactions.enabled && !chat_replies.enabled) || !state.element.isConnected || state.element.isContentEditable || (selection && !selection.isCollapsed))
     {
         return;
     }
@@ -527,8 +561,7 @@ function chat_reactions__show_actions(state, event, hover)
     }
     else
     {
-        if (hover && chat_reactions.action_state && (chat_reactions.action_state.menu || chat_reactions.picker
-            || chat_reactions.action_state.tools.contains(document.activeElement)))
+        if (hover && chat_reactions.action_state && (chat_reactions.action_state.menu || chat_reactions.picker || chat_reactions.action_state.tools.contains(document.activeElement)))
         {
             return;
         }
@@ -555,7 +588,7 @@ function chat_reactions__show_actions(state, event, hover)
 }
 
 /**
- * @brief Keeps the open actions beside their message when the chat moves.
+ * @brief keeps the open actions beside their message when the chat moves
  */
 function chat_reactions__position_actions()
 {
@@ -573,36 +606,35 @@ function chat_reactions__position_actions()
     let context_rect = state.context.getBoundingClientRect();
     let chat = state.element.closest("#chat-context-container") || state.context.parentElement;
     let clip = chat.getBoundingClientRect();
-    if (rect.bottom <= Math.max(0, clip.top) || rect.top >= Math.min(window.innerHeight, clip.bottom))
+    if (rect.bottom <= Math.max(0, clip.top) || rect.top >= Math.min(utils__viewport_height(), clip.bottom))
     {
         chat_reactions__close_actions(false);
         return;
     }
-    let width = state.tools.offsetWidth;
-    let height = state.tools.offsetHeight;
+    let width = state.tools.offsetWidth * g_position_scale;
+    let height = state.tools.offsetHeight * g_position_scale;
     let top = rect.top - height / 2;
-    state.tools.style.left = Math.max(8, Math.min(rect.right, context_rect.right, window.innerWidth - 8) - width) + "px";
-    state.tools.style.top = Math.max(8, clip.top, Math.min(top, clip.bottom - height - 4, window.innerHeight - height - 8)) + "px";
+    state.tools.style.left = utils__position_px(Math.max(8, Math.min(rect.right, context_rect.right, utils__viewport_width() - 8) - width));
+    state.tools.style.top = utils__position_px(Math.max(8, clip.top, Math.min(top, clip.bottom - height - 4, utils__viewport_height() - height - 8)));
     if (state.menu)
     {
         let anchor = state.more_button.getBoundingClientRect();
         let menu = state.menu;
-        menu.style.left = Math.max(8, Math.min(anchor.right - menu.offsetWidth, window.innerWidth - menu.offsetWidth - 8)) + "px";
-        menu.style.top = Math.max(8, anchor.bottom + menu.offsetHeight + 4 <= window.innerHeight - 8
-            ? anchor.bottom + 4 : anchor.top - menu.offsetHeight - 4) + "px";
+        menu.style.left = utils__position_px(Math.max(8, Math.min(anchor.right - menu.offsetWidth * g_position_scale, utils__viewport_width() - menu.offsetWidth * g_position_scale - 8)));
+        menu.style.top = utils__position_px(Math.max(8, anchor.bottom + menu.offsetHeight * g_position_scale + 4 <= utils__viewport_height() - 8 ? anchor.bottom + 4 : anchor.top - menu.offsetHeight * g_position_scale - 4));
     }
     chat_reactions__position_picker();
 }
 
 /**
- * @brief Closes the message actions and the emoji choices opened from them.
- * @param restore_focus Whether the selected message should receive keyboard focus.
+ * @brief closes the message actions and the emoji choices opened from them
+ *
+ * @param restore_focus whether the selected message should receive keyboard focus
  */
 function chat_reactions__close_actions(restore_focus)
 {
     let state = chat_reactions.action_state;
-    let suppress_hover = !!(state && (state.tools.matches(":hover") || (state.menu && state.menu.matches(":hover"))
-        || (chat_reactions.picker && chat_reactions.picker.matches(":hover"))));
+    let suppress_hover = !!(state && (state.tools.matches(":hover") || (state.menu && state.menu.matches(":hover")) || (chat_reactions.picker && chat_reactions.picker.matches(":hover"))));
     clearTimeout(chat_reactions.close_timer);
     chat_reactions__close_picker(false);
     chat_reactions.action_state = null;
@@ -621,7 +653,7 @@ function chat_reactions__close_actions(restore_focus)
 }
 
 /**
- * @brief Places the emoji choices beside the open reaction button.
+ * @brief places the emoji choices beside the open reaction button
  */
 function chat_reactions__position_picker()
 {
@@ -632,15 +664,15 @@ function chat_reactions__position_picker()
         return;
     }
     let rect = state.add_button.getBoundingClientRect();
-    let width = picker.offsetWidth;
-    let height = picker.offsetHeight;
-    picker.style.left = Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8)) + "px";
-    picker.style.top = Math.max(8, Math.min(rect.top >= height + 8 ? rect.top - height - 5 : rect.bottom + 5,
-        window.innerHeight - height - 8)) + "px";
+    let width = picker.offsetWidth * g_position_scale;
+    let height = picker.offsetHeight * g_position_scale;
+    picker.style.left = utils__position_px(Math.max(8, Math.min(rect.right - width, utils__viewport_width() - width - 8)));
+    picker.style.top = utils__position_px(Math.max(8, Math.min(rect.top >= height + 8 ? rect.top - height - 5 : rect.bottom + 5, utils__viewport_height() - height - 8)));
 }
 
 /**
- * @brief Opens one emoji picker beside the selected message.
+ * @brief opens one emoji picker beside the selected message
+ *
  * @param object state -> displayed message
  * @param Element anchor -> button that opened the picker
  */
@@ -725,7 +757,8 @@ function chat_reactions__show_choices(state, anchor)
 }
 
 /**
- * @brief Closes the emoji picker and optionally returns focus to its message.
+ * @brief closes the emoji picker and optionally returns focus to its message
+ *
  * @param restore_focus -> whether the Add reaction button should receive focus
  */
 function chat_reactions__close_picker(restore_focus)
@@ -749,7 +782,8 @@ function chat_reactions__close_picker(restore_focus)
 }
 
 /**
- * @brief Sends a reaction through the existing encrypted chat message route.
+ * @brief sends a reaction through the existing encrypted chat message route
+ *
  * @param object state -> message being reacted to
  * @param string emoji -> chosen reaction
  */
@@ -790,8 +824,7 @@ function chat_reactions__send(state, emoji)
     }
     let votes = state.votes.get(emoji);
     let own = votes && votes.get(g_rsa_public_key_string);
-    if (typeof emoji !== "string" || !/^server:[a-f0-9]{32}$/.test(emoji)
-        || (!server_emojis__name(emoji.slice(7)) && !(own && own.active)))
+    if (typeof emoji !== "string" || !/^server:[a-f0-9]{32}$/.test(emoji) || (!server_emojis__name(emoji.slice(7)) && !(own && own.active)))
     {
         return;
     }
@@ -818,7 +851,8 @@ function chat_reactions__send(state, emoji)
 }
 
 /**
- * @brief Records each person's current reaction without counting duplicates.
+ * @brief records each person's current reaction without counting duplicates
+ *
  * @param object state -> displayed message
  * @param object payload -> validated reaction
  * @param string actor -> sender public key from the client list
@@ -826,8 +860,7 @@ function chat_reactions__send(state, emoji)
  */
 function chat_reactions__apply(state, payload, actor, sequence)
 {
-    if (typeof payload.emoji !== "string" || !/^server:[a-f0-9]{32}$/.test(payload.emoji)
-        || (!server_emojis__name(payload.emoji.slice(7)) && (!state.votes.has(payload.emoji) || payload.active)))
+    if (typeof payload.emoji !== "string" || !/^server:[a-f0-9]{32}$/.test(payload.emoji) || (!server_emojis__name(payload.emoji.slice(7)) && (!state.votes.has(payload.emoji) || payload.active)))
     {
         return;
     }
@@ -858,34 +891,32 @@ function chat_reactions__apply(state, payload, actor, sequence)
 }
 
 /**
- * @brief Handles reactions before the normal message handler adds text or alerts.
+ * @brief handles reactions before the normal message handler adds text or alerts
+ *
  * @param object payload -> decrypted chat contents
  * @param object message -> sender and destination supplied by the server
  * @param boolean direct -> true for private chat
+ * @param object|null retained_sender -> trusted sender snapshot for retained local delivery, or null for a live sender
+ *
  * @return boolean -> true when this payload is a reaction
  */
-function chat_reactions__receive(payload, message, direct)
+function chat_reactions__receive(payload, message, direct, retained_sender)
 {
     if (!payload || payload.type !== "chat_reaction")
     {
         return false;
     }
-    if (!G_HAS_DOM || message.sender_id == g_local_client_id
-        || typeof payload.message_id !== "string" || !/^[a-f0-9]{32}$/.test(payload.message_id)
-        || typeof payload.emoji !== "string" || !/^server:[a-f0-9]{32}$/.test(payload.emoji)
-        || typeof payload.emoji_name !== "string" || !/^[a-z0-9_]{1,32}$/.test(payload.emoji_name)
-        || typeof payload.active !== "boolean"
-        || !Number.isSafeInteger(message.server_chat_message_id))
+    if (!G_HAS_DOM || message.sender_id == g_local_client_id || typeof payload.message_id !== "string" || !/^[a-f0-9]{32}$/.test(payload.message_id) || typeof payload.emoji !== "string" || !/^server:[a-f0-9]{32}$/.test(payload.emoji) || typeof payload.emoji_name !== "string" || !/^[a-z0-9_]{1,32}$/.test(payload.emoji_name) || typeof payload.active !== "boolean" || !Number.isSafeInteger(message.server_chat_message_id))
     {
         return true;
     }
-    let sender = channel_tree__get_client_by_client_id(message.sender_id);
-    let actor = channel_tree__get_public_key_by_client_id(message.sender_id);
+    let sender = retained_sender || channel_tree__get_client_by_client_id(message.sender_id);
+    let actor = retained_sender ? retained_sender.public_key : channel_tree__get_public_key_by_client_id(message.sender_id);
     if (!sender || sender.is_ignored_by_local_client || !actor)
     {
         return true;
     }
-    let context = document.getElementById(direct ? "chat-context-pm-" + message.sender_id : "chat-context-channel-" + message.channel_id);
+    let context = document.getElementById(direct ? (retained_sender ? retained_sender.context_id : "chat-context-pm-" + message.sender_id) : "chat-context-channel-" + message.channel_id);
     let element = chat_replies__find_original(context, payload);
     let state = element && chat_reactions.entries.get(element);
     if (state && state.author === payload.author_public_key && (!direct || state.peer_key === actor))
@@ -896,9 +927,11 @@ function chat_reactions__receive(payload, message, direct)
 }
 
 /**
- * @brief Uses the server's current emoji name or the name kept with an older reaction.
+ * @brief uses the server's current emoji name or the name kept with an older reaction
+ *
  * @param emoji -> server emoji identifier
  * @param state -> message whose reactions contain a saved name
+ *
  * @return string -> readable emoji name
  */
 function chat_reactions__emoji_name(emoji, state)
@@ -907,7 +940,7 @@ function chat_reactions__emoji_name(emoji, state)
 }
 
 /**
- * @brief Updates existing reactions and an open picker after server emojis change.
+ * @brief updates existing reactions and an open picker after server emojis change
  */
 function chat_reactions__refresh_server_emojis()
 {
@@ -936,9 +969,10 @@ function chat_reactions__refresh_server_emojis()
 }
 
 /**
- * @brief Removes reactions when the message is deleted or trimmed from history.
+ * @brief removes reactions when the message is deleted or trimmed from history
+ *
  * @param Element element -> message being removed
- * @param is_deleted Whether the server requested deletion of the message.
+ * @param is_deleted whether the server requested deletion of the message
  */
 function chat_reactions__forget(element, is_deleted)
 {
@@ -992,7 +1026,7 @@ function chat_reactions__forget(element, is_deleted)
 }
 
 /**
- * @brief Restores the local preference and connects its checkbox.
+ * @brief restores the local preference and connects its checkbox
  */
 function chat_reactions__setup()
 {
@@ -1026,9 +1060,7 @@ function chat_reactions__setup()
     document.addEventListener("click", function(event)
     {
         let state = chat_reactions.action_state;
-        if (state && !state.block.contains(event.target) && !state.tools.contains(event.target)
-            && (!state.menu || !state.menu.contains(event.target))
-            && (!chat_reactions.picker || !chat_reactions.picker.contains(event.target)))
+        if (state && !state.block.contains(event.target) && !state.tools.contains(event.target) && (!state.menu || !state.menu.contains(event.target)) && (!chat_reactions.picker || !chat_reactions.picker.contains(event.target)))
         {
             chat_reactions__close_actions(false);
         }
@@ -1048,8 +1080,7 @@ function chat_reactions__setup()
     document.addEventListener("selectionchange", function()
     {
         let selection = window.getSelection();
-        if (chat_reactions.action_state && selection && !selection.isCollapsed
-            && (!chat_reactions.picker || !chat_reactions.picker.contains(selection.anchorNode)))
+        if (chat_reactions.action_state && selection && !selection.isCollapsed && (!chat_reactions.picker || !chat_reactions.picker.contains(selection.anchorNode)))
         {
             chat_reactions__close_actions(false);
         }

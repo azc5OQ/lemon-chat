@@ -35,8 +35,10 @@ static void _ui_layout_internal__composer(float scale);
 static void _ui_layout_internal__workspace(gui_node_t *node, float x, float y, float width, float height, float scale);
 
 /**
- * @brief selects a preset arrangement while custom styles keep the usual left-hand channel pane.
+ * @brief selects a preset arrangement while custom styles keep the usual left hand channel pane
+ *
  * @param const char* name -> loaded theme filename, or NULL for the default arrangement
+ *
  * @return void
  */
 void desktop_ui_layout__theme(const char *name)
@@ -60,8 +62,10 @@ void desktop_ui_layout__theme(const char *name)
 }
 
 /**
- * @brief raises a floating panel while keeping popup menus above all panels.
- * @param gui_node_t* node -> clicked or opened scene-owned panel or one of its descendants
+ * @brief raises a floating panel while keeping popup menus above all panels
+ *
+ * @param gui_node_t* node -> clicked or opened scene owned panel or one of its descendants
+ *
  * @return void
  */
 void desktop_ui_layout__raise(gui_node_t *node)
@@ -119,11 +123,13 @@ void desktop_ui_layout__raise(gui_node_t *node)
 }
 
 /**
- * @brief activates the clicked panel before forwarding the original widget input.
- * @param gui_node_t* node -> clicked scene-owned widget
+ * @brief activates the clicked panel before forwarding the original widget input
+ *
+ * @param gui_node_t* node -> clicked scene owned widget
  * @param int64 x -> pointer x coordinate
  * @param int64 y -> pointer y coordinate
  * @param int64 button -> pointer button
+ *
  * @return void
  */
 static void _ui_layout_internal__pointer(gui_node_t *node, int64 x, int64 y, int64 button)
@@ -136,8 +142,10 @@ static void _ui_layout_internal__pointer(gui_node_t *node, int64 x, int64 y, int
 }
 
 /**
- * @brief fits the compact composer around the selected font and the visible control rows.
+ * @brief fits the compact composer around the selected font and the visible control rows
+ *
  * @param float scale -> physical pixels per logical unit
+ *
  * @return void
  */
 static void _ui_layout_internal__composer(float scale)
@@ -195,13 +203,15 @@ static void _ui_layout_internal__composer(float scale)
 }
 
 /**
- * @brief places the existing channel pane beside or above the conversation without rebuilding either subtree.
+ * @brief places the existing channel pane beside or above the conversation without rebuilding either subtree
+ *
  * @param gui_node_t* node -> workspace container
  * @param float x -> allocated horizontal origin
  * @param float y -> allocated vertical origin
  * @param float width -> allocated physical width
  * @param float height -> allocated physical height
  * @param float scale -> physical pixels per logical unit
+ *
  * @return void
  */
 static void _ui_layout_internal__workspace(gui_node_t *node, float x, float y, float width, float height, float scale)
@@ -292,13 +302,15 @@ static void _ui_layout_internal__workspace(gui_node_t *node, float x, float y, f
 }
 
 /**
- * @brief fits floating panels and the sidebar to the current viewport before children are measured.
- * @param gui_node_t* node -> scene-owned window
+ * @brief fits floating panels and the sidebar to the current viewport before children are measured
+ *
+ * @param gui_node_t* node -> scene owned window
  * @param float x -> physical window origin
  * @param float y -> physical window origin
  * @param float width -> available physical width
  * @param float height -> available physical height
  * @param float scale -> physical pixels per logical unit
+ *
  * @return void
  */
 static void _ui_layout_internal__window(gui_node_t *node, float x, float y, float width, float height, float scale)
@@ -369,13 +381,15 @@ static void _ui_layout_internal__window(gui_node_t *node, float x, float y, floa
 }
 
 /**
- * @brief clips a horizontal tab strip and brings a newly selected tab fully into view.
- * @param gui_node_t* node -> scene-owned conversation strip
+ * @brief clips a horizontal tab strip and brings a newly selected tab fully into view
+ *
+ * @param gui_node_t* node -> scene owned conversation strip
  * @param float x -> physical origin
  * @param float y -> physical origin
  * @param float width -> available physical width
  * @param float height -> available physical height
  * @param float scale -> physical pixels per logical unit
+ *
  * @return void
  */
 static void _ui_layout_internal__tabs(gui_node_t *node, float x, float y, float width, float height, float scale)
@@ -451,8 +465,10 @@ static void _ui_layout_internal__tabs(gui_node_t *node, float x, float y, float 
 }
 
 /**
- * @brief moves the tab viewport without changing the selected chat or its draft.
+ * @brief moves the tab viewport without changing the selected chat or its draft
+ *
  * @param gui_event_t* event -> previous/next button click
+ *
  * @return void
  */
 static void _ui_layout_internal__scroll_tabs(gui_event_t *event)
@@ -471,11 +487,13 @@ static void _ui_layout_internal__scroll_tabs(gui_event_t *event)
 }
 
 /**
- * @brief starts a sidebar resize while preserving normal button input elsewhere.
+ * @brief starts a sidebar resize while preserving normal button input elsewhere
+ *
  * @param gui_node_t* node -> pressed button
  * @param int64 x -> physical pointer position
  * @param int64 y -> physical pointer position
  * @param int64 button -> mouse button code, zero for left
+ *
  * @return void
  */
 static void _ui_layout_internal__down(gui_node_t *node, int64 x, int64 y, int64 button)
@@ -493,10 +511,12 @@ static void _ui_layout_internal__down(gui_node_t *node, int64 x, int64 y, int64 
 }
 
 /**
- * @brief resizes the tree without consuming the minimum conversation space.
+ * @brief resizes the tree without consuming the minimum conversation space
+ *
  * @param gui_node_t* node -> pressed divider or other button
  * @param int64 x -> physical pointer position
  * @param int64 y -> physical pointer position
+ *
  * @return boole -> TRUE when the divider owns this drag
  */
 static boole _ui_layout_internal__drag(gui_node_t *node, int64 x, int64 y)
@@ -538,10 +558,12 @@ static boole _ui_layout_internal__drag(gui_node_t *node, int64 x, int64 y)
 }
 
 /**
- * @brief moves the divider along its visible axis or restores that pane dimension with Home.
+ * @brief moves the divider along its visible axis or restores that pane dimension with Home
+ *
  * @param gui_node_t* node -> focused button
  * @param int64 key -> portable virtual key
  * @param boole down -> TRUE for key down
+ *
  * @return void
  */
 static void _ui_layout_internal__key(gui_node_t *node, int64 key, boole down)
@@ -579,13 +601,15 @@ static void _ui_layout_internal__key(gui_node_t *node, int64 key, boole down)
 }
 
 /**
- * @brief sizes application containers while Meek preserves scroll state during measurement.
- * @param gui_node_t* node -> scene-owned container
+ * @brief sizes application containers while Meek preserves scroll state during measurement
+ *
+ * @param gui_node_t* node -> scene owned container
  * @param float x -> allocated horizontal position
  * @param float y -> allocated vertical position
  * @param float width -> allocated width, negative for intrinsic measurement
  * @param float height -> allocated height
  * @param float scale -> current display scale
+ *
  * @return void
  */
 static void _ui_layout_internal__div(gui_node_t *node, float x, float y, float width, float height, float scale)
@@ -689,7 +713,8 @@ static void _ui_layout_internal__div(gui_node_t *node, float x, float y, float w
 }
 
 /**
- * @brief extends the public widget API while leaving vendored Meek UI sources unchanged.
+ * @brief extends the public widget API while leaving vendored Meek UI sources unchanged
+ *
  * @return void
  */
 void desktop_ui_layout__register(void)

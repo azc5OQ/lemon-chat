@@ -1,4 +1,4 @@
-// This file manages channels, their members and the client chosen to maintain each channel's keys.
+// this file manages channels, their members and the client chosen to maintain each channel's keys
 #include "channel.h"
 #include "channel_groups.h"
 #include "permissions.h"
@@ -21,9 +21,13 @@ static boole _channel_internal__can_maintain(const client_t *client, const chann
 static boole _channel_internal__is_maintainer_admin(const client_t *client, const channel_t *channel);
 
 /**
- * @brief Prepares an exact-sized channel array without changing the live array.
- * @attention Caller holds clients and channels write locks until commit or cancellation. Existing channel IDs and membership allocations retain their ownership.
- * @return NULL on success; otherwise a user-facing reason. Free an uncommitted replacement.
+ * @brief allocates the requested channel capacity without changing the live array
+ *
+ * @param uint64 count -> requested number of channel slots
+ * @param channel_t** replacement -> receives the new array, or NULL if no resize is needed
+ *
+ * @return NULL on success, otherwise the refusal reason. Free an uncommitted replacement
+ * @attention hold the clients and channels write locks through commit or cancellation
  */
 cstring channel__prepare_resize(uint64 count, channel_t **replacement)
 {
@@ -63,7 +67,13 @@ cstring channel__prepare_resize(uint64 count, channel_t **replacement)
     return NULL_POINTER;
 }
 
-/** @brief Publishes a prepared array after persistence succeeds; caller still holds both write locks. */
+/**
+ * @brief publishes a prepared channel array after persistence succeeds
+ *
+ * @param channel_t* replacement -> prepared array whose ownership passes to the live state, or NULL for no change
+ * @param uint64 count -> prepared array capacity
+ * @attention the caller still holds the clients and channels write locks
+ */
 void channel__commit_resize(channel_t *replacement, uint64 count)
 {
     channel_t *previous = NULL_POINTER;
@@ -87,8 +97,14 @@ void channel__commit_resize(channel_t *replacement, uint64 count)
 }
 
 /**
- * @brief Checks a type conversion while the clients and channels locks are held.
- * @return NULL when allowed, otherwise a user-facing reason.
+ * @brief checks whether the actor may change a channel's lifetime
+ *
+ * @param const client_t* actor -> client requesting the change
+ * @param const channel_t* channel -> channel being converted
+ * @param boole temporary -> TRUE for a temporary channel, FALSE for a permanent channel
+ *
+ * @return NULL when allowed, otherwise the refusal reason
+ * @attention the caller holds the clients and channels locks
  */
 cstring channel__type_change_error(const client_t *actor, const channel_t *channel, boole temporary)
 {
@@ -180,8 +196,12 @@ cstring channel__type_change_error(const client_t *actor, const channel_t *chann
 }
 
 /**
- * @brief Applies a validated conversion without recreating the channel or moving members.
- * @attention Caller holds clients and channels write locks and has checked type_change_error.
+ * @brief applies a validated lifetime change and updates channel ownership
+ *
+ * @param client_t* actor -> client becoming the owner when the channel becomes temporary
+ * @param channel_t* channel -> channel to update without moving its members
+ * @param boole temporary -> TRUE for a temporary channel, FALSE for a permanent channel
+ * @attention hold both write locks and check channel__type_change_error first
  */
 void channel__set_temporary(client_t *actor, channel_t *channel, boole temporary)
 {
@@ -230,16 +250,16 @@ void channel__set_temporary(client_t *actor, channel_t *channel, boole temporary
     }
 }
 
-// Names of the channel requirements in settings and messages, in the order of _channel_internal__required_power.
+// names of the channel requirements in settings and messages, in the order of _channel_internal__required_power
 static const char *g_channel_required_power_names[] = { "required_talk_power", "required_message_power", "required_picture_power", "required_stream_power", "required_file_power", "required_view_power", "required_create_power" };
 
 #define CHANNEL_REQUIRED_POWER_COUNT (sizeof(g_channel_required_power_names) / sizeof(g_channel_required_power_names[0]))
 
 /**
- * @brief Returns the field of a channel that holds one of its requirements.
+ * @brief returns the field of a channel that holds one of its requirements
  *
- * @param channel Channel whose field is needed.
- * @param index Position of the requirement in g_channel_required_power_names.
+ * @param channel Channel whose field is needed
+ * @param index Position of the requirement in g_channel_required_power_names
  *
  * @return uint64* -> the requirement with that index
  */
@@ -266,9 +286,12 @@ static uint64 *_channel_internal__required_power(channel_t *channel, uint64 inde
 }
 
 /**
- * @brief Checks channel power requirements and applies them only when all are valid.
- * @param object Request or saved channel containing optional requirements.
- * @param channel Channel to update, or NULL when only checking the values.
+ * @brief checks channel power requirements and applies them only when all are valid
+ *
+ * @param object Request or saved channel containing optional requirements
+ * @param channel Channel to update, or NULL when only checking the values
+ *
+ * @return boole -> TRUE if all supplied powers are valid, otherwise FALSE without applying any
  */
 boole channel__read_required_powers(cJSON *object, channel_t *channel)
 {
@@ -300,10 +323,10 @@ boole channel__read_required_powers(cJSON *object, channel_t *channel)
 }
 
 /**
- * @brief Tells whether two channels have the same power requirements.
+ * @brief tells whether two channels have the same power requirements
  *
- * @param first Channel to compare.
- * @param second Channel to compare with.
+ * @param first Channel to compare
+ * @param second Channel to compare with
  *
  * @return boole -> TRUE when all requirements are equal
  */
@@ -323,9 +346,9 @@ boole channel__has_same_required_powers(const channel_t *first, const channel_t 
 }
 
 /**
- * @brief Sets every power requirement of a channel to 0, the value of a new channel.
+ * @brief sets every power requirement of a channel to 0, the value of a new channel
  *
- * @param channel Channel to change.
+ * @param channel Channel to change
  *
  * @return void
  */
@@ -341,10 +364,10 @@ void channel__clear_required_powers(channel_t *channel)
 }
 
 /**
- * @brief Adds channel power requirements to saved settings or a client message.
+ * @brief adds channel power requirements to saved settings or a client message
  *
- * @param object JSON object receiving the channel requirements.
- * @param channel Channel whose requirements are copied.
+ * @param object JSON object receiving the channel requirements
+ * @param channel Channel whose requirements are copied
  *
  * @return boole -> TRUE when every requirement was added
  */
@@ -518,7 +541,12 @@ client_t *channel__find_music_bot_in_channel(uint64 channel_id)
 }
 
 /**
- * @brief Checks whether a connected person can maintain this channel.
+ * @brief checks whether a connected person can maintain this channel
+ *
+ * @param const client_t* client -> client being considered as maintainer
+ * @param const channel_t* channel -> channel requiring an active human member
+ *
+ * @return boole -> TRUE if the client is an active member, otherwise FALSE
  */
 static boole _channel_internal__can_maintain(const client_t *client, const channel_t *channel)
 {
@@ -526,8 +554,13 @@ static boole _channel_internal__can_maintain(const client_t *client, const chann
 }
 
 /**
- * @brief Recognizes server admins, channel admins and the owner of this temporary channel.
- * @attention Caller holds the clients and channels write locks. Editing powers alone do not make a channel admin.
+ * @brief recognizes server admins, channel admins and the owner of this temporary channel
+ * @attention caller holds the clients and channels write locks. Editing powers alone do not make a channel admin
+ *
+ * @param const client_t* client -> client whose authority is checked
+ * @param const channel_t* channel -> channel requiring maintainer administration
+ *
+ * @return boole -> TRUE for an applicable server admin, channel admin or temporary owner
  */
 static boole _channel_internal__is_maintainer_admin(const client_t *client, const channel_t *channel)
 {
@@ -542,13 +575,15 @@ static boole _channel_internal__is_maintainer_admin(const client_t *client, cons
 }
 
 /**
- * @brief Chooses randomly among available admins, or other members when no admin is available.
+ * @brief chooses randomly among available admins, or other members when no admin is available
+ *
  * @param uint64* _out__new_index_of_maintainer -> receives the chosen maintainer's client id
  * @param uint64 channel_id -> id of the channel needing a new maintainer
  * @param uint64 index_of_client_that_left -> departing or voted-out client to exclude when requested
  * @param boole do_not_include_client_that_left_when_searching_for_new_maintainer -> TRUE to exclude the supplied client
+ *
  * @return boole -> TRUE when a replacement was found
- * @attention The caller holds the clients and channels write locks. The excluded client cannot return through either candidate group.
+ * @attention the caller holds the clients and channels write locks. The excluded client cannot return through either candidate group
  */
 boole channel__find_new_maintainer_for_channel(uint64 *_out__new_index_of_maintainer, uint64 channel_id, uint64 index_of_client_that_left, boole do_not_include_client_that_left_when_searching_for_new_maintainer)
 {
@@ -644,11 +679,13 @@ boole channel__find_new_maintainer_for_channel(uint64 *_out__new_index_of_mainta
 }
 
 /**
- * @brief Finds a vote replacement, keeping an admin maintainer unless another admin can take over.
+ * @brief finds a vote replacement, keeping an admin maintainer unless another admin can take over
+ *
  * @param uint64* replacement -> receives the selected client id only on success
  * @param channel_t* channel -> channel whose current maintainer is being replaced
+ *
  * @return boole -> FALSE when no eligible replacement meets the vote rule
- * @attention The caller holds the clients and channels write locks. A departure uses the normal selector instead.
+ * @attention the caller holds the clients and channels write locks. A departure uses the normal selector instead
  */
 boole channel__find_voted_maintainer_replacement(uint64 *replacement, channel_t *channel)
 {
@@ -680,10 +717,11 @@ boole channel__find_voted_maintainer_replacement(uint64 *replacement, channel_t 
 }
 
 /**
- * @brief Records a new maintainer, or clears the role when nobody remains.
+ * @brief records a new maintainer, or clears the role when nobody remains
+ *
  * @param channel_t* channel -> channel being changed
  * @param int64 client_id -> new maintainer, or -1 to clear the role
- * @attention The caller holds the clients and channels write locks.
+ * @attention the caller holds the clients and channels write locks
  */
 void channel__set_maintainer(channel_t *channel, int64 client_id)
 {
@@ -697,7 +735,7 @@ void channel__set_maintainer(channel_t *channel, int64 client_id)
  * @brief destroys a temp channel: moves any remaining members to the root channel and frees the
  *        slot, then broadcasts the deletion. used when a temp channel's owner leaves it,
  *        disconnects, or deletes it. temp channels never have child channels or music bots, so no
- *        cascade is needed.
+ *        cascade is needed
  *
  * @param uint64 temp_channel_id -> id of the temp channel to destroy
  *
@@ -777,13 +815,14 @@ void channel__destroy_temp_channel(uint64 temp_channel_id)
 }
 
 /**
- * @brief Moves a client, replaces its former channel maintainer, and broadcasts the join. Updates
- *        its audio peer, maintainer id and microphone state.
+ * @brief moves a client, replaces its former channel maintainer, and broadcasts the join. Updates
+ * its audio peer, maintainer id and microphone state
  *
  * @param uint64 client_id -> the client to move
  * @param uint64 destination_channel_id -> the channel to move the client into
  *
  * @attention caller must hold the clients and channels write locks
+ * @param const char* reason -> join reason forwarded in the channel change message
  *
  * @return void
  */
@@ -829,9 +868,9 @@ void channel__move_client_into_channel(uint64 client_id, uint64 destination_chan
 }
 
 /**
- * @brief Collects valid client ids in a channel, excluding the specified client.
+ * @brief collects valid client ids in a channel, excluding the specified client
  *
- * @attention out_receiving_client_ids must hold max_client_count entries; this function does not check its capacity. Free and unauthenticated slots are skipped.
+ * @attention out_receiving_client_ids must hold max_client_count entries; this function does not check its capacity. Free and unauthenticated slots are skipped
  *
  * @param int64 client_to_ignore -> index of the client to leave out, pass a value no slot can have to include everyone
  * @param uint64 channel_id -> id of the channel to collect clients from
@@ -865,13 +904,15 @@ uint64 channel__get_other_clients_in_channel(int64 client_to_ignore, uint64 chan
 }
 
 /**
- * @brief Checks channel capacity and password access, sending a refusal when either check fails.
+ * @brief checks channel capacity and password access, sending a refusal when either check fails
+ *
  * @param client_t* client -> client attempting to enter; admins bypass both checks
  * @param channel_t* channel -> destination channel
  * @param char* password -> supplied password, or NULL when none was supplied
  * @param boole password_already_proven -> skips only the password check for a returning client
+ *
  * @return boole -> TRUE when entry is allowed; FALSE when refused
- * @attention The caller holds the clients and channels locks.
+ * @attention the caller holds the clients and channels locks
  */
 boole channel__check_channel_access(client_t *client, channel_t *channel, char *password, boole password_already_proven)
 {
@@ -928,12 +969,12 @@ boole channel__check_channel_access(client_t *client, channel_t *channel, char *
 }
 
 /**
- * @brief Collects the values that decide what a client may see of channels it is not in.
+ * @brief collects the values that decide what a client may see of channels it is not in
  *
  * @param client_t* client -> client whose values are read, with the clients lock held
  * @param channel_view_rights_t* rights -> receives the values as they are now
  *
- * @note The values taken from the client's groups are calculated by permissions__refresh_client_powers.
+ * @note the values taken from the client's groups are calculated by permissions__refresh_client_powers
  *
  * @return void
  */
@@ -946,17 +987,12 @@ static void _channel_internal__read_view_rights(const client_t *client, channel_
 }
 
 /**
- * @brief Decides whether a client with the given rights is told who is inside a channel.
+ * @brief checks member visibility using channel membership, privacy and permission rules
  *
- *        A client always sees the members of the channel it is in. From outside, two rules
- *        apply. The older server setting hides the members of every channel that has a
- *        password. With groups enabled, the client's groups must allow viewing channel members
- *        and its channel view power must reach the channel's required view power.
+ * @param const channel_view_rights_t* rights -> viewing client's rights
+ * @param const channel_t* channel -> channel whose members are requested
  *
- * @param const channel_view_rights_t* rights -> the viewing client's rights
- * @param const channel_t* channel -> channel whose members are asked for
- *
- * @return boole -> TRUE when the members are shown
+ * @return boole -> TRUE if members may be shown, otherwise FALSE
  */
 static boole _channel_internal__are_members_visible(const channel_view_rights_t *rights, const channel_t *channel)
 {
@@ -983,7 +1019,7 @@ static boole _channel_internal__are_members_visible(const channel_view_rights_t 
 }
 
 /**
- * @brief Decides whether a client with the given rights is told a channel's description.
+ * @brief decides whether a client with the given rights is told a channel's description
  *
  * @param const channel_view_rights_t* rights -> the viewing client's rights
  * @param const channel_t* channel -> channel whose description is asked for
@@ -1003,7 +1039,7 @@ static boole _channel_internal__is_description_visible(const channel_view_rights
 }
 
 /**
- * @brief Tells whether a client may currently see who is inside a channel.
+ * @brief tells whether a client may currently see who is inside a channel
  *
  * @param const client_t* viewer -> client that would receive the information, with the clients lock held
  * @param const channel_t* channel -> channel asked about, with the channels lock held
@@ -1026,7 +1062,7 @@ boole channel__are_members_visible(const client_t *viewer, const channel_t *chan
 }
 
 /**
- * @brief Tells whether a client may currently read a channel's description.
+ * @brief tells whether a client may currently read a channel's description
  *
  * @param const client_t* viewer -> client that would receive the description, with the clients lock held
  * @param const channel_t* channel -> channel asked about, with the channels lock held
@@ -1049,12 +1085,12 @@ boole channel__is_description_visible(const client_t *viewer, const channel_t *c
 }
 
 /**
- * @brief Tells whether a client may see which channel another client is in.
+ * @brief tells whether a client may see which channel another client is in
  *
  * @param const client_t* viewer -> client that would receive the information, with the clients lock held
  * @param const client_t* subject -> client whose channel is asked about
  *
- * @attention The caller holds the channels lock. A subject in idle mode is in no channel, so nothing is hidden.
+ * @attention the caller holds the channels lock. A subject in idle mode is in no channel, so nothing is hidden
  *
  * @return boole -> TRUE when the viewer may see which channel the subject is in
  */
@@ -1077,8 +1113,8 @@ boole channel__is_client_location_visible(const client_t *viewer, const client_t
 }
 
 /**
- * @brief Records that a client has just received the channel list and the client list, so later
- *        changes are compared with the rights used for those lists.
+ * @brief records that a client has just received the channel list and the client list, so later
+ *        changes are compared with the rights used for those lists
  *
  * @param client_t* client -> client that received the lists, with the clients write lock held
  *
@@ -1090,8 +1126,8 @@ void channel__remember_sent_view(client_t *client)
 }
 
 /**
- * @brief Sends one client the current place of every member of a channel, or tells it that
- *        their place is hidden from now on.
+ * @brief sends one client the current place of every member of a channel, or tells it that
+ *        their place is hidden from now on
  *
  * @param client_t* receiver -> client that is told
  * @param channel_t* channel -> channel whose members are sent
@@ -1116,18 +1152,10 @@ static void _channel_internal__send_members(client_t *receiver, channel_t *chann
 }
 
 /**
- * @brief Tells a client about every channel whose members or description it may see now but
- *        could not see before, and the other way round.
+ * @brief resends members and descriptions whose visibility changed for this client
  *
- *        The server remembers the rights it last used when it told the client about the
- *        channels (sent_channel_view_rights). This function compares them with the rights the
- *        client has now. They differ after the client changed channel, after its groups or
- *        their permissions changed, and after it gained or lost admin access. For every channel
- *        where the answer changed, the members and the description are sent again.
- *
- * @param client_t* client -> client to update
- *
- * @attention The caller holds the clients write lock and the channels lock.
+ * @param client_t* client -> client whose current and previously sent rights are compared
+ * @attention the caller holds the clients write lock and the channels lock
  *
  * @return void
  */
@@ -1186,9 +1214,9 @@ void channel__send_view_changes_to_client(client_t *client)
 }
 
 /**
- * @brief Updates every connected client whose view of the channels changed.
+ * @brief updates every connected client whose view of the channels changed
  *
- * @attention The caller holds only the clients write lock.
+ * @attention the caller holds only the clients write lock
  *
  * @return void
  */
@@ -1206,15 +1234,15 @@ void channel__apply_permission_changes(void)
 }
 
 /**
- * @brief Updates the clients after a channel edit changed who may see its members or its
- *        description: the required view power or the password changed.
+ * @brief updates the clients after a channel edit changed who may see its members or its
+ *        description: the required view power or the password changed
  *
  * @param const channel_t* previous -> copy of the channel as it was before the edit
  * @param channel_t* channel -> the channel after the edit
  *
- * @attention The caller holds the clients lock and the channels lock. A changed description is
+ * @attention the caller holds the clients lock and the channels lock. A changed description is
  *            sent by the edit announcement itself; this function covers the clients for which
- *            the description became visible or hidden.
+ *            the description became visible or hidden
  *
  * @return void
  */
@@ -1254,11 +1282,13 @@ void channel__send_view_changes_for_channel(const channel_t *previous, channel_t
 }
 
 /**
- * @brief Replaces a departing maintainer with another member, or clears the role.
+ * @brief replaces a departing maintainer with another member, or clears the role
+ *
  * @param channel_t* channel -> channel the client is leaving
  * @param uint64 client_id -> departing client, excluded from the choice
+ *
  * @return boole -> TRUE when a replacement was chosen and needs to be announced
- * @attention The caller holds the clients and channels write locks. Announce the departure before announcing the replacement, so clients update their member lists first.
+ * @attention the caller holds the clients and channels write locks. Announce the departure before announcing the replacement, so clients update their member lists first
  */
 boole channel__replace_departed_maintainer(channel_t *channel, uint64 client_id)
 {
@@ -1278,9 +1308,10 @@ boole channel__replace_departed_maintainer(channel_t *channel, uint64 client_id)
 }
 
 /**
- * @brief Welcomes a member, preferring an arriving admin over an ordinary maintainer.
+ * @brief welcomes a member, preferring an arriving admin over an ordinary maintainer
+ *
  * @param client_t* client -> authenticated client already placed in the channel
- * @attention The caller holds the clients and channels write locks and has already announced the client's arrival and any previously hidden members.
+ * @attention the caller holds the clients and channels write locks and has already announced the client's arrival and any previously hidden members
  */
 void channel__welcome_client(client_t *client)
 {

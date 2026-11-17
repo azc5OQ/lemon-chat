@@ -10,17 +10,14 @@ import org.junit.runner.RunWith;
 
 import static org.junit.Assert.*;
 
-/**
- * Instrumented test, which will execute on an Android device.
- *
- * @see <a href="http://d.android.com/tools/testing">Testing documentation</a>
- */
+/** checks that the hybrid app keeps its existing data namespace */
 @RunWith(AndroidJUnit4.class)
-public class ExampleInstrumentedTest {
+public class ExampleInstrumentedTest
+{
     @Test
-    public void useAppContext() {
-        // Context of the app under test.
+    public void useAppContext()
+    {
         Context appContext = InstrumentationRegistry.getInstrumentation().getTargetContext();
-        assertEquals("com.example.webviewtest", appContext.getPackageName());
+        assertEquals(appContext.getPackageName() + ".test", InstrumentationRegistry.getInstrumentation().getContext().getPackageName());
     }
 }

@@ -1,0 +1,31 @@
+{
+  "version": "24.22.1-0",
+  "upstream_version": "24.22.1",
+  "repository": "https://github.com/fogtape/nodejs-mobile",
+  "release_tag": "v24.22.1-0",
+  "prerelease": true,
+  "flavor": "full",
+  "supported_abis": ["arm64-v8a", "armeabi-v7a", "x86_64"],
+  "default_abis": ["arm64-v8a", "armeabi-v7a"],
+  "archive_url": "https://github.com/fogtape/nodejs-mobile/releases/download/v24.22.1-0/nodejs-mobile-android-24.22.1-0.zip",
+  "archive_size": 112853733,
+  "archive_sha256": "d6fd9f610fe5d81fede8f0d400c5a62723247725a19831835f15abf4f0604250",
+  "android_min_api": 24,
+  "source_ndk_revision": "27.3.13750724",
+  "header_cpp_standard": 20,
+  "notices": [
+    {
+      "source": "licenses/nodejs-mobile-24.22.1-0.txt",
+      "path": "notices/nodejs-mobile-24.22.1-0.txt",
+      "sha256": "c373dabed995013e091b1908996a69a1647ef19d400e6c1fd4b7fb06d8bc0f66",
+      "url": "https://raw.githubusercontent.com/fogtape/nodejs-mobile/v24.22.1-0/LICENSE"
+    }
+  ],
+  "header_count": 132,
+  "header_tree_sha256": "2a4d731898a6ab1507cdca998085718b0a55fcbb9c59d33c0268896f9e62b679",
+  "library_sha256": {
+    "arm64-v8a": "fd0212ffe75fe0e4843642644deffc2658174a5a2bf3803fecab4e8fafec651b",
+    "armeabi-v7a": "b1fb756863f868795d663344a406a88642422ca48a5bc4a01a7eb837073c90bd",
+    "x86_64": "dd937abf1e501eefe0f0c39ffe8b89710a2762ca69509ea385b1e7c6135881bb"
+  }
+}

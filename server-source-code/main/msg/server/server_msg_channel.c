@@ -1,5 +1,5 @@
 #include "../../core/channel_groups.h"
-// This file tells clients about channels, membership changes and the selected channel maintainer.
+// this file tells clients about channels, membership changes and the selected channel maintainer
 
 #include "server_msg.h"
 #include "../../base.h"
@@ -33,9 +33,9 @@ void server_msg__channel__send_full_to_single_client(client_t *receiver, uint64 
 }
 
 /**
- * @brief Sends a message about one channel to every client in one of two versions: the complete
+ * @brief sends a message about one channel to every client in one of two versions: the complete
  *        one, or one with an empty description for the clients that may not read this
- *        channel's description.
+ *        channel's description
  *
  * @param cJSON* root -> the complete message; this function changes it and the caller deletes it
  * @param cJSON* message -> the "message" object inside root
@@ -79,8 +79,8 @@ static void _server_msg_channel_internal__send_to_all_clients_with_visible_descr
 }
 
 /**
- * @brief Sends one client a channel's description, or tells it that the description is hidden
- *        from now on. Used when the client's rights or the channel's required view power changed.
+ * @brief sends one client a channel's description, or tells it that the description is hidden
+ *        from now on. Used when the client's rights or the channel's required view power changed
  *
  * @param client_t* receiver -> the client that is told
  * @param channel_t* channel -> the channel
@@ -112,8 +112,8 @@ void server_msg__channel__send_description_to_single_client(client_t *receiver, 
 }
 
 /**
- * @brief This function sends channel list to single client. Called when client sents
- *        challenge_response message to server during authentication process.
+ * @brief this function sends channel list to single client. Called when client sents
+ *        challenge_response message to server during authentication process
  *
  * @param client_t* receiver -> the client that receives it
  *
@@ -147,7 +147,7 @@ void server_msg__channel__send_list_to_single_client(client_t *receiver)
         // add id and name
         single_channel = cJSON_CreateObject();
         cJSON_AddNumberToObject(single_channel, "channel_id", g_channel_array[i].channel_id);
-        cJSON_AddNumberToObject(single_channel, "parent_channel_id", g_channel_array[i].parent_channel_id);
+        cJSON_AddNumberToObject(single_channel, "parent_channel_id", (int64)g_channel_array[i].parent_channel_id);
         cJSON_AddStringToObject(single_channel, "name", g_channel_array[i].name);
 
         // a client that may not read this channel's description gets an empty one
@@ -181,7 +181,7 @@ void server_msg__channel__send_list_to_single_client(client_t *receiver)
 }
 
 /**
- * @brief This function sends the maintainer of the current channel the client just joined. Used
+ * @brief this function sends the maintainer of the current channel the client just joined. Used
  *        when the client joins the server or when it switches channel
  *
  * @param client_t* receiver -> the client to send the maintainer id to
@@ -237,7 +237,7 @@ void server_msg__channel__send_create_message_to_all_clients(channel_t *channel,
 
     // add ids and texts
     cJSON_AddNumberToObject(message, "channel_id", channel->channel_id);
-    cJSON_AddNumberToObject(message, "parent_channel_id", channel->parent_channel_id);
+    cJSON_AddNumberToObject(message, "parent_channel_id", (int64)channel->parent_channel_id);
     cJSON_AddStringToObject(message, "name", channel->name);
     cJSON_AddStringToObject(message, "description", channel->description);
     cJSON_AddNumberToObject(message, "maintainer_id", channel->maintainer_id);
@@ -315,10 +315,11 @@ void server_msg__channel__send_edit_message_to_all_clients(channel_t *channel, c
 /**
  * @brief sends channel join message to all clients
  *
- * @param client_t* subject -> self explanatory
- * @param channel_t* new_channel -> id of server message
+ * @param client_t* subject -> client that joined the channel
+ * @param channel_t* new_channel -> destination channel
+ * @param const char* reason -> join reason, or NULL to omit it
  *
- * @attention this function gets called AFTER new channel id is assigned to client struct, not before so this function must assume the client is already in its new channel, if it is going to do any logical operations based on that
+ * @attention assign the client's new channel before calling this function
  *
  * @return void
  */
@@ -417,7 +418,7 @@ void server_msg__channel__send_join_message_to_all_clients(client_t *subject, ch
         // check member visibility
         is_hide_client_active = (boole)(channel__are_members_visible(client_in_loop, new_channel) == FALSE);
 
-        // a client that may not see who is in the new channel gets the variant without the channel id
+    // hide the channel id when member visibility is restricted
         server_msg__delivery__send_text_to_client(client_in_loop, is_hide_client_active == TRUE ? plaintext_hidden : plaintext);
     }
 
@@ -427,15 +428,8 @@ void server_msg__channel__send_join_message_to_all_clients(client_t *subject, ch
 }
 
 /**
- * @brief sends a channel_join message about one client to one single receiving client
- *
- *        when the receiving client is not in the same channel as the client that switched, real time
- *        microphone information is stripped before sending, push to talk active is downgraded to push
- *        to talk enabled and the streamed song name is cleared.
- *
- *        the message carries the reason "visibility": the subject did not move. the receiver is
- *        told where the subject is because it may see that now, or that the subject's place is
- *        hidden from now on.
+ * @brief refreshes one client's visibility without moving the subject
+ *        hides active microphone and song details from receivers outside the channel
  *
  * @param client_t* subject -> the client whose channel change is being announced
  * @param channel_t* new_channel -> channel that the subject joined
@@ -622,7 +616,7 @@ void server_msg__channel__send_call_event_to_idle_client(client_t *receiver, cli
 }
 
 /**
- * @brief This function sends client_going_to_idle_mode to all authenticated clients
+ * @brief this function sends client_going_to_idle_mode to all authenticated clients
  *
  * @param client_t* subject -> the client that is going to idle mode
  *
@@ -652,7 +646,7 @@ void server_msg__channel__send_client_going_to_idle_mode_info_to_all_clients(cli
 }
 
 /**
- * @brief This function sends client_coming_back_from_idle_mode to all authenticated clients
+ * @brief this function sends client_coming_back_from_idle_mode to all authenticated clients
  *
  * @param client_t* subject -> the client coming back from idle mode
  * @param uint64 channel_the_client_joins -> id of the channel the client joins on return

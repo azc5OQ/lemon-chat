@@ -1,0 +1,29 @@
+{
+  "version": "v18.20.4",
+  "cases": [
+    {
+      "name": "stored 2048 vector",
+      "bits": 2048,
+      "key_fingerprint": "73915ffdd4f139c643bd4e8ca950465d5ff92c831887ac1662d1fd745e53578a",
+      "file_fingerprint": "17af35d0ab45703e21c9d98262c65ed85db18e430131f153464b4d6a803f0057"
+    },
+    {
+      "name": "unicode 2048",
+      "bits": 2048,
+      "key_fingerprint": "61a4b3fda061417cfe6aee63f33ea02f86220c8c090b020a9fbce28301f77f8d",
+      "file_fingerprint": "f22346d08cf20ec9a32aaa07c2a22fd004b730cbf88613d0ff04fb377c5a1f36"
+    },
+    {
+      "name": "same unicode 3072",
+      "bits": 3072,
+      "key_fingerprint": "ae75ce147fe51d640f01671f5031dc0305e7d15ad62ebd6f404087143278dbe0",
+      "file_fingerprint": "0fdbcbb704b5359313123669eaba46105562f34c510a62cfdeccf2cefa10125a"
+    },
+    {
+      "name": "bom and line breaks 2048",
+      "bits": 2048,
+      "key_fingerprint": "93cf5222c529fea476f047d7c4e9edd021723c094e6bfdfb84e47c762b3fa8a3",
+      "file_fingerprint": "c83b23691d98dab4835d7855c30b47dc58d968f0a546481615073460a45f1890"
+    }
+  ]
+}

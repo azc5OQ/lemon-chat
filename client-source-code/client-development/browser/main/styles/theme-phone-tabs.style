@@ -1,14 +1,17 @@
-/* The phone layout with a bar of four screens (People, Chat, Channels, Me); included after theme-phone.style.
-   Including this sheet enables the bar with --member-conversations-tabs: 1. member-conversations.js writes the
-   shown screen into the attribute data-conversation-tab of the body: chat, people, channels or me.
-   The Channels screen is the full channel tree. The talk button stays above the composer on Chat, People and Channels.
-   A theme gives its colours with the --tabs-... variables; without them Mono's colours are used. */
+/* Add People, Chat, Channels and Me tabs to the shared phone layout. member-conversations.js sets data-conversation-tab. Theme variables supply the colors. */
 :root
 {
     --member-conversations-tabs: 1;
     --tabs-bar: 64px;
+    --tabs-people-avatar-size: 50px;
     /* no <select> of all channels: the Channels screen lists them */
     --member-conversations-rooms: 0;
+    --tabs-appearance-dark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2319191c' stroke-width='1.7'%3E%3Ccircle cx='12' cy='12' r='8'/%3E%3Cpath d='M12 4a8 8 0 0 1 0 16z' fill='%2319191c'/%3E%3C/svg%3E");
+    --tabs-appearance-light: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23f2f2f3' stroke-width='1.7'%3E%3Ccircle cx='12' cy='12' r='8'/%3E%3Cpath d='M12 4a8 8 0 0 1 0 16z' fill='%23f2f2f3'/%3E%3C/svg%3E");
+    --tabs-settings-dark: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2319191c' stroke-width='1.7' stroke-linecap='round'%3E%3Cpath d='M4 6h16M4 12h16M4 18h16'/%3E%3Cpath d='M9 4v4M15 10v4M9 16v4' stroke-width='4'/%3E%3C/svg%3E");
+    --tabs-settings-light: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23f2f2f3' stroke-width='1.7' stroke-linecap='round'%3E%3Cpath d='M4 6h16M4 12h16M4 18h16'/%3E%3Cpath d='M9 4v4M15 10v4M9 16v4' stroke-width='4'/%3E%3C/svg%3E");
+    --tabs-appearance-icon: var(--tabs-appearance-dark);
+    --tabs-settings-icon: var(--tabs-settings-dark);
 }
 
 /* the bar is always there while connected, so the page ends above it */
@@ -155,6 +158,18 @@
     padding-top: 6px;
 }
 
+:root #member-list-body .member-list-client
+{
+    padding-left: calc(var(--tabs-people-avatar-size) + 26px);
+}
+
+:root #member-list-body .member-list-client > .client-audio-state
+{
+    top: calc((66px - var(--tabs-people-avatar-size)) / 2);
+    width: var(--tabs-people-avatar-size);
+    height: var(--tabs-people-avatar-size);
+}
+
 /* The Channels screen: the full channel tree in place of the list of people. */
 :root:has(body[data-conversation-tab="channels"]) #space-devider-42,
 :root:has(body[data-conversation-tab="me"]) #space-devider-42
@@ -282,9 +297,7 @@
     font-weight: 400;
 }
 
-/* The song name of a client that streams music: the light green and light blue letters of the Default
-   theme have a contrast of 1.2 to 1 and 1.4 to 1 on the white panel of this theme. The brackets take the
-   colour of secondary text and the song name the colour of normal text. */
+/* Use readable text colors for song titles and brackets on light panels. */
 :root #space-devider1 .connected-client .marquee-music-playing-container > p
 {
     color: var(--mono-muted);
@@ -316,7 +329,7 @@
     background-size: cover;
 }
 
-/* The Me screen: the user's name, then Server, Look and Settings as rows. */
+/* the profile and its actions share the current theme colors */
 :root:has(body[data-conversation-tab="me"]) #member-conversations-profile
 {
     top: calc(var(--mono-top) + 22px);
@@ -336,8 +349,8 @@
     right: calc(16px + var(--phone-side));
     left: calc(16px + var(--phone-side));
     width: auto;
-    height: 56px;
-    border-radius: 16px;
+    height: 48px;
+    border-radius: 12px;
     background-color: var(--tabs-row, var(--mono-surface));
     background-position: 18px center;
 }
@@ -350,29 +363,40 @@
 :root:has(body[data-conversation-tab="me"]) #connections-menu-button
 {
     width: 100%;
-    height: 56px;
+    height: 48px;
     background-position: 18px center;
 }
 
 :root:has(body[data-conversation-tab="me"]) #communication-system-head-menu > #choose-theme-button
 {
-    top: calc(var(--mono-top) + 162px);
+    top: calc(var(--mono-top) + 154px);
+    background-image: var(--tabs-appearance-icon);
 }
 
 :root:has(body[data-conversation-tab="me"]) #communication-system-head-menu > #local-settings-button
 {
-    top: calc(var(--mono-top) + 228px);
+    top: calc(var(--mono-top) + 212px);
+    background-image: var(--tabs-settings-icon);
 }
 
-:root:has(body[data-conversation-tab="me"]) #communication-system-head-menu::after,
-:root:has(body[data-conversation-tab="me"]) #head-menu-left-group::after,
+:root:has(body[data-conversation-tab="me"]) #communication-system-head-menu > :is(#choose-theme-button, #local-settings-button)
+{
+    box-sizing: border-box;
+    padding: 0 18px 0 54px;
+    background-size: 22px;
+    color: var(--mono-text);
+    font: 600 16px/1.4 var(--set-font);
+    text-align: left;
+    filter: none;
+}
+
 :root:has(body[data-conversation-tab="me"]) #connections-menu::after
 {
     right: auto !important;
     left: calc(72px + var(--phone-side)) !important;
     width: auto !important;
     color: var(--mono-text) !important;
-    font: 600 16px/56px var(--set-font) !important;
+    font: 600 16px/48px var(--set-font) !important;
     text-align: left !important;
     z-index: 43;
 }
@@ -382,14 +406,26 @@
     top: calc(var(--mono-top) + 96px) !important;
 }
 
-:root:has(body[data-conversation-tab="me"]) #head-menu-left-group::after
-{
-    top: calc(var(--mono-top) + 162px) !important;
-}
-
+:root:has(body[data-conversation-tab="me"]) #head-menu-left-group::after,
 :root:has(body[data-conversation-tab="me"]) #communication-system-head-menu::after
 {
-    top: calc(var(--mono-top) + 228px) !important;
+    content: none !important;
+}
+
+/* android keeps connection settings in its native screen */
+:root:has(body.android-app[data-conversation-tab="me"]) #communication-system-head-menu > #choose-theme-button
+{
+    top: calc(var(--mono-top) + 96px);
+}
+
+:root:has(body.android-app[data-conversation-tab="me"]) #communication-system-head-menu > #local-settings-button
+{
+    top: calc(var(--mono-top) + 154px);
+}
+
+:root:has(body.android-app[data-conversation-tab="me"]) #show-hide-log-button
+{
+    top: calc(var(--mono-top) + 212px);
 }
 
 /* The log button is a fourth row of the Me screen, and the log is shown under it. Both are on this screen only.
@@ -406,7 +442,7 @@
     bottom: auto;
     left: calc(16px + var(--phone-side));
     box-sizing: border-box;
-    width: calc(100vw - 32px - 2 * var(--phone-side));
+    width: calc(calc(100vw / var(--ui-display-scale, 1)) - 32px - 2 * var(--phone-side));
     height: 56px;
     margin: 0;
     padding: 0 0 0 56px;
@@ -557,14 +593,7 @@
     font: 600 14px/20px var(--set-font);
 }
 
-/* The lock is the only mark at the left of a row in this layout: a channel without audio has the words
-   "no voice" at the right end of its row. The lock does not move the name of the channel: its left margin
-   is negative and as wide as the lock with the 2px after it (16px), so the lock stands in the empty part
-   that moves a row to the right by the depth of its channel. A channel of the first depth, and every
-   channel of a list without depth, has no such empty part; while one of those has a password, every row
-   of a channel and of a person gets an empty part of 16px. The widths of layout.style are not used here,
-   because they also count the mark of a channel without audio. The row of the user's own channel is left
-   out: its ::after part holds the words "you are here" (next rule). */
+/* Reserve gutter space for password locks without shifting channel names. Audio restrictions use the no voice label. The current channel keeps its you are here marker. */
 :root #space-devider1 #channel-list-container .single-channel:not(.single-channel-current):has(> .single-channel-is-using-password)::after
 {
     margin-left: -16px;

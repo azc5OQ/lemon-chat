@@ -6,10 +6,12 @@
 #include "mbedtls/platform_util.h"
 
 /**
- * @brief attempts one bounded attachment write without waiting on a full socket queue.
+ * @brief attempts one bounded attachment write without waiting on a full socket queue
+ *
  * @param desktop_session_t* session -> sole protocol sender
  * @param cJSON* message -> consumed inner message on every path
- * @return boole -> TRUE when queued; FALSE leaves the transfer available for a later retry
+ *
+ * @return boole -> TRUE when queued. FALSE leaves the transfer available for a later retry
  */
 boole client_msg__delivery__try_send(desktop_session_t *session, cJSON *message)
 {
@@ -38,8 +40,10 @@ boole client_msg__delivery__try_send(desktop_session_t *session, cJSON *message)
 }
 
 /**
- * @brief creates the owned inner message object.
+ * @brief creates the owned inner message object
+ *
  * @param const char* type -> new control or protocol message type
+ *
  * @return cJSON* -> owned inner message, or NULL on allocation failure
  */
 cJSON *client_msg__delivery__new_message(const char *type)
@@ -56,11 +60,13 @@ cJSON *client_msg__delivery__new_message(const char *type)
 }
 
 /**
- * @brief consumes a complete message, encrypts it and sends it from the sole sending worker.
- * @param desktop_session_t* session -> session state; worker-owned unless this is a GUI entry point
- * @param cJSON* message -> owned outgoing message; ownership is consumed even on failure
+ * @brief consumes a complete message, encrypts it and sends it from the sole sending worker
+ *
+ * @param desktop_session_t* session -> session state. Worker owned unless this is a GUI entry point
+ * @param cJSON* message -> owned outgoing message. Ownership is consumed even on failure
  * @param boole complete -> nonzero when all required outgoing fields were allocated
- * @return boole -> 1 when accepted by transport; consumes message on every path
+ *
+ * @return boole -> 1 when accepted by transport. Consumes message on every path
  */
 boole client_msg__delivery__send(desktop_session_t *session, cJSON *message, boole complete)
 {

@@ -1,8 +1,19 @@
 #include "keys_session.h"
+#include "../clib/clib.h"
 #include <stdio.h>
 #include <string.h>
 #include "mbedtls/sha256.h"
 
+/**
+ * @brief starts the transcript with policy, nonce and client public key
+ *
+ * @param ubyte [32] transcript -> receives the initial 32 byte transcript hash
+ * @param const lemon_session_policy * policy -> session policy to validate and include
+ * @param const char * nonce -> 32 character negotiation nonce
+ * @param const char * public_key -> terminated client public key
+ *
+ * @return boole -> TRUE when the policy is valid and both transcript inputs are mixed
+ */
 boole keys_session__begin_transcript(ubyte transcript[32], const lemon_session_policy *policy, const char *nonce, const char *public_key)
 {
     char header[256] = { 0 };
@@ -22,7 +33,18 @@ boole keys_session__begin_transcript(ubyte transcript[32], const lemon_session_p
     return size > 0 && (uint64)size < sizeof(header) && keys_session__mix(transcript, (const ubyte *)header, (uint64)size) && keys_session__mix(transcript, (const ubyte *)public_key, strlen(public_key));
 }
 
-/** @brief Derives independent keys per direction, cipher and layer from all exchanges. */
+/**
+ * @brief derives separate keys for each direction and cipher layer
+ *
+ * @param const ubyte* secret -> combined exchange secret containing 32 bytes
+ * @param const ubyte* transcript -> handshake hash containing 32 bytes
+ * @param int64 type -> cipher for the required layers
+ * @param uint64 count -> number of required layers
+ * @param int64 random_type -> extra cipher, or zero to omit the extra layer
+ * @param lemon_session_keys* output -> receives the keys. Cleared on failure
+ *
+ * @return boole -> TRUE if every key was derived successfully
+ */
 boole keys_session__derive(const ubyte secret[32], const ubyte transcript[32], int64 type, uint64 count, int64 random_type, lemon_session_keys *output)
 {
     int64 cipher = 0;
@@ -65,6 +87,18 @@ boole keys_session__derive(const ubyte secret[32], const ubyte transcript[32], i
     return status;
 }
 
+/**
+ * @brief applies all directional session cipher layers in place
+ *
+ * @param const lemon_session_keys * session -> derived session layer keys
+ * @param boole server_to_client -> TRUE for server to client keys, otherwise client to server keys
+ * @param boole encrypt -> TRUE to encrypt or FALSE to decrypt
+ * @param const ubyte [16] iv -> message initialization vector
+ * @param ubyte * data -> bytes to transform
+ * @param uint64 size -> byte count
+ *
+ * @return boole -> TRUE when the layer count and every cipher operation succeed
+ */
 boole keys_session__crypt(const lemon_session_keys *session, boole server_to_client, boole encrypt, const ubyte iv[16], ubyte *data, uint64 size)
 {
     uint64 selected = 0;
@@ -89,7 +123,17 @@ boole keys_session__crypt(const lemon_session_keys *session, boole server_to_cli
     return 1;
 }
 
-/** @brief Encrypts/decrypts one candidate probe; a separate HMAC verifies its plaintext. */
+/**
+ * @brief encrypts or decrypts a probe with the selected candidate cipher
+ *
+ * @param const ubyte* secret -> combined exchange secret containing 32 bytes
+ * @param const ubyte* transcript -> handshake hash containing 32 bytes
+ * @param int64 type -> candidate cipher identifier
+ * @param const ubyte* iv -> starting value containing 16 bytes
+ * @param ubyte* data -> probe buffer containing 32 bytes. Transformed in place
+ *
+ * @return boole -> TRUE if key derivation and the cipher operation succeeded
+ */
 boole keys_session__random_probe(const ubyte secret[32], const ubyte transcript[32], int64 type, const ubyte iv[16], ubyte data[32])
 {
     char purpose[128] = { 0 };
@@ -109,6 +153,16 @@ boole keys_session__random_probe(const ubyte secret[32], const ubyte transcript[
     return status;
 }
 
+/**
+ * @brief authenticates a cipher probe together with the handshake transcript
+ *
+ * @param const ubyte [32] secret -> combined 32 byte shared secret
+ * @param const ubyte [32] transcript -> 32 byte transcript hash
+ * @param const ubyte [32] plaintext -> 32 byte unencrypted probe
+ * @param ubyte [32] tag -> receives the 32 byte authentication tag
+ *
+ * @return boole -> TRUE when key derivation and authentication succeed
+ */
 boole keys_session__random_probe_tag(const ubyte secret[32], const ubyte transcript[32], const ubyte plaintext[32], ubyte tag[32])
 {
     ubyte key[32] = { 0 };
@@ -116,8 +170,8 @@ boole keys_session__random_probe_tag(const ubyte secret[32], const ubyte transcr
     boole status = FALSE;
 
     // join plaintext and transcript
-    memcpy(input, plaintext, 32);
-    memcpy(input + 32, transcript, 32);
+    clib__copy_memory(plaintext, input, 32, sizeof(input));
+    clib__copy_memory(transcript, input + 32, 32, sizeof(input) - 32);
 
     // calculate the tag
     status = keys_session__hkdf(secret, transcript, "lemonchat/v2/random-cipher/probe-check", key) && ciphers__hmac(key, input, sizeof(input), tag);
@@ -128,7 +182,16 @@ boole keys_session__random_probe_tag(const ubyte secret[32], const ubyte transcr
     return status;
 }
 
-/** @brief HKDF-SHA256 extract/expand for one 32-byte output, with a bounded purpose label. */
+/**
+ * @brief derives one key with HKDF SHA256
+ *
+ * @param const ubyte* input -> secret containing 32 bytes
+ * @param const ubyte* salt -> salt containing 32 bytes
+ * @param const char* purpose -> terminated purpose label shorter than 256 bytes
+ * @param ubyte* output -> buffer receiving the 32 byte key
+ *
+ * @return boole -> TRUE if the key was derived successfully
+ */
 boole keys_session__hkdf(const ubyte input[32], const ubyte salt[32], const char *purpose, ubyte output[32])
 {
     ubyte extracted[32] = { 0 };
@@ -139,7 +202,7 @@ boole keys_session__hkdf(const ubyte input[32], const ubyte salt[32], const char
     // calculate the output key
     if (size < sizeof(info))
     {
-        memcpy(info, purpose, size);
+        clib__copy_memory(purpose, info, size, sizeof(info));
         info[size] = 1;
         status = ciphers__hmac(salt, input, 32, extracted) && ciphers__hmac(extracted, info, size + 1, output);
     }
@@ -150,7 +213,15 @@ boole keys_session__hkdf(const ubyte input[32], const ubyte salt[32], const char
     return status;
 }
 
-/** @brief Hash-chains a length-prefixed field; used for secrets and the handshake transcript. */
+/**
+ * @brief hashes the current state with a field's length and contents
+ *
+ * @param ubyte* state -> current 32 byte hash. Receives the updated hash
+ * @param const ubyte* data -> field bytes to include
+ * @param uint64 size -> field length, at most UINT32_MAX bytes
+ *
+ * @return boole -> TRUE if the hash was updated successfully
+ */
 boole keys_session__mix(ubyte state[32], const ubyte *data, uint64 size)
 {
     mbedtls_sha256_context context = { 0 };

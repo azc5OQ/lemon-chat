@@ -1,4 +1,4 @@
-// Builds channel member rows shared by the desktop window and game overlay.
+// builds channel member rows shared by the desktop window and game overlay
 #include "ui/member_view.h"
 #include "ui/ui_voice.h"
 #include "ui/ui_headers.h"
@@ -8,13 +8,13 @@
 static gui_node_t *_member_view_internal__label(gui_node_t *row, const char *klass, const char *text);
 
 /**
- * @brief creates and appends a bounded text label to a member row.
+ * @brief creates and appends a bounded text label to a member row
  *
  * @param gui_node_t* row -> parent member row
  * @param const char* klass -> style classes for the new label
  * @param const char* text -> text buffer
  *
- * @return gui_node_t* -> the new scene-owned label, or NULL on allocation failure
+ * @return gui_node_t* -> the new scene owned label, or NULL on allocation failure
  */
 static gui_node_t *_member_view_internal__label(gui_node_t *row, const char *klass, const char *text)
 {
@@ -32,7 +32,7 @@ static gui_node_t *_member_view_internal__label(gui_node_t *row, const char *kla
 }
 
 /**
- * @brief replaces the member rows with a validated channel snapshot.
+ * @brief replaces the member rows with a validated channel snapshot
  *
  * @param gui_node_t* container -> scene node whose member rows are replaced
  * @param const desktop_overlay_snapshot_t* snapshot -> bounded channel display snapshot

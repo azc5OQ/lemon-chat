@@ -1,14 +1,7 @@
-// head-menu.js is embedded in template.html along with the other client files
-// it is the menu at the left end of the head menu (the strip at the top of the page that also holds the icon buttons
-// at its right end): two buttons, "connections" and "bookmarks", each opening a list below it, like the menus of a
-// desktop program. "connections" opens the connect window (the connection form, which used to be a page of its own;
-// connection.js owns it) or ends the connection; "bookmarks" lists the saved servers, and a click connects to one.
-// the group is hidden on android and in the member list theme bluebell, which keeps the connect
-// form as a page of its own; the stylesheets do that hiding
-// main.js calls head_menu__init once the page exists; connection.js asks for a repaint of the bookmarks list
+// provides the connection and bookmark menus. initialized by main.js
 
 /**
- * @brief wires the menu buttons, their lists, the close button of the connect window, and the outside click and the escape key that close an open list
+ * @brief binds connection and bookmark menus, outside clicks and Escape
  *
  * @return void
  */
@@ -41,14 +34,14 @@ function head_menu__init()
     {
         head_menu__close_all();
 
-        // while connected, "connect" is greyed out and does nothing: the window opens only without a connection
+        // disable Connect while connected
         if (connect_item.classList.contains("is-disabled") == false)
         {
             connection__show_connect_window();
         }
     };
 
-    // "disconnect" asks first: the entry turns into a question with "yes" and "no", and only "yes" ends the connection
+    // confirm before disconnecting
     disconnect_item.onclick = function(event)
     {
         event.stopPropagation();
@@ -71,7 +64,7 @@ function head_menu__init()
     }
 
 
-    // a click anywhere else closes an open list; the buttons stop their own click from reaching here
+    // close menus on outside clicks
     document.addEventListener("click", head_menu__close_all);
     document.addEventListener("keydown", function(event)
     {
@@ -82,13 +75,16 @@ function head_menu__init()
     });
 
     // the "disconnect" entry follows every change of the connection state
-    g_connection_status_listeners.push(function() { head_menu__refresh_connections_items(); });
+    g_connection_status_listeners.push(function()
+    {
+        head_menu__refresh_connections_items();
+    });
     head_menu__refresh_connections_items();
     head_menu__render_bookmarks();
 }
 
 /**
- * @brief opens the list of one menu and closes the other; a click on the button of the open menu closes it
+ * @brief toggles one menu and closes the other
  *
  * @param string menu_id -> "connections-menu" or "bookmarks-menu"
  *
@@ -122,8 +118,7 @@ function head_menu__toggle(menu_id)
 }
 
 /**
- * @brief turns the "disconnect" entry into the question "disconnect from the server?" with "yes" and "no"
- *        "yes" ends the connection and closes the list; "no", a click elsewhere or the escape key put the entry back
+ * @brief asks for confirmation before disconnecting
  *
  * @return void
  */
@@ -166,7 +161,7 @@ function head_menu__show_disconnect_question()
 }
 
 /**
- * @brief puts the "disconnect" entry back to its plain form
+ * @brief restores the Disconnect menu item
  *
  * @return void
  */
@@ -182,7 +177,7 @@ function head_menu__reset_disconnect_item()
 }
 
 /**
- * @brief closes every open list, and takes back an open disconnect question
+ * @brief closes open menus and cancels disconnect confirmation
  *
  * @return void
  */
@@ -206,8 +201,7 @@ function head_menu__close_all()
 }
 
 /**
- * @brief the two entries follow the connection: "connect" is greyed out while a connection exists, "disconnect" is greyed out
- *        unless a connection exists or an attempt runs (in the retry countdown it is greyed out too)
+ * @brief updates Connect and Disconnect availability from connection state
  *
  * @return void
  */
@@ -229,9 +223,9 @@ function head_menu__refresh_connections_items()
 }
 
 /**
- * @brief whether a connection exists right now, for the entries that must do nothing then
+ * @brief checks whether a connection is active
  *
- * @return boolean
+ * @return boolean true when authenticated or the connection phase is connected
  */
 function head_menu__is_connected()
 {
@@ -239,9 +233,7 @@ function head_menu__is_connected()
 }
 
 /**
- * @brief fills the bookmarks list from the saved servers: one row per server, which connects to it, with a delete mark at its right end,
- *        and below them the row that saves the server of the connect window's fields under a name. an empty list shows a note
- *        above that row. connection.js calls this after every change of the saved servers
+ * @brief rebuilds saved server rows and the row for adding a bookmark
  *
  * @return void
  */
@@ -274,7 +266,7 @@ function head_menu__render_bookmarks()
         let remove = document.createElement("span");
 
         row.className = "head-menu-dropdown-item bookmarks-menu-item";
-        // a bookmark connects, so like "connect" it is greyed out while a connection exists; its delete mark still works
+        // disable bookmark connections while connected. keep deletion available
         row.classList.toggle("is-disabled", head_menu__is_connected());
         row.setAttribute("data-bookmark-index", i);
         row.title = bookmarks[i].host + ":" + bookmarks[i].port;
@@ -311,8 +303,7 @@ function head_menu__render_bookmarks()
 }
 
 /**
- * @brief the row at the end of the bookmarks list: a name and a save button, which save the address and port of the connect window's fields
- *        clicks and keys inside the row stay inside it, because a click that reaches the page closes the list
+ * @brief adds the bookmark name field and Save button
  *
  * @param HTMLElement list -> the list the row is appended to
  *
@@ -359,8 +350,7 @@ function head_menu__append_bookmark_save_row(list)
 }
 
 /**
- * @brief the save row of the bookmarks list: the address and port of the connect window are saved under the typed name
- *        a saved bookmark repaints the list (connection.js), which empties the name for the next one
+ * @brief saves the form's server address and port under the entered bookmark name
  *
  * @return void
  */
@@ -368,14 +358,11 @@ function head_menu__save_bookmark()
 {
     let name_input = document.getElementById("bookmarks-menu-name");
 
-    connection__save_server_bookmark((name_input != null) ? name_input.value : "",
-        document.getElementById("input-ip-address").value, document.getElementById("input-port-number").value);
+    connection__save_server_bookmark((name_input != null) ? name_input.value : "", document.getElementById("input-ip-address").value, document.getElementById("input-port-number").value);
 }
 
 /**
- * @brief a bookmark was clicked: its address and port go into the connect window, a connection attempt to it starts, and the window opens
- *        only without a connection (the row is greyed out otherwise). on a page with the server written into it the bookmark takes
- *        that server's place (connection.js); the page's keys are still the ones sent, a bookmark stores none
+ * @brief loads a saved server and starts connecting when no connection exists
  *
  * @param number index -> the bookmark's index in the stored list
  *
@@ -406,7 +393,7 @@ function head_menu__connect_to_bookmark(index)
 }
 
 /**
- * @brief the delete mark of a bookmark row: the server is removed from the saved list, and both lists are repainted
+ * @brief deletes a bookmark and refreshes both bookmark lists
  *
  * @param number index -> the bookmark's index in the stored list
  *
@@ -427,11 +414,7 @@ function head_menu__delete_bookmark(index)
 }
 
 /**
- * @brief The identity button of the top bar (#show-secret-identity-string). A press opens the list with the
- *        entries "export this identity" and "import another identity" under the button; a press while the
- *        list is open closes the list. The list gets fixed coordinates, because the themes put the button
- *        at different places of the top bar. It opens above the button when there is no room under it
- *        (a top bar at the lower edge of the window), and it does not leave the window at the sides.
+ * @brief toggles the identity menu and positions it within the window
  *
  * @param object event -> the click event of the button
  *
@@ -457,21 +440,20 @@ function head_menu__identity_button_onclick(event)
     }
 
     // stay inside the window
-    left = Math.max(4, Math.min(rect.left, window.innerWidth - list.offsetWidth - 4));
+    left = Math.max(4, Math.min(rect.left, utils__viewport_width() - list.offsetWidth * g_position_scale - 4));
     top = rect.bottom + 2;
-    if (top + list.offsetHeight > window.innerHeight)
+    if (top + list.offsetHeight * g_position_scale > utils__viewport_height())
     {
-        top = rect.top - list.offsetHeight - 2;
+        top = rect.top - list.offsetHeight * g_position_scale - 2;
     }
 
     // place the list
-    list.style.left = Math.round(left) + "px";
-    list.style.top = Math.round(top) + "px";
+    list.style.left = utils__position_px(Math.round(left));
+    list.style.top = utils__position_px(Math.round(top));
 }
 
 /**
- * @brief An entry of the identity list was pressed. The list is closed and the window of that entry is
- *        opened: the export window for "export this identity", the import window for "import another identity".
+ * @brief closes the identity menu and opens the selected import or export dialog
  *
  * @param object event -> the click event of the entry
  *

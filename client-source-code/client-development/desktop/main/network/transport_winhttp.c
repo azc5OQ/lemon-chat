@@ -1,5 +1,5 @@
 #include "platform/memory.h"
-// The connection worker owns asynchronous WinHTTP operations and every handle lifetime.
+// the connection worker owns asynchronous WinHTTP operations and every handle lifetime
 #include <windows.h>
 #include <winhttp.h>
 #include <stdlib.h>
@@ -44,10 +44,12 @@ static DWORD WINAPI _transport_internal__worker(void *context);
 static boole _transport_internal__send(desktop_transport_t *transport, const char *bytes, uint64 size, boole binary, uint64 expires);
 
 /**
- * @brief updates the connection status under its short-lived data lock.
+ * @brief updates the connection status under its short lived data lock
+ *
  * @param desktop_transport_t* transport -> owned transport
  * @param desktop_transport_state_t state -> new connection state
  * @param const char* detail -> bounded display text
+ *
  * @return void
  */
 static void _transport_internal__status(desktop_transport_t *transport, desktop_transport_state_t state, const char *detail)
@@ -60,12 +62,14 @@ static void _transport_internal__status(desktop_transport_t *transport, desktop_
 }
 
 /**
- * @brief records completion without invoking networking or application code.
+ * @brief records completion without invoking networking or application code
+ *
  * @param HINTERNET handle -> borrowed native callback handle
  * @param DWORD_PTR context -> operation retained until HANDLE_CLOSING
  * @param DWORD status -> native completion status
  * @param void* information -> borrowed native result
  * @param DWORD size -> native result size
+ *
  * @return void
  */
 static void CALLBACK _transport_internal__callback(HINTERNET handle, DWORD_PTR context, DWORD status, void *information, DWORD size)
@@ -125,8 +129,10 @@ static void CALLBACK _transport_internal__callback(HINTERNET handle, DWORD_PTR c
 }
 
 /**
- * @brief creates completion events before a callback can reference their owner.
- * @param transport_operation_t* operation -> cleared worker-local operation
+ * @brief creates completion events before a callback can reference their owner
+ *
+ * @param transport_operation_t* operation -> cleared worker local operation
+ *
  * @return boole -> TRUE when every event exists
  */
 static boole _transport_internal__operation(transport_operation_t *operation)
@@ -139,9 +145,11 @@ static boole _transport_internal__operation(transport_operation_t *operation)
 }
 
 /**
- * @brief installs a handle-specific context before asynchronous operations start.
+ * @brief installs a handle specific context before asynchronous operations start
+ *
  * @param HINTERNET handle -> worker-owned request
  * @param transport_operation_t* operation -> initialized completion state
+ *
  * @return boole -> TRUE when the context and callback are registered
  */
 static boole _transport_internal__register(HINTERNET handle, transport_operation_t *operation)
@@ -160,9 +168,11 @@ static boole _transport_internal__register(HINTERNET handle, transport_operation
 }
 
 /**
- * @brief cancels asynchronous operations and retains their buffers until the final callback.
+ * @brief cancels asynchronous operations and retains their buffers until the final callback
+ *
  * @param HINTERNET handle -> handle closed exactly once by this worker
  * @param transport_operation_t* operation -> operation kept alive through cancellation
+ *
  * @return void
  */
 static void _transport_internal__close(HINTERNET handle, transport_operation_t *operation)
@@ -179,8 +189,10 @@ static void _transport_internal__close(HINTERNET handle, transport_operation_t *
 }
 
 /**
- * @brief frees completion events after the handle's final callback.
- * @param transport_operation_t* operation -> closed worker-local operation
+ * @brief frees completion events after the handle's final callback
+ *
+ * @param transport_operation_t* operation -> closed worker local operation
+ *
  * @return void
  */
 static void _transport_internal__dispose(transport_operation_t *operation)
@@ -201,9 +213,11 @@ static void _transport_internal__dispose(transport_operation_t *operation)
 }
 
 /**
- * @brief waits for handshake completion, cancellation or a bounded timeout on the worker.
+ * @brief waits for handshake completion, cancellation or a bounded timeout on the worker
+ *
  * @param desktop_transport_t* transport -> owned transport
  * @param transport_operation_t* operation -> pending handshake operation
+ *
  * @return DWORD -> native error, or ERROR_SUCCESS
  */
 static DWORD _transport_internal__wait(desktop_transport_t *transport, transport_operation_t *operation)
@@ -229,8 +243,10 @@ static DWORD _transport_internal__wait(desktop_transport_t *transport, transport
 }
 
 /**
- * @brief owns asynchronous TCP WebSocket I/O outside the session and GUI threads.
+ * @brief owns asynchronous TCP WebSocket I/O outside the session and GUI threads
+ *
  * @param void* context -> transport retained until this worker exits
+ *
  * @return DWORD -> zero after every handle and buffer has been released
  */
 static DWORD WINAPI _transport_internal__worker(void *context)
@@ -529,7 +545,7 @@ label_finished:
     {
         WinHttpCloseHandle(session);
     }
-    // closing callbacks have finished; no I/O can still reference these buffers
+    // closing callbacks have finished. No I/O can still reference these buffers
     desktop_message__release(&outgoing);
     if (message)
     {
@@ -564,7 +580,8 @@ label_finished:
 }
 
 /**
- * @brief allocates an idle transport with bounded queues and cancellation events.
+ * @brief allocates an idle transport with bounded queues and cancellation events
+ *
  * @return desktop_transport_t* -> owned transport, or NULL
  */
 desktop_transport_t *desktop_transport__create(void)
@@ -593,11 +610,20 @@ desktop_transport_t *desktop_transport__create(void)
 }
 
 /**
- * @brief signals cancellation without executing WinHTTP or waiting on the caller's thread.
+ * @brief signals cancellation without executing WinHTTP or waiting on the caller's thread
+ *
  * @param desktop_transport_t* transport -> owned transport, or NULL
+ *
  * @return void
  */
 /* Requests cancellation without waiting. Destroy joins before releasing storage. */
+/**
+ * @brief requests that the connection worker stop
+ *
+ * @param desktop_transport_t* transport -> transport to stop, or null
+ *
+ * @return void
+ */
 void desktop_transport__disconnect(desktop_transport_t *transport)
 {
     if (transport && transport->stop)
@@ -607,8 +633,10 @@ void desktop_transport__disconnect(desktop_transport_t *transport)
 }
 
 /**
- * @brief joins the worker before releasing callback-visible queues and state.
+ * @brief joins the worker before releasing callback visible queues and state
+ *
  * @param desktop_transport_t* transport -> owned transport, or NULL
+ *
  * @return void
  */
 void desktop_transport__destroy(desktop_transport_t *transport)
@@ -646,12 +674,22 @@ void desktop_transport__destroy(desktop_transport_t *transport)
 }
 
 /**
- * @brief starts a new connection after the previous worker releases its handles.
+ * @brief starts a new connection after the previous worker releases its handles
+ *
  * @param desktop_transport_t* transport -> idle owned transport
  * @param const char* url -> TCP WebSocket endpoint
+ *
  * @return boole -> TRUE when setup started
  */
-/* Starts a worker; the GUI thread never performs a connection or receive. */
+/* Starts a worker. The GUI thread never performs a connection or receive. */
+/**
+ * @brief validates the address and starts a connection worker
+ *
+ * @param desktop_transport_t* transport -> transport with no active worker
+ * @param const char* url -> ws or wss address
+ *
+ * @return boole -> true when the worker starts, before connection success is known
+ */
 boole desktop_transport__connect(desktop_transport_t *transport, const char *url)
 {
     // check the transport
@@ -698,9 +736,11 @@ boole desktop_transport__connect(desktop_transport_t *transport, const char *url
 }
 
 /**
- * @brief copies the connection status under its data lock.
+ * @brief copies the connection status under its data lock
+ *
  * @param desktop_transport_t* transport -> owned transport
  * @param desktop_transport_status_t* status -> receives a value copy
+ *
  * @return void
  */
 void desktop_transport__status(desktop_transport_t *transport, desktop_transport_status_t *status)
@@ -713,12 +753,14 @@ void desktop_transport__status(desktop_transport_t *transport, desktop_transport
 }
 
 /**
- * @brief copies a message while preserving reliable order and rejecting expired voice.
+ * @brief copies a message while preserving reliable order and rejecting expired voice
+ *
  * @param desktop_transport_t* transport -> connected transport
  * @param const char* bytes -> readable bytes, or NULL for an empty binary message
  * @param uint64 size -> bounded byte count
  * @param boole binary -> WebSocket message kind
  * @param uint64 expires -> zero for reliable data, otherwise a monotonic deadline
+ *
  * @return boole -> TRUE when the queue owns a copy
  */
 static boole _transport_internal__send(desktop_transport_t *transport, const char *bytes, uint64 size, boole binary, uint64 expires)
@@ -748,23 +790,36 @@ static boole _transport_internal__send(desktop_transport_t *transport, const cha
 }
 
 /**
- * @brief queues reliable UTF-8 metadata without performing network I/O.
+ * @brief queues reliable UTF-8 metadata without performing network I/O
+ *
  * @param desktop_transport_t* transport -> connected transport
  * @param const char* bytes -> complete text message
  * @param uint64 size -> byte count
+ *
  * @return boole -> TRUE when queued
  */
 /* Copies into a bounded queue. The connection worker owns all network operations. */
+/**
+ * @brief queues a text frame for the connection worker
+ *
+ * @param desktop_transport_t* transport -> transport that owns the output queue
+ * @param const char* bytes -> frame bytes to copy
+ * @param uint64 size -> frame byte count
+ *
+ * @return boole -> true when the queue accepts the frame
+ */
 boole desktop_transport__send(desktop_transport_t *transport, const char *bytes, uint64 size)
 {
     return _transport_internal__send(transport, bytes, size, FALSE, 0);
 }
 
 /**
- * @brief queues reliable binary data, including empty audio keepalives.
+ * @brief queues reliable binary data, including empty audio keepalives
+ *
  * @param desktop_transport_t* transport -> connected transport
  * @param const ubyte* bytes -> complete message, or NULL when empty
  * @param uint64 size -> byte count
+ *
  * @return boole -> TRUE when queued
  */
 boole desktop_transport__send_binary(desktop_transport_t *transport, const ubyte *bytes, uint64 size)
@@ -773,11 +828,13 @@ boole desktop_transport__send_binary(desktop_transport_t *transport, const ubyte
 }
 
 /**
- * @brief queues voice that expires before it can accumulate a long sending delay.
+ * @brief queues voice that expires before it can accumulate a long sending delay
+ *
  * @param desktop_transport_t* transport -> connected audio transport
  * @param const ubyte* bytes -> encrypted voice frame
  * @param uint64 size -> frame size
  * @param uint64 expires -> nonzero monotonic expiry
+ *
  * @return boole -> TRUE when queued
  */
 boole desktop_transport__send_media(desktop_transport_t *transport, const ubyte *bytes, uint64 size, uint64 expires)
@@ -786,8 +843,10 @@ boole desktop_transport__send_media(desktop_transport_t *transport, const ubyte 
 }
 
 /**
- * @brief removes unsent voice when push-to-talk stops, retaining reliable attachment data.
+ * @brief removes unsent voice when push to talk stops, retaining reliable attachment data
+ *
  * @param desktop_transport_t* transport -> owned audio transport
+ *
  * @return void
  */
 void desktop_transport__discard_media(desktop_transport_t *transport)
@@ -799,9 +858,11 @@ void desktop_transport__discard_media(desktop_transport_t *transport)
 }
 
 /**
- * @brief transfers the next received message to its caller.
+ * @brief transfers the next received message to its caller
+ *
  * @param desktop_transport_t* transport -> owned transport
  * @param desktop_message_t* message -> cleared output, released by caller
+ *
  * @return boole -> TRUE when available
  */
 boole desktop_transport__receive(desktop_transport_t *transport, desktop_message_t *message)

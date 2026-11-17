@@ -19,6 +19,12 @@ set(USE_MBEDTLS ON CACHE BOOL "" FORCE)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 add_subdirectory("${THIRD}/mbedtls-3.6.6" mbedtls EXCLUDE_FROM_ALL)
+
+# mbedtls reads random bytes with the getrandom system call. A kernel older than 3.17 has no getrandom, and
+# mbedtls then reads /dev/random, which blocks on such a kernel until the kernel has collected enough entropy;
+# the login of every client then stops at the key challenge (seen on a phone with kernel 3.4). /dev/urandom does
+# not block and is the random source of Android's own libraries.
+target_compile_definitions(mbedcrypto PRIVATE MBEDTLS_PLATFORM_DEV_RANDOM="/dev/urandom")
 add_library(MbedTLS::MbedTLS INTERFACE IMPORTED GLOBAL)
 set_target_properties(MbedTLS::MbedTLS PROPERTIES INTERFACE_LINK_LIBRARIES "mbedtls;mbedx509;mbedcrypto")
 add_subdirectory("${THIRD}/libdatachannel-0.24.2" datachannel EXCLUDE_FROM_ALL)

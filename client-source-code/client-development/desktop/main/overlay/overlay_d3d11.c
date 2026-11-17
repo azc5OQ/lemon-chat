@@ -1,4 +1,4 @@
-// Draws bounded channel display data inside the selected D3D11 game.
+// draws bounded channel display data inside the selected D3D11 game
 #define COBJMACROS
 #include <windows.h>
 #include <d3d11.h>
@@ -44,7 +44,7 @@ static HRESULT STDMETHODCALLTYPE _overlay_d3d11_internal__present(IDXGISwapChain
 static HRESULT STDMETHODCALLTYPE _overlay_d3d11_internal__resize(IDXGISwapChain *chain, UINT count, UINT width, UINT height, DXGI_FORMAT format, UINT flags);
 
 /**
- * @brief forwards overlay warnings and errors to the Windows debugger output.
+ * @brief forwards overlay warnings and errors to the Windows debugger output
  *
  * @param meek_log_level_e level -> library log level
  * @param const char* file -> library source filename
@@ -71,9 +71,9 @@ static void _overlay_d3d11_internal__log(meek_log_level_e level, const char *fil
 }
 
 /**
- * @brief loads the overlay font, style and scene from beside the overlay DLL.
+ * @brief loads the overlay font, style and scene from beside the overlay DLL
  *
- * @return boole -> 1 when the scene and required controls are ready; 0 otherwise
+ * @return boole -> 1 when the scene and required controls are ready. 0 otherwise
  */
 static boole _overlay_d3d11_internal__scene(void)
 {
@@ -111,7 +111,7 @@ static boole _overlay_d3d11_internal__scene(void)
 }
 
 /**
- * @brief draws fresh, enabled display data and restores the game render state afterward.
+ * @brief draws fresh, enabled display data and restores the game render state afterward
  *
  * @param IDXGISwapChain* chain -> game or fixture swap chain
  *
@@ -308,13 +308,13 @@ static void _overlay_d3d11_internal__draw(IDXGISwapChain *chain)
 }
 
 /**
- * @brief draws the overlay when its render lock is available, then forwards Present.
+ * @brief draws the overlay when its render lock is available, then forwards Present
  *
  * @param IDXGISwapChain* chain -> game or fixture swap chain
  * @param UINT interval -> presentation sync interval
  * @param UINT flags -> flags passed by the game
  *
- * @return HRESULT STDMETHODCALLTYPE -> the original swap-chain Present result
+ * @return HRESULT STDMETHODCALLTYPE -> the original swap chain Present result
  */
 static HRESULT STDMETHODCALLTYPE _overlay_d3d11_internal__present(IDXGISwapChain *chain, UINT interval, UINT flags)
 {
@@ -330,10 +330,10 @@ static HRESULT STDMETHODCALLTYPE _overlay_d3d11_internal__present(IDXGISwapChain
 }
 
 /**
- * @brief releases the overlay back-buffer view before forwarding a game resize.
+ * @brief releases the overlay back buffer view before forwarding a game resize
  *
  * @param IDXGISwapChain* chain -> game or fixture swap chain
- * @param UINT count -> requested back-buffer count
+ * @param UINT count -> requested back buffer count
  * @param UINT width -> requested buffer width
  * @param UINT height -> requested buffer height
  * @param DXGI_FORMAT format -> requested buffer format
@@ -369,13 +369,12 @@ static HRESULT STDMETHODCALLTYPE _overlay_d3d11_internal__resize(IDXGISwapChain 
     return result;
 }
 
-// Called explicitly after LoadLibrary completes; DllMain never creates hooks or threads.
 /**
- * @brief installs D3D11 hooks after LoadLibrary has completed, outside DllMain.
+ * @brief installs D3D11 hooks after LoadLibrary completes, outside DllMain
  *
- * @param void* ignored -> unused remote-thread argument
+ * @param void* ignored -> unused thread argument
  *
- * @return BOOL WINAPI -> 1 when hooks are ready; 0 if startup failed or no enabled snapshot exists
+ * @return DWORD WINAPI -> 1 when hooks are ready, or 0 if startup failed or no enabled snapshot exists
  */
 __declspec(dllexport) DWORD WINAPI lemon_overlay_start(void *ignored)
 {
@@ -517,9 +516,9 @@ __declspec(dllexport) DWORD WINAPI lemon_overlay_start(void *ignored)
 }
 
 /**
- * @brief reads the number of overlay frames drawn for the bounded rendering check.
+ * @brief reads the number of overlay frames drawn for the bounded rendering check
  *
- * @return BOOL WINAPI -> the frame count
+ * @return DWORD WINAPI -> the frame count
  */
 __declspec(dllexport) DWORD WINAPI lemon_overlay_frames(void)
 {
@@ -527,7 +526,7 @@ __declspec(dllexport) DWORD WINAPI lemon_overlay_frames(void)
 }
 
 /**
- * @brief records the module handle without initializing rendering or creating threads under the loader lock.
+ * @brief records the module handle without initializing rendering or creating threads under the loader lock
  *
  * @param HINSTANCE instance -> overlay module instance
  * @param DWORD reason -> Windows DLL notification

@@ -1,5 +1,5 @@
-// This file limits how many messages each chat keeps on this device and lets
-// the user search those messages without sending a search request to the server.
+// this file limits how many messages each chat keeps on this device and lets
+// the user search those messages without sending a search request to the server
 
 var chat_history =
 {
@@ -16,21 +16,24 @@ var chat_history =
 };
 
 /**
- * @brief Finds individual messages, including separate lines from the same sender.
+ * @brief finds individual messages, including separate lines from the same sender
+ *
  * @param Element context -> one channel or private chat
+ *
  * @return Array -> messages in display order, including pictures, file cards and notices
  */
 function chat_history__entries(context)
 {
-    return Array.from(context.querySelectorAll(
-        ".single-chat-message-content > .single-chat-message-content-p, "
-        + ".single-chat-message-content > .chat-picture-img, "
-        + ".single-chat-message-content > .chat-file-card, :scope > .single-server-message"));
+    return Array.from(context.querySelectorAll( ".single-chat-message-content > .single-chat-message-content-p, " + ".single-chat-message-content > .chat-picture-img, " + ".single-chat-message-content > .chat-file-card, :scope > .single-server-message"));
 }
 
 /**
- * @brief Removes the oldest entries and releases the downloaded files they displayed.
+ * @brief removes the oldest entries and releases the downloaded files they displayed
+ *
  * @param Element context -> chat whose limit should be applied
+ * @param number limit -> number of newest entries to retain, defaulting to the local setting
+ *
+ * @return void
  */
 function chat_history__trim(context, limit = chat_history.limit)
 {
@@ -97,7 +100,7 @@ function chat_history__trim(context, limit = chat_history.limit)
 }
 
 /**
- * @brief Applies changes once for messages arriving together, including messages in hidden chats.
+ * @brief applies changes once for messages arriving together, including messages in hidden chats
  */
 function chat_history__refresh()
 {
@@ -134,7 +137,8 @@ function chat_history__refresh()
 }
 
 /**
- * @brief Reports whether the user is searching instead of following new messages.
+ * @brief reports whether the user is searching instead of following new messages
+ *
  * @return boolean -> true while the search box is visible
  */
 function chat_history__is_search_open()
@@ -144,7 +148,8 @@ function chat_history__is_search_open()
 }
 
 /**
- * @brief Finds literal text in the current chat, including words split by text formatting.
+ * @brief finds literal text in the current chat, including words split by text formatting
+ *
  * @param boolean reveal -> scroll to the selected match when the user changes the search
  */
 function chat_history__search(reveal)
@@ -208,7 +213,8 @@ function chat_history__search(reveal)
 }
 
 /**
- * @brief Highlights matches without changing message HTML or removing its click handlers.
+ * @brief highlights matches without changing message HTML or removing its click handlers
+ *
  * @param boolean reveal -> move the chat scroll position to the selected result
  */
 function chat_history__show_match(reveal)
@@ -235,8 +241,7 @@ function chat_history__show_match(reveal)
         CSS.highlights.set("chat-search-results", highlights);
         CSS.highlights.set("chat-search-current", new Highlight(...(selected ? [selected.range] : [])));
     }
-    document.getElementById("chat-search-count").textContent = selected
-        ? (chat_history.selected + 1) + " / " + chat_history.matches.length : "0 matches";
+    document.getElementById("chat-search-count").textContent = selected ? (chat_history.selected + 1) + " / " + chat_history.matches.length : "0 matches";
     document.getElementById("chat-search-previous").disabled = !selected;
     document.getElementById("chat-search-next").disabled = !selected;
     if (selected)
@@ -257,7 +262,8 @@ function chat_history__show_match(reveal)
 }
 
 /**
- * @brief Selects the previous or next occurrence, wrapping at either end of the chat.
+ * @brief selects the previous or next occurrence, wrapping at either end of the chat
+ *
  * @param number direction -> -1 for previous, 1 for next
  */
 function chat_history__step(direction)
@@ -271,7 +277,8 @@ function chat_history__step(direction)
 }
 
 /**
- * @brief Closes search, releases its message references and returns keyboard focus.
+ * @brief closes search, releases its message references and returns keyboard focus
+ *
  * @param boolean restore_focus -> false when closing from local settings
  */
 function chat_history__close_search(restore_focus)
@@ -288,7 +295,7 @@ function chat_history__close_search(restore_focus)
 }
 
 /**
- * @brief Restores the local limit and connects the search box and keyboard shortcuts.
+ * @brief restores the local limit and connects the search box and keyboard shortcuts
  */
 function chat_history__setup()
 {
@@ -425,11 +432,9 @@ function chat_history__setup()
             event.stopImmediatePropagation();
             chat_history__close_search();
         }
-        else if (chat_history.search_enabled && (event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "f"
-            && window.getClientRects().length > 0)
+        else if (chat_history.search_enabled && (event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === "f" && window.getClientRects().length > 0)
         {
-            if (target.closest("input, textarea, [contenteditable='true']") != null
-                && !window.contains(target) && target.id !== "chat-input-container-text-input")
+            if (target.closest("input, textarea, [contenteditable='true']") != null && !window.contains(target) && target.id !== "chat-input-container-text-input")
             {
                 return;
             }

@@ -50,7 +50,7 @@ body {
 
 #verification-system {
     background: var(--tmx-darkest);
-    min-height: 100vh;
+    min-height: calc(100vh / var(--ui-display-scale, 1));
     text-align: center;
 }
 
@@ -537,8 +537,8 @@ div#image-upload-preview {
     z-index: 10;
     right: 8px;
     bottom: 32px;
-    width: min(640px, calc(100vw - 16px));
-    height: min(360px, calc(100vh - 48px));
+    width: min(640px, calc(calc(100vw / var(--ui-display-scale, 1)) - 16px));
+    height: min(360px, calc(calc(100vh / var(--ui-display-scale, 1)) - 48px));
     padding: 10px;
     background: var(--tmx-darkest);
     color: var(--tmx-green);
@@ -911,6 +911,7 @@ div#image-upload-preview {
     position: absolute;
     inset: 9px;
     background: currentColor;
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='9' y='3' width='6' height='12' rx='3'/%3E%3Cpath d='M6 10v2a6 6 0 0 0 12 0v-2M12 18v3m-3 0h6'/%3E%3C/svg%3E") center / contain no-repeat;
     mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='9' y='3' width='6' height='12' rx='3'/%3E%3Cpath d='M6 10v2a6 6 0 0 0 12 0v-2M12 18v3m-3 0h6'/%3E%3C/svg%3E") center / contain no-repeat;
 }
 
@@ -947,10 +948,7 @@ div#image-upload-preview {
     border-color: #a397ff;
 }
 
-/* voice.js and ui.js write a picture of the microphone into the style attribute of this label every time
-   the microphone is switched on or off. The themes Mobile, Hybrid, Hybrid v2 and Aero show the state with
-   that picture. This theme draws the state itself (::before, ::after and the colours above), so the picture
-   is not shown here: it stood behind the drawn microphone. */
+/* Suppress the inline microphone icon because Termix draws its own state with pseudo elements. */
 #toggle-microphone-label
 {
     background-image: none !important;
@@ -1195,8 +1193,8 @@ a-toast:hover { background-color: var(--tmx-hover) !important; }
 #background-container {
     position: fixed !important;
     inset: 0 !important;
-    width: 100vw !important;
-    height: 100vh !important;
+    width: calc(100vw / var(--ui-display-scale, 1)) !important;
+    height: calc(100vh / var(--ui-display-scale, 1)) !important;
     background: rgba(0, 0, 0, 0.72) !important;
     opacity: 1 !important;
     z-index: 300 !important;
@@ -1244,9 +1242,13 @@ a-toast { animation: tmx-pop 0.16s ease-out; }
 {
     background-image: none;
     background-color: currentColor;
+    -webkit-mask-image: var(--context-menu-icon, linear-gradient(transparent, transparent));
     mask-image: var(--context-menu-icon, linear-gradient(transparent, transparent));
+    -webkit-mask-size: contain;
     mask-size: contain;
+    -webkit-mask-position: center;
     mask-position: center;
+    -webkit-mask-repeat: no-repeat;
     mask-repeat: no-repeat;
 }
 
@@ -1436,10 +1438,7 @@ a-toast { animation: tmx-pop 0.16s ease-out; }
 .member-list-client .connected-client-country-flag {
     display: none;
 }
-/* The song name of a client that streams music is not shown in the member list. A row of the member list
-   is a copy of a row of the channel tree, and the copy has the "display: inline-block" that the script
-   writes into the style attribute to show the song name, so this rule needs !important. Without it the
-   song name was shown and ended 55px past the end of the row. */
+/* Hide song titles in the copied member rows, overriding their inline visibility. */
 .member-list-client .marquee-music-playing-container {
     display: none !important;
 }
@@ -1619,7 +1618,7 @@ a-toast { animation: tmx-pop 0.16s ease-out; }
     gap: 6px;
     align-content: flex-start;
     max-width: 360px;
-    max-height: 60vh;
+    max-height: calc(60vh / var(--ui-display-scale, 1));
     overflow-y: auto;
     padding: 12px;
     background: var(--tmx-darkest);
@@ -3129,9 +3128,7 @@ div#local-settings-container .local-settings-row-flat-channel-list
     display: flex !important;
 }
 
-/* A channel without audio and a channel with a password get a picture at the left of the arrow of the
-   row: first the crossed-out loudspeaker, then the lock; layout.style gives both their size and their
-   place in the row. This theme drew neither of the two before. */
+/* Show audio and password marks before the channel arrow. layout.style positions them. */
 #channel-list-container .single-channel > .single-channel-is-audio-disabled
 {
     background-image: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2020%2020%27%3E%20%3Cpath%20d%3D%27M3%207.6h2.8L10%204.2v11.6l-4.2-3.4H3z%27%20fill%3D%27%2391a8c2%27%2F%3E%20%3Cpath%20d%3D%27M12.6%207.4a3.6%203.6%200%200%201%200%205.2%27%20fill%3D%27none%27%20stroke%3D%27%2391a8c2%27%20stroke-width%3D%271.6%27%20stroke-linecap%3D%27round%27%2F%3E%20%3Cpath%20d%3D%27M4%203.5l12%2013%27%20stroke%3D%27%23ff7a7e%27%20stroke-width%3D%272%27%20stroke-linecap%3D%27round%27%2F%3E%20%3C%2Fsvg%3E");
@@ -3143,9 +3140,7 @@ div#local-settings-container .local-settings-row-flat-channel-list
     background: url("data:image/svg+xml,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20viewBox%3D%270%200%2020%2020%27%3E%20%3Crect%20x%3D%274.5%27%20y%3D%279%27%20width%3D%2711%27%20height%3D%278%27%20rx%3D%271.8%27%20fill%3D%27%2391a8c2%27%2F%3E%20%3Cpath%20d%3D%27M7%209V6.8a3%203%200%200%201%206%200V9%27%20fill%3D%27none%27%20stroke%3D%27%2391a8c2%27%20stroke-width%3D%271.7%27%20stroke-linecap%3D%27round%27%2F%3E%20%3C%2Fsvg%3E") center / contain no-repeat;
 }
 
-/* The "#" of a channel row is the button that collapses and expands the channel. The button itself shows
-   the "#"; before, it showed a small triangle, and the "#" was a part of the name without a function.
-   While the channel is collapsed, the "#" is bold and has the accent colour. */
+/* Use the channel hash as its collapse button. Highlight it while the channel is collapsed. */
 :is(#channel-list-container, #idle-clients-container) .single-channel > :is(.single-channel-collapse-button, .single-channel-expand-button)
 {
     width: auto;

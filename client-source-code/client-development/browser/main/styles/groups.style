@@ -1,6 +1,6 @@
 #moderation-dialog#moderation-dialog
 {
-    width: min(640px, calc(100vw - 24px));
+    width: min(640px, calc(calc(100vw / var(--ui-display-scale, 1)) - 24px));
 }
 
 .channel-groups-tabs
@@ -66,7 +66,7 @@
 {
     flex: 1;
     overflow: auto;
-    max-height: 55dvh;
+    max-height: calc(55dvh / var(--ui-display-scale, 1));
 }
 
 #channel-groups-panel input[type="number"]
@@ -79,7 +79,7 @@
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(40px, 1fr));
     gap: 4px;
-    max-height: 45dvh;
+    max-height: calc(45dvh / var(--ui-display-scale, 1));
     overflow-y: auto;
 }
 
@@ -189,9 +189,9 @@
 
 :is(#groups-dialog, #groups-log-dialog, #groups-icon-picker, #moderation-dialog)
 {
-    width: min(1110px, calc(100vw - 24px));
+    width: min(1110px, calc(calc(100vw / var(--ui-display-scale, 1)) - 24px));
     max-width: none;
-    max-height: calc(100dvh - 24px);
+    max-height: calc(calc(100dvh / var(--ui-display-scale, 1)) - 24px);
     padding: 0;
     margin: auto;
     color: var(--set-text, #e8e8e8);
@@ -358,7 +358,7 @@
     grid-template-columns: minmax(170px, 21%) minmax(0, 1fr) minmax(190px, 24%);
     gap: 10px;
     padding: 10px;
-    height: min(550px, calc(100dvh - 135px));
+    height: min(550px, calc(calc(100dvh / var(--ui-display-scale, 1)) - 135px));
     min-height: 360px;
 }
 
@@ -524,7 +524,7 @@
     align-content: start;
     justify-content: start;
     gap: 6px;
-    height: min(340px, 42dvh);
+    height: min(340px, calc(42dvh / var(--ui-display-scale, 1)));
     min-height: 54px;
     overflow: auto;
     overscroll-behavior: contain;
@@ -863,7 +863,7 @@ body.server-groups-disabled .identity-entry-groups
 
 #groups-log-dialog
 {
-    width: min(760px, calc(100vw - 32px));
+    width: min(760px, calc(calc(100vw / var(--ui-display-scale, 1)) - 32px));
 }
 
 #groups-log-dialog #groups-log-text
@@ -871,7 +871,7 @@ body.server-groups-disabled .identity-entry-groups
     display: block;
     box-sizing: border-box;
     width: 100%;
-    height: min(55vh, 480px);
+    height: min(calc(55vh / var(--ui-display-scale, 1)), 480px);
     padding: 10px;
     resize: vertical;
     font-size: 12px;
@@ -882,7 +882,7 @@ body.server-groups-disabled .identity-entry-groups
 
 #groups-icon-picker
 {
-    width: min(520px, calc(100vw - 24px));
+    width: min(520px, calc(calc(100vw / var(--ui-display-scale, 1)) - 24px));
     overflow: hidden;
 }
 
@@ -969,10 +969,10 @@ body.server-groups-disabled .identity-entry-groups
 #groups-dialog
 {
     box-sizing: border-box;
-    min-width: min(780px, calc(100vw - 24px));
-    max-width: calc(100vw - 24px);
-    min-height: min(420px, calc(100dvh - 24px));
-    height: min(640px, calc(100dvh - 24px));
+    min-width: min(780px, calc(calc(100vw / var(--ui-display-scale, 1)) - 24px));
+    max-width: calc(calc(100vw / var(--ui-display-scale, 1)) - 24px);
+    min-height: min(420px, calc(calc(100dvh / var(--ui-display-scale, 1)) - 24px));
+    height: min(640px, calc(calc(100dvh / var(--ui-display-scale, 1)) - 24px));
     resize: both;
 }
 
@@ -1247,8 +1247,8 @@ body.server-groups-disabled .identity-entry-groups
     position: fixed;
     box-sizing: border-box;
     width: max-content;
-    max-width: calc(100vw - 16px);
-    max-height: calc(100dvh - 16px);
+    max-width: calc(calc(100vw / var(--ui-display-scale, 1)) - 16px);
+    max-height: calc(calc(100dvh / var(--ui-display-scale, 1)) - 16px);
     margin: 0;
     overflow: auto;
     overscroll-behavior: contain;

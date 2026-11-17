@@ -19,11 +19,11 @@ function run(script, arguments_ = [], env = process.env)
 }
 
 /**
- * @brief Tells whether the build that created a lock file is still running.
+ * @brief Checks whether the build lock should remain active.
  *
- * @param string lockFile -> path of the lock file; it holds the process id of the build that created it
+ * @param string lockFile -> lock file containing the build process ID
  *
- * @return boolean -> true when that build runs; false when it was stopped and left the file behind
+ * @return boolean -> true for a live owner or a new lock still waiting for its process ID
  */
 function isLockOwnerRunning(lockFile)
 {
@@ -44,7 +44,7 @@ function isLockOwnerRunning(lockFile)
     // no id written
     if (!Number.isInteger(owner) || owner <= 0)
     {
-        // a build writes its id right after it creates the file, so an empty file of the last seconds is in use
+        // Give a new build ten seconds to write its process ID.
         return age < 10000;
     }
 

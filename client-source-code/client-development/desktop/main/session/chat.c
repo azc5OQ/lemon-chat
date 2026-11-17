@@ -2,8 +2,10 @@
 #include "platform/memory.h"
 
 /**
- * @brief checks the original random identifier without accepting server message numbers.
+ * @brief checks the original random identifier without accepting server message numbers
+ *
  * @param const char* id -> bounded lowercase hexadecimal identifier
+ *
  * @return boole -> TRUE for exactly sixteen encoded bytes
  */
 boole desktop_chat__valid_id(const char *id)
@@ -28,8 +30,10 @@ boole desktop_chat__valid_id(const char *id)
 }
 
 /**
- * @brief validates bounded UTF-8 replacement text and rejects whitespace-only edits.
- * @param const char* text -> NUL-terminated replacement text
+ * @brief validates bounded UTF-8 replacement text and rejects whitespace only edits
+ *
+ * @param const char* text -> NUL terminated replacement text
+ *
  * @return boole -> TRUE when text fits without truncation and has visible content
  */
 boole desktop_chat__valid_text(const char *text)
@@ -111,9 +115,11 @@ boole desktop_chat__valid_text(const char *text)
 }
 
 /**
- * @brief checks whether an outgoing text still belongs to the current connection and recipient.
+ * @brief checks whether an outgoing text still belongs to the current connection and recipient
+ *
  * @param const desktop_session_view_t* view -> immutable GUI snapshot or worker-owned model
  * @param const desktop_chat_t* chat -> retained text in that snapshot
+ *
  * @return boole -> TRUE when the message can be edited now
  */
 boole desktop_session__can_edit(const desktop_session_view_t *view, const desktop_chat_t *chat)
@@ -140,12 +146,14 @@ boole desktop_session__can_edit(const desktop_session_view_t *view, const deskto
 }
 
 /**
- * @brief queues a replacement for one exact retained message without changing the GUI snapshot.
- * @param desktop_session_t* session -> GUI-owned session
+ * @brief queues a replacement for one exact retained message without changing the GUI snapshot
+ *
+ * @param desktop_session_t* session -> GUI owned session
  * @param uint64 sequence -> retained message sequence, not its wire identifier
  * @param uint64 connection_serial -> connection captured when the editor opened
  * @param const char* text -> replacement copied into the bounded command queue
- * @return boole -> TRUE when accepted; worker rechecks identity and encryption before sending
+ *
+ * @return boole -> TRUE when accepted. Worker rechecks identity and encryption before sending
  */
 boole desktop_session__edit(desktop_session_t *session, uint64 sequence, uint64 connection_serial, const char *text)
 {

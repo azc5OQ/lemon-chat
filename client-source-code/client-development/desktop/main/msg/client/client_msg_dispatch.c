@@ -7,8 +7,10 @@
 #include "mbedtls/platform_util.h"
 
 /**
- * @brief consumes one GUI command after checking current worker-owned channel state.
- * @param desktop_session_t* session -> session state; worker-owned unless this is a GUI entry point
+ * @brief consumes one GUI command after checking current worker-owned channel state
+ *
+ * @param desktop_session_t* session -> session state. Worker owned unless this is a GUI entry point
+ *
  * @return void
  */
 void client_msg__dispatch_command(desktop_session_t *session)

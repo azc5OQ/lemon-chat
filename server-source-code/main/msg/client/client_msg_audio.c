@@ -1,4 +1,4 @@
-// This file checks requests to set up WebRTC and change the client's microphone state.
+// this file checks requests to set up WebRTC and change the client's microphone state
 #include "client_msg.h"
 #include "../server/server_msg.h"
 #include "../../audio_webrtc.h"
@@ -14,12 +14,13 @@ static boole _client_msg_audio_internal__is_ice_candidate_format_valid(cJSON *js
 static boole _client_msg_audio_internal__is_json_process_microphone_usage_valid(cJSON *json_root);
 
 /**
- * @brief verifies if received json has needed keys and values
+ * @brief checks the SDP answer fields
  *
  * @param cJSON* json_root -> the parsed client request
  * @param uint64 client_id -> id of the client
+ * @param cJSON** checked_value -> receives the validated value object from json_root
  *
- * @return boole
+ * @return boole -> TRUE if the answer fields are valid
  */
 static boole _client_msg_audio_internal__is_json_sdp_answer_format_valid(cJSON *json_root, uint64 client_id, cJSON **checked_value)
 {
@@ -89,7 +90,7 @@ static boole _client_msg_audio_internal__is_json_sdp_answer_format_valid(cJSON *
 }
 
 /**
- * @brief This function processes sdp answer for offer that server sent to client as part of process
+ * @brief this function processes sdp answer for offer that server sent to client as part of process
  *        of establishing webrtc datachannel connection
  *
  * @param cJSON* json_root -> the parsed client request
@@ -132,12 +133,13 @@ void client_msg__audio__process_sdp_answer(cJSON *json_root, uint64 sender_clien
 }
 
 /**
- * @brief verifies if received json has needed keys and values
+ * @brief checks the ICE candidate fields
  *
  * @param cJSON* json_root -> the parsed client request
  * @param uint64 client_id -> id of the client
+ * @param cJSON** checked_value -> receives the validated value object from json_root
  *
- * @return boole
+ * @return boole -> TRUE if the candidate fields are valid
  */
 static boole _client_msg_audio_internal__is_ice_candidate_format_valid(cJSON *json_root, uint64 client_id, cJSON **checked_value)
 {
@@ -212,7 +214,7 @@ static boole _client_msg_audio_internal__is_ice_candidate_format_valid(cJSON *js
 }
 
 /**
- * @brief This function processes ice candidate. When I tried this on local network, this was not
+ * @brief this function processes ice candidate. When I tried this on local network, this was not
  *        needed. Still, good to send and process
  *
  * @param cJSON* json_root -> the parsed client request
@@ -337,9 +339,8 @@ void client_msg__audio__process_microphone_usage(cJSON *json_root, uint64 sender
 
     received_microphone_usage = json_value->valueint;
 
-    // every state needs an audio connection the server holds for this client while audio is on: a
-    // dropped connection set "audio disabled", an attach resets it to listening, and the client then
-    // reports its state again (talking, microphone ready, or listening only)
+    // accept audio state only while this client owns an active audio connection
+    // reattaching resets it to listening until the client reports its state
     clib__read_lock(&g_webrtc_peers_rwlock_guard);
     status0 = ((g_server_settings.is_voice_chat_active == TRUE) || (g_server_settings.is_music_bot_audio_active == TRUE)) && ((client->is_audio_websocket_authenticated == TRUE) || ((g_server_settings.is_audio_over_webrtc_allowed == TRUE) && (audio_webrtc__is_connected(client->client_id) == TRUE)));
     is_served = status0;

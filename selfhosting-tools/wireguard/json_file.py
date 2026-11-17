@@ -31,7 +31,7 @@ def write(path, pairs, merge):
             target.write("\n")
             target.flush()
             os.fsync(target.fileno())
-        # Catch edits made while preparing the replacement. This is not a file lock;
+        # Catch edits made while preparing the replacement. This is not a file lock.
         # the server should be stopped while its settings are being changed.
         if merge:
             with open(path, encoding="utf-8") as source:

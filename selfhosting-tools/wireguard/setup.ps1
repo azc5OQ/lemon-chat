@@ -1,9 +1,9 @@
-# lemon-chat selfhosting-tools/wireguard/setup.ps1 - run on the WINDOWS machine that hosts the lemon-chat server.
+# Sets up the tunnel on the Windows server host.
 #
 # turns a VPS into a router for this machine: asks a few questions, sets WireGuard up on the VPS over ssh
 # (router/setup.sh), installs the WireGuard tunnel here as a service, forwards the chat ports from the router's
 # public address through the tunnel, and switches the server's wireguard mode on in server_settings.json.
-# see README.md in this directory. run again to change answers; the saved answers are the defaults.
+# see README.md in this directory. run again to change answers. The saved answers are the defaults.
 #
 # needs: an elevated PowerShell (the tunnel service), the Windows OpenSSH client, internet access.
 
@@ -91,7 +91,7 @@ $rangeBegin = [int]($udpRange -split '-')[0]
 $rangeEnd = [int]($udpRange -split '-')[1]
 $a | Add-Member NoteProperty udp_range $udpRange
 
-# tls ends on this machine, in the server's own stunnel; the router forwards the encrypted connections
+# tls ends on this machine, in the server's own stunnel. The router forwards the encrypted connections
 # unchanged. the question is asked while stunnel is still off too, because the certificate can only be
 # obtained once tcp 80 is forwarded
 $hostStunnel = ((Default-FromSettings "is_stunnel_enabled" $false) -eq $true)
@@ -161,7 +161,7 @@ if ([int]$a.wg_port -eq 3478 -or ([int]$a.wg_port -ge $rangeBegin -and [int]$a.w
     throw 'Forwarded UDP ports overlap the WireGuard listener'
 }
 
-# Canonical RFC1918 network; .1 and .2 must lie inside it. Router validation repeats this.
+# Canonical RFC1918 network. .1 and .2 must lie inside it. Router validation repeats this.
 $network = ($subnet -split '/')[0]
 if (-not (Test-IPv4 $network) -or $subnetPrefix -notmatch '^[0-9]{1,2}$') {
     throw 'Invalid tunnel subnet'
@@ -222,7 +222,7 @@ if ($sshKey -eq "") {
         $generated = Join-Path $script:WgSshDir "lemon_router_key"
         if (-not (Test-Path $generated)) {
             # --% hands the rest to the process verbatim, so the empty passphrase (-N "") arrives as an
-            # empty argument; powershell would otherwise drop it or pass literal quotes
+            # empty argument. Powershell would otherwise drop it or pass literal quotes
             $env:TUNNEL_HOST_KEY = $generated
             & ssh-keygen.exe --% -q -t ed25519 -N "" -C tunnel-host -f "%TUNNEL_HOST_KEY%"
         }
@@ -330,7 +330,7 @@ if ($settings -ne $null) {
     Set-SettingsField $settings "webrtc_port_range_begin" $rangeBegin
     Set-SettingsField $settings "webrtc_port_range_end" $rangeEnd
     if ($mode -eq "ports") {
-        # every visitor arrives from the router's tunnel address; the same-IP rule would admit only one
+        # every visitor arrives from the router's tunnel address. The same-IP rule would admit only one
         Set-SettingsField $settings "is_same_ip_address_allowed" $true
     }
     Write-ServerSettings $settings
@@ -341,7 +341,7 @@ if ($settings -ne $null) {
 
 # ---- 7. windows firewall: the forwarded connections arrive on the tunnel adapter ----
 
-# the adapter counts as a public network, where windows blocks unsolicited inbound traffic; one rule per
+# the adapter counts as a public network, where windows blocks unsolicited inbound traffic. One rule per
 # protocol, limited to the tunnel adapter, lets the forwarded ports through. re-created on every run
 $firewallRuleName = "lemon-chat (wireguard tunnel)"
 try {

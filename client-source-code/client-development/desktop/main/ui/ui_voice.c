@@ -17,7 +17,8 @@ static float _ui_voice_internal__glyph(float x, float y, int64 state);
 static void _ui_voice_internal__paint(gui_node_t *node, int64 state);
 
 /**
- * @brief measures a rounded line in the fixed logical icon canvas.
+ * @brief measures a rounded line in the fixed logical icon canvas
+ *
  * @param float x -> sample x
  * @param float y -> sample y
  * @param float ax -> first endpoint x
@@ -25,6 +26,7 @@ static void _ui_voice_internal__paint(gui_node_t *node, int64 state);
  * @param float bx -> second endpoint x
  * @param float by -> second endpoint y
  * @param float width -> full stroke width
+ *
  * @return float -> signed distance from the stroke edge
  */
 static float _ui_voice_internal__line(float x, float y, float ax, float ay, float bx, float by, float width)
@@ -41,12 +43,14 @@ static float _ui_voice_internal__line(float x, float y, float ax, float ay, floa
 }
 
 /**
- * @brief measures a rounded rectangle without depending on tessellated small geometry.
+ * @brief measures a rounded rectangle without depending on tessellated small geometry
+ *
  * @param float x -> sample x relative to center
  * @param float y -> sample y relative to center
  * @param float width -> half width
  * @param float height -> half height
  * @param float radius -> corner radius
+ *
  * @return float -> signed distance from the edge
  */
 static float _ui_voice_internal__box(float x, float y, float width, float height, float radius)
@@ -59,10 +63,12 @@ static float _ui_voice_internal__box(float x, float y, float width, float height
 }
 
 /**
- * @brief places small audio badges near the orb edge and retains the separate channel symbol.
+ * @brief places small audio badges near the orb edge and retains the separate channel symbol
+ *
  * @param float x -> sample x relative to center
  * @param float y -> sample y relative to center
  * @param int64 state -> cached audio state, or six for the channel hash
+ *
  * @return float -> signed glyph distance
  */
 static float _ui_voice_internal__glyph(float x, float y, int64 state)
@@ -95,8 +101,10 @@ static float _ui_voice_internal__glyph(float x, float y, int64 state)
 }
 
 /**
- * @brief prepares bounded gradient and detail masks once, shared by every row and theme.
+ * @brief prepares bounded gradient and detail masks once, shared by every row and theme
+ *
  * @param int64 state -> zero through five for audio, six for the channel symbol
+ *
  * @return boole -> TRUE when both owned textures are ready
  */
 static boole _ui_voice_internal__texture(int64 state)
@@ -199,9 +207,11 @@ static boole _ui_voice_internal__texture(int64 state)
 }
 
 /**
- * @brief paints the shaded theme colour, highlight and small state badge from cached textures.
- * @param gui_node_t* node -> scene-owned audio indicator
+ * @brief paints the shaded theme colour, highlight and small state badge from cached textures
+ *
+ * @param gui_node_t* node -> scene owned audio indicator
  * @param int64 state -> validated cached icon state
+ *
  * @return void
  */
 static void _ui_voice_internal__paint(gui_node_t *node, int64 state)
@@ -229,8 +239,10 @@ static void _ui_voice_internal__paint(gui_node_t *node, int64 state)
 }
 
 /**
- * @brief draws the matching channel symbol using the same bounded, antialiased texture cache.
- * @param gui_node_t* node -> scene-owned channel decoration
+ * @brief draws the matching channel symbol using the same bounded, antialiased texture cache
+ *
+ * @param gui_node_t* node -> scene owned channel decoration
+ *
  * @return void
  */
 void desktop_ui_voice__draw_channel(gui_node_t *node)
@@ -248,9 +260,11 @@ void desktop_ui_voice__draw_channel(gui_node_t *node)
 }
 
 /**
- * @brief resolves the audio state without allocating or animating per client.
- * @param gui_node_t* node -> scene-owned audio indicator or ordinary text
+ * @brief resolves the audio state without allocating or animating per client
+ *
+ * @param gui_node_t* node -> scene owned audio indicator or ordinary text
  * @param float scale -> display scale
+ *
  * @return void
  */
 static void _ui_voice_internal__draw(gui_node_t *node, float scale)
@@ -279,7 +293,8 @@ static void _ui_voice_internal__draw(gui_node_t *node, float scale)
 }
 
 /**
- * @brief releases owned state masks while the renderer remains alive.
+ * @brief releases owned state masks while the renderer remains alive
+ *
  * @return void
  */
 void desktop_ui_voice__shutdown(void)
@@ -303,7 +318,8 @@ void desktop_ui_voice__shutdown(void)
 }
 
 /**
- * @brief registers application graphics through Meek UI's public widget API, without changing library code.
+ * @brief registers application graphics through Meek UI's public widget API, without changing library code
+ *
  * @return void
  */
 void desktop_ui_voice__register(void)
@@ -324,10 +340,12 @@ void desktop_ui_voice__register(void)
 }
 
 /**
- * @brief appends a fixed-size graphical audio indicator, leaving row clicks to its parent.
- * @param gui_node_t* parent -> scene-owned member row
+ * @brief appends a fixed size graphical audio indicator, leaving row clicks to its parent
+ *
+ * @param gui_node_t* parent -> scene owned member row
  * @param int64 audio -> protocol state: 1 speaking, 2 ready, 3 microphone off, 4 deafened
  * @param boole muted -> TRUE when this listener has locally muted the member
+ *
  * @return void
  */
 void desktop_ui_voice__append(gui_node_t *parent, int64 audio, boole muted)

@@ -1,10 +1,21 @@
 #include "cipher_trivium.h"
 #include "ciphers.h"
 
-// Trivium's three shift registers, packed into 3 + 3 + 4 words.
-// The uint words must stay 32-bit: shifts discard bits beyond each word.
-// One update advances all registers by 32 bits. The unused high bits in the
-// last word of each register are never read by a feedback tap.
+/**
+ * @brief advances the Trivium registers by 32 bits
+ *
+ * @param uint[10] state -> registers packed into 3, 3 and 4 words
+ *
+ * @return uint -> the next 32 bits of keystream
+ */
+// state words must remain 32 bits. Unused high bits are not read
+/**
+ * @brief advances the Trivium registers by one output word
+ *
+ * @param uint [10] state -> ten words holding the mutable cipher state
+ *
+ * @return uint -> next 32 keystream bits
+ */
 static uint _cipher_trivium_internal__next_word(uint state[10])
 {
     uint first = ((state[2] << 30) | (state[1] >> 2)) ^ ((state[2] << 3) | (state[1] >> 29));
@@ -31,8 +42,28 @@ static uint _cipher_trivium_internal__next_word(uint state[10])
     return output;
 }
 
-// Exact Trivium-80 variant: SHA-256(key)[0..9], fixed IV 01..0a and its word byte order.
-// No message IV is used. Repeating a key repeats the keystream. Returns 1 on success.
+/**
+ * @brief encrypts or decrypts data in place with the legacy Trivium variant
+ *
+ * @param const ubyte* key -> input bytes hashed to derive the cipher key
+ * @param uint64 key_size -> number of bytes in key
+ * @param ubyte* data -> buffer to update
+ * @param uint64 size -> number of bytes in data
+ *
+ * @return boole -> 1 on success. 0 for a NULL pointer or a hash failure
+ */
+// uses the first 10 SHA256 bytes and the fixed IV 01..0a
+// reusing the key repeats the keystream
+/**
+ * @brief applies the Trivium keystream derived from the supplied key
+ *
+ * @param const ubyte * key -> source key bytes
+ * @param uint64 key_size -> source key byte count
+ * @param ubyte * data -> buffer to transform in place
+ * @param uint64 size -> buffer byte count
+ *
+ * @return boole -> TRUE when the key digest and transformation succeed
+ */
 boole cipher_trivium__crypt(const ubyte *key, uint64 key_size, ubyte *data, uint64 size)
 {
     uint64 setup_index = 0;

@@ -1,6 +1,6 @@
-// differential test: the wasm keygen must reproduce the js golden vectors exactly,
-// because a single differing bit means a different identity for the same passphrase
-//   node compare-wasm.js [vectors-file]
+// check that Wasm key generation matches the saved JavaScript vectors exactly
+// a different key would give the passphrase a different identity
+// run: node compare-wasm.js [vectors-file]
 
 let fs = require("fs");
 let crypto = require("crypto");
@@ -22,8 +22,7 @@ WebAssembly.instantiate(wasm_bytes, {}).then(function(result)
     {
         let vector = vectors[i];
 
-        // the js side seeds with sha256.hex(passphrase); the vendored sha256 and node's
-        // agree for these ascii passphrases
+        // both implementations use the SHA256 hex digest as the seed
         let seed_hex = crypto.createHash("sha256").update(vector.passphrase, "utf8").digest("hex");
 
         let seed_ptr = wasm.rsa_keygen__get_seed_buffer();
@@ -64,8 +63,7 @@ WebAssembly.instantiate(wasm_bytes, {}).then(function(result)
 
         if (all_match)
         {
-            console.log("vector " + (i + 1) + "/" + vectors.length + " MATCH (" + vector.bits
-                + " bits, wasm " + took + "ms vs js " + vector.ms_js + "ms)");
+            console.log("vector " + (i + 1) + "/" + vectors.length + " MATCH (" + vector.bits + " bits, wasm " + took + "ms vs js " + vector.ms_js + "ms)");
         }
         else
         {

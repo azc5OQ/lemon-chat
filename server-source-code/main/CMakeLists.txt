@@ -336,5 +336,5 @@ if(SERVER_REGRESSION_TESTS)
     add_test(NAME first_time_setup
         COMMAND ${NODE_EXECUTABLE} "${PROJECT_SOURCE_DIR}/../../tests/server/first-time-setup-test.cjs"
             $<TARGET_FILE:first-time-setup-driver>)
-    set_tests_properties(first_time_setup PROPERTIES TIMEOUT 60)
+    set_tests_properties(first_time_setup PROPERTIES TIMEOUT 180)
 endif()

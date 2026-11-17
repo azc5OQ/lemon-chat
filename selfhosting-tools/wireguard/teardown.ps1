@@ -1,4 +1,4 @@
-# lemon-chat selfhosting-tools/wireguard/teardown.ps1 - run on the Windows machine that hosts the server, elevated.
+# Stops the tunnel on the Windows server host. Run elevated.
 # removes the tunnel service here, undoes the router side (router/teardown.sh over ssh) and switches the
 # server's wireguard mode off in server_settings.json. the saved answers and the key pairs stay.
 

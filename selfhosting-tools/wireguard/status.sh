@@ -1,5 +1,5 @@
 #!/bin/sh
-# lemon-chat selfhosting-tools/wireguard/status.sh - run on the Linux machine that hosts the server.
+# Reports tunnel status on the Linux server host.
 # shows the tunnel on this machine, then the router side (router/status.sh over ssh) and a tcp check of the
 # websocket port through the router. read-only.
 

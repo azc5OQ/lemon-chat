@@ -1,19 +1,20 @@
-// worker-entry.js is embedded in template.html along with the other client files
-// it is the entry point of every web worker: the whole page is re-loaded inside each worker, and the
-// THREAD_NAME that audio_opus_glue__create_new_webworker_in_same_file patches in says which onmessage handler this one runs
-// it is included early, so a load error in a later file can never leave a worker without a handler
+// selects the worker handler using the name injected into this copy of the page
+// loaded before the worker implementations so onmessage is installed early
 
-// worker boot diagnostics: flip to true to trace patching, dispatch and the keypair flow
+// enable worker startup logging
 var DBG_WORKER_BOOT_LOG = false;
 
-// this variable value is hardcoded in audio_opus_glue__create_new_webworker_in_same_file function
+// audio_opus_glue__create_new_webworker_in_same_file replaces this padded name
 var THREAD_NAME = "                                                   ";
 
 if (IS_CURRENT_THREAD_WORKER)
 {
     THREAD_NAME = THREAD_NAME.trim();
 
-    if (DBG_WORKER_BOOT_LOG) { console.log("[dispatch] THREAD_NAME=" + JSON.stringify(THREAD_NAME)); }
+    if (DBG_WORKER_BOOT_LOG)
+    {
+        console.log("[dispatch] THREAD_NAME=" + JSON.stringify(THREAD_NAME));
+    }
 
 
     if (THREAD_NAME == "data_processing_worker")

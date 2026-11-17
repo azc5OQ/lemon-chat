@@ -5,8 +5,10 @@ static const desktop_server_feature_t g_server_features[] = { { "is_voice_chat_a
 _Static_assert(sizeof(g_server_features) / sizeof(*g_server_features) == DESKTOP_SERVER_FEATURES, "Public feature count must match its bitset.");
 
 /**
- * @brief returns a known public feature's protocol key and display label.
+ * @brief returns a known public feature's protocol key and display label
+ *
  * @param int64 index -> feature position from zero through DESKTOP_SERVER_FEATURES - 1
+ *
  * @return const desktop_server_feature_t* -> static description, or NULL for an invalid position
  */
 const desktop_server_feature_t *desktop_server_info__feature(int64 index)

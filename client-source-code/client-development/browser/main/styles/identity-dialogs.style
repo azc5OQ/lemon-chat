@@ -12,10 +12,10 @@
 {
     box-sizing: border-box;
     width: 480px;
-    max-width: calc(100vw - 24px) !important;
+    max-width: calc(calc(100vw / var(--ui-display-scale, 1)) - 24px) !important;
     height: auto !important;
     min-height: 0 !important;
-    max-height: calc(100dvh - 24px) !important;
+    max-height: calc(calc(100dvh / var(--ui-display-scale, 1)) - 24px) !important;
     padding: 0;
     overflow: auto !important;
     overscroll-behavior: contain;

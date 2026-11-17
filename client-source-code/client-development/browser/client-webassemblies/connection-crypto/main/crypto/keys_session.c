@@ -1,8 +1,19 @@
 #include "keys_session.h"
+#include "../../../common/clib.h"
 #include <stdio.h>
 #include <string.h>
 #include "mbedtls/sha256.h"
 
+/**
+ * @brief starts the handshake hash with the policy, nonce and public key
+ *
+ * @param unsigned char[32] transcript -> receives the initial handshake hash
+ * @param const lemon_session_policy* policy -> negotiated exchange count and cipher layers
+ * @param const char* nonce -> server nonce containing exactly 32 characters
+ * @param const char* public_key -> client's public identity key
+ *
+ * @return int -> 1 on success, otherwise 0
+ */
 int keys_session__begin_transcript(unsigned char transcript[32], const lemon_session_policy* policy,
     const char* nonce, const char* public_key)
 {
@@ -22,7 +33,18 @@ int keys_session__begin_transcript(unsigned char transcript[32], const lemon_ses
         && keys_session__mix(transcript, (const unsigned char*)public_key, strlen(public_key));
 }
 
-/** @brief Derives independent keys per direction, cipher and layer from all exchanges. */
+/**
+ * @brief derives separate keys for each direction, cipher and layer
+ *
+ * @param const unsigned char secret[32] -> combined exchange secret
+ * @param const unsigned char transcript[32] -> handshake hash
+ * @param int type -> cipher for the configured layers
+ * @param unsigned int count -> number of configured layers
+ * @param int random_type -> extra cipher, or zero to omit it
+ * @param lemon_session_keys* output -> receives the keys. Cleared on failure
+ *
+ * @return int -> 1 if all keys were derived, otherwise 0
+ */
 int keys_session__derive(const unsigned char secret[32], const unsigned char transcript[32],
     int type, unsigned int count, int random_type, lemon_session_keys* output)
 {
@@ -56,6 +78,18 @@ int keys_session__derive(const unsigned char secret[32], const unsigned char tra
     return status;
 }
 
+/**
+ * @brief applies the session layers, reversing their order for decryption
+ *
+ * @param const lemon_session_keys* session -> keys for both traffic directions
+ * @param int server_to_client -> nonzero selects incoming server keys
+ * @param int encrypt -> nonzero encrypts, zero decrypts
+ * @param const unsigned char[16] iv -> message IV shared by the layers
+ * @param unsigned char* data -> buffer updated in place
+ * @param size_t size -> number of bytes in the buffer
+ *
+ * @return int -> 1 if every layer succeeds, otherwise 0
+ */
 int keys_session__crypt(const lemon_session_keys* session, int server_to_client, int encrypt,
     const unsigned char iv[16], unsigned char* data, size_t size)
 {
@@ -77,7 +111,17 @@ int keys_session__crypt(const lemon_session_keys* session, int server_to_client,
     return 1;
 }
 
-/** @brief Encrypts/decrypts one candidate probe; a separate HMAC verifies its plaintext. */
+/**
+ * @brief applies a candidate cipher to the probe for a separate HMAC check
+ *
+ * @param const unsigned char secret[32] -> combined exchange secret
+ * @param const unsigned char transcript[32] -> handshake hash
+ * @param int type -> candidate cipher
+ * @param const unsigned char iv[16] -> initialization vector
+ * @param unsigned char data[32] -> probe updated in place
+ *
+ * @return int -> 1 if derivation and cipher processing succeeded, otherwise 0
+ */
 int keys_session__random_probe(const unsigned char secret[32], const unsigned char transcript[32], int type,
     const unsigned char iv[16], unsigned char data[32])
 {
@@ -94,14 +138,24 @@ int keys_session__random_probe(const unsigned char secret[32], const unsigned ch
     return status;
 }
 
+/**
+ * @brief authenticates the recovered cipher probe and handshake hash
+ *
+ * @param const unsigned char[32] secret -> combined exchange secret
+ * @param const unsigned char[32] transcript -> handshake hash
+ * @param const unsigned char[32] plaintext -> recovered probe bytes
+ * @param unsigned char[32] tag -> receives the authentication tag
+ *
+ * @return int -> 1 on success, otherwise 0
+ */
 int keys_session__random_probe_tag(const unsigned char secret[32], const unsigned char transcript[32],
     const unsigned char plaintext[32], unsigned char tag[32])
 {
     unsigned char key[32];
     unsigned char input[64];
     int status;
-    memcpy(input, plaintext, 32);
-    memcpy(input + 32, transcript, 32);
+    clib__copy_memory(plaintext, input, 32, sizeof(input));
+    clib__copy_memory(transcript, input + 32, 32, sizeof(input) - 32);
     status = keys_session__hkdf(secret, transcript, "lemonchat/v2/random-cipher/probe-check", key)
         && ciphers__hmac(key, input, sizeof(input), tag);
     ciphers__clear(key, sizeof(key));
@@ -109,7 +163,16 @@ int keys_session__random_probe_tag(const unsigned char secret[32], const unsigne
     return status;
 }
 
-/** @brief HKDF-SHA256 extract/expand for one 32-byte output, with a bounded purpose label. */
+/**
+ * @brief derives one key with HKDF using SHA256
+ *
+ * @param const unsigned char input[32] -> input key material
+ * @param const unsigned char salt[32] -> salt
+ * @param const char* purpose -> purpose label shorter than 256 bytes
+ * @param unsigned char output[32] -> receives the derived key
+ *
+ * @return int -> 1 if derivation succeeded, otherwise 0
+ */
 int keys_session__hkdf(const unsigned char input[32], const unsigned char salt[32], const char* purpose, unsigned char output[32])
 {
     unsigned char extracted[32];
@@ -119,7 +182,7 @@ int keys_session__hkdf(const unsigned char input[32], const unsigned char salt[3
 
     if (size < sizeof(info))
     {
-        memcpy(info, purpose, size);
+        clib__copy_memory(purpose, info, size, sizeof(info));
         info[size] = 1;
         status = ciphers__hmac(salt, input, 32, extracted)
             && ciphers__hmac(extracted, info, size + 1, output);
@@ -129,7 +192,15 @@ int keys_session__hkdf(const unsigned char input[32], const unsigned char salt[3
     return status;
 }
 
-/** @brief Hash-chains a length-prefixed field; used for secrets and the handshake transcript. */
+/**
+ * @brief hashes the previous state, field length and field bytes together
+ *
+ * @param unsigned char state[32] -> hash updated in place
+ * @param const unsigned char* data -> field bytes
+ * @param size_t size -> field length, at most UINT32_MAX
+ *
+ * @return int -> 1 if hashing succeeded, otherwise 0
+ */
 int keys_session__mix(unsigned char state[32], const unsigned char* data, size_t size)
 {
     mbedtls_sha256_context context;

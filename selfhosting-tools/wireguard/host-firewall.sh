@@ -1,7 +1,7 @@
 #!/bin/sh
 # written by lemon-chat selfhosting-tools/wireguard/setup.sh
 # Linux host firewall hook: up [TCP_PORTS UDP_PORTS] or down.
-# Setup saves the port lists; later wg-quick hooks reuse them after a reboot.
+# Setup saves the port lists. Later wg-quick hooks reuse them after a reboot.
 set -eu
 
 DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
@@ -31,7 +31,7 @@ TCP_PORTS=$(sed -n '1p' "$STATE")
 UDP_PORTS=$(sed -n '2p' "$STATE")
 valid_ports "$TCP_PORTS" && valid_ports "$UDP_PORTS" || exit 2
 
-# Use a dedicated zone on firewalld systems; otherwise use tagged INPUT rules.
+# Use a dedicated zone on firewalld systems. Otherwise use tagged INPUT rules.
 if command -v firewall-cmd >/dev/null 2>&1 && firewall-cmd --state >/dev/null 2>&1; then
     if [ -e "$ZONE" ]; then
         grep -Eq '^<!-- written by lemon-chat (selfhosting-tools|tools)/wireguard/setup\.sh -->$' "$ZONE" || exit 1

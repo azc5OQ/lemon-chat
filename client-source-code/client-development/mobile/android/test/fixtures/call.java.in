@@ -1,0 +1,246 @@
+class Bundle
+{
+}
+class View
+{
+}
+class ViewGroup extends View
+{
+    View getChildAt(int index)
+    {
+        return new View();
+    }
+}
+class HybridWindowInsets
+{
+    static void apply(Object activity, View root)
+    {
+    }
+}
+class TextView extends View
+{
+    String text;
+    public void setText(String value)
+    {
+        text = value;
+    }
+}
+class Intent
+{
+    final java.util.Map<String, Object> extras = new java.util.HashMap<String, Object>();
+    String action;
+    static final int FLAG_ACTIVITY_NEW_TASK = 1;
+    static final int FLAG_ACTIVITY_SINGLE_TOP = 2;
+    String getAction()
+    {
+        return this.action;
+    }
+    void addFlags(int flags)
+    {
+    }
+    void putExtra(String key, long value)
+    {
+        this.extras.put(key, value);
+    }
+    long getLongExtra(String key, long fallback)
+    {
+        return this.extras.containsKey(key) ? (Long)this.extras.get(key) : fallback;
+    }
+    Intent()
+    {
+    }
+    Intent(Object context, Class<?> target)
+    {
+    }
+    public void setAction(String value)
+    {
+        action = value;
+    }
+    public void putExtra(String key, int value)
+    {
+        extras.put(key, value);
+    }
+    public void putExtra(String key, String value)
+    {
+        extras.put(key, value);
+    }
+    public String getStringExtra(String key)
+    {
+        return (String) extras.get(key);
+    }
+    public int getIntExtra(String key, int fallback)
+    {
+        return extras.containsKey(key) ? (Integer) extras.get(key) : fallback;
+    }
+}
+class AppCompatActivity
+{
+    Intent intent;
+    Intent startedService;
+    Intent startedActivity;
+    final TextView callerView = new TextView();
+    protected void onCreate(Bundle state)
+    {
+    }
+    protected void onNewIntent(Intent replacement)
+    {
+        // Model framework delivery; application fields are not framework-managed extras.
+    }
+    protected void setContentView(int layout)
+    {
+    }
+    protected Intent getIntent()
+    {
+        return intent;
+    }
+    protected void setIntent(Intent replacement)
+    {
+        intent = replacement;
+    }
+    @SuppressWarnings("unchecked")
+    protected <T extends View> T findViewById(int id)
+    {
+        return (T)(id == R.id.content ? new ViewGroup() : callerView);
+    }
+    protected void startService(Intent request)
+    {
+        startedService = request;
+    }
+    protected void startActivity(Intent request)
+    {
+        this.startedActivity = request;
+    }
+    protected void finish()
+    {
+    }
+    protected void finishAndRemoveTask()
+    {
+    }
+}
+class MainActivity
+{
+}
+class NodeBridge
+{
+    int actions;
+    String lastId;
+    void sendCallAction(String action, String callId, String sessionId)
+    {
+        this.actions++;
+        this.lastId = callId;
+    }
+}
+class NotificationManager
+{
+    int cancellations;
+    void cancel(int id)
+    {
+        this.cancellations++;
+    }
+}
+class WebView
+{
+    void evaluateJavascript(String script, Object callback)
+    {
+    }
+}
+class BackgroundService
+{
+    String activeCallId = "";
+    String activeCallSession = "";
+    long activeCallExpiry;
+    static boolean suppressNextIdleExit;
+    static final int INCOMING_CALL_NOTIFICATION_ID = 2;
+    NotificationManager notificationManager = new NotificationManager();
+    NodeBridge nodeBridge = new NodeBridge();
+    WebView webView = new WebView();
+    boolean isTrustedPage()
+    {
+        return true;
+    }
+__CURRENT_CALL__
+__CALL_ACTION__
+__CLEAR_CALL__
+    static final String ACTION_ACCEPT_CALL = "accept-call";
+    static final String ACTION_DECLINE_CALL = "decline-call";
+}
+class Log
+{
+    static void d(String tag, String message)
+    {
+    }
+}
+class R
+{
+    static class layout
+    {
+        static final int incoming_call_activity = 1;
+    }
+    static class id
+    {
+        static final int content = 1000;
+        static final int caller_name = 2;
+    }
+}
+
+class Probe
+{
+    static void check(boolean result, String message)
+    {
+        if (!result)
+        {
+            throw new AssertionError(message);
+        }
+    }
+    static Intent call(String caller, String id)
+    {
+        Intent intent = new Intent();
+        intent.putExtra("callerName", caller);
+        intent.putExtra("call_id", id);
+        intent.putExtra("session_id", "session-A");
+        intent.putExtra("expires_at", System.currentTimeMillis() + 30000);
+        return intent;
+    }
+    public static void main(String[] args)
+    {
+        String oldId = "00000000000000000000000000000001";
+        String newId = "00000000000000000000000000000002";
+        IncomingCallActivity activity = new IncomingCallActivity();
+        activity.setIntent(call("Maya", oldId));
+        activity.onCreate(new Bundle());
+        check("Maya".equals(activity.callerView.text), "first caller not displayed");
+        activity.onNewIntent(call("Sam", newId));
+        activity.onAcceptCall(new View());
+        check("Sam".equals(activity.callerView.text), "new caller not displayed");
+        check(activity.startedService == null && newId.equals(activity.startedActivity.getStringExtra("call_id")), "accept must launch activity with current capability");
+        BackgroundService service = new BackgroundService();
+        service.activeCallId = newId;
+        service.activeCallSession = "session-A";
+        service.activeCallExpiry = System.currentTimeMillis() + 30000;
+        Intent old = call("Maya", oldId);
+        old.setAction(BackgroundService.ACTION_ACCEPT_CALL);
+        service.handleCallAction(old);
+        check(service.nodeBridge.actions == 0 && service.activeCallId.equals(newId), "stale action changed current call");
+        service.handleCallAction(activity.startedActivity);
+        check(service.nodeBridge.actions == 1 && newId.equals(service.nodeBridge.lastId), "valid current action was not sent");
+        service.handleCallAction(activity.startedActivity);
+        check(service.nodeBridge.actions == 1, "duplicate call action sent twice");
+        service.activeCallId = newId;
+        service.activeCallExpiry = System.currentTimeMillis() - 1;
+        service.handleCallAction(activity.startedActivity);
+        check(service.nodeBridge.actions == 1, "expired capability accepted");
+        service.activeCallExpiry = System.currentTimeMillis() + 30000;
+        service.activeCallSession = "session-B";
+        service.handleCallAction(activity.startedActivity);
+        check(service.nodeBridge.actions == 1, "wrong session accepted");
+        service.activeCallSession = "session-A";
+        int canceledBeforeDisconnect = service.notificationManager.cancellations;
+        service.clearIncomingCall();
+        check(!service.isCurrentCall(newId, "session-A") && service.activeCallSession.isEmpty()
+            && service.activeCallExpiry == 0 && service.notificationManager.cancellations == canceledBeforeDisconnect + 1,
+            "Disconnected call remained actionable or displayed");
+        service.handleCallAction(activity.startedActivity);
+        check(service.nodeBridge.actions == 1, "Disconnected call submitted a native action");
+        System.out.println("PASS: reused call screen refreshes caller/capability; activity-first acceptance; stale, duplicate, expired and wrong-session actions rejected");
+    }
+}

@@ -6,9 +6,11 @@
 static boole _client_msg_channel_edit_internal__allowed(const desktop_channel_t *current, const desktop_channel_request_t *request);
 
 /**
- * @brief checks changed fields against the server's current hints; the server remains authoritative.
+ * @brief checks changed fields against the server's current hints. The server remains authoritative
+ *
  * @param const desktop_channel_t* current -> current worker-owned channel
  * @param const desktop_channel_request_t* request -> explicit saved draft
+ *
  * @return boole -> nonzero when every changed field is currently permitted
  */
 static boole _client_msg_channel_edit_internal__allowed(const desktop_channel_t *current, const desktop_channel_request_t *request)
@@ -34,9 +36,11 @@ static boole _client_msg_channel_edit_internal__allowed(const desktop_channel_t 
 }
 
 /**
- * @brief sends channel creation, an explicit edit, deletion or an access query using existing messages.
+ * @brief sends channel creation, an explicit edit, deletion or an access query using existing messages
+ *
  * @param desktop_session_t* session -> authenticated worker-owned connection
  * @param const desktop_channel_request_t* request -> copied draft with original channel revision
+ *
  * @return void
  */
 void client_msg__channel__send_change(desktop_session_t *session, const desktop_channel_request_t *request)

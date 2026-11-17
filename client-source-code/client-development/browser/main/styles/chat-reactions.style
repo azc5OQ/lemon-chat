@@ -146,7 +146,7 @@
     justify-content: center;
     min-width: 20px;
     min-height: 20px;
-    max-width: min(160px, 50vw);
+    max-width: min(160px, calc(50vw / var(--ui-display-scale, 1)));
     overflow-wrap: anywhere;
     white-space: normal;
     font: 17px/1 "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif;
@@ -183,7 +183,7 @@
     display: inline-flex;
     align-items: center;
     gap: 1px;
-    max-width: calc(100vw - 16px);
+    max-width: calc(calc(100vw / var(--ui-display-scale, 1)) - 16px);
     box-sizing: border-box;
     padding: 2px;
     border: 1px solid var(--reaction-border);
@@ -271,8 +271,8 @@
     z-index: 2147483646;
     box-sizing: border-box;
     min-width: 170px;
-    max-width: calc(100vw - 16px);
-    max-height: calc(100dvh - 16px);
+    max-width: calc(calc(100vw / var(--ui-display-scale, 1)) - 16px);
+    max-height: calc(calc(100dvh / var(--ui-display-scale, 1)) - 16px);
     overflow: auto;
     padding: 4px;
     border: 1px solid var(--reaction-border);
@@ -330,8 +330,8 @@
     position: fixed;
     z-index: 2147483646;
     box-sizing: border-box;
-    width: min(286px, calc(100vw - 16px));
-    max-height: calc(100dvh - 16px);
+    width: min(286px, calc(calc(100vw / var(--ui-display-scale, 1)) - 16px));
+    max-height: calc(calc(100dvh / var(--ui-display-scale, 1)) - 16px);
     padding: 10px;
     overflow: auto;
     border: 1px solid var(--reaction-border);

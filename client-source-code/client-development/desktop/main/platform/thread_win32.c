@@ -20,8 +20,10 @@ struct desktop_mutex_t
 static DWORD WINAPI _thread_internal__run(void *context);
 
 /**
- * @brief adapts the shared worker entry point to Windows.
+ * @brief adapts the shared worker entry point to Windows
+ *
  * @param void* context -> owned thread descriptor, retained until join
+ *
  * @return DWORD WINAPI -> worker exit code
  */
 static DWORD WINAPI _thread_internal__run(void *context)
@@ -33,9 +35,11 @@ static DWORD WINAPI _thread_internal__run(void *context)
 }
 
 /**
- * @brief starts a worker without blocking the UI.
+ * @brief starts a worker without blocking the UI
+ *
  * @param desktop_thread_function_t function -> worker entry point
- * @param void* context -> caller-owned state retained until join
+ * @param void* context -> caller owned state retained until join
+ *
  * @return desktop_thread_t* -> owned handle, or NULL on failure
  */
 desktop_thread_t *desktop_thread__start(desktop_thread_function_t function, void *context)
@@ -64,8 +68,10 @@ desktop_thread_t *desktop_thread__start(desktop_thread_function_t function, void
 }
 
 /**
- * @brief waits for the worker before releasing its descriptor.
+ * @brief waits for the worker before releasing its descriptor
+ *
  * @param desktop_thread_t* thread -> owned handle, or NULL
+ *
  * @return void
  */
 void desktop_thread__join(desktop_thread_t *thread)
@@ -81,7 +87,8 @@ void desktop_thread__join(desktop_thread_t *thread)
 }
 
 /**
- * @brief allocates and initializes a shared-state mutex.
+ * @brief allocates and initializes a shared state mutex
+ *
  * @return desktop_mutex_t* -> owned mutex, or NULL
  */
 desktop_mutex_t *desktop_mutex__create(void)
@@ -99,8 +106,10 @@ desktop_mutex_t *desktop_mutex__create(void)
 }
 
 /**
- * @brief releases an unused mutex after all workers have stopped.
+ * @brief releases an unused mutex after all workers have stopped
+ *
  * @param desktop_mutex_t* mutex -> owned mutex, or NULL
+ *
  * @return void
  */
 void desktop_mutex__destroy(desktop_mutex_t *mutex)
@@ -115,8 +124,10 @@ void desktop_mutex__destroy(desktop_mutex_t *mutex)
 }
 
 /**
- * @brief acquires a short-lived shared-state lock.
+ * @brief acquires a short lived shared state lock
+ *
  * @param desktop_mutex_t* mutex -> initialized mutex
+ *
  * @return void
  */
 void desktop_mutex__lock(desktop_mutex_t *mutex)
@@ -125,8 +136,10 @@ void desktop_mutex__lock(desktop_mutex_t *mutex)
 }
 
 /**
- * @brief releases a shared-state lock.
+ * @brief releases a shared state lock
+ *
  * @param desktop_mutex_t* mutex -> locked mutex
+ *
  * @return void
  */
 void desktop_mutex__unlock(desktop_mutex_t *mutex)
@@ -135,9 +148,11 @@ void desktop_mutex__unlock(desktop_mutex_t *mutex)
 }
 
 /**
- * @brief acquires a short lock only when it is immediately available.
+ * @brief acquires a short lock only when it is immediately available
+ *
  * @param desktop_mutex_t* mutex -> initialized mutex
- * @return boole -> 1 when acquired; the caller must unlock
+ *
+ * @return boole -> 1 when acquired. The caller must unlock
  */
 boole desktop_mutex__try_lock(desktop_mutex_t *mutex)
 {

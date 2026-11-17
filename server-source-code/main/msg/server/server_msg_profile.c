@@ -1,6 +1,6 @@
 #include "../../util.h"
 #include "../../clib/clib.h"
-// This file sends usernames, avatars, visible country codes and stored client information.
+// this file sends usernames, avatars, visible country codes and stored client information
 #include "../../core/permissions.h"
 
 #include "server_msg.h"
@@ -9,9 +9,8 @@
 #include "../../../third-party/rxi-log/log.h"
 
 /**
- * @brief the country code users may learn about a client: nothing unless flags are displayed, and
- *        nothing for an admin while admin flags are kept private. country blocking resolves the
- *        code for its own check, which must never leak it to users
+ * @brief returns only the country code permitted by flag visibility settings
+ *        country blocking must not expose a code hidden from other clients
  *
  * @param client_t* client -> the client being described
  *
@@ -36,7 +35,7 @@ cstring server_msg__profile__country_code_to_send(client_t *client)
 }
 
 /**
- * @brief This function sends client_rename_message to all authenticated clients
+ * @brief this function sends client_rename_message to all authenticated clients
  *
  * @param client_t* subject -> the client that changed its username
  * @param char* new_username -> self explanatory
@@ -68,10 +67,7 @@ void server_msg__profile__send_client_rename_message_to_all_clients(client_t *su
 }
 
 /**
- * @brief Broadcasts a client's visible country code to authenticated human clients.
- *
- * Call this when admin status or is_admin_country_flag_hidden changes the visible code.
- * Messages contain only the visible country code.
+ * @brief broadcasts the visible country code after admin status or flag privacy changes
  *
  * @param client_t* subject -> the client whose shown code changed
  *
@@ -131,7 +127,7 @@ void server_msg__profile__send_admin_country_codes_to_all_clients(void)
 /**
  * @brief broadcasts a lightweight "this client's avatar changed" event (no image payload) to all
  *        authenticated non-bot clients, so they can re-request that client's avatar if they show
- *        it.
+ *        it
  *
  * @param client_t* subject -> the client whose avatar was set or deleted
  *
@@ -158,9 +154,7 @@ void server_msg__profile__send_avatar_changed_event_to_all_clients(client_t *sub
 }
 
 /**
- * @brief sends one client's avatar (full base64 data-url, or empty string if none) to a single
- *        requesting client. used for both the profile-pane request and the chunked tree lazy-load,
- *        so avatars are only ever sent to clients that asked for them.
+ * @brief returns the requested avatar data URL, or an empty string when none exists
  *
  * @param client_t* receiver -> the client that asked for the avatar
  * @param uint64 avatar_owner_client_id -> whose avatar this is
@@ -194,9 +188,10 @@ void server_msg__profile__send_client_avatar_to_single_client(client_t *receiver
 }
 
 /**
- * @brief Sends saved users' names, avatars and active group badges to a client with access to the
+ * @brief sends saved users' names, avatars and active group badges to a client with access to the
  *        list. Public keys and last seen times are included only when their server settings are
- *        enabled.
+ *        enabled
+ *
  * @param receiver -> client receiving the list while the caller holds the clients lock
  */
 void server_msg__profile__send_stored_clients_to_single_client(client_t *receiver)

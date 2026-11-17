@@ -1,8 +1,6 @@
-// chat.js is embedded in template.html along with the other client files, and in the node bundle
-// it is the chat side: composing and sending (a text, a picture or a file goes from the input to the
-// worker for encryption and lands in a chat context), the typing indicator, and the read state of
-// conversations (unread counters, badges, seen receipts)
-// ui.js calls chat__send_chat_message and the typing side; messages.js and dispatch.js feed the incoming state
+// composes messages and attachments and sends them through the encryption worker
+// tracks typing, unread counts and seen receipts for each conversation
+// UI code starts sends. messages.js and dispatch.js apply incoming state
 
 // state private to this file
 var picture_delivery_pending = false; // between the server's upload ack and image_sent_status (relay to the receivers finished)
@@ -11,6 +9,534 @@ var picture_delivery_hide_timer = null;
 
 var upload_ack_timer = null;
 var upload_generation = 0;
+var picture_preparation = null;
+var picture_operation_sequence = 0;
+var chat_peer_local_state = new Map();
+var chat_last_delivery_by_context = new Map();
+
+/**
+ * @brief finds the conversation key for a retained text or attachment delivery
+ *
+ * @param object frame -> received frame with its message and optional retained sender
+ *
+ * @return string -> conversation key, or an empty string for unsupported or invalid content
+ */
+function chat__delivery_context(frame)
+{
+    const message = frame && frame.message;
+    if (!message || typeof message.type !== "string")
+    {
+        return "";
+    }
+    if (message.type === "offline_chat_message")
+    {
+        return typeof message.sender_identity_hash === "string" ? "identity:" + message.sender_identity_hash : "";
+    }
+    if (/^channel_chat_(message|picture|file)(?:_metadata|_decrypted)?$/.test(message.type))
+    {
+        return Number.isSafeInteger(message.channel_id) ? "chat-context-channel-" + message.channel_id : "";
+    }
+    if (/^direct_chat_(message|picture|file)(?:_metadata|_decrypted)?$/.test(message.type))
+    {
+        if (message.some_json && message.some_json.type !== "direct_chat_message")
+        {
+            return "";
+        }
+        const sender = chat__resolve_direct_sender(frame);
+        return sender ? chat__peer_state_key(sender) : "";
+    }
+    return "";
+}
+
+/**
+ * @brief reports a conversation read through its latest accepted delivery
+ *
+ * @param string context_id -> conversation key used for delivery tracking
+ * @param object arguments_value -> additional local read command arguments
+ *
+ * @return void
+ */
+function chat__send_read_command(context_id, arguments_value)
+{
+    const delivery_id = chat_last_delivery_by_context.get(context_id);
+    if (delivery_id)
+    {
+        connection__send_local_command("read_conversation", Object.assign({}, arguments_value,
+        {
+            context_id: context_id,
+            delivery_id: delivery_id,
+            send_seen_receipts: g_send_seen_receipts === true
+        }));
+    }
+}
+
+/**
+ * @brief identifies peer state by identity hash, falling back to the public key
+ *
+ * @param object|null client -> client or resolved sender
+ *
+ * @return string -> stable peer key, or an empty string when unavailable
+ */
+function chat__peer_state_key(client)
+{
+    if (client == null)
+    {
+        return "";
+    }
+    return client.identity_hash ? "identity:" + client.identity_hash : (client.public_key ? "key:" + client.public_key : "");
+}
+
+/**
+ * @brief parses chat text or a permitted encrypted edit or reaction
+ *
+ * @param string value -> decrypted JSON contents
+ * @param boolean allow_controls -> whether edits and reactions may be returned
+ *
+ * @return object|null the parsed message or null for invalid content
+ */
+function chat__read_message_payload(value, allow_controls = true)
+{
+    if (typeof value !== "string")
+    {
+        return null;
+    }
+    let payload;
+    try
+    {
+        payload = JSON.parse(value);
+    }
+    catch (invalid_content)
+    {
+        return null;
+    }
+    if (payload == null || typeof payload !== "object" || Array.isArray(payload))
+    {
+        return null;
+    }
+    if (allow_controls && (payload.type === "chat_message_edit" || payload.type === "chat_reaction"))
+    {
+        return payload;
+    }
+    return typeof payload.value === "string" ? payload : null;
+}
+
+// a retained message belongs to the identity that sent it, even after its transport slot is reused
+// only trusted local delivery carries Node's sender snapshot. it does not create a live member
+/**
+ * @brief resolves a direct sender while checking retained sender data against the local session
+ *
+ * @param object frame -> direct message frame with optional local sender metadata
+ *
+ * @return object|null -> resolved sender and conversation, or null when invalid
+ */
+function chat__resolve_direct_sender(frame)
+{
+    const message = frame && frame.message;
+    if (!message)
+    {
+        return null;
+    }
+    let client = channel_tree__get_client_by_client_id(message.sender_id);
+    const retained = frame.local_sender;
+    if (retained != null)
+    {
+        if (!android_host__is_ui_only_runtime() || !frame.local_delivery || frame.local_delivery.session_id !== node_session_id || typeof retained !== "object" || Array.isArray(retained) || !Number.isSafeInteger(retained.client_id) || retained.client_id !== message.sender_id || typeof retained.public_key !== "string" || !retained.public_key || retained.public_key.length > 16384 || typeof retained.identity_hash !== "string" || retained.identity_hash.length > 128 || (retained.identity_hash && !/^[A-Za-z0-9+/=]+$/.test(retained.identity_hash)) || typeof retained.username !== "string" || retained.username.length > 512)
+        {
+            return null;
+        }
+        client = g_client_list.find(function(candidate)
+        {
+            return candidate && candidate.public_key === retained.public_key;
+        }) || null;
+    }
+    if (!retained && !client)
+    {
+        return null;
+    }
+    const source = retained || client;
+    const sender =
+    {
+        client: client,
+        client_id: client ? client.client_id : null,
+        public_key: source.public_key || "",
+        identity_hash: source.identity_hash || "",
+        username: retained ? retained.username : (client.username || message.sender_username || "")
+    };
+    const saved = chat_peer_local_state.get(chat__peer_state_key(sender));
+    sender.is_ignored_by_local_client = Boolean((client && client.is_ignored_by_local_client) || (saved && saved.is_ignored_by_local_client));
+    if (client)
+    {
+        sender.context_id = "chat-context-pm-" + client.client_id;
+    }
+    else if (sender.identity_hash)
+    {
+        sender.context_id = "chat-context-offline-" + sender.identity_hash;
+    }
+    else
+    {
+        const existing = g_chat_context_array.find(function(context)
+        {
+            return context.type === "user" && context.peer_public_key === sender.public_key;
+        });
+        let suffix = g_chat_context_array.length;
+        sender.context_id = existing ? existing.chat_context_id : "chat-context-offline-key-" + suffix;
+        while (!existing && chat__get_chat_context_index_by_chat_context_id(sender.context_id) >= 0)
+        {
+            sender.context_id = "chat-context-offline-key-" + (++suffix);
+        }
+    }
+    return sender;
+}
+
+/**
+ * @brief creates or verifies a conversation bound to the resolved sender's public key
+ *
+ * @param object sender -> sender returned by chat__resolve_direct_sender
+ *
+ * @return boolean -> true when the sender's conversation is available
+ */
+function chat__ensure_direct_context(sender)
+{
+    let index = chat__get_chat_context_index_by_chat_context_id(sender.context_id);
+    if (index >= 0)
+    {
+        const context = g_chat_context_array[index];
+        if (context.peer_public_key && context.peer_public_key !== sender.public_key)
+        {
+            return false;
+        }
+        if (G_HAS_DOM && document.getElementById(sender.context_id) == null)
+        {
+            return false;
+        }
+        context.peer_public_key = sender.public_key;
+        context.peer_identity_hash = sender.identity_hash;
+        return true;
+    }
+    const container = document.getElementById("chat-context-container");
+    if (container == null)
+    {
+        return false;
+    }
+    container.insertAdjacentHTML("beforeend", '<div class="chat-context" id="' + chat__sanitize_string(sender.context_id) + '" style="display: none;"><div class="single-server-message">now talking to user: ' + chat__sanitize_string(sender.username) + '</div><div class="single-server-message server-message-public-key">your public key: ' + chat__sanitize_string(g_rsa_public_key_string) + '</div><div class="single-server-message server-message-public-key">their public key: ' + chat__sanitize_string(sender.public_key) + '</div><div class="single-server-message"></div></div>');
+    g_chat_context_array.push(
+    {
+        type: "user",
+        chat_context_id: sender.context_id,
+        peer_public_key: sender.public_key,
+        peer_identity_hash: sender.identity_hash,
+        peer_username: sender.username,
+        last_known_message_sender_username: ""
+    });
+    if (sender.client == null)
+    {
+        const selector_id = sender.context_id.slice("chat-context-".length);
+        const selectors = document.getElementById("chat-context-selectors-container");
+        if (selectors && document.querySelector('[data-chat-context-selector-id="' + selector_id + '"]') == null)
+        {
+            selectors.insertAdjacentHTML("beforeend", '<div class="chat-context-selector" data-chat-context-selector-type="user" data-chat-context-selector-id="' + selector_id + '"><div class="p-container"><p>' + chat__sanitize_string(sender.username) + '</p></div><div class="remove-chat-context-selector" data-chat-context-remove-selector-type="user" data-chat-context-remove-selector-id="' + selector_id + '"></div></div>');
+            for (const selector of document.getElementsByClassName("chat-context-selector"))
+            {
+                selector.onclick = UI.chat_context_selector_onclick;
+            }
+            for (const selector of document.getElementsByClassName("remove-chat-context-selector"))
+            {
+                selector.onclick = UI.chat_context_remove_onclick;
+            }
+        }
+    }
+    return true;
+}
+
+/**
+ * @brief notifies Android and updates unread counts or read receipts for a direct message
+ *
+ * @param object sender -> resolved sender and conversation
+ * @param number|null message_id -> message ID for a receipt, or null for activity only
+ *
+ * @return void
+ */
+function chat__record_direct_activity(sender, message_id)
+{
+    android_host__notify({type: "chat_activity", sender_id: sender.client_id, username: sender.username, context_id: sender.context_id});
+    if (sender.client == null)
+    {
+        UI.schedule_member_list_sync();
+        return;
+    }
+    if (g_current_chat_context_id !== sender.context_id || typeof process !== "undefined")
+    {
+        chat__increment_unread_count(sender.client_id);
+        if (message_id != null)
+        {
+            chat__remember_message_awaiting_receipt(sender.client_id, message_id);
+        }
+        chat__render_unread_badge(sender.client_id, true);
+    }
+    else if (message_id != null)
+    {
+        if (chat__is_the_user_actually_looking())
+        {
+            chat__send_seen_receipt_for_message(sender.client_id, message_id);
+        }
+        else
+        {
+            chat__remember_message_awaiting_receipt(sender.client_id, message_id);
+        }
+    }
+}
+
+/**
+ * @brief keeps unread, ignore and mute state by identity before client slots change
+ *
+ * @return void
+ */
+function chat__remember_peer_state()
+{
+    chat__bind_private_contexts();
+    for (const client of g_client_list)
+    {
+        const key = chat__peer_state_key(client);
+        if (key)
+        {
+            chat_peer_local_state.set(key,
+            {
+                unread_count: client.unread_count || 0,
+                is_ignored_by_local_client: client.is_ignored_by_local_client === true,
+                is_muted_by_local_client: client.is_muted_by_local_client === true
+            });
+        }
+    }
+}
+
+/**
+ * @brief restores saved peer state onto the current client list and refreshes the app badge
+ *
+ * @return void
+ */
+function chat__restore_peer_state()
+{
+    for (const client of g_client_list)
+    {
+        const state = chat_peer_local_state.get(chat__peer_state_key(client));
+        if (state)
+        {
+            Object.assign(client, state);
+        }
+    }
+    chat__update_app_unread_badge();
+}
+
+/**
+ * @brief combines saved and connected peer state for page attachment
+ *
+ * @return array -> peer records keyed by identity hash or public key
+ */
+function chat__snapshot_peer_states()
+{
+    const states = new Map(chat_peer_local_state);
+    for (const client of g_client_list)
+    {
+        const key = chat__peer_state_key(client);
+        if (key)
+        {
+            states.set(key,
+            {
+                unread_count: client.unread_count || 0,
+                is_ignored_by_local_client: client.is_ignored_by_local_client === true,
+                is_muted_by_local_client: client.is_muted_by_local_client === true
+            });
+        }
+    }
+    return Array.from(states, function(entry)
+    {
+        return Object.assign({key: entry[0]}, entry[1]);
+    });
+}
+
+/**
+ * @brief validates the complete peer snapshot before replacing local peer state
+ *
+ * @param array states -> peer records from the local runtime
+ *
+ * @return void
+ *
+ * @throws Error -> a peer record has invalid keys, counters or flags
+ */
+function chat__hydrate_peer_states(states)
+{
+    if (!Array.isArray(states))
+    {
+        return;
+    }
+    const replacement = new Map();
+    for (const state of states)
+    {
+        if (!state || typeof state.key !== "string" || !/^(identity:|key:).+/.test(state.key) || !Number.isSafeInteger(state.unread_count) || state.unread_count < 0 || typeof state.is_ignored_by_local_client !== "boolean" || typeof state.is_muted_by_local_client !== "boolean")
+        {
+            throw new Error("Invalid local peer state");
+        }
+        replacement.set(state.key,
+        {
+            unread_count: state.unread_count,
+            is_ignored_by_local_client: state.is_ignored_by_local_client,
+            is_muted_by_local_client: state.is_muted_by_local_client
+        });
+    }
+    chat_peer_local_state = replacement;
+}
+
+/**
+ * @brief validates channel unread counts before replacing and rendering them
+ *
+ * @param array states -> channel IDs and unread counts from the local runtime
+ *
+ * @return void
+ *
+ * @throws Error -> a channel ID or unread count is invalid
+ */
+function chat__hydrate_channel_counts(states)
+{
+    if (!Array.isArray(states))
+    {
+        return;
+    }
+    const counts = {};
+    for (const state of states)
+    {
+        if (!state || !Number.isSafeInteger(state.channel_id) || state.channel_id < 0 || !Number.isSafeInteger(state.unread_count) || state.unread_count < 0)
+        {
+            throw new Error("Invalid local channel unread state");
+        }
+        counts[state.channel_id] = state.unread_count;
+    }
+    g_channel_unread_counts = counts;
+    for (const key of Object.keys(counts))
+    {
+        chat__render_channel_unread_badge(Number(key));
+    }
+}
+
+/**
+ * @brief binds existing private conversations to their current peer's public key
+ *
+ * @return void
+ */
+function chat__bind_private_contexts()
+{
+    for (const context of g_chat_context_array)
+    {
+        const match = /^chat-context-pm-([0-9]+)$/.exec(context.chat_context_id);
+        if (context.type !== "user" || !match || context.peer_public_key)
+        {
+            continue;
+        }
+        const client = channel_tree__get_client_by_client_id(Number(match[1]));
+        if (client && client.public_key)
+        {
+            context.peer_public_key = client.public_key;
+            context.peer_identity_hash = client.identity_hash || "";
+        }
+    }
+}
+
+/**
+ * @brief checks that a private conversation still belongs to the client occupying its slot
+ *
+ * @param string context_id -> private conversation ID
+ * @param number client_id -> current recipient slot
+ *
+ * @return string|null -> matching peer public key, or null after warning about a changed connection
+ */
+function chat__private_recipient_key(context_id, client_id)
+{
+    const index = chat__get_chat_context_index_by_chat_context_id(context_id);
+    const client = channel_tree__get_client_by_client_id(client_id);
+    const context = index < 0 ? null : g_chat_context_array[index];
+    if (!context || !client || !context.peer_public_key || context.peer_public_key !== client.public_key)
+    {
+        utils__custom_alert("This person's connection changed. Open their conversation again before sending.");
+        return null;
+    }
+    return context.peer_public_key;
+}
+
+/**
+ * @brief rebinds private conversations by public key after clients leave or change slots
+ *
+ * @return void
+ */
+function chat__reconcile_private_contexts()
+{
+    const moves = [];
+    for (const context of g_chat_context_array)
+    {
+        if (context.type !== "user" || !/^chat-context-pm-/.test(context.chat_context_id))
+        {
+            continue;
+        }
+        const client = g_client_list.find(function(candidate)
+        {
+            return context.peer_public_key && candidate.public_key === context.peer_public_key;
+        });
+        const previous = context.chat_context_id;
+        let next = client ? "chat-context-pm-" + client.client_id : "chat-context-offline-" + (context.peer_identity_hash || "detached-" + previous.slice(16));
+        if (!client && !context.peer_identity_hash)
+        {
+            const base = next;
+            let suffix = 0;
+            while (g_chat_context_array.some(function(candidate)
+            {
+                return candidate !== context && candidate.chat_context_id === next;
+            }) || moves.some(function(move)
+            {
+                return move.next === next;
+            }))
+            {
+                next = base + "-" + (++suffix);
+            }
+        }
+        if (previous === next)
+        {
+            continue;
+        }
+        const previous_selector = "user-" + previous.slice("chat-context-pm-".length);
+        moves.push(
+        {
+            context: context,
+            client: client,
+            next: next,
+            element: document.getElementById(previous),
+            selectors: Array.from(document.querySelectorAll('[data-chat-context-selector-id="' + previous_selector + '"]')),
+            remove_selectors: Array.from(document.querySelectorAll('[data-chat-context-remove-selector-id="' + previous_selector + '"]')),
+            was_open: g_current_chat_context_id === previous
+        });
+    }
+    // capture all old DOM references before renaming: two peers may exchange transport slots
+    for (const move of moves)
+    {
+        if (move.element)
+        {
+            move.element.id = move.next;
+        }
+        const selector_id = move.client ? "user-" + move.client.client_id : move.next.slice("chat-context-".length);
+        for (const selector of move.selectors)
+        {
+            selector.setAttribute("data-chat-context-selector-id", selector_id);
+        }
+        for (const selector of move.remove_selectors)
+        {
+            selector.setAttribute("data-chat-context-remove-selector-id", selector_id);
+        }
+        move.context.chat_context_id = move.next;
+        if (move.was_open)
+        {
+            g_current_chat_context_id = move.next;
+            g_chat_message_receiver_id = move.client ? move.client.client_id : null;
+            g_offline_chat_recipient_identity_hash = move.client ? "" : (move.context.peer_identity_hash || "");
+        }
+    }
+}
 
 var UPLOAD_ACK_TIMEOUT_MS = 300000;   // a slow 10mb upload legitimately takes minutes
 
@@ -20,20 +546,19 @@ var TYPING_EXPIRY_MS = 6000;          // twice the send interval, so one lost me
 
 var CHANNEL_CONTEXT_SEND_WARNING = "Join this channel before sending messages or attachments.";
 
-// the private-message ids this client already receipted; each is sent once, only to its author
+// track private message receipts so each message is acknowledged once to its author
 var seen_receipts_already_sent = {};
 
-// which conversations have had our latest message read. one eye in the corner of the chat,
-// not one on every bubble
+// track whether each private conversation has had our latest message read
 var seen_state_by_context = {};
 
-// private messages that arrived while their conversation was closed. a receipt is owed
-// for each, and is sent when the user actually opens it
+// retain receipts for private messages until their conversation is read
 var unreceipted_messages_by_sender = {};
 var chat_scroll_pending = false;
 
 /**
- * @brief Uses the current theme's text style for displayed messages when the local setting is on.
+ * @brief uses the current theme's text style for displayed messages when the local setting is on
+ *
  * @return void
  */
 function chat__apply_theme_formatting()
@@ -54,8 +579,8 @@ function chat__apply_theme_formatting()
         return;
     }
 
-    // Themes set message styles in different places. Read a plain message once,
-    // when this setting or the theme changes, without touching the saved messages.
+    // themes set message styles in different places. read a plain message once,
+    // when this setting or the theme changes, without touching the saved messages
     sample = document.createElement("div");
     sample.className = "single-chat-message";
     sample.style.cssText = "position: absolute; visibility: hidden; pointer-events: none;";
@@ -72,7 +597,7 @@ function chat__apply_theme_formatting()
     document.body.classList.add("chat-use-theme-formatting");
 }
 
-// ---- composing and sending ----
+// message composition and sending
 
 /**
  * @brief index of a chat context in g_chat_context_array
@@ -94,8 +619,11 @@ function chat__get_chat_context_index_by_chat_context_id(id)
 }
 
 /**
- * @brief Matches an offline conversation to the same identity after it reconnects.
- * @param client Connected client whose identity is matched.
+ * @brief matches an offline conversation to the same identity after it reconnects
+ *
+ * @param client connected client whose identity is matched
+ *
+ * @return object -> promotion result with the previous and current context IDs and open state
  */
 function chat__promote_offline_chat_context_state(client)
 {
@@ -146,6 +674,8 @@ function chat__promote_offline_chat_context_state(client)
     {
         // no live thread yet: the offline one simply becomes it, history and all
         g_chat_context_array[offline_index].chat_context_id = live_context_id;
+        g_chat_context_array[offline_index].peer_public_key = client.public_key;
+        g_chat_context_array[offline_index].peer_identity_hash = client.identity_hash;
     }
     else
     {
@@ -168,14 +698,18 @@ function chat__promote_offline_chat_context_state(client)
 }
 
 /**
- * @brief clears the upload lock and the progress overlay
- *        the parts loop must not do this itself: it only queues, so releasing there let a second
- *        upload start and overwrite the server buffer of the first
+ * @brief releases the upload lock and clears its progress overlay
+ * the parts loop only queues data. it must wait for acknowledgement before releasing the lock
  *
  * @return void
  */
 function chat__release_file_upload_lock()
 {
+    if (picture_preparation != null)
+    {
+        clearTimeout(picture_preparation.timer);
+        picture_preparation = null;
+    }
     upload_generation++;
     connection__cancel_upload_send();
     if (upload_ack_timer != null)
@@ -191,8 +725,63 @@ function chat__release_file_upload_lock()
 }
 
 /**
- * @brief the upload ack arrived but the relay to the receivers is still running: says so instead of leaving the grayed thumbnail unexplained
- *        image_sent_status ends it, a two-minute timer is the fallback
+ * @brief marks the matching picture preparation as failed and restores an unchanged draft
+ *
+ * @param object result -> worker failure carrying the preparation operation ID
+ *
+ * @return void
+ */
+function chat__picture_preparation_failed(result)
+{
+    if (picture_preparation == null || picture_preparation.operation_id !== result.operation_id)
+    {
+        return;
+    }
+    const failed = picture_preparation;
+    chat__release_file_upload_lock();
+    const image = document.querySelector('[data-single-chat-message-local-message-id="' + failed.local_message_id + '"]');
+    if (image)
+    {
+        image.classList.add("message-send-failed");
+        image.title = "Picture not sent. Select it again to retry.";
+    }
+    // do not overwrite a newer draft or put this picture into a different conversation
+    if (g_current_chat_context_id === failed.context_id && !g_base64_picture_string_to_send && !g_pending_chat_file && !document.getElementById("chat-input-container-text-input").value)
+    {
+        g_base64_picture_string_to_send = failed.picture;
+        document.getElementById("chat-input-container-text-input").value = failed.text;
+        const preview = document.getElementById("image-upload-preview");
+        preview.style.backgroundImage = 'url("' + failed.picture + '")';
+        preview.style.display = "block";
+        if (typeof UI.sync_chat_input_state === "function")
+        {
+            UI.sync_chat_input_state();
+        }
+    }
+    utils__custom_alert("The picture could not be encrypted and was not sent. Your picture is ready to retry.");
+}
+
+/**
+ * @brief accepts only the current picture preparation and stops its timeout
+ *
+ * @param object result -> worker result carrying the preparation operation ID
+ *
+ * @return boolean -> true when the result matches the active preparation
+ */
+function chat__picture_preparation_succeeded(result)
+{
+    if (picture_preparation == null || picture_preparation.operation_id !== result.operation_id)
+    {
+        return false;
+    }
+    clearTimeout(picture_preparation.timer);
+    picture_preparation = null;
+    return true;
+}
+
+/**
+ * @brief shows that an accepted picture is still being relayed to its recipients
+ * clear this state on image_sent_status or after the timeout
  *
  * @return void
  */
@@ -213,7 +802,7 @@ function chat__show_picture_delivery_status()
 }
 
 /**
- * @brief ends the picture delivery status; the overlay stays when a new upload already owns it
+ * @brief clears picture delivery status unless a newer upload owns it
  *
  * @return void
  */
@@ -232,7 +821,7 @@ function chat__hide_picture_delivery_status()
 
     picture_delivery_pending = false;
 
-    // a new upload may already own the overlay; leave it to that one then
+    // leave the overlay unchanged when a newer upload owns it
     if (g_is_file_being_uploaded == false)
     {
         document.getElementById("upload-progress-overlay").style.display = "none";
@@ -242,10 +831,7 @@ function chat__hide_picture_delivery_status()
 }
 
 /**
- * @brief whether an upload may start now, one at a time
- *        the intent globals are written before chat__send_file_by_parts runs its guard, so a
- *        refused upload relabelled the one already running; call sites ask here first and touch
- *        nothing on refusal
+ * @brief checks whether another file upload can begin
  *
  * @return boolean true when no upload is running
  */
@@ -261,8 +847,7 @@ function chat__can_start_file_upload()
 }
 
 /**
- * @brief uploads a file in parts when the socket has room, with the progress overlay; the lock stays until the server's ack
- *        a file_send_error mid-upload releases the lock, and the loop stops feeding a file the server dropped
+ * @brief sends file parts with socket backpressure and retains the lock until acknowledgement
  *
  * @param array parts -> the base64 parts
  * @param number total_bytes_length -> the whole file's length, sent with every part
@@ -283,6 +868,11 @@ function chat__send_file_by_parts(parts, total_bytes_length, delay_ms)
     document.getElementById("upload-progress-overlay").style.display = "block";
 
     const generation = ++upload_generation;
+    /**
+     * @brief sends the next chunk only for the current upload and waits for final server acknowledgement
+     *
+     * @return Promise<void> -> resolves after handling this chunk or the final acknowledgement wait
+     */
     async function next_part_upload()
     {
         // a file_send_error released the lock mid-upload: the server dropped this file, stop feeding it
@@ -295,8 +885,7 @@ function chat__send_file_by_parts(parts, total_bytes_length, delay_ms)
 
         if (i >= parts.length)
         {
-            // queued, not delivered. hold the lock until the server acks, with a timer so a lost
-            // ack cannot block uploads for the rest of the session
+            // keep the upload lock until acknowledgement. a timeout prevents a lost reply from blocking future uploads
             document.getElementById("upload-progress-text").innerHTML = "waiting for server ...";
             upload_ack_timer = setTimeout(chat__release_file_upload_lock, UPLOAD_ACK_TIMEOUT_MS);
             return;
@@ -339,8 +928,7 @@ function chat__send_file_by_parts(parts, total_bytes_length, delay_ms)
 }
 
 /**
- * @brief sends the attached file as a message of its own; typed text stays in the box for the next send
- *        every way this can fail tells the user and keeps the file attached
+ * @brief sends the attached file separately from any draft text
  *
  * @param string receiver_type -> "channel" or "user"
  *
@@ -389,7 +977,7 @@ function chat__send_pending_chat_file(receiver_type)
             return false;
         }
 
-        receiver_public_key = channel_tree__get_public_key_by_client_id(g_chat_message_receiver_id);
+        receiver_public_key = chat__private_recipient_key(g_current_chat_context_id, g_chat_message_receiver_id);
 
         if (receiver_public_key == "" || receiver_public_key == null)
         {
@@ -445,8 +1033,7 @@ function chat__send_pending_chat_file(receiver_type)
         chat_files__wire_chat_file_download_button(card, key);
     }
 
-    // lock now, not when the worker answers: encrypting 20 MB takes a moment and a second
-    // send in that window must be refused instead of relabelling this one
+    // lock before encryption starts so a second send cannot replace the pending upload
     g_is_file_being_uploaded = true;
     document.getElementById("upload-progress-overlay").style.display = "block";
     document.getElementById("upload-progress-text").innerHTML = "encrypting ...";
@@ -479,9 +1066,11 @@ function chat__send_pending_chat_file(receiver_type)
 }
 
 /**
- * @brief Converts line breaks in outgoing text to spaces.
- * @param value Text from the message input.
- * @return Text ready for the local message and encrypted payload.
+ * @brief converts line breaks in outgoing text to spaces
+ *
+ * @param value text from the message input
+ *
+ * @return text ready for the local message and encrypted payload
  */
 function chat__normalize_composed_text(value)
 {
@@ -489,10 +1078,7 @@ function chat__normalize_composed_text(value)
 }
 
 /**
- * @brief the one send path for the text in the input, for both targets
- *        "channel" is the current channel (keys already known), "user" the selected person
- *        (encrypted to their public key); a pending file goes first, on its own.
- *        chat__send_chat_message decides the target and the offline cases
+ * @brief sends the pending attachment or draft text to the selected conversation
  *
  * @param string target -> "channel" or "user"
  *
@@ -522,7 +1108,6 @@ function chat__send_composed_chat_message(target)
 
     let text_input = document.getElementById("chat-input-container-text-input");
     let chat_message_to_send_value = chat__normalize_composed_text(text_input.value);
-    text_input.value = "";
 
     if (g_base64_picture_string_to_send.length == 0 && chat_message_to_send_value.trim().length == 0)
     {
@@ -539,7 +1124,7 @@ function chat__send_composed_chat_message(target)
     let receiver_public_key = "";
     if (target == "user")
     {
-        receiver_public_key = channel_tree__get_public_key_by_client_id(g_chat_message_receiver_id);
+        receiver_public_key = chat__private_recipient_key(g_current_chat_context_id, g_chat_message_receiver_id);
         if (receiver_public_key == "" || receiver_public_key == null)
         {
             utils__custom_log("[send] no public key for receiver " + g_chat_message_receiver_id);
@@ -551,6 +1136,7 @@ function chat__send_composed_chat_message(target)
     }
 
     let chat_context = document.getElementById(g_current_chat_context_id);
+    text_input.value = "";
     let sender_html = android_host__generate_message_sender_html(g_local_client_id, g_local_username);
     let time_html = new Date().toLocaleTimeString();
 
@@ -567,9 +1153,21 @@ function chat__send_composed_chat_message(target)
         document.getElementById("image-upload-preview").style.backgroundImage = "";
         document.getElementById("image-upload-preview").style.display = "none";
 
-        // lock now, like the file path: encrypting a big picture takes a while and a second
-        // send in that window must be refused, not relabel this one
+        // lock before picture encryption starts so a second send cannot replace it
         g_is_file_being_uploaded = true;
+        const operation_id = ++picture_operation_sequence;
+        picture_preparation =
+        {
+            operation_id: operation_id,
+            local_message_id: g_local_message_id,
+            context_id: g_current_chat_context_id,
+            picture: g_base64_picture_string_to_send,
+            text: chat_message_to_send_value,
+            timer: setTimeout(function()
+            {
+                chat__picture_preparation_failed({operation_id: operation_id});
+            }, 120000)
+        };
         document.getElementById("upload-progress-overlay").style.display = "block";
         document.getElementById("upload-progress-text").innerHTML = "processing image for send ...";
 
@@ -577,6 +1175,7 @@ function chat__send_composed_chat_message(target)
         {
             g_data_processing_worker.postMessage({
                 type: "mainthread__create_direct_chat_picture",
+                operation_id: operation_id,
                 base64_picture_string_to_send: g_base64_picture_string_to_send,
                 receiver_public_key: receiver_public_key,
                 chat_message_receiver_id: g_chat_message_receiver_id,
@@ -587,6 +1186,7 @@ function chat__send_composed_chat_message(target)
         {
             g_data_processing_worker.postMessage({
                 type: "mainthread__create_channel_chat_picture",
+                operation_id: operation_id,
                 base64_picture_string_to_send: g_base64_picture_string_to_send,
                 current_channel_keys: g_current_channel_keys,
                 current_channel_id: g_current_channel_id,
@@ -644,8 +1244,7 @@ function chat__send_composed_chat_message(target)
 }
 
 /**
- * @brief the click handler that expands and collapses a public key in a private chat's header line
- *        one delegated listener on the chat container, so keys in chats opened later are covered too
+ * @brief installs delegated clicks for expanding public keys in private chat headers
  *
  * @return void
  */
@@ -678,10 +1277,7 @@ function chat__setup_public_key_expand()
 }
 
 /**
- * @brief Restores the local choice to hide the two lines with public keys at the beginning of a private chat
- *        ("your public key", "his public key") and connects its checkbox in the local settings. The lines
- *        are hidden until the user turns the choice off. A class on the body hides them (layout.style), so
- *        the choice also applies to the private chats that are opened later.
+ * @brief restores and wires the setting that hides public key details in private conversations
  *
  * @return void
  */
@@ -709,9 +1305,7 @@ function chat__setup_public_key_lines_setting()
 }
 
 /**
- * @brief scrolls the chat to its newest message
- *        a received message only does so while the local "auto-scroll to the end" setting is on, so a
- *        person reading older messages is not yanked down; the user's own send or tab switch always does
+ * @brief scrolls to the newest message when forced or enabled by the local setting
  *
  * @param boolean is_forced -> true ignores the setting
  *
@@ -744,14 +1338,13 @@ function chat__scroll_chat_to_end(is_forced)
     {
         return;
     }
-    // Scroll once for messages arriving together. Reading the height after
-    // every message makes the browser lay out the whole chat repeatedly.
+    // scroll once for messages arriving together. reading the height after
+    // every message makes the browser lay out the whole chat repeatedly
     chat_scroll_pending = true;
     (typeof requestAnimationFrame === "function" ? requestAnimationFrame : setTimeout)(function()
     {
         chat_scroll_pending = false;
-        if (container.isConnected && g_auto_scroll_chat_to_end
-            && !(typeof chat_history__is_search_open === "function" && chat_history__is_search_open()))
+        if (container.isConnected && g_auto_scroll_chat_to_end && !(typeof chat_history__is_search_open === "function" && chat_history__is_search_open()))
         {
             container.scrollTop = container.scrollHeight;
         }
@@ -759,8 +1352,7 @@ function chat__scroll_chat_to_end(is_forced)
 }
 
 /**
- * @brief a fresh message block of our own at the end of a chat context
- *        the spacer that keeps the bottom padding is dropped first and re-added last, so it stays the final element
+ * @brief appends a local message while keeping the bottom spacer last
  *
  * @param Element chat_context -> the context element
  * @param string sender_html -> the sender header
@@ -777,8 +1369,7 @@ function chat__append_local_chat_message_block(chat_context, sender_html, time_h
         spacers[0].remove();
     }
 
-    chat_context.insertAdjacentHTML("beforeend",
-        "<div class=\"single-chat-message\">\n\
+    chat_context.insertAdjacentHTML("beforeend", "<div class=\"single-chat-message\">\n\
             <div class=\"single-message-content\">\n\
                 <div class=\"single-chat-message-sender-local-username-container\">\n\
                     " + sender_html + "\n\
@@ -821,8 +1412,9 @@ function chat__send_direct_chat_message()
 }
 
 /**
- * @brief Encrypts a message for a saved identity and asks the server to hold it until that user returns.
- * @param offline_contact Saved recipient and their public key.
+ * @brief encrypts a message for a saved identity and asks the server to hold it until that user returns
+ *
+ * @param offline_contact saved recipient and their public key
  */
 function chat__send_offline_chat_message(offline_contact)
 {
@@ -884,7 +1476,8 @@ function chat__send_offline_chat_message(offline_contact)
 }
 
 /**
- * @brief Prevents a channel send while another conversation is selected, before consuming the draft.
+ * @brief prevents a channel send while another conversation is selected, before consuming the draft
+ *
  * @return boolean true when the selected conversation belongs to the joined channel
  */
 function chat__can_send_to_selected_channel()
@@ -898,17 +1491,92 @@ function chat__can_send_to_selected_channel()
     return false;
 }
 
+// a channel message that waits for the channel key: the chat context it was written in and the timer that
+// ends the wait, or null while no message waits
+var chat_channel_keys_wait = null;
+var CHAT_CHANNEL_KEYS_WAIT_MS = 15000;
+
 /**
- * @brief Routes Send to channel, direct or offline sending, with fallbacks when a direct recipient changes status.
+ * @brief Keeps a channel message in the message field until the channel key arrives. After a login or a
+ *        channel change the key arrives from the channel maintainer a moment later; a message sent in that
+ *        time is sent by chat__send_message_waiting_for_channel_keys when the key is stored.
+ *
+ * @return boolean -> true while the message waits, false when it has waited CHAT_CHANNEL_KEYS_WAIT_MS without a key
+ */
+function chat__wait_for_channel_keys()
+{
+    // waited too long
+    if (chat_channel_keys_wait === false)
+    {
+        chat_channel_keys_wait = null;
+        return false;
+    }
+
+    // already waiting
+    if (chat_channel_keys_wait != null)
+    {
+        return true;
+    }
+
+    // start the wait
+    chat_channel_keys_wait = {
+        context_id: g_current_chat_context_id,
+        timer: setTimeout(function()
+        {
+            chat_channel_keys_wait = false;
+            if (g_current_channel_keys == null)
+            {
+                chat__send_chat_message();
+            }
+            chat_channel_keys_wait = null;
+        }, CHAT_CHANNEL_KEYS_WAIT_MS)
+    };
+    utils__custom_alert("waiting for the channel key, the message is sent when it arrives", "channel-key-wait");
+    return true;
+}
+
+/**
+ * @brief Sends the channel message that waits for the channel key, if the user is still in the chat context it
+ *        was written in. Called when a channel key is stored.
+ *
+ * @return void
+ */
+function chat__send_message_waiting_for_channel_keys()
+{
+    let wait = chat_channel_keys_wait;
+
+    // no message waits
+    if (wait == null || wait === false || g_current_channel_keys == null)
+    {
+        return;
+    }
+
+    // end the wait
+    clearTimeout(wait.timer);
+    chat_channel_keys_wait = null;
+
+    // send the message
+    if (wait.context_id === g_current_chat_context_id)
+    {
+        utils__hide_custom_alert("", "channel-key-wait");
+        chat__send_chat_message();
+    }
+}
+
+/**
+ * @brief routes Send to channel, direct or offline sending, with fallbacks when a direct recipient changes status
+ *
  * @return void
  */
 function chat__send_chat_message()
 {
-    // EVERY exit from this function is logged. a message that quietly goes nowhere is
-    // the hardest kind of bug to chase, and this path has several silent returns
-    utils__custom_log("[send] type=" + g_chat_message_receiver_type
-        + " receiver_id=" + g_chat_message_receiver_id + " (" + (typeof g_chat_message_receiver_id) + ")"
-        + " context=" + g_current_chat_context_id);
+    if (!g_is_authenticated)
+    {
+        utils__custom_alert("Connect to the server before sending. Your draft has been kept.");
+        return;
+    }
+    // log each exit so refused sends can be traced
+    utils__custom_log("[send] type=" + g_chat_message_receiver_type + " receiver_id=" + g_chat_message_receiver_id + " (" + (typeof g_chat_message_receiver_id) + ")" + " context=" + g_current_chat_context_id);
 
     if (g_chat_message_receiver_type == "channel")
     {
@@ -919,6 +1587,12 @@ function chat__send_chat_message()
         if (g_current_channel_keys == null)
         {
             utils__custom_log("[send] STOP: no channel keys");
+
+            // wait for key
+            if (chat__wait_for_channel_keys())
+            {
+                return;
+            }
             utils__custom_alert("no channel keys from channel maintainer, cant send the message");
             return;
         }
@@ -936,16 +1610,14 @@ function chat__send_chat_message()
                 return;
             }
 
-            utils__custom_log("[send] receiver not in client list, trying the offline paths"
-                + " (identity='" + g_offline_chat_recipient_identity_hash + "')");
+            utils__custom_log("[send] receiver not in client list, trying the offline paths" + " (identity='" + g_offline_chat_recipient_identity_hash + "')");
             // they may have come online since this context was opened: then send it live instead
             // of queueing (the server refuses to queue for a connected client)
             let live_client = channel_tree__get_client_by_identity_hash(g_offline_chat_recipient_identity_hash);
 
             if (live_client != null)
             {
-                // state first, markup second. routing this through UI.* alone would lose the
-                // whole promotion in a runtime with no ui to paint
+                // update conversation state before rendering because Node has no UI implementation
                 let promotion = chat__promote_offline_chat_context_state(live_client);
                 UI.promote_offline_chat_context_render(promotion, live_client);
 
@@ -965,8 +1637,7 @@ function chat__send_chat_message()
 
             if (offline_contact != null)
             {
-                // we know who they are but were never given their public key, so nothing
-                // can be encrypted for them - the server does not hold messages here
+                // an offline send needs the recipient public key before encryption can begin
                 utils__custom_log("[send] STOP: known contact but no public key");
                 utils__custom_alert("this server does not keep messages for people who are offline");
                 return;
@@ -983,9 +1654,11 @@ function chat__send_chat_message()
 }
 
 /**
- * @brief Reads edited text without the final line break used to position the caret.
- * @param element Message being edited.
- * @return Text with the line breaks entered by the user.
+ * @brief reads edited text without the final line break used to position the caret
+ *
+ * @param element message being edited
+ *
+ * @return text with the line breaks entered by the user
  */
 function chat__get_edited_text(element)
 {
@@ -995,8 +1668,7 @@ function chat__get_edited_text(element)
     {
         last = last.lastChild;
     }
-    if (last && (last.nodeName === "BR" || (last.nodeType === Node.TEXT_NODE && last.nodeValue === "\n"))
-        && text.endsWith("\n"))
+    if (last && (last.nodeName === "BR" || (last.nodeType === Node.TEXT_NODE && last.nodeValue === "\n")) && text.endsWith("\n"))
     {
         text = text.slice(0, -1);
     }
@@ -1004,9 +1676,10 @@ function chat__get_edited_text(element)
 }
 
 /**
- * @brief Saves or cancels an edit in its original conversation.
- * @param element Message being edited.
- * @param save Whether to send changed text.
+ * @brief saves or cancels an edit in its original conversation
+ *
+ * @param element message being edited
+ * @param save whether to send changed text
  */
 function chat__finish_message_edit(element, save)
 {
@@ -1060,45 +1733,42 @@ function chat__finish_message_edit(element, save)
         };
     }
     request.local_message_id = g_local_message_id++;
-    // The worker applies the same content encryption as a new message before transport encryption.
+    // the worker applies the same content encryption as a new message before transport encryption
     g_data_processing_worker.postMessage(request);
     element.textContent = text;
     element.classList.add("chat-message-edited");
 }
 
 /**
- * @brief Applies an edit only after decrypting a chat message from the original author.
+ * @brief applies an edit only after decrypting a chat message from the original author
+ *
  * @param object payload -> decrypted edit contents, including the original message's random identifier
  * @param object message -> sender, channel and sequence supplied by the server
  * @param boolean direct -> whether this arrived through the private message route
+ * @param object|null retained_sender -> trusted sender snapshot for retained local delivery, or null for a live sender
+ *
  * @return boolean true when the payload is an edit, including an invalid edit that must be discarded
  */
-function chat__receive_message_edit(payload, message, direct)
+function chat__receive_message_edit(payload, message, direct, retained_sender)
 {
     if (!payload || payload.type !== "chat_message_edit")
     {
         return false;
     }
-    if (!G_HAS_DOM || message.sender_id === g_local_client_id
-        || typeof payload.message_id !== "string" || !/^[a-f0-9]{32}$/.test(payload.message_id)
-        || typeof payload.author_public_key !== "string"
-        || typeof payload.new_message_value !== "string" || !payload.new_message_value.trim()
-        || !Number.isSafeInteger(message.server_chat_message_id) || message.server_chat_message_id < 0)
+    if (!G_HAS_DOM || message.sender_id === g_local_client_id || typeof payload.message_id !== "string" || !/^[a-f0-9]{32}$/.test(payload.message_id) || typeof payload.author_public_key !== "string" || typeof payload.new_message_value !== "string" || !payload.new_message_value.trim() || !Number.isSafeInteger(message.server_chat_message_id) || message.server_chat_message_id < 0)
     {
         return true;
     }
-    let sender = channel_tree__get_client_by_client_id(message.sender_id);
-    let actor = channel_tree__get_public_key_by_client_id(message.sender_id);
+    let sender = retained_sender || channel_tree__get_client_by_client_id(message.sender_id);
+    let actor = retained_sender ? retained_sender.public_key : channel_tree__get_public_key_by_client_id(message.sender_id);
     if (!sender || sender.is_ignored_by_local_client || !actor || actor !== payload.author_public_key)
     {
         return true;
     }
-    let context = document.getElementById(direct ? "chat-context-pm-" + message.sender_id : "chat-context-channel-" + message.channel_id);
+    let context = document.getElementById(direct ? (retained_sender ? retained_sender.context_id : "chat-context-pm-" + message.sender_id) : "chat-context-channel-" + message.channel_id);
     let element = chat_replies__find_original(context, payload);
     let state = element && chat_reactions.entries.get(element);
-    if (!state || state.author !== actor || state.generation !== g_worker_connection_generation
-        || (direct && state.peer_key !== actor)
-        || (state.last_edit_sequence != null && state.last_edit_sequence >= message.server_chat_message_id))
+    if (!state || state.author !== actor || state.generation !== g_worker_connection_generation || (direct && state.peer_key !== actor) || (state.last_edit_sequence != null && state.last_edit_sequence >= message.server_chat_message_id))
     {
         return true;
     }
@@ -1109,8 +1779,9 @@ function chat__receive_message_edit(payload, message, direct)
 }
 
 /**
- * @brief Saves an edit when focus moves elsewhere.
- * @param event Focus leaving the edited message.
+ * @brief saves an edit when focus moves elsewhere
+ *
+ * @param event focus leaving the edited message
  */
 function chat__local_chat_message_onblur(event)
 {
@@ -1118,8 +1789,9 @@ function chat__local_chat_message_onblur(event)
 }
 
 /**
- * @brief Saves with Enter, keeps Shift and Enter for new lines, and cancels with Escape.
- * @param event Key pressed while editing a message.
+ * @brief saves with Enter, keeps Shift and Enter for new lines, and cancels with Escape
+ *
+ * @param event key pressed while editing a message
  */
 function chat__local_chat_message_onkeydown(event)
 {
@@ -1137,10 +1809,7 @@ function chat__local_chat_message_onkeydown(event)
 }
 
 /**
- * @brief html-entity escape for element text and quoted attribute values: < > & and both quotes
- *        not enough for unquoted attributes, javascript: urls, event handlers or script/style
- *        bodies, and not idempotent, so escape exactly once on the way into the dom; an <img> src
- *        takes chat__sanitize_image_data_url
+ * @brief escapes HTML text and quoted attribute values
  *
  * @param string str -> the text, anything else is coerced
  *
@@ -1152,7 +1821,7 @@ function chat__sanitize_string(str)
     {
         return "";
     }
-    str = "" + str; // coerce so a non-string (malformed/attacker field) cannot throw on .replace
+    str = "" + str; // coerce other values before calling replace
     var map = {
         '&': '&amp;',
         '<': '&lt;',
@@ -1168,10 +1837,7 @@ function chat__sanitize_string(str)
 }
 
 /**
- * @brief the allowlist for a decrypted picture used as an <img> src: only a base64 image data url passes
- *        anything else (an external url that would beacon the viewer, a javascript: or html
- *        scheme, junk) becomes a blank placeholder; .src does not decode entities, so
- *        chat__sanitize_string is the wrong tool
+ * @brief allows supported base64 image URLs and replaces other sources with a placeholder
  *
  * @param string str -> the candidate src
  *
@@ -1191,12 +1857,12 @@ function chat__sanitize_image_data_url(str)
         return str;
     }
 
-    // 1x1 transparent png, shown in place of anything that is not a well-formed image data URL
+    // use a transparent pixel when the source is not a valid image data URL
     return "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMBAQDJ/pLvAAAAAElFTkSuQmCC";
 }
 
 /**
- * @brief strips the "data:...;base64," prefix
+ * @brief removes the prefix before a data URL's base64 contents
  *
  * @param string base64string -> the data url
  *
@@ -1216,7 +1882,7 @@ function chat__remove_data_url_prefix_from_base64_string(base64string)
 }
 
 /**
- * @brief Splits an upload into pieces of at most 16 KiB, so small files need fewer messages.
+ * @brief splits an upload into pieces of at most 16 KiB, so small files need fewer messages
  *
  * @param string string_to_split -> the text
  *
@@ -1251,12 +1917,10 @@ function chat__get_file_extension(filename)
     return ext == null ? "" : ext[1];
 }
 
-// ---- typing indicator ----
+// typing indicators
 
 /**
- * @brief tells whoever is on the other side of the open conversation that we are writing
- *        called on every keystroke but sends at most once every few seconds, so a long message
- *        is a handful of tiny messages, not one per character; carries no text, only where it belongs
+ * @brief sends a rate limited typing notice for the current conversation
  *
  * @return void
  */
@@ -1297,7 +1961,7 @@ function chat__send_typing_indicator()
 }
 
 /**
- * @brief the chat context id a typing notice belongs to, matching the ids the contexts are built with, so the notice shows only while that conversation is on screen
+ * @brief finds the conversation context for a typing notice
  *
  * @param string receiver_type -> "channel" or "user"
  * @param number receiver_id -> the channel, or us
@@ -1365,9 +2029,7 @@ function chat__clear_typing_from_client(sender_client_id)
 }
 
 /**
- * @brief one typing line: the text, then three dots that animate on their own
- *        the dots are separate spans so css can fade them in one after another; rewriting the
- *        text on a timer would repaint the whole line several times a second
+ * @brief builds a typing indicator with animated dots
  *
  * @param string text_without_dots -> the "x is typing" text, set as textContent since a username is user-supplied
  *
@@ -1379,7 +2041,7 @@ function chat__build_typing_line(text_without_dots)
     line.className = "typing-indicator-line";
 
     let label = document.createElement("span");
-    // textContent, never innerHTML: a username is user-supplied
+    // use textContent because usernames may contain markup
     label.textContent = text_without_dots;
     line.appendChild(label);
 
@@ -1398,7 +2060,7 @@ function chat__build_typing_line(text_without_dots)
 }
 
 /**
- * @brief paints the "x is typing ..." line for the conversation on screen, drops entries that were not refreshed, and stops its own ticker once nothing is left to show
+ * @brief renders current typing notices and expires stale entries
  *
  * @return void
  */
@@ -1417,7 +2079,10 @@ function chat__render_typing_indicator()
     for (let context_id in g_typing.state)
     {
         let typers = g_typing.state[context_id];
-        if (typers == null) { continue; }
+        if (typers == null)
+        {
+            continue;
+        }
 
         for (let client_id in typers)
         {
@@ -1436,8 +2101,7 @@ function chat__render_typing_indicator()
         }
     }
 
-    // one line per person, stacked. capped at three so a busy channel cannot push the chat
-    // upwards without end - the rest is counted on a final line
+    // show at most three names and count the remaining typists on a final line
     element.textContent = "";
 
     if (names.length == 0)
@@ -1458,8 +2122,7 @@ function chat__render_typing_indicator()
             element.appendChild(chat__build_typing_line("and " + (names.length - lines_to_show) + " others are typing"));
         }
 
-        // "block", never "": clearing the inline style falls back to the stylesheet,
-        // where this element is display:none - so it would never actually appear
+        // use an explicit display value because the stylesheet hides this element by default
         element.style.display = "block";
     }
 
@@ -1470,7 +2133,7 @@ function chat__render_typing_indicator()
     }
 }
 
-// ---- unread and seen ----
+// unread counts and seen receipts
 
 /**
  * @brief shows or hides the seen eye of the conversation on screen, from seen_state_by_context and the local setting
@@ -1486,9 +2149,7 @@ function chat__render_seen_indicator()
         return;
     }
 
-    let is_seen = (g_current_chat_context_id != null)
-        && (seen_state_by_context[g_current_chat_context_id] == true)
-        && (g_show_seen_indicator == true);
+    let is_seen = (g_current_chat_context_id != null) && (seen_state_by_context[g_current_chat_context_id] == true) && (g_show_seen_indicator == true);
 
     indicator.classList.toggle("chat-seen-visible", is_seen);
 }
@@ -1520,7 +2181,7 @@ function chat__mark_message_as_seen(sender_client_id)
 }
 
 /**
- * @brief queues a private message that arrived while its conversation was closed; a receipt is owed for it and sent when the user opens the conversation
+ * @brief queues a private message receipt under its sender's identity
  *
  * @param number sender_client_id -> the author
  * @param number server_chat_message_id -> the message
@@ -1529,59 +2190,81 @@ function chat__mark_message_as_seen(sender_client_id)
  */
 function chat__remember_message_awaiting_receipt(sender_client_id, server_chat_message_id)
 {
-    if (server_chat_message_id == null || sender_client_id == g_local_client_id)
+    if (android_host__is_ui_only_runtime() || server_chat_message_id == null || sender_client_id == g_local_client_id)
     {
         return;
     }
-
-    if (unreceipted_messages_by_sender[sender_client_id] == null)
+    const peer_key = chat__peer_state_key(channel_tree__get_client_by_client_id(sender_client_id));
+    if (!peer_key)
     {
-        unreceipted_messages_by_sender[sender_client_id] = [];
+        return;
     }
-
-    unreceipted_messages_by_sender[sender_client_id].push(server_chat_message_id);
+    if (unreceipted_messages_by_sender[peer_key] == null)
+    {
+        unreceipted_messages_by_sender[peer_key] = [];
+    }
+    if (!unreceipted_messages_by_sender[peer_key].includes(server_chat_message_id))
+    {
+        unreceipted_messages_by_sender[peer_key].push(server_chat_message_id);
+    }
 }
 
 /**
  * @brief sends the receipts owed to one sender, once, when their conversation is opened
  *
  * @param number sender_client_id -> the author
+ * @param boolean authorized_read -> whether the current page authorized this Node read
+ * @param boolean send_receipts -> whether the page allows seen receipts
  *
  * @return void
  */
-function chat__send_pending_seen_receipts(sender_client_id)
+function chat__send_pending_seen_receipts(sender_client_id, authorized_read = false, send_receipts = g_send_seen_receipts)
 {
-    let pending = unreceipted_messages_by_sender[sender_client_id];
+    // Node requires an authorized page read. browsers check visibility directly
+    if (android_host__is_ui_only_runtime() || (typeof process !== "undefined" ? !authorized_read || !g_node_has_attached_ui : !chat__is_the_user_actually_looking()))
+    {
+        return;
+    }
+    // find receipts by identity so a reused client slot cannot inherit them
+    const peer_key = chat__peer_state_key(channel_tree__get_client_by_client_id(sender_client_id));
+    let pending = unreceipted_messages_by_sender[peer_key];
 
     if (pending == null)
     {
         return;
     }
 
-    unreceipted_messages_by_sender[sender_client_id] = [];
+    // consume the read even when the local receipt preference is disabled
+    delete unreceipted_messages_by_sender[peer_key];
 
     for (let x = 0; x < pending.length; x++)
     {
-        chat__send_seen_receipt_for_message(sender_client_id, pending[x]);
+        chat__send_seen_receipt_for_message(sender_client_id, pending[x], authorized_read, send_receipts);
     }
 }
 
 /**
- * @brief tells a sender we read their private message, at most once per message, only while somebody is looking and the local setting allows it
+ * @brief sends one receipt after checking read authorization and the local preference
  *
  * @param number sender_client_id -> the author
  * @param number server_chat_message_id -> the message
+ * @param boolean authorized_read -> whether the current page authorized this Node read
+ * @param boolean send_receipts -> whether the page allows seen receipts
  *
  * @return void
  */
-function chat__send_seen_receipt_for_message(sender_client_id, server_chat_message_id)
+function chat__send_seen_receipt_for_message(sender_client_id, server_chat_message_id, authorized_read = false, send_receipts = g_send_seen_receipts)
 {
-    if (chat__is_the_user_actually_looking() == false)
+    if (android_host__is_ui_only_runtime())
+    {
+        return;
+    }
+    if (typeof process !== "undefined" ? !authorized_read || !g_node_has_attached_ui : !chat__is_the_user_actually_looking())
     {
         return;
     }
 
-    if (g_send_seen_receipts == false)
+    if (send_receipts !== true)
     {
         return;
     }
@@ -1614,10 +2297,7 @@ function chat__send_seen_receipt_for_message(sender_client_id, server_chat_messa
 }
 
 /**
- * @brief tells the other side of a direct conversation that the local user closed the
- *        conversation's window. the notice is encrypted like a text message, so the server does
- *        not learn what it says. nothing is sent to a music bot, to a client that left, or when
- *        the local user's groups do not allow direct messages (the server would refuse it)
+ * @brief sends an encrypted conversation closure notice to an eligible live peer
  *
  * @param number client_id -> the client on the other side of the conversation
  *
@@ -1648,8 +2328,7 @@ function chat__send_direct_chat_closed_notice(client_id)
 }
 
 /**
- * @brief the other side closed the window of a direct conversation: a line says so in that
- *        conversation, if it is still open here. without an open conversation there is nothing to add
+ * @brief adds a closure notice to an existing private conversation
  *
  * @param number sender_client_id -> the client that closed its window
  * @param string sender_username -> its name as sent by the server, used when the client list has no name
@@ -1681,8 +2360,7 @@ function chat__show_direct_chat_closed(sender_client_id, sender_username)
     }
 }
 
-// coming back to the app pays whatever was owed for the conversation on screen. without
-// this a message read on return only receipted if the chat was clicked a second time
+// process receipts for the visible conversation when the user returns to the app
 if (typeof document !== "undefined" && typeof document.addEventListener === "function")
 {
     document.addEventListener("visibilitychange", function()
@@ -1702,9 +2380,8 @@ if (typeof document !== "undefined" && typeof document.addEventListener === "fun
 }
 
 /**
- * @brief whether the screen is on and this page is in front of it
- *        headless node always answers no: nobody is looking at it, and if it answered yes every
- *        read would be receipted twice
+ * @brief checks whether the user can see the current page
+ * Node always returns false because it has no visible conversation
  *
  * @return boolean true when the user can see the page
  */
@@ -1737,9 +2414,7 @@ function chat__get_channel_unread_count(channel_id)
 }
 
 /**
- * @brief counts one more unread message in a channel and repaints its badge
- *        the channel being read never accumulates a badge, but "being read" needs somebody
- *        looking; under node with no ui attached nobody is, so everything counts
+ * @brief counts an unread channel message and updates its badge
  *
  * @param number channel_id -> the channel the message arrived in
  *
@@ -1747,10 +2422,12 @@ function chat__get_channel_unread_count(channel_id)
  */
 function chat__increment_channel_unread_count(channel_id)
 {
-    // the channel being read never accumulates a badge, but "being read" needs somebody looking;
-    // under node with no ui attached nobody is, so everything counts
-    if (android_host__is_someone_watching_the_ui() == true
-        && g_current_chat_context_id === ("chat-context-channel-" + channel_id))
+    if (android_host__is_ui_only_runtime())
+    {
+        return;
+    }
+    // only a visible conversation counts as read. headless Node keeps counting unread messages
+    if (android_host__is_someone_watching_the_ui() == true && g_current_chat_context_id === ("chat-context-channel-" + channel_id))
     {
         return;
     }
@@ -1769,15 +2446,18 @@ function chat__increment_channel_unread_count(channel_id)
  */
 function chat__clear_channel_unread_count(channel_id)
 {
+    if (android_host__is_ui_only_runtime())
+    {
+        chat__send_read_command("chat-context-channel-" + channel_id, {channel_id: channel_id});
+        return;
+    }
     g_channel_unread_counts[channel_id] = 0;
     chat__render_channel_unread_badge(channel_id);
     chat__update_app_unread_badge();
 }
 
 /**
- * @brief paints a channel's unread badge and mirrors it into the member list
- *        a class, not style.display: whether the badge shows at all is the theme's call (mobile
- *        themes only), and an inline display would override that decision
+ * @brief updates a channel unread badge and mirrors it into the member list
  *
  * @param number channel_id -> the channel
  *
@@ -1785,6 +2465,10 @@ function chat__clear_channel_unread_count(channel_id)
  */
 function chat__render_channel_unread_badge(channel_id)
 {
+    if (!G_HAS_DOM)
+    {
+        return;
+    }
     let badge = document.querySelector('[data-channel-unread-for="' + channel_id + '"]');
 
     if (badge == null)
@@ -1795,8 +2479,7 @@ function chat__render_channel_unread_badge(channel_id)
     let count = chat__get_channel_unread_count(channel_id);
     badge.innerHTML = count;
 
-    // a class, not style.display: whether the badge shows at all is the theme's call
-    // (mobile themes only), and an inline display would override that decision
+    // use a class so the theme retains control of badge visibility
     if (count > 0)
     {
         badge.classList.remove("unread-empty");
@@ -1806,8 +2489,7 @@ function chat__render_channel_unread_badge(channel_id)
         badge.classList.add("unread-empty");
     }
 
-    // the member list theme (bluebell) hides the channel tree and shows a circle instead; the count
-    // is shown on that circle, which is rebuilt by the member list mirror
+    // rebuild the member list badge for themes that hide the channel tree
     if (typeof UI !== "undefined" && typeof UI.schedule_member_list_sync === "function")
     {
         UI.schedule_member_list_sync();
@@ -1815,9 +2497,7 @@ function chat__render_channel_unread_badge(channel_id)
 }
 
 /**
- * @brief the launcher icon badge: every unread channel plus every unread private conversation
- *        android shows it through the notification count via the java bridge; node hands the
- *        number to its host, which keeps the badge working while the app is idle or closed
+ * @brief publishes the total unread count for channel and private conversations
  *
  * @return void
  */
@@ -1830,17 +2510,23 @@ function chat__update_app_unread_badge()
         total += chat__get_channel_unread_count(channel_id);
     }
 
-    for (let i = 0; i < g_client_list.length; i++)
+    const counted = new Set();
+    for (const client of g_client_list)
     {
-        if (typeof g_client_list[i].unread_count === "number")
+        const key = chat__peer_state_key(client);
+        counted.add(key);
+        total += client.unread_count || 0;
+    }
+    for (const [key, state] of chat_peer_local_state)
+    {
+        if (!counted.has(key))
         {
-            total += g_client_list[i].unread_count;
+            total += state.unread_count || 0;
         }
     }
 
-    // the webview reports through the java bridge; node has no Android object and hands the number
-    // to its host, which is what keeps the badge working while the app is idle or closed
-    if (typeof Android !== "undefined" && typeof Android.JavaExportSetUnreadBadge === "function")
+    // WebView reports counts through Android. Node reports them through its host while the page is absent
+    if (typeof Android !== "undefined" && typeof Android.JavaExportSetUnreadBadge === "function" && g_loopback_port <= 0)
     {
         Android.JavaExportSetUnreadBadge(total);
     }
@@ -1878,41 +2564,71 @@ function chat__get_unread_count(client_id)
  */
 function chat__increment_unread_count(client_id)
 {
+    if (android_host__is_ui_only_runtime())
+    {
+        return;
+    }
     let client_object = channel_tree__get_client_by_client_id(client_id);
 
     if (client_object != null)
     {
         client_object.unread_count = chat__get_unread_count(client_id) + 1;
-    chat__update_app_unread_badge();
+        chat_peer_local_state.set(chat__peer_state_key(client_object),
+        {
+            unread_count: client_object.unread_count,
+            is_ignored_by_local_client: client_object.is_ignored_by_local_client === true,
+            is_muted_by_local_client: client_object.is_muted_by_local_client === true
+        });
+        chat__update_app_unread_badge();
     }
 }
 
 /**
- * @brief opening a private conversation is reading it: the count goes to zero and the receipts owed are sent
+ * @brief marks a private conversation read through the connection owner
  *
  * @param number client_id -> the other person
+ * @param boolean authorized_read -> whether the current page authorized this Node read
+ * @param boolean send_receipts -> whether the page allows seen receipts
  *
  * @return void
  */
-function chat__clear_unread_count(client_id)
+function chat__clear_unread_count(client_id, authorized_read = false, send_receipts = g_send_seen_receipts)
 {
     // opening it is reading it, so anything that arrived while it was closed is
     // receipted now
-    chat__send_pending_seen_receipts(client_id);
+    chat__send_pending_seen_receipts(client_id, authorized_read, send_receipts);
     chat__render_seen_indicator();
 
     let client_object = channel_tree__get_client_by_client_id(client_id);
 
     if (client_object != null)
     {
+        if (android_host__is_ui_only_runtime())
+        {
+            chat__send_read_command(chat__peer_state_key(client_object),
+            {
+                identity_hash: client_object.identity_hash,
+                public_key: client_object.public_key
+            });
+            return;
+        }
         client_object.unread_count = 0;
-    chat__update_app_unread_badge();
+        const key = chat__peer_state_key(client_object);
+        const state = chat_peer_local_state.get(key);
+        if (state)
+        {
+            state.unread_count = 0;
+        }
+        chat__update_app_unread_badge();
     }
 }
 
 /**
- * @brief Formats an unread count for its badge and accessible label.
- * @param count Number of unread messages.
+ * @brief formats an unread count for its badge and accessible label
+ *
+ * @param count number of unread messages
+ *
+ * @return object -> badge text, digit count and accessible label
  */
 function chat__get_unread_badge_content(count)
 {
@@ -1926,21 +2642,23 @@ function chat__get_unread_badge_content(count)
 }
 
 /**
- * @brief Creates the unread badge when a client row is drawn.
- * @param count Number of unread messages.
+ * @brief creates the unread badge when a client row is drawn
+ *
+ * @param count number of unread messages
+ *
+ * @return string -> unread badge markup
  */
 function chat__generate_unread_badge_html(count)
 {
     let content = chat__get_unread_badge_content(count);
-    return '<p class="connected-client-p-received-messages-number" data-unread-digits="' + content.digits
-        + '" title="' + content.label + '" aria-label="' + content.label + '"'
-        + (count > 0 ? '' : ' hidden') + '>' + content.text + '</p>';
+    return '<p class="connected-client-p-received-messages-number" data-unread-digits="' + content.digits + '" title="' + content.label + '" aria-label="' + content.label + '"' + (count > 0 ? '' : ' hidden') + '>' + content.text + '</p>';
 }
 
 /**
- * @brief Updates the client row and any copies shown in the member list.
- * @param client_id Client whose unread count changed.
- * @param is_visible Whether to show the badge.
+ * @brief updates the client row and any copies shown in the member list
+ *
+ * @param client_id client whose unread count changed
+ * @param is_visible whether to show the badge
  */
 function chat__render_unread_badge(client_id, is_visible)
 {
@@ -1957,29 +2675,40 @@ function chat__render_unread_badge(client_id, is_visible)
     }
 }
 
-// Remote formatting is restricted to one color and one known font class.
+// remote formatting is restricted to one color and one known font class
+/**
+ * @brief restricts message colors to supported CSS color syntax
+ *
+ * @param string value -> requested message color
+ *
+ * @return string -> accepted color, or inherit
+ */
 function chat__sanitize_color(value)
 {
     if (typeof value !== "string" || value.length > 80)
     {
         return "inherit";
     }
-    if (/^#[0-9a-f]{3,4}$/i.test(value) || /^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(value)
-        || /^[a-z]{1,24}$/i.test(value)
-        || /^(rgb|rgba|hsl|hsla)\([0-9.,%+ /-]+\)$/i.test(value))
+    if (/^#[0-9a-f]{3,4}$/i.test(value) || /^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(value) || /^[a-z]{1,24}$/i.test(value) || /^(rgb|rgba|hsl|hsla)\([0-9.,%+ /-]+\)$/i.test(value))
     {
         return value;
     }
     return "inherit";
 }
 
+/**
+ * @brief accepts a bundled font class or an encoded local font class
+ *
+ * @param string value -> requested message font class
+ *
+ * @return string -> accepted class, or the default message font class
+ */
 function chat__sanitize_font(value)
 {
     const fonts = ["default", "Yellowtail", "Bruno-Ace-SC", "Raleway", "Kavoon", "Reenie-Beanie",
         "Sacramento", "Sofia", "Nova-Mono", "Codystar", "Londrina-Outline", "Mystery-Quest",
         "Nosifer", "Simonetta", "Hanalei", "Just-Me-Again-Down-Here", "Inter", "Manrope", "Plus-Jakarta-Sans"];
-    if (typeof value === "string" && (fonts.some(font => value === "custom-font-usage-" + font)
-        || /^custom-font-usage-local-(?:[0-9a-f]{2}){1,63}$/.test(value)))
+    if (typeof value === "string" && (fonts.some(font => value === "custom-font-usage-" + font) || /^custom-font-usage-local-(?:[0-9a-f]{2}){1,63}$/.test(value)))
     {
         return value;
     }

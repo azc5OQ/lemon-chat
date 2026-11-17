@@ -43,7 +43,7 @@ public class ServerService extends Service
         return null;
     }
 
-    // Hosting is an ongoing foreground session; every stop/failure/destroy path releases the locks.
+    // Keep locks while hosting and release them whenever the session ends.
     @SuppressLint("WakelockTimeout")
     @Override public int onStartCommand(Intent intent, int flags, int startId)
     {
@@ -79,7 +79,6 @@ public class ServerService extends Service
         try
         {
             startForeground(1, BuildNotification());
-            ServerSettings.Read(getFilesDir());
             File executable = new File(getApplicationInfo().nativeLibraryDir, "libchat-server.so");
             if (!executable.canExecute())
             {
@@ -109,14 +108,18 @@ public class ServerService extends Service
         return START_NOT_STICKY;
     }
 
-    /** Copies the web client and writes startup settings away from the UI thread. */
+    /**
+     * Prepares hosting files away from the UI thread.
+     * @param session generation allowed to launch the server
+     * @param executable native server to launch
+     */
     private void PrepareServer(int session, File executable)
     {
         new Thread(() ->
         {
             try
             {
-                JSONObject settings = FunnelSettings.Prepare(this);
+                JSONObject settings = HostingSettings.Prepare(this);
                 handler.post(() ->
                 {
                     if (session != generation || !active)
@@ -159,7 +162,7 @@ public class ServerService extends Service
                         }
                         hosting = true;
                         status = "Hosting";
-                        if (FunnelSettings.IsEnabled(ServerService.this))
+                        if (HostingSettings.IsFunnelEnabled(ServerService.this))
                         {
                             try
                             {
@@ -183,8 +186,9 @@ public class ServerService extends Service
                         {
                             return;
                         }
+                        AppendError((stopping ? "Server stopped by request" : "Server exited unexpectedly") + " (exit code " + code + ")");
                         Finish(stopping ? "Stopped" : !funnelFailure.isEmpty() ? funnelFailure
-                            : "Server stopped unexpectedly. Open View log for details.");
+                            : "Server stopped unexpectedly (exit code " + code + "). Open View log for details.");
                         if (error != null)
                         {
                             AppendError(error);
