@@ -44,67 +44,6 @@
 
 See the [documentation index](docs/README.md) for all guides.
 
-## Clean build files
-
-To reclaim space after building, close the running clients, server and build tools,
-then run `tools\clean.bat` on Windows or `sh tools/clean.sh` on Linux/macOS from the repository
-root. Python 3 and Git must be installed. Both scripts use the same cleanup rules.
-
-Preview the files first with `tools\clean.bat --dry-run` or `sh tools/clean.sh --dry-run`.
-For example, a compiled WebAssembly file in a project's `build` directory is
-removed, but its source, published module and `prebuilt-backup` copy are kept.
-The next browser build can compile it again from source.
-
-The scripts also remove recognized server, desktop and Android build output,
-compiler caches and unchanged packaged assets. Tracked files, downloaded build
-tools, dependencies, settings, keys and saved music remain. Modified live themes,
-fonts and sounds are kept; unknown files in build folders are listed as `KEEP`.
-Directory links are never followed. This deliberately preserves files that cannot
-be identified safely as build output.
-
-## Code formatting
-
-The C and C++ sources are formatted with clang-format 23.1.5, the JavaScript sources
-with js-beautify 2.0.3. The scripts are in the `tools` folder and need Python 3. When a
-tool is missing, they offer to download it for Windows, Linux or macOS.
-`tools\install-clang-format.bat` and `sh tools/install-clang-format.sh` only download
-clang-format.
-
-**Before every commit, run `tools\format-before-commit.bat` on Windows or
-`sh tools/format-before-commit.sh` on Linux and macOS.** It formats the changed C, C++
-and JavaScript files with the project rules in `tools/before-commit.clang-format` and
-`tools/before-commit.jsbeautifyrc`, so that the commit keeps the project style and
-contains no formatting changes. Add the changed files again with `git add` afterwards.
-Do not change the two rules files. The script reads them as they are in the last commit
-and only uses these tool versions, so the result is the same on every system. The steps
-and the JavaScript rules are in [docs/committing.md](docs/committing.md).
-
-To work in your own style, change `tools/.clang-format` and run
-`tools\format-codebase.bat` or `sh tools/format-codebase.sh`. It asks whether to format
-`server-source-code`, `client-source-code` or both. Folders named `third-party` and
-other bundled libraries are skipped. Run the format before commit afterwards, as
-described above.
-
-These are the C and C++ project rules.
-
-- Indentation with 4 spaces, no tabs.
-- Every opening brace on its own line, after functions, `if`, `else`, loops, `switch`,
-  `case` labels, structures, unions and enumerations. `else` starts a new line.
-- Braces around every body of `if`, `else` and loops, also around a single statement.
-- No function, block, `if`, loop or `case` on a single line.
-- Column limit 2000. A statement stays on one line, and a call wrapped by hand is
-  joined into one line.
-- `case` labels at the indentation of their `switch`. Preprocessor directives and
-  `goto` labels are not indented.
-- `*` next to the name, as in `char *name`.
-- A space between `if`, `for`, `while` or `switch` and the parenthesis. No space
-  between a function name and its parenthesis, after a cast or inside parentheses
-  and brackets.
-- One space before a comment at the end of a line. Such comments, assignments and
-  declarations are not aligned with the lines around them.
-- At most one empty line in a row, and no empty line at the start of a block.
-- Include order, comments and string literals stay as written.
-
 
 <br>
 <br>
@@ -134,16 +73,12 @@ These are the C and C++ project rules.
 
 ## More technical notes
 
-I made this chat to be similar to TeamSpeak and Mumble, which you can see in the interface.<br>
-Voice chat is optional and can be enabled by the admin in each channel. Text, pictures, and audio sent between users are end-to-end encrypted.<br>
-This chat does not rely on TLS/SSL alone. Messages are encrypted between users even when TLS/SSL is not used, and the server relays them without having the keys to read them.<br>
-WebSocket is used for text and pictures. Audio and video can use either WebSocket or WebRTC DataChannel. WebRTC is optional, and the server can choose WebSocket only.<br>
-Clients connect to the server, not to each other, so they do not share their IP addresses with other users through WebRTC.<br>
-Lemon Chat runs its own STUN service using Violet. See [Audio and video connections](docs/webrtc.md) for the WebSocket and WebRTC choices, required ports and encryption layers.<br>
-The `client.html` file has everything embedded in it. Open it in your browser, enter the server's IP address and port, and connect. It can also be packaged into a desktop app using a tool like Electron if needed.<br>
-The server should be easy to build if the correct build tools are installed. The C/C++ libraries needed to build it are already included in this repository.<br>
-Use the `.bat` build script on Windows or the `.sh` script for your system.
-
+I made this communication system to be similar to tools such as TeamSpeak or Mumble, which is evident from its interface.<br>
+It supports optional voice chat or even video streams, and all messages—including text, images, and audio / video data—are end-to-end encrypted for both direct and channel communication.<br>
+This chat does not rely solely on TLS/SSL and applies its own encryption on top if TLS/SSL is used, making it extremely difficult—even for the hosting admin—to view messages that do not belong to them.<br>
+WebSocket is used for text and images, while WebRTC data channels are used for audio (only the data channel part is used; communication is client → server like WebSocket, so clients cannot leak IP addresses).<br>
+The `client.html` contains everything embedded. It can be used like a regular `.exe` by clicking it, entering the IP address and port, and connecting to a server, or it can be packaged into an actual `.exe` using a tool like Electron if needed. <br>
+The server should be easy to build (if the system has the correct build tools installed). Every dependency for building the server is already in this repository; there are no extra C/C++ libraries to download. For even more information, read the [docs](docs/README.md).
 
 
 <br>
@@ -215,7 +150,7 @@ cvector -> https://github.com/eteran/c-vector
 <br>
 log.c -> https://github.com/rxi/log
 <br>
-SHA-256 by ITH -> [source](server-source-code/main-server/third-party/ITH-sha/sha256.c)
+SHA-256 by ITH -> [source](server-source-code/third-party/ITH-sha/sha256.c)
 <br>
 Base64 by zhicheng -> https://github.com/zhicheng/base64
 
