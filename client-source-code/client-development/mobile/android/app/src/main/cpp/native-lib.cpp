@@ -20,7 +20,7 @@ static int g_stderr_pipe[2] = { -1, -1 };
 static pthread_t g_log_thread;
 static bool g_logging_started = false;
 
-static void* log_pump(void*)
+static void *log_pump(void *)
 {
     char buffer[1024];
     pollfd streams[2] = { { g_stdout_pipe[0], POLLIN, 0 }, { g_stderr_pipe[0], POLLIN, 0 } };
@@ -136,8 +136,7 @@ static bool start_logging_if_needed()
     return ready;
 }
 
-extern "C" JNIEXPORT jint JNICALL
-Java_com_lemonchat_NodeRuntime_nativeStartNode(JNIEnv* env, jobject /* this */, jobjectArray arguments)
+extern "C" JNIEXPORT jint JNICALL Java_com_lemonchat_NodeRuntime_nativeStartNode(JNIEnv *env, jobject /* this */, jobjectArray arguments)
 {
     if (arguments == nullptr || !start_logging_if_needed())
     {
@@ -148,7 +147,7 @@ Java_com_lemonchat_NodeRuntime_nativeStartNode(JNIEnv* env, jobject /* this */, 
 
     // node::Start wants a plain argv, and it may write to it, so give it writable copies that
     // outlive the call
-    char** argv = static_cast<char**>(calloc(static_cast<size_t>(argument_count) + 1, sizeof(char*)));
+    char **argv = static_cast<char **>(calloc(static_cast<size_t>(argument_count) + 1, sizeof(char *)));
 
     if (argv == nullptr)
     {
@@ -159,7 +158,7 @@ Java_com_lemonchat_NodeRuntime_nativeStartNode(JNIEnv* env, jobject /* this */, 
     for (jsize i = 0; i < argument_count; i++)
     {
         jstring argument = static_cast<jstring>(env->GetObjectArrayElement(arguments, i));
-        const char* utf8 = argument != nullptr ? env->GetStringUTFChars(argument, nullptr) : nullptr;
+        const char *utf8 = argument != nullptr ? env->GetStringUTFChars(argument, nullptr) : nullptr;
         if (utf8 != nullptr)
         {
             argv[i] = strdup(utf8);

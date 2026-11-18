@@ -1,5 +1,8 @@
-// uses an authenticated control connection to the native owner
-// each socket owns its receive buffer, callbacks and write queue
+// this file connects the chat client in Node.js to the Java part of the Android app.
+// the connection is a network connection inside the phone (127.0.0.1). its port and password (token) are in bridge.json.
+// the Java part sends one JSON command per line, for example which server to join or whether file logging is on.
+// the client sends its state back the same way, for example whether it is connected and how many messages are unread.
+// each connection keeps its own received text, its waiting replies and the text it still has to send
 const net = require("net");
 const fs = require("fs");
 const path = require("path");
@@ -390,21 +393,30 @@ function start(bundle, initial_loopback_info, options)
                     if (last_connect_intent == null || last_connect_intent.command_id !== command.command_id)
                     {
                         const accepted = command.type === "connect" ? bundle.node_request_connect() === true : bundle.node_disconnect_by_user() === true;
-                        last_connect_intent = {command_id: command.command_id, action: command.type, accepted};
+                        last_connect_intent = { command_id: command.command_id, action: command.type, accepted };
                     }
-                    send_event({type: "connect_intent_result", command_id: command.command_id,
-                        accepted: last_connect_intent.action === command.type && last_connect_intent.accepted});
+                    send_event(
+                    {
+                        type: "connect_intent_result",
+                        command_id: command.command_id,
+                        accepted: last_connect_intent.action === command.type && last_connect_intent.accepted
+                    });
                     break;
                 }
                 case "call_action":
                 case "come_from_idle":
-                    const accepted = bundle.node_handle_call_action( command.type === "come_from_idle" || command.action === "accept" ? "accept_call" : "decline_call", command) === true;
+                    const accepted = bundle.node_handle_call_action(command.type === "come_from_idle" || command.action === "accept" ? "accept_call" : "decline_call", command) === true;
                     if (accepted)
                     {
                         pending_call = null;
                     }
-                    send_event({type: "call_action_result", call_id: command.call_id,
-                        session_id: command.session_id, accepted});
+                    send_event(
+                    {
+                        type: "call_action_result",
+                        call_id: command.call_id,
+                        session_id: command.session_id,
+                        accepted
+                    });
                     break;
                 case "ui_visible":
                     bundle.node_set_ui_attached(command.visible, true, command.preserve_idle === true, command.force_idle === true);

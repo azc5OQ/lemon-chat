@@ -1,6 +1,6 @@
-#include "../../main/definitions.h"
+#include "../../main-server/main/definitions.h"
 
-#include "../../third-party/dave-g-json/cJSON.h"
+#include "../../main-server/third-party/dave-g-json/cJSON.h"
 #include <fcntl.h>
 #include <signal.h>
 #include <string.h>
@@ -25,15 +25,10 @@ static void _android_main_internal__print_memory_information(void)
     uint64 fixed_bytes = 0;
 
     // include the chat, audio and video sockets reserved for every client
-    bytes_per_slot = sizeof(client_t) + sizeof(webrtc_peer_t)
-        + WEBSOCKET_CONNECTIONS_PER_CLIENT * ws_client_slot_size() + sizeof(int64);
-    fixed_bytes = sizeof(client_stored_data_t) * MAX_CLIENT_STORED_DATA
-        + sizeof(icon_t) * MAX_ICONS
-        + sizeof(group_t) * MAX_GROUPS
-        + sizeof(ban_entry_t) * MAX_BANS;
+    bytes_per_slot = sizeof(client_t) + sizeof(webrtc_peer_t) + WEBSOCKET_CONNECTIONS_PER_CLIENT * ws_client_slot_size() + sizeof(int64);
+    fixed_bytes = sizeof(client_stored_data_t) * MAX_CLIENT_STORED_DATA + sizeof(icon_t) * MAX_ICONS + sizeof(group_t) * MAX_GROUPS + sizeof(ban_entry_t) * MAX_BANS;
 
-    printf("{\"slot_bytes\":%llu,\"fixed_bytes\":%llu,\"channel_bytes\":%llu,\"default_channels\":%d}\n",
-        bytes_per_slot, fixed_bytes, (uint64)sizeof(channel_t), DEFAULT_CHANNEL_COUNT);
+    printf("{\"slot_bytes\":%llu,\"fixed_bytes\":%llu,\"channel_bytes\":%llu,\"default_channels\":%d}\n", bytes_per_slot, fixed_bytes, (uint64)sizeof(channel_t), DEFAULT_CHANNEL_COUNT);
 }
 
 /**
@@ -43,14 +38,14 @@ static void _android_main_internal__print_memory_information(void)
  */
 static boole _android_main_internal__are_settings_valid(void)
 {
-    FILE* settings_file = NULL_POINTER;
+    FILE *settings_file = NULL_POINTER;
     int64 file_length = 0;
     uint64 bytes_read = 0;
-    char* file_buffer = NULL_POINTER;
-    cJSON* json_root = NULL_POINTER;
-    cJSON* json_port = NULL_POINTER;
-    cJSON* json_slots = NULL_POINTER;
-    cJSON* json_admin_password = NULL_POINTER;
+    char *file_buffer = NULL_POINTER;
+    cJSON *json_root = NULL_POINTER;
+    cJSON *json_port = NULL_POINTER;
+    cJSON *json_slots = NULL_POINTER;
+    cJSON *json_admin_password = NULL_POINTER;
     boole are_settings_valid = FALSE;
 
     settings_file = fopen("server_settings.json", "rb");
@@ -71,7 +66,7 @@ static boole _android_main_internal__are_settings_valid(void)
         fclose(settings_file);
         return FALSE;
     }
-    file_buffer = (char*)calloc((size_t)file_length + 1, 1);
+    file_buffer = (char *)calloc((size_t)file_length + 1, 1);
     if (file_buffer == NULL_POINTER)
     {
         fclose(settings_file);
@@ -90,12 +85,7 @@ static boole _android_main_internal__are_settings_valid(void)
     json_port = cJSON_GetObjectItemCaseSensitive(json_root, "websocket_port");
     json_slots = cJSON_GetObjectItemCaseSensitive(json_root, "server_slots");
     json_admin_password = cJSON_GetObjectItemCaseSensitive(json_root, "admin_password");
-    if (cJSON_IsObject(json_root)
-        && cJSON_IsNumber(json_port) && json_port->valuedouble == json_port->valueint
-        && json_port->valueint >= 1024 && json_port->valueint <= 65535
-        && cJSON_IsNumber(json_slots) && json_slots->valuedouble == json_slots->valueint
-        && json_slots->valueint >= 1 && json_slots->valueint <= MAX_SERVER_SLOTS
-        && cJSON_IsString(json_admin_password) && strlen(json_admin_password->valuestring) == 44)
+    if (cJSON_IsObject(json_root) && cJSON_IsNumber(json_port) && json_port->valuedouble == json_port->valueint && json_port->valueint >= 1024 && json_port->valueint <= 65535 && cJSON_IsNumber(json_slots) && json_slots->valuedouble == json_slots->valueint && json_slots->valueint >= 1 && json_slots->valueint <= MAX_SERVER_SLOTS && cJSON_IsString(json_admin_password) && strlen(json_admin_password->valuestring) == 44)
     {
         are_settings_valid = TRUE;
     }
@@ -112,7 +102,7 @@ static boole _android_main_internal__are_settings_valid(void)
  *
  * @return int -> server exit code, or EXIT_FAILURE when startup is not possible
  */
-int main(int argument_count, char** arguments)
+int main(int argument_count, char **arguments)
 {
     pid_t parent_process_id = 0;
     int lock_file_descriptor = -1;

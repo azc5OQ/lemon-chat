@@ -1,10 +1,10 @@
-#include "../../../main/base.h"
-#include "../../../main/core/channel.h"
-#include "../../../main/msg/server/server_msg.h"
-#include "../../../main/util.h"
+#include "../../../main-server/main/base.h"
+#include "../../../main-server/main/core/channel.h"
+#include "../../../main-server/main/msg/server/server_msg.h"
+#include "../../../main-server/main/util.h"
 #include <assert.h>
 
-server_settings_t g_server_settings = {0};
+server_settings_t g_server_settings = { 0 };
 channel_t *g_channel_array;
 client_t *g_clients_array;
 static cJSON *captured;
@@ -103,8 +103,8 @@ static void check_parent(cJSON *object, int64 expected)
 
 int main(void)
 {
-    channel_t channels[2] = {0};
-    client_t client = {0};
+    channel_t channels[2] = { 0 };
+    client_t client = { 0 };
     g_channel_array = channels;
     g_clients_array = &client;
     g_server_settings.max_channel_count = 2;

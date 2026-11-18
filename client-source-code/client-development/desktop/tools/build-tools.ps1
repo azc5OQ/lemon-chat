@@ -159,7 +159,7 @@ try
         }
         if (!$approved)
         {
-            throw 'Install the missing tools yourself, or run build.bat --download-tools. No download was started.'
+            throw 'Install the missing tools yourself, or run build-windows.bat --download-tools. No download was started.'
         }
         if ($env:PROCESSOR_ARCHITECTURE -ne 'AMD64' -and $env:PROCESSOR_ARCHITEW6432 -ne 'AMD64')
         {

@@ -100,7 +100,7 @@ OpenGL or Vulkan games. The normal desktop window can be used without enabling i
 
 ## Build it
 
-Open `client-source-code/client-development/desktop` and run `build.bat` on Windows,
-or `sh build.sh` on Linux or macOS. The Windows script can download missing build tools.
+Open `client-source-code/client-development/desktop` and run `build-windows.bat` on Windows,
+`sh build-linux.sh` on Linux or `sh build-mac.sh` on macOS. The Windows script can download missing build tools.
 
 The [build guide](building.md#native-desktop-client) explains the package locations and platform requirements.

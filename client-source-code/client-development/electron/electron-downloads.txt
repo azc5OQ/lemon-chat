@@ -1,0 +1,14 @@
+# Electron archives used by package_electron.py. Each line holds the key, the SHA-256 and the address. The checksums
+# are from SHASUMS256.txt of the Electron release (https://github.com/electron/electron/releases/tag/v45.3.4). An
+# archive is downloaded once into electron/.downloads and checked before every use. The archives are larger than the
+# 100 MB file limit of GitHub, so they are not kept in the repository. The 32-bit targets win32-ia32 and linux-armv7l
+# use Electron 43.8.11 (https://github.com/electron/electron/releases/tag/v43.8.11), because Electron 44 and newer
+# are not published for 32-bit systems.
+win32-x64 b177908b5c48dad990612d7861fc8f03f8c06be0ca3351383a83cc11dd8e9144 https://github.com/electron/electron/releases/download/v45.3.4/electron-v45.3.4-win32-x64.zip
+win32-arm64 21f469ac13eebc8a9a7eb3ee8afdabe951e0ab70f7cec0847f4d6d9d9d898d20 https://github.com/electron/electron/releases/download/v45.3.4/electron-v45.3.4-win32-arm64.zip
+win32-ia32 325ae75861eb65c80aa6aa6145e4df47c27795aec92cf9ca5a74699c6f1621d4 https://github.com/electron/electron/releases/download/v43.8.11/electron-v43.8.11-win32-ia32.zip
+linux-x64 696689916f56fc12dd3085527351751ff0845c37eda45df420fc0d7aecc841f3 https://github.com/electron/electron/releases/download/v45.3.4/electron-v45.3.4-linux-x64.zip
+linux-arm64 619d0431bc7653acb10af4f803538322b8665926daf0938b87e6139ffb004b9d https://github.com/electron/electron/releases/download/v45.3.4/electron-v45.3.4-linux-arm64.zip
+linux-armv7l 55e059a829c7c94020099886e7f7a428711984275ce269c2e0a7693c4f2a7359 https://github.com/electron/electron/releases/download/v43.8.11/electron-v43.8.11-linux-armv7l.zip
+darwin-x64 c78311efcf842a973238c44a28a899592c9cc38727bb96660aca9bbeb9bf6b3d https://github.com/electron/electron/releases/download/v45.3.4/electron-v45.3.4-darwin-x64.zip
+darwin-arm64 f3ac0124c48a6cc3aa9332caca0e913cc478cd3610a378881729ca33452caa72 https://github.com/electron/electron/releases/download/v45.3.4/electron-v45.3.4-darwin-arm64.zip

@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-Glues the client sources into bundle.js for nodejs-mobile - same @@INCLUDE mechanism as
-../../browser/build.cjs, different include list.
+this script builds bundle.js, the chat client for Node.js on Android. it reads node-template.js and replaces each
+@@INCLUDE line with the named file, in the same way as ../../browser/build.cjs builds the web page.
 
-In: dom-shim, crypto vendors, utils, encoding, audio-opus-glue (for custom_typeof), messages, main.
-Out: ui.js and sounds.js (their `var UI` / `var g_sound_effects` would shadow the shim - see
-dom-shim.js), plus all webaudio/wasm/worker files - voice stays in the WebView.
+the bundle holds the browser page's JavaScript without the parts that draw the page. ui.js and sounds.js are left
+out, because their global names would replace the stand-ins of dom-shim.js. the audio, WebAssembly and helper thread
+files are left out, because voice is handled by the page in the app window.
 
-Paths starting with `node/` resolve next to this script, everything else under ../../browser/main.
+paths that start with node/ are files of this folder. all other paths are under ../../browser/main
 """
 import base64
 import hashlib

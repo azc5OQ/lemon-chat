@@ -224,7 +224,7 @@ With both methods allowed, the browser tries the user's preferred method first. 
 
 The server forwards packets between clients using either method. Users on WebRTC and WebSocket can therefore hear each other and watch the same video. Each connection ends at the server, so users do not exchange their IP addresses through WebRTC.
 
-The [WebRTC guide](webrtc.md) explains the DataChannel design, the built-in Violet STUN service, and why clients do not exchange IP addresses. For an HTTP tunnel such as Tailscale Funnel, use **WebSocket only**. See the [selfhosting guide](../selfhosting-tools/README.md) for ports and commands.
+The [WebRTC guide](webrtc.md) explains the DataChannel design, the built-in Violet STUN service, and why clients do not exchange IP addresses. For an HTTP tunnel such as Tailscale Funnel, use **WebSocket only**. See the [selfhosting guide](../tools/selfhosting-tools/README.md) for ports and commands.
 
 The server and the channel must both allow audio before users can send audio. The same rule applies to video.
 
@@ -297,7 +297,7 @@ If the computer is renamed in Tailscale, old routes can still use its previous h
 
 With Funnel enabled and verified, a WebSocket connection from `127.0.0.1` can provide one client IP address in the `X-Forwarded-For` header. This header lets the local proxy report the original user's address. Connections from other addresses cannot use it. Local connections without the header are still accepted, and plain WS access remains available.
 
-Use Funnel's HTTP proxy mode. Programs on the server computer must be trusted because local connections can provide this header. See the [Funnel instructions](../selfhosting-tools/README.md#client-ip-addresses).
+Use Funnel's HTTP proxy mode. Programs on the server computer must be trusted because local connections can provide this header. See the [Funnel instructions](../tools/selfhosting-tools/README.md#client-ip-addresses).
 
 ## Channel keys in large channels
 
@@ -409,8 +409,8 @@ Reaction details are sent inside the encrypted channel or private message. The s
 
 ## Relevant source files
 
-- [Loading, defaults and saving](../server-source-code/main/core/server_settings.c)
-- [Admin settings requests](../server-source-code/main/msg/client/client_msg_server_settings.c)
-- [Settings and public information sent to clients](../server-source-code/main/msg/server/server_msg_server_settings.c)
+- [Loading, defaults and saving](../server-source-code/main-server/main/core/server_settings.c)
+- [Admin settings requests](../server-source-code/main-server/main/msg/client/client_msg_server_settings.c)
+- [Settings and public information sent to clients](../server-source-code/main-server/main/msg/server/server_msg_server_settings.c)
 - [Settings tab behavior](../client-source-code/client-development/browser/main/scripts/app/server/server-settings-tab.js)
 - [Usage readings and public server information](../client-source-code/client-development/browser/main/scripts/app/server/server-info.js)

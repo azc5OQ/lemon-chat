@@ -17,9 +17,9 @@
  *
  * @return void
  */
-void ciphers__clear(void* data, size_t size)
+void ciphers__clear(void *data, size_t size)
 {
-    volatile unsigned char* bytes = data;
+    volatile unsigned char *bytes = data;
     while (size > 0)
     {
         *bytes++ = 0;
@@ -34,24 +34,24 @@ void ciphers__clear(void* data, size_t size)
  *
  * @return const char* -> static name, or NULL for an unsupported cipher
  */
-const char* ciphers__name(int type)
+const char *ciphers__name(int type)
 {
     switch (type)
     {
-        case LEMON_AES256:
-            return "aes256";
-        case LEMON_CHACHA20:
-            return "chacha20";
-        case LEMON_CAMELLIA256:
-            return "camellia256";
-        case LEMON_TWOFISH256:
-            return "twofish256";
-        case LEMON_SERPENT256:
-            return "serpent256";
-        case LEMON_TRIVIUM80:
-            return "trivium80";
-        default:
-            return NULL;
+    case LEMON_AES256:
+        return "aes256";
+    case LEMON_CHACHA20:
+        return "chacha20";
+    case LEMON_CAMELLIA256:
+        return "camellia256";
+    case LEMON_TWOFISH256:
+        return "twofish256";
+    case LEMON_SERPENT256:
+        return "serpent256";
+    case LEMON_TRIVIUM80:
+        return "trivium80";
+    default:
+        return NULL;
     }
 }
 
@@ -62,7 +62,7 @@ const char* ciphers__name(int type)
  *
  * @return int -> cipher identifier, or 0 for an unknown name
  */
-int ciphers__type(const char* name)
+int ciphers__type(const char *name)
 {
     if (name != NULL)
     {
@@ -103,7 +103,7 @@ int ciphers__type(const char* name)
  *
  * @return int -> 1 on success, otherwise 0
  */
-int ciphers__sha256(const unsigned char* data, size_t size, unsigned char output[32])
+int ciphers__sha256(const unsigned char *data, size_t size, unsigned char output[32])
 {
     return mbedtls_sha256(data, size, output, 0) == 0;
 }
@@ -118,7 +118,7 @@ int ciphers__sha256(const unsigned char* data, size_t size, unsigned char output
  *
  * @return int -> 1 if hashing succeeded, otherwise 0
  */
-int ciphers__hmac(const unsigned char key[32], const unsigned char* data, size_t size, unsigned char output[32])
+int ciphers__hmac(const unsigned char key[32], const unsigned char *data, size_t size, unsigned char output[32])
 {
     mbedtls_sha256_context context;
     unsigned char pad[64];
@@ -131,18 +131,12 @@ int ciphers__hmac(const unsigned char key[32], const unsigned char* data, size_t
     {
         pad[index] = (index < 32 ? key[index] : 0) ^ 0x36;
     }
-    status = mbedtls_sha256_starts(&context, 0) == 0
-        && mbedtls_sha256_update(&context, pad, sizeof(pad)) == 0
-        && mbedtls_sha256_update(&context, data, size) == 0
-        && mbedtls_sha256_finish(&context, digest) == 0;
+    status = mbedtls_sha256_starts(&context, 0) == 0 && mbedtls_sha256_update(&context, pad, sizeof(pad)) == 0 && mbedtls_sha256_update(&context, data, size) == 0 && mbedtls_sha256_finish(&context, digest) == 0;
     for (index = 0; index < sizeof(pad); index++)
     {
         pad[index] ^= 0x36 ^ 0x5c;
     }
-    status = status && mbedtls_sha256_starts(&context, 0) == 0
-        && mbedtls_sha256_update(&context, pad, sizeof(pad)) == 0
-        && mbedtls_sha256_update(&context, digest, sizeof(digest)) == 0
-        && mbedtls_sha256_finish(&context, output) == 0;
+    status = status && mbedtls_sha256_starts(&context, 0) == 0 && mbedtls_sha256_update(&context, pad, sizeof(pad)) == 0 && mbedtls_sha256_update(&context, digest, sizeof(digest)) == 0 && mbedtls_sha256_finish(&context, output) == 0;
     mbedtls_sha256_free(&context);
     ciphers__clear(pad, sizeof(pad));
     ciphers__clear(digest, sizeof(digest));
@@ -160,7 +154,7 @@ int ciphers__hmac(const unsigned char key[32], const unsigned char* data, size_t
  *
  * @return int -> 1 if cipher processing succeeded, otherwise 0
  */
-int ciphers__crypt(int type, const unsigned char key[32], const unsigned char iv[16], unsigned char* data, size_t size)
+int ciphers__crypt(int type, const unsigned char key[32], const unsigned char iv[16], unsigned char *data, size_t size)
 {
     if (key == NULL || iv == NULL || data == NULL)
     {
@@ -168,19 +162,19 @@ int ciphers__crypt(int type, const unsigned char key[32], const unsigned char iv
     }
     switch (type)
     {
-        case LEMON_AES256:
-            return cipher_aes__crypt(key, iv, data, size);
-        case LEMON_CHACHA20:
-            return cipher_chacha20__crypt(key, iv, data, size);
-        case LEMON_CAMELLIA256:
-            return cipher_camellia__crypt(key, iv, data, size);
-        case LEMON_TWOFISH256:
-            return cipher_twofish__crypt(key, iv, data, size);
-        case LEMON_SERPENT256:
-            return cipher_serpent__crypt(key, iv, data, size);
-        case LEMON_TRIVIUM80:
-            return cipher_trivium__crypt(key, 32, data, size);
-        default:
-            return 0;
+    case LEMON_AES256:
+        return cipher_aes__crypt(key, iv, data, size);
+    case LEMON_CHACHA20:
+        return cipher_chacha20__crypt(key, iv, data, size);
+    case LEMON_CAMELLIA256:
+        return cipher_camellia__crypt(key, iv, data, size);
+    case LEMON_TWOFISH256:
+        return cipher_twofish__crypt(key, iv, data, size);
+    case LEMON_SERPENT256:
+        return cipher_serpent__crypt(key, iv, data, size);
+    case LEMON_TRIVIUM80:
+        return cipher_trivium__crypt(key, 32, data, size);
+    default:
+        return 0;
     }
 }

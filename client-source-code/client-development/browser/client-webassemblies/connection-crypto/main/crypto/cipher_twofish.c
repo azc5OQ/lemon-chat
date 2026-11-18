@@ -15,11 +15,11 @@
  *
  * @return int -> 1 on success. 0 on failure
  */
-int cipher_twofish__crypt(const unsigned char key[32], const unsigned char iv[16], unsigned char* data, size_t size)
+int cipher_twofish__crypt(const unsigned char key[32], const unsigned char iv[16], unsigned char *data, size_t size)
 {
     symmetric_key scheduled;
     unsigned char counter[16];
-    unsigned char stream[16] = {0};
+    unsigned char stream[16] = { 0 };
     size_t offset = 0;
     size_t index;
     int status;

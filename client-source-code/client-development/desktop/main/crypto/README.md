@@ -49,6 +49,3 @@ both copies together. The browser's WebAssembly module uses these client-side
 sources and dependencies; neither client build reads the server source tree.
 The older tiny-AES implementation remains in `../../third-party/kokke-tiny-aes-c`;
 its existing `lemon-aes` runtime library is built by the third-party CMake file.
-
-See the [protocol document](../../../../../docs/connection-encryption-protocol.md)
-for message formats and key derivation.

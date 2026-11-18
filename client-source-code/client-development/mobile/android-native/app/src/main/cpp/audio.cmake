@@ -10,7 +10,7 @@ set(OPUS_DRED OFF CACHE BOOL "" FORCE)
 set(OPUS_OSCE OFF CACHE BOOL "" FORCE)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
-add_subdirectory("${LEMON_ROOT}/server-source-code/third-party/libopus-1.6.1" "${CMAKE_CURRENT_BINARY_DIR}/opus")
+add_subdirectory("${LEMON_ROOT}/server-source-code/main-server/third-party/libopus-1.6.1" "${CMAKE_CURRENT_BINARY_DIR}/opus")
 target_sources(lemonnative PRIVATE "${CMAKE_CURRENT_LIST_DIR}/opus_jni.c")
 target_link_libraries(lemonnative PRIVATE opus)
 

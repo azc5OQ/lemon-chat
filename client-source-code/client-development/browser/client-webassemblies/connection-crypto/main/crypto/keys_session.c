@@ -14,23 +14,17 @@
  *
  * @return int -> 1 on success, otherwise 0
  */
-int keys_session__begin_transcript(unsigned char transcript[32], const lemon_session_policy* policy,
-    const char* nonce, const char* public_key)
+int keys_session__begin_transcript(unsigned char transcript[32], const lemon_session_policy *policy, const char *nonce, const char *public_key)
 {
     char header[256];
     int size;
-    if (policy->exchanges < 1 || policy->exchanges > LEMON_MAX_DH_EXCHANGES
-        || policy->layers < 1 || policy->layers > LEMON_MAX_SESSION_LAYERS
-        || ciphers__name(policy->cipher) == NULL || strlen(nonce) != 32)
+    if (policy->exchanges < 1 || policy->exchanges > LEMON_MAX_DH_EXCHANGES || policy->layers < 1 || policy->layers > LEMON_MAX_SESSION_LAYERS || ciphers__name(policy->cipher) == NULL || strlen(nonce) != 32)
     {
         return 0;
     }
     memset(transcript, 0, 32);
-    size = snprintf(header, sizeof(header), "lemonchat-v2|%s|%u|%u|%s|%u", nonce,
-        policy->exchanges, policy->layers, ciphers__name(policy->cipher), policy->random_layer ? 1u : 0u);
-    return size > 0 && (size_t)size < sizeof(header)
-        && keys_session__mix(transcript, (const unsigned char*)header, (size_t)size)
-        && keys_session__mix(transcript, (const unsigned char*)public_key, strlen(public_key));
+    size = snprintf(header, sizeof(header), "lemonchat-v2|%s|%u|%u|%s|%u", nonce, policy->exchanges, policy->layers, ciphers__name(policy->cipher), policy->random_layer ? 1u : 0u);
+    return size > 0 && (size_t)size < sizeof(header) && keys_session__mix(transcript, (const unsigned char *)header, (size_t)size) && keys_session__mix(transcript, (const unsigned char *)public_key, strlen(public_key));
 }
 
 /**
@@ -45,22 +39,19 @@ int keys_session__begin_transcript(unsigned char transcript[32], const lemon_ses
  *
  * @return int -> 1 if all keys were derived, otherwise 0
  */
-int keys_session__derive(const unsigned char secret[32], const unsigned char transcript[32],
-    int type, unsigned int count, int random_type, lemon_session_keys* output)
+int keys_session__derive(const unsigned char secret[32], const unsigned char transcript[32], int type, unsigned int count, int random_type, lemon_session_keys *output)
 {
     char purpose[128];
     unsigned int index;
     int status = 0;
 
     ciphers__clear(output, sizeof(*output));
-    if (count < 1 || count > LEMON_MAX_SESSION_LAYERS || ciphers__name(type) == NULL
-        || (random_type != 0 && ciphers__name(random_type) == NULL))
+    if (count < 1 || count > LEMON_MAX_SESSION_LAYERS || ciphers__name(type) == NULL || (random_type != 0 && ciphers__name(random_type) == NULL))
     {
         return 0;
     }
     output->count = count + (random_type != 0);
-    status = keys_session__hkdf(secret, transcript, "lemonchat/v2/client-to-server/mac", output->client_mac)
-        && keys_session__hkdf(secret, transcript, "lemonchat/v2/server-to-client/mac", output->server_mac);
+    status = keys_session__hkdf(secret, transcript, "lemonchat/v2/client-to-server/mac", output->client_mac) && keys_session__hkdf(secret, transcript, "lemonchat/v2/server-to-client/mac", output->server_mac);
     for (index = 0; status && index < output->count; index++)
     {
         int cipher = index < count ? type : random_type;
@@ -90,10 +81,9 @@ int keys_session__derive(const unsigned char secret[32], const unsigned char tra
  *
  * @return int -> 1 if every layer succeeds, otherwise 0
  */
-int keys_session__crypt(const lemon_session_keys* session, int server_to_client, int encrypt,
-    const unsigned char iv[16], unsigned char* data, size_t size)
+int keys_session__crypt(const lemon_session_keys *session, int server_to_client, int encrypt, const unsigned char iv[16], unsigned char *data, size_t size)
 {
-    const lemon_session_layer* layers = server_to_client ? session->server_to_client : session->client_to_server;
+    const lemon_session_layer *layers = server_to_client ? session->server_to_client : session->client_to_server;
     unsigned int index;
 
     if (session->count < 1 || session->count > LEMON_MAX_CONNECTION_LAYERS)
@@ -122,13 +112,12 @@ int keys_session__crypt(const lemon_session_keys* session, int server_to_client,
  *
  * @return int -> 1 if derivation and cipher processing succeeded, otherwise 0
  */
-int keys_session__random_probe(const unsigned char secret[32], const unsigned char transcript[32], int type,
-    const unsigned char iv[16], unsigned char data[32])
+int keys_session__random_probe(const unsigned char secret[32], const unsigned char transcript[32], int type, const unsigned char iv[16], unsigned char data[32])
 {
     char purpose[128];
     unsigned char key[32];
     int status = 0;
-    const char* name = ciphers__name(type);
+    const char *name = ciphers__name(type);
     if (name != NULL)
     {
         snprintf(purpose, sizeof(purpose), "lemonchat/v2/random-cipher/probe/%s", name);
@@ -148,16 +137,14 @@ int keys_session__random_probe(const unsigned char secret[32], const unsigned ch
  *
  * @return int -> 1 on success, otherwise 0
  */
-int keys_session__random_probe_tag(const unsigned char secret[32], const unsigned char transcript[32],
-    const unsigned char plaintext[32], unsigned char tag[32])
+int keys_session__random_probe_tag(const unsigned char secret[32], const unsigned char transcript[32], const unsigned char plaintext[32], unsigned char tag[32])
 {
     unsigned char key[32];
     unsigned char input[64];
     int status;
     clib__copy_memory(plaintext, input, 32, sizeof(input));
     clib__copy_memory(transcript, input + 32, 32, sizeof(input) - 32);
-    status = keys_session__hkdf(secret, transcript, "lemonchat/v2/random-cipher/probe-check", key)
-        && ciphers__hmac(key, input, sizeof(input), tag);
+    status = keys_session__hkdf(secret, transcript, "lemonchat/v2/random-cipher/probe-check", key) && ciphers__hmac(key, input, sizeof(input), tag);
     ciphers__clear(key, sizeof(key));
     ciphers__clear(input, sizeof(input));
     return status;
@@ -173,7 +160,7 @@ int keys_session__random_probe_tag(const unsigned char secret[32], const unsigne
  *
  * @return int -> 1 if derivation succeeded, otherwise 0
  */
-int keys_session__hkdf(const unsigned char input[32], const unsigned char salt[32], const char* purpose, unsigned char output[32])
+int keys_session__hkdf(const unsigned char input[32], const unsigned char salt[32], const char *purpose, unsigned char output[32])
 {
     unsigned char extracted[32];
     unsigned char info[256];
@@ -184,8 +171,7 @@ int keys_session__hkdf(const unsigned char input[32], const unsigned char salt[3
     {
         clib__copy_memory(purpose, info, size, sizeof(info));
         info[size] = 1;
-        status = ciphers__hmac(salt, input, 32, extracted)
-            && ciphers__hmac(extracted, info, size + 1, output);
+        status = ciphers__hmac(salt, input, 32, extracted) && ciphers__hmac(extracted, info, size + 1, output);
     }
     ciphers__clear(extracted, sizeof(extracted));
     ciphers__clear(info, sizeof(info));
@@ -201,7 +187,7 @@ int keys_session__hkdf(const unsigned char input[32], const unsigned char salt[3
  *
  * @return int -> 1 if hashing succeeded, otherwise 0
  */
-int keys_session__mix(unsigned char state[32], const unsigned char* data, size_t size)
+int keys_session__mix(unsigned char state[32], const unsigned char *data, size_t size)
 {
     mbedtls_sha256_context context;
     unsigned char length[4];
@@ -216,12 +202,7 @@ int keys_session__mix(unsigned char state[32], const unsigned char* data, size_t
     length[2] = (unsigned char)(size >> 8);
     length[3] = (unsigned char)size;
     mbedtls_sha256_init(&context);
-    status = mbedtls_sha256_starts(&context, 0) == 0
-        && mbedtls_sha256_update(&context, state, 32) == 0
-        && mbedtls_sha256_update(&context, length, 4) == 0
-        && mbedtls_sha256_update(&context, data, size) == 0
-        && mbedtls_sha256_finish(&context, state) == 0;
+    status = mbedtls_sha256_starts(&context, 0) == 0 && mbedtls_sha256_update(&context, state, 32) == 0 && mbedtls_sha256_update(&context, length, 4) == 0 && mbedtls_sha256_update(&context, data, size) == 0 && mbedtls_sha256_finish(&context, state) == 0;
     mbedtls_sha256_free(&context);
     return status;
 }
-

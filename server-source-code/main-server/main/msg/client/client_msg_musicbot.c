@@ -1,0 +1,736 @@
+// this file checks requests to create or remove music bots and to manage or play their songs
+#include "client_msg.h"
+#include "../../core/permissions.h"
+#include "../../core/client_session.h"
+#include "../server/server_msg.h"
+#include "../../core/musicbot.h"
+#include "../../base.h"
+#include "../../util.h"
+#include "../../memory_manager.h"
+#include "../../clib/clib.h"
+#include "../../../third-party/rxi-log/log.h"
+
+// declarations
+static boole _client_msg_musicbot_internal__is_json_start_song_stream_message_valid(cJSON *json_root);
+static boole _client_msg_musicbot_internal__is_client_msg__process_create_music_bot_request_valid(cJSON *json_root);
+static boole _client_msg_musicbot_internal__is_client_msg__process_delete_music_bot_request_valid(cJSON *json_root);
+static boole _client_msg_musicbot_internal__is_musicbot_get_song_list_request_valid(cJSON *json_root);
+static boole _client_msg_musicbot_internal__is_remove_song_from_music_bot_request_valid(cJSON *json_root);
+
+/**
+ * @brief checks that a slot index is a whole number within the slot count
+ *
+ * @param cJSON* value -> index to check
+ * @param uint64 count -> number of available slots
+ *
+ * @return boole -> TRUE if the index is valid
+ */
+static boole _client_msg_musicbot_internal__is_index_valid(cJSON *value, uint64 count)
+{
+    uint64 index = 0;
+
+    return (boole)(count > 0 && util__json_read_uint64(value, count - 1, &index) == TRUE);
+}
+
+/**
+ * @brief validates a start-song-stream message: the song name is present, non-empty and within the
+ *        length limit
+ *
+ * @param cJSON* json_root -> the parsed client request
+ *
+ * @return boole
+ */
+static boole _client_msg_musicbot_internal__is_json_start_song_stream_message_valid(cJSON *json_root)
+{
+    cJSON *json_song_name = NULL_POINTER;
+    cJSON *json_message_object = NULL_POINTER;
+    int64 song_name_length = 0;
+
+    // read the message object
+    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+
+    // check name is text
+    json_song_name = cJSON_GetObjectItemCaseSensitive(json_message_object, "song_name");
+    if (cJSON_IsString(json_song_name) == FALSE)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "_client_msg_musicbot_internal__is_json_start_song_stream_message_valid cJSON_IsString(json_song_name) \n");
+        return FALSE;
+    }
+
+    // refuse missing text
+    if (json_song_name->valuestring == NULL_POINTER)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "_client_msg_musicbot_internal__is_json_start_song_stream_message_valid json_song_name->valuestring == NULL_POINTER \n");
+        return FALSE;
+    }
+
+    // check the name length
+    song_name_length = clib__utf8_string_length_check_max_length(json_song_name->valuestring, SONG_NAME_MAX_LENGTH - 1);
+    if (song_name_length == -1 || song_name_length == 0)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "_client_msg_musicbot_internal__is_json_start_song_stream_message_valid song_name_length == -1 || song_name_length == 0 \n");
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
+/**
+ * @brief processes a client's request to start streaming a song to its channel
+ *
+ * @param cJSON* json_root -> the parsed client request
+ * @param uint64 sender_client_id -> id of the client that sent the request
+ *
+ * @return void
+ */
+void client_msg__musicbot__process_start_song_stream_message(cJSON *json_root, uint64 sender_client_id)
+{
+    boole status = FALSE;
+    client_t *client = NULL_POINTER;
+    cJSON *json_song_name = NULL_POINTER;
+    cJSON *json_message_object = NULL_POINTER;
+
+    // check the song name
+    status = _client_msg_musicbot_internal__is_json_start_song_stream_message_valid(json_root);
+    if (status == FALSE)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__musicbot__process_start_song_stream_message client_msg__is_json_start_song_stream_message_valid == FALSE \n");
+        return;
+    }
+
+    // lock the clients
+    clib__write_lock(&g_clients_global_rwlock_guard);
+
+    client = &g_clients_array[sender_client_id];
+
+    // check the sender state
+    if (base__is_current_client_request(sender_client_id) == FALSE || client->is_authenticated == FALSE)
+    {
+        goto label_client_msg__process_start_song_stream_end;
+    }
+
+    // check the talk power
+    clib__read_lock(&g_channels_global_rwlock_guard);
+    status = client->channel_id < g_server_settings.max_channel_count && permissions__can_use_channel(client, &g_channel_array[client->channel_id], PERMISSION_TALK_POWER);
+    clib__unlock(&g_channels_global_rwlock_guard);
+    if (status == FALSE)
+    {
+        server_msg__administration__send_permission_denied_to_single_client(client, permissions__power_name(PERMISSION_TALK_POWER));
+        goto label_client_msg__process_start_song_stream_end;
+    }
+
+    // read the song name
+    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    json_song_name = cJSON_GetObjectItemCaseSensitive(json_message_object, "song_name");
+
+    // store the stream state
+    client->is_streaming_song = TRUE;
+    clib__null_memory(client->song_name, SONG_NAME_MAX_LENGTH);
+    clib__string_copy(client->song_name, sizeof(client->song_name), json_song_name->valuestring);
+
+    // send the start message
+    server_msg__musicbot__send_start_song_stream_message_to_clients_in_same_channel(client);
+
+label_client_msg__process_start_song_stream_end:
+
+    // unlock the clients
+    clib__unlock(&g_clients_global_rwlock_guard);
+}
+
+/**
+ * @brief processes a client's request to stop streaming its song
+ *
+ * @param cJSON* json_root -> the parsed client request
+ * @param uint64 sender_client_id -> id of the client that sent the request
+ *
+ * @return void
+ */
+void client_msg__musicbot__process_stop_song_stream_message(cJSON *json_root, uint64 sender_client_id)
+{
+    boole status = FALSE;
+    client_t *client = NULL_POINTER;
+
+    // lock the clients
+    clib__write_lock(&g_clients_global_rwlock_guard);
+
+    client = &g_clients_array[sender_client_id];
+
+    // check the sender state
+    if (base__is_current_client_request(sender_client_id) == FALSE || client->is_authenticated == FALSE)
+    {
+        goto label_client_msg__process_stop_song_stream_end;
+    }
+
+    // clear the stream state
+    client->is_streaming_song = FALSE;
+    clib__null_memory(client->song_name, sizeof(client->song_name));
+
+    // send the stop message
+    server_msg__musicbot__send_stop_song_stream_message_to_clients_in_same_channel(client);
+
+label_client_msg__process_stop_song_stream_end:
+
+    // unlock the clients
+    clib__unlock(&g_clients_global_rwlock_guard);
+}
+
+/**
+ * @brief validates a create-music-bot request: the channel id and bot username are present and
+ *        valid
+ *
+ * @param cJSON* json_root -> the parsed client request
+ * @note this is just first glance check
+ *
+ * @return boole
+ */
+static boole _client_msg_musicbot_internal__is_client_msg__process_create_music_bot_request_valid(cJSON *json_root)
+{
+    cJSON *json_message_object = NULL_POINTER;
+    cJSON *json_channel_id = NULL_POINTER;
+    cJSON *json_music_bot_username = NULL_POINTER;
+    uint64 json_music_bot_username_length = 0;
+
+    // read the message object
+    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+
+    // refuse missing channel id
+    json_channel_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "channel_id");
+
+    if (json_channel_id == NULL_POINTER)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "json_channel_id == NULL_POINTER \n");
+        return FALSE;
+    }
+
+    // check the channel index
+    if (_client_msg_musicbot_internal__is_index_valid(json_channel_id, g_server_settings.max_channel_count) == FALSE)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "_client_msg_musicbot_internal__is_client_msg__process_create_music_bot_request_valid cJSON_IsNumber(json_channel_id)");
+        return FALSE;
+    }
+
+    // check channel id range
+    if (json_channel_id->valueint < 0 || json_channel_id->valueint >= g_server_settings.max_channel_count)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "json_channel_id is invalid");
+        return FALSE;
+    }
+
+    // refuse a missing name
+    json_music_bot_username = cJSON_GetObjectItemCaseSensitive(json_message_object, "music_bot_username");
+
+    if (json_music_bot_username == NULL_POINTER)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "json_music_bot_username == NULL_POINTER \n");
+        return FALSE;
+    }
+
+    // refuse missing text
+    if (json_music_bot_username->valuestring == NULL_POINTER)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "_client_msg_musicbot_internal__is_client_msg__process_create_music_bot_request_valid json_music_bot_username->valuestring == NULL_POINTER \n");
+        return FALSE;
+    }
+
+    // check name is text
+    if (cJSON_IsString(json_music_bot_username) == FALSE)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "_client_msg_musicbot_internal__is_client_msg__process_create_music_bot_request_valid cJSON_IsString(json_music_bot_username)");
+        return FALSE;
+    }
+
+    // check the name length
+    json_music_bot_username_length = clib__utf8_string_length(json_music_bot_username->valuestring);
+
+    if (json_music_bot_username_length == 0 || json_music_bot_username_length >= USERNAME_MAX_LENGTH)
+    {
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
+/**
+ * @brief processes an admin request to create a music bot client in a channel
+ *
+ * @param cJSON* json_root -> the parsed client request
+ * @param uint64 sender_client_id -> id of the client that sent the request
+ *
+ * @return void
+ */
+void client_msg__musicbot__process_create_request(cJSON *json_root, uint64 sender_client_id)
+{
+    cJSON *json_message_object = NULL_POINTER;
+    cJSON *json_channel_id = NULL_POINTER;
+    cJSON *json_music_bot_username = NULL_POINTER;
+    client_t *admin = NULL_POINTER;
+    client_t *music_bot = NULL_POINTER;
+
+    // check channel and name
+    if (_client_msg_musicbot_internal__is_client_msg__process_create_music_bot_request_valid(json_root) == FALSE)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__process_create_music_bot is not valid");
+        return;
+    }
+
+    // read channel and name
+    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    json_channel_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "channel_id");
+    json_music_bot_username = cJSON_GetObjectItemCaseSensitive(json_message_object, "music_bot_username");
+
+    // lock clients and channels
+    clib__write_lock(&g_clients_global_rwlock_guard);
+    clib__write_lock(&g_channels_global_rwlock_guard);
+
+    // check if the client that sent the message is valid: connected and existing
+    // this was checked before but not within write lock like here
+    if (base__is_current_client_request(sender_client_id) == FALSE)
+    {
+        goto label_client_msg__process_create_music_bot_end;
+    }
+    admin = &g_clients_array[sender_client_id];
+
+    // check the create permission
+    if (permissions__is_allowed(admin, PERMISSION_CREATE_MUSIC_BOTS) == FALSE)
+    {
+        server_msg__administration__send_permission_denied_to_single_client(admin, permissions__name(PERMISSION_CREATE_MUSIC_BOTS));
+        goto label_client_msg__process_create_music_bot_end;
+    }
+
+    // repeat the capacity check after taking the locks: settings may shrink
+    // the channel allocation while this request waits
+    if (_client_msg_musicbot_internal__is_index_valid(json_channel_id, g_server_settings.max_channel_count) == FALSE || g_channel_array[json_channel_id->valueint].is_existing == FALSE)
+    {
+        goto label_client_msg__process_create_music_bot_end;
+    }
+
+#ifndef MUSICBOT_DEBUG_ALLOW_MULTIPLE_BOTS_PER_CHANNEL
+    // allow one music bot per channel unless MUSICBOT_DEBUG_ALLOW_MULTIPLE_BOTS_PER_CHANNEL
+    // is enabled for testing simultaneous audio senders
+    if (g_channel_array[json_channel_id->valueint].is_music_bot_active_in_channel == TRUE)
+    {
+        goto label_client_msg__process_create_music_bot_end;
+    }
+#endif
+
+    // music bots are not allowed in temp channels
+    if (g_channel_array[json_channel_id->valueint].is_temp_channel == TRUE)
+    {
+        goto label_client_msg__process_create_music_bot_end;
+    }
+
+    // allocate the music bot
+    music_bot = musicbot__allocate((uint64)json_channel_id->valueint, json_music_bot_username->valuestring);
+    if (music_bot == NULL_POINTER)
+    {
+        goto label_client_msg__process_create_music_bot_end;
+    }
+
+    // start the music bot
+    if (!musicbot__start(music_bot))
+    {
+        musicbot__free_unstarted(music_bot);
+        goto label_client_msg__process_create_music_bot_end;
+    }
+
+    // send the connect message
+    server_msg__connection__send_client_connect_message_to_all_clients(music_bot);
+
+label_client_msg__process_create_music_bot_end:
+    // unlock channels and clients
+    clib__unlock(&g_channels_global_rwlock_guard);
+    clib__unlock(&g_clients_global_rwlock_guard);
+}
+
+/**
+ * @brief validates a delete-music-bot request: the channel id is present and valid
+ *
+ * @param cJSON* json_root -> the parsed client request
+ * @note this is just first glance check
+ *
+ * @return boole
+ */
+static boole _client_msg_musicbot_internal__is_client_msg__process_delete_music_bot_request_valid(cJSON *json_root)
+{
+    cJSON *json_message_object = NULL_POINTER;
+    cJSON *json_channel_id = NULL_POINTER;
+
+    // read the message object
+    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+
+    // refuse missing channel id
+    json_channel_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "channel_id");
+
+    if (json_channel_id == NULL_POINTER)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "_client_msg_musicbot_internal__is_client_msg__process_delete_music_bot_request_valid json_channel_id == NULL_POINTER \n");
+        return FALSE;
+    }
+
+    // check the channel index
+    if (_client_msg_musicbot_internal__is_index_valid(json_channel_id, g_server_settings.max_channel_count) == FALSE)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "_client_msg_musicbot_internal__is_client_msg__process_delete_music_bot_request_valid cJSON_IsNumber(json_channel_id)");
+        return FALSE;
+    }
+
+    // check channel id range
+    if (json_channel_id->valueint < 0 || json_channel_id->valueint >= g_server_settings.max_channel_count)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "json_channel_id is invalid");
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
+/**
+ * @brief processes an admin request to delete a music bot from its channel
+ *
+ * @param cJSON* json_root -> the parsed client request
+ * @param uint64 sender_client_id -> id of the client that sent the request
+ *
+ * @return void
+ */
+void client_msg__musicbot__process_delete_request(cJSON *json_root, uint64 sender_client_id)
+{
+    cJSON *json_message_object = NULL_POINTER;
+    cJSON *json_channel_id = NULL_POINTER;
+    client_t *music_bot = NULL_POINTER;
+    client_t *admin = NULL_POINTER;
+    uint64 bot_loop_index = 0;
+
+    // check the channel id
+    if (_client_msg_musicbot_internal__is_client_msg__process_delete_music_bot_request_valid(json_root) == FALSE)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__musicbot__process_delete_request is not valid");
+        return;
+    }
+
+    // read the channel id
+    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    json_channel_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "channel_id");
+
+    // lock clients and channels
+    clib__write_lock(&g_clients_global_rwlock_guard);
+    clib__write_lock(&g_channels_global_rwlock_guard);
+
+    // check if the client that sent the message is valid: connected and existing
+    // this was checked before but not within write lock like here
+    if (base__is_current_client_request(sender_client_id) == FALSE)
+    {
+        goto label_client_msg__process_delete_music_bot_end;
+    }
+    admin = &g_clients_array[sender_client_id];
+
+    // check the delete permission
+    if (permissions__is_allowed(admin, PERMISSION_DELETE_MUSIC_BOTS) == FALSE)
+    {
+        server_msg__administration__send_permission_denied_to_single_client(admin, permissions__name(PERMISSION_DELETE_MUSIC_BOTS));
+        goto label_client_msg__process_delete_music_bot_end;
+    }
+
+    // repeat the capacity check under the resize locks before indexing
+    if (_client_msg_musicbot_internal__is_index_valid(json_channel_id, g_server_settings.max_channel_count) == FALSE || g_channel_array[json_channel_id->valueint].is_existing == FALSE)
+    {
+        goto label_client_msg__process_delete_music_bot_end;
+    }
+
+    // check if there is at least one music bot in the channel
+    if (g_channel_array[json_channel_id->valueint].is_music_bot_active_in_channel == FALSE)
+    {
+        goto label_client_msg__process_delete_music_bot_end;
+    }
+
+    // hide each bot and signal its stream thread to stop
+    // the reaper joins the thread before freeing its songs and client slot
+    DBG_CLIENT_MESSAGE log_info("%s", "client_msg__musicbot__process_delete_request \n");
+
+    for (bot_loop_index = 0; bot_loop_index < g_server_settings.max_client_count; bot_loop_index++)
+    {
+        // skip other clients
+        music_bot = &g_clients_array[bot_loop_index];
+
+        if (music_bot->is_existing == FALSE || music_bot->is_music_bot == FALSE || music_bot->channel_id != (uint64)json_channel_id->valueint)
+        {
+            continue;
+        }
+
+        // log the music bot
+        DBG_CLIENT_MESSAGE log_info("%s %lld %s", "client_msg__musicbot__process_delete_request music bot id -> ", music_bot->client_id, "\n");
+        DBG_CLIENT_MESSAGE log_info("%s %s %s", "client_msg__musicbot__process_delete_request music bot username -> ", music_bot->username, "\n");
+
+        // start the bot deletion
+        if (musicbot__begin_delete(music_bot) == TRUE)
+        {
+            server_msg__connection__send_client_disconnect_message_to_all_clients(music_bot->client_id, NULL_POINTER);
+        }
+    }
+
+    // update the channel flag
+    g_channel_array[json_channel_id->valueint].is_music_bot_active_in_channel = FALSE;
+    for (bot_loop_index = 0; bot_loop_index < g_server_settings.max_client_count; bot_loop_index++)
+    {
+        music_bot = &g_clients_array[bot_loop_index];
+        if (music_bot->is_existing == TRUE && music_bot->is_music_bot == TRUE && music_bot->channel_id == (uint64)json_channel_id->valueint)
+        {
+            g_channel_array[json_channel_id->valueint].is_music_bot_active_in_channel = TRUE;
+            break;
+        }
+    }
+
+    DBG_CLIENT_MESSAGE log_info("%s", "client_msg__musicbot__process_delete_request END \n");
+
+label_client_msg__process_delete_music_bot_end:
+    // unlock channels and clients
+    clib__unlock(&g_channels_global_rwlock_guard);
+    clib__unlock(&g_clients_global_rwlock_guard);
+}
+
+/**
+ * @brief validates a music-bot song-list request: the music bot id is present and within range
+ *
+ * @param cJSON* json_root -> the parsed client request
+ *
+ * @return boole -> TRUE when the request is valid, FALSE otherwise
+ */
+static boole _client_msg_musicbot_internal__is_musicbot_get_song_list_request_valid(cJSON *json_root)
+{
+    cJSON *json_musicbot_id = NULL_POINTER;
+    cJSON *json_message_object = NULL_POINTER;
+
+    // read the message object
+    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+
+    // refuse missing bot id
+    json_musicbot_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "musicbot_id");
+
+    if (json_musicbot_id == NULL_POINTER)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "json_musicbot_id == NULL_POINTER \n");
+        return FALSE;
+    }
+
+    // check the bot index
+    if (_client_msg_musicbot_internal__is_index_valid(json_musicbot_id, g_server_settings.max_client_count) == FALSE)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "cJSON_IsNumber(musicbot_id) \n");
+        return FALSE;
+    }
+
+    // check bot id range
+    if (json_musicbot_id->valueint < 0 || json_musicbot_id->valueint >= g_server_settings.max_client_count)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "json_musicbot_id is invalid");
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
+/**
+ * @brief processes a client's request for a music bot's current song list
+ *
+ * @param cJSON* json_root -> the parsed client request
+ * @param uint64 sender_client_id -> id of the client that sent the request
+ *
+ * @return void
+ */
+void client_msg__musicbot__process_get_song_list_request(cJSON *json_root, uint64 sender_client_id)
+{
+    cJSON *json_message_object = NULL_POINTER;
+    cJSON *json_musicbot_id = NULL_POINTER;
+    client_t *client = NULL_POINTER;
+    client_t *music_bot = NULL_POINTER;
+
+    // check the bot id
+    if (_client_msg_musicbot_internal__is_musicbot_get_song_list_request_valid(json_root) == FALSE)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__musicbot__process_get_song_list_request is not valid");
+        return;
+    }
+
+    // read the bot id
+    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    json_musicbot_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "musicbot_id");
+
+    // lock the clients
+    clib__read_lock(&g_clients_global_rwlock_guard);
+
+    // check if the client that sent the message is valid: connected and existing
+    // this was checked before but not within read lock like here
+    client = &g_clients_array[sender_client_id];
+
+    if (base__is_current_client_request(sender_client_id) == FALSE || client->is_authenticated == FALSE || client->is_existing == FALSE)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "client->is_authenticated == FALSE || client->is_existing == FALSE goto label_client_msg__process_musicbot_get_song_list_request_end end");
+        goto label_client_msg__process_musicbot_get_song_list_request_end;
+    }
+
+    // check the music permissions
+    if (permissions__is_allowed(client, PERMISSION_UPLOAD_MUSIC_TRACKS) == FALSE && permissions__is_allowed(client, PERMISSION_DELETE_MUSIC_TRACKS) == FALSE && permissions__is_allowed(client, PERMISSION_CONTROL_MUSIC_PLAYBACK) == FALSE)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "client->is_admin == FALSE goto label_client_msg__process_musicbot_get_song_list_request_end end");
+        server_msg__administration__send_access_denied_to_single_client(client, NULL_POINTER);
+        goto label_client_msg__process_musicbot_get_song_list_request_end;
+    }
+
+    // check target is bot
+    music_bot = &g_clients_array[json_musicbot_id->valueint];
+    if (music_bot->is_music_bot == FALSE)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "music_bot->is_music_bot == FALSE goto label_client_msg__process_musicbot_get_song_list_request_end end");
+        goto label_client_msg__process_musicbot_get_song_list_request_end;
+    }
+
+    // send the song list
+    DBG_CLIENT_MESSAGE log_info("%s", "calling server_msg__musicbot__send_song_list_to_single_client");
+
+    server_msg__musicbot__send_song_list_to_single_client(&g_clients_array[sender_client_id], music_bot);
+
+label_client_msg__process_musicbot_get_song_list_request_end:
+    // unlock the clients
+    clib__unlock(&g_clients_global_rwlock_guard);
+}
+
+/**
+ * @brief validates a remove-song-from-music-bot request: the song id and music bot id are present
+ *        and within range
+ *
+ * @param cJSON* json_root -> the parsed client request
+ *
+ * @return boole -> TRUE when the request is valid, FALSE otherwise
+ */
+static boole _client_msg_musicbot_internal__is_remove_song_from_music_bot_request_valid(cJSON *json_root)
+{
+    cJSON *json_message_object = NULL_POINTER;
+    cJSON *json_song_id = NULL_POINTER;
+    cJSON *json_musicbot_id = NULL_POINTER;
+
+    // read both id fields
+    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    json_song_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "song_id");
+    json_musicbot_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "musicbot_id");
+
+    // refuse missing song id
+    if (json_song_id == NULL_POINTER)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "cJSON_IsNumber(json_song_id) \n");
+        return FALSE;
+    }
+
+    // check the song index
+    if (_client_msg_musicbot_internal__is_index_valid(json_song_id, MUSIC_BOT_MAX_FILE_COUNT) == FALSE)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "cJSON_IsNumber(json_song_id) \n");
+        return FALSE;
+    }
+
+    // check song id range
+    if (json_song_id->valueint < 0 || json_song_id->valueint >= MUSIC_BOT_MAX_FILE_COUNT)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "json_song_id is invalid");
+        return FALSE;
+    }
+
+    // refuse missing bot id
+    if (json_musicbot_id == NULL_POINTER)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "cJSON_IsNumber(musicbot_id) \n");
+        return FALSE;
+    }
+
+    // check the bot index
+    if (_client_msg_musicbot_internal__is_index_valid(json_musicbot_id, g_server_settings.max_client_count) == FALSE)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "cJSON_IsNumber(musicbot_id) \n");
+        return FALSE;
+    }
+
+    // check bot id range
+    if (json_musicbot_id->valueint < 0 || json_musicbot_id->valueint >= g_server_settings.max_client_count)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "json_musicbot_id is invalid");
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
+/**
+ * @brief processes an admin request to remove a song from a music bot and refreshes the song list
+ *
+ * @param cJSON* json_root -> the parsed client request
+ * @param uint64 sender_client_id -> id of the client that sent the request
+ *
+ * @return void
+ */
+void client_msg__musicbot__process_remove_song_request(cJSON *json_root, uint64 sender_client_id)
+{
+    cJSON *json_message_object = NULL_POINTER;
+    cJSON *json_song_id = NULL_POINTER;
+    cJSON *json_musicbot_id = NULL_POINTER;
+    client_t *sender_client = NULL_POINTER;
+    client_t *music_bot = NULL_POINTER;
+
+    // check both id fields
+    if (_client_msg_musicbot_internal__is_remove_song_from_music_bot_request_valid(json_root) == FALSE)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "client_msg__musicbot__process_remove_song_request is not valid");
+        return;
+    }
+
+    // lock the clients
+    clib__write_lock(&g_clients_global_rwlock_guard);
+
+    // read both ids
+    json_message_object = cJSON_GetObjectItemCaseSensitive(json_root, "message");
+    json_song_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "song_id");
+    json_musicbot_id = cJSON_GetObjectItemCaseSensitive(json_message_object, "musicbot_id");
+
+    // check the sender connection
+    if (base__is_current_client_request(sender_client_id) == FALSE)
+    {
+        goto label_client_msg__process_remove_song_from_music_bot_request_end;
+    }
+    sender_client = &g_clients_array[sender_client_id];
+    music_bot = &g_clients_array[json_musicbot_id->valueint];
+
+    // check target is bot
+    if (music_bot->is_music_bot == FALSE)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "not music bot");
+        goto label_client_msg__process_remove_song_from_music_bot_request_end;
+    }
+
+    // check sender is authenticated
+    if (sender_client->is_existing == FALSE || sender_client->is_authenticated == FALSE)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "not valid client");
+        goto label_client_msg__process_remove_song_from_music_bot_request_end;
+    }
+
+    // check the delete permission
+    if (permissions__is_allowed(sender_client, PERMISSION_DELETE_MUSIC_TRACKS) == FALSE)
+    {
+        DBG_CLIENT_MESSAGE log_info("%s", "sender is not admin");
+        server_msg__administration__send_permission_denied_to_single_client(sender_client, permissions__name(PERMISSION_DELETE_MUSIC_TRACKS));
+        goto label_client_msg__process_remove_song_from_music_bot_request_end;
+    }
+
+    // questionable thread safety
+    musicbot__remove_song(music_bot, json_song_id->valueint);
+
+    // send the song list
+    server_msg__musicbot__send_song_list_to_single_client(&g_clients_array[sender_client_id], music_bot);
+
+    // send stop when empty
+    if (music_bot->music_bot_client_extension.music_bot_songs_count == 0)
+    {
+        server_msg__musicbot__send_stop_song_stream_message_to_clients_in_same_channel(music_bot);
+    }
+
+label_client_msg__process_remove_song_from_music_bot_request_end:
+    // unlock the clients
+    clib__unlock(&g_clients_global_rwlock_guard);
+}

@@ -1,7 +1,9 @@
-// builds the headless shared client bundle
+// this file is the list of files that build-node.py joins into bundle.js, the chat client for Node.js.
+// each @@INCLUDE line is replaced by the named file. the files are the browser page's JavaScript without the parts
+// that draw the page
 
-// load the DOM shim before the vendor factory
-// the AES vendor file opens the factory and main.js closes it
+// dom-shim.js comes first, because the other files expect the browser objects it creates.
+// aes-js.js opens a function around all following files and main.js closes it, so their names stay inside it
 
 /* @@INCLUDE: node/dom-shim.js @@ */
 
@@ -10,12 +12,10 @@
 /* @@INCLUDE: scripts/app/globals.js @@ */
 // sound playback belongs to the visible client
 function sounds__play(name)
-{
-}
+{}
 
 function sounds__stop(name)
-{
-}
+{}
 /* @@INCLUDE: scripts/vendor/sha256.js @@ */
 /* @@INCLUDE: scripts/vendor/js-sha256.js @@ */
 // use the shared RSA implementation

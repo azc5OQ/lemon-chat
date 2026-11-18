@@ -1,6 +1,8 @@
-// provides browser placeholders for the headless shared client
+// this file gives the chat client empty stand-in versions of the browser objects it expects, such as document.
+// the chat client was written for a web page, but in Node.js there is no page. the stand-ins accept the calls and do
+// nothing, so the client code runs without changes
 
-// defining document makes some dependencies select their browser implementation
+// some libraries check whether document exists to choose their browser version, so document is defined here
 
 if (typeof document === "undefined")
 {
@@ -13,7 +15,8 @@ if (typeof document === "undefined")
      */
     function make_dead_collection()
     {
-        return new Proxy([], {
+        return new Proxy([],
+        {
             get: function(target, key)
             {
                 if (key === "length")
@@ -39,30 +42,22 @@ if (typeof document === "undefined")
     function make_dead_element()
     {
         let element = {
-            style: {
+            style:
+            {
                 // provide the style methods used by avatar rendering
-                setProperty: function()
-                {
-                },
-                removeProperty: function()
-                {
-                },
+                setProperty: function() {},
+                removeProperty: function() {},
                 getPropertyValue: function()
                 {
                     return "";
                 }
             },
             dataset: {},
-            classList: {
-                add: function()
-                {
-                },
-                remove: function()
-                {
-                },
-                toggle: function()
-                {
-                },
+            classList:
+            {
+                add: function() {},
+                remove: function() {},
+                toggle: function() {},
                 // no visual class is active in Node
                 contains: function()
                 {
@@ -87,53 +82,27 @@ if (typeof document === "undefined")
             {
                 return child;
             },
-            replaceChildren: function()
-            {
-            },
-            close: function()
-            {
-            },
-            showModal: function()
-            {
-            },
-            insertAdjacentHTML: function()
-            {
-            },
+            replaceChildren: function() {},
+            close: function() {},
+            showModal: function() {},
+            insertAdjacentHTML: function() {},
             insertBefore: function(child)
             {
                 return child;
             },
-            setAttribute: function()
-            {
-            },
+            setAttribute: function() {},
             getAttribute: function()
             {
                 return null;
             },
-            removeAttribute: function()
-            {
-            },
-            addEventListener: function()
-            {
-            },
-            removeEventListener: function()
-            {
-            },
-            remove: function()
-            {
-            },
-            focus: function()
-            {
-            },
-            blur: function()
-            {
-            },
-            click: function()
-            {
-            },
-            scrollIntoView: function()
-            {
-            },
+            removeAttribute: function() {},
+            addEventListener: function() {},
+            removeEventListener: function() {},
+            remove: function() {},
+            focus: function() {},
+            blur: function() {},
+            click: function() {},
+            scrollIntoView: function() {},
             getBoundingClientRect: function()
             {
                 return { top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0 };
@@ -192,9 +161,7 @@ if (typeof document === "undefined")
         hostname: "",
         host: "",
         port: "",
-        reload: function()
-        {
-        }
+        reload: function() {}
     };
 
     global.document = {
@@ -232,12 +199,8 @@ if (typeof document === "undefined")
         {
             return make_dead_element();
         },
-        addEventListener: function()
-        {
-        },
-        removeEventListener: function()
-        {
-        },
+        addEventListener: function() {},
+        removeEventListener: function() {},
         body: make_dead_element(),
         documentElement: make_dead_element(),
         location: dead_location
@@ -248,12 +211,8 @@ if (typeof document === "undefined")
     // keep Node's existing timers and globals
 
     let window_members = {
-        addEventListener: function()
-        {
-        },
-        removeEventListener: function()
-        {
-        },
+        addEventListener: function() {},
+        removeEventListener: function() {},
         getComputedStyle: function()
         {
             return {};
@@ -261,9 +220,7 @@ if (typeof document === "undefined")
         innerWidth: 0,
         innerHeight: 0,
         location: dead_location,
-        scrollTo: function()
-        {
-        },
+        scrollTo: function() {},
         requestAnimationFrame: function(callback)
         {
             return setTimeout(callback, 16);
@@ -285,23 +242,25 @@ if (typeof document === "undefined")
     global.navigator = { userAgent: "nodejs-mobile" };
 
     // discard rendering calls in Node
-    global.UI = new Proxy({}, {
+    global.UI = new Proxy({},
+    {
         get: function()
         {
-            return function()
-            {
-            };
+            return function() {};
         }
     });
 
     // discard sound playback in Node
-    global.g_sound_effects = new Proxy({}, {
-        get: function() {
-            return { play: function()
-            {
-            }, pause: function()
-            {
-            }, currentTime: 0, volume: 0 };
+    global.g_sound_effects = new Proxy({},
+    {
+        get: function()
+        {
+            return {
+                play: function() {},
+                pause: function() {},
+                currentTime: 0,
+                volume: 0
+            };
         }
     });
 

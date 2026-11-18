@@ -144,7 +144,7 @@ Read [Encryption](encryption.md) for more about the keys, or [Channel keys in la
 
 ## Relevant source files
 
-- [Channel state and maintainer selection](../server-source-code/main/core/channel.c)
-- [Incoming channel requests](../server-source-code/main/msg/client/client_msg_channel.c)
-- [Channel announcements](../server-source-code/main/msg/server/server_msg_channel.c)
+- [Channel state and maintainer selection](../server-source-code/main-server/main/core/channel.c)
+- [Incoming channel requests](../server-source-code/main-server/main/msg/client/client_msg_channel.c)
+- [Channel announcements](../server-source-code/main-server/main/msg/server/server_msg_channel.c)
 - [Client key handling](../client-source-code/client-development/browser/main/scripts/app/crypto/keys.js)

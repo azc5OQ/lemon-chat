@@ -1,5 +1,7 @@
-// transfers prepared content to the page in bounded chunks
-// the page accepts, acknowledges or cancels each transfer
+// this file sends large content, such as files and pictures, from Node.js to the page in the app window.
+// the content is sent in parts of 48 KB. the page confirms each part, accepts the whole transfer or cancels it.
+// at most 4 parts are sent before the page confirms them, at most 8 transfers run at the same time, and a transfer
+// that gets no answer for 2 minutes is stopped
 const crypto = require("crypto");
 const RAW_CHUNK_BYTES = 48 * 1024;
 const MAX_FRAME_BYTES = 48 * 1024 * 1024 + 64 * 1024;
@@ -148,8 +150,11 @@ function create(options)
                 return;
             }
             const message = {
-                type: "local_transfer_chunk", transfer_id: transfer.id, session_id: options.session_id,
-                index, data
+                type: "local_transfer_chunk",
+                transfer_id: transfer.id,
+                session_id: options.session_id,
+                index,
+                data
             };
             if (!send(message))
             {
@@ -181,10 +186,19 @@ function create(options)
                 return "busy";
             }
             const transfer = {
-                id: crypto.randomBytes(16).toString("hex"), text, metadata, total_bytes: bytes,
-                total_chunks: Math.ceil(bytes / RAW_CHUNK_BYTES), started: false,
-                next_index: 0, last_acknowledged: -1, text_offset: 0, encoded_bytes: 0,
-                batch: Buffer.alloc(0), batch_offset: 0, timer: null
+                id: crypto.randomBytes(16).toString("hex"),
+                text,
+                metadata,
+                total_bytes: bytes,
+                total_chunks: Math.ceil(bytes / RAW_CHUNK_BYTES),
+                started: false,
+                next_index: 0,
+                last_acknowledged: -1,
+                text_offset: 0,
+                encoded_bytes: 0,
+                batch: Buffer.alloc(0),
+                batch_offset: 0,
+                timer: null
             };
             transfers.set(transfer.id, transfer);
             total_bytes += bytes;
@@ -193,8 +207,11 @@ function create(options)
                 fail(transfer, "expired");
             }, TIMEOUT_MS);
             const begin = {
-                type: "local_transfer_begin", transfer_id: transfer.id, session_id: options.session_id,
-                total_bytes: bytes, total_chunks: transfer.total_chunks
+                type: "local_transfer_begin",
+                transfer_id: transfer.id,
+                session_id: options.session_id,
+                total_bytes: bytes,
+                total_chunks: transfer.total_chunks
             };
             if (metadata.content_type === "direct_chat_file_decrypted" || metadata.content_type === "direct_chat_picture_decrypted")
             {

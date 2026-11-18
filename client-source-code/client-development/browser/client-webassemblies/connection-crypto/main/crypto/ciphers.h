@@ -14,11 +14,11 @@ enum
     LEMON_TRIVIUM80 = 7
 };
 
-const char* ciphers__name(int type);
-int ciphers__type(const char* name);
-int ciphers__crypt(int type, const unsigned char key[32], const unsigned char iv[16], unsigned char* data, size_t size);
-int ciphers__sha256(const unsigned char* data, size_t size, unsigned char output[32]);
-int ciphers__hmac(const unsigned char key[32], const unsigned char* data, size_t size, unsigned char output[32]);
-void ciphers__clear(void* data, size_t size);
+const char *ciphers__name(int type);
+int ciphers__type(const char *name);
+int ciphers__crypt(int type, const unsigned char key[32], const unsigned char iv[16], unsigned char *data, size_t size);
+int ciphers__sha256(const unsigned char *data, size_t size, unsigned char output[32]);
+int ciphers__hmac(const unsigned char key[32], const unsigned char *data, size_t size, unsigned char output[32]);
+void ciphers__clear(void *data, size_t size);
 
 #endif

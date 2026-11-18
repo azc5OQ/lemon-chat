@@ -55,7 +55,7 @@ public final class ServerChecks extends Instrumentation
             check(!onMain(() -> ServerService.active), "no server was already running");
             JSONObject settings = ServerSettings.Read(target.getFilesDir());
             check(settings.optJSONArray("channels") != null, "copied channel settings are present");
-            check(!FunnelSettings.IsEnabled(target), "public access remains disabled");
+            check(!HostingSettings.IsFunnelEnabled(target), "public access remains disabled");
             MemoryInfo.Load(new File(target.getApplicationInfo().nativeLibraryDir, "libchat-server.so"));
             check(MemoryInfo.slotBytes > 0 && MemoryInfo.channelBytes > 0, "installed native memory query works");
             long reserved = MemoryInfo.Estimate(settings.getInt("server_slots"), settings.optInt("max_channel_count", MemoryInfo.defaultChannels));
@@ -105,8 +105,7 @@ public final class ServerChecks extends Instrumentation
 
     private void startServer() throws Exception
     {
-        onMain(() ->
-        {
+        onMain(() -> {
             target.startForegroundService(new Intent(target, ServerService.class));
             return null;
         });
@@ -115,8 +114,7 @@ public final class ServerChecks extends Instrumentation
 
     private void stopServer() throws Exception
     {
-        onMain(() ->
-        {
+        onMain(() -> {
             target.startService(new Intent(target, ServerService.class).setAction(ServerService.ACTION_STOP));
             return null;
         });
@@ -155,8 +153,7 @@ public final class ServerChecks extends Instrumentation
     {
         AtomicReference<T> value = new AtomicReference<>();
         AtomicReference<Exception> failure = new AtomicReference<>();
-        runOnMainSync(() ->
-        {
+        runOnMainSync(() -> {
             try
             {
                 value.set(action.call());

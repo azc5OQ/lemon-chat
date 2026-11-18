@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""install the pinned Android Node runtime with its matching headers"""
+"""this script installs nodejs-mobile, the Node.js program for Android, in the fixed version the app uses, together
+with its header files, which the Android app build needs to compile against it"""
 
 import argparse
 import hashlib

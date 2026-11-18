@@ -1,12 +1,16 @@
 #!/bin/sh
 # Bootstrap only Node here. No system installation or shell-profile changes.
+
+# sh mode for zsh
+if [ -n "${ZSH_VERSION:-}" ]; then emulate sh; fi
+
 set -eu
 browser_directory=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 tools_directory="$browser_directory/.build-tools"
 case "$(uname -s)" in
     Linux) platform=linux ;;
     Darwin) platform=darwin ;;
-    *) echo 'Use build.bat on Windows, or install Node.js and run node build.cjs.' >&2; exit 1 ;;
+    *) echo 'Use build-windows.bat on Windows, or install Node.js and run node build.cjs.' >&2; exit 1 ;;
 esac
 case "$(uname -m)" in
     x86_64|amd64) architecture=x64 ;;
@@ -77,5 +81,49 @@ if [ "$node_program" = "$cached" ]
 then
     PATH="${cached%/*}:$PATH"
     export PATH
+fi
+
+# client.html only, or also the Electron app, chosen by --electron, --no-electron, LEMON_CLIENT_BUILD_TARGET=html
+# or electron, or else by the question below
+electron_files='client-electron-amd64.AppImage, client-electron-arm64.AppImage and client-electron-armhf.AppImage'
+if [ "$platform" = darwin ]
+then
+    electron_files='client-electron-amd64.dmg and client-electron-arm64.dmg'
+fi
+electron_choice=${LEMON_CLIENT_BUILD_TARGET:-}
+for argument in "$@"
+do
+    case "$argument" in
+        --electron) electron_choice=electron ;;
+        --no-electron) electron_choice=html ;;
+    esac
+done
+if [ -z "$electron_choice" ] && [ -t 0 ]
+then
+    printf '\n1. client.html only\n2. client.html and the Electron app, %s in buildresult\n' "$electron_files"
+    while :
+    do
+        printf 'Choose [1/2]: '
+        read -r answer || exit 1
+        case "$answer" in
+            1) electron_choice=html; break ;;
+            2) electron_choice=electron; break ;;
+        esac
+    done
+fi
+count=$#
+while [ "$count" -gt 0 ]
+do
+    argument=$1
+    shift
+    case "$argument" in
+        --electron|--no-electron) ;;
+        *) set -- "$@" "$argument" ;;
+    esac
+    count=$((count - 1))
+done
+if [ "$electron_choice" = electron ]
+then
+    set -- "$@" --electron
 fi
 exec "$node_program" "$browser_directory/build.cjs" "$@"

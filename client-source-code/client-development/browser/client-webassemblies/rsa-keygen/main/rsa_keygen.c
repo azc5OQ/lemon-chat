@@ -69,7 +69,7 @@ static uint32 _rsa_internal__arc4_byte(void)
  *
  * @return void
  */
-static void _rsa_internal__seedrandom(const uint8* seed, int32 seed_length)
+static void _rsa_internal__seedrandom(const uint8 *seed, int32 seed_length)
 {
     int32 key[256];
     boole key_defined[256];
@@ -139,7 +139,7 @@ static void _rsa_internal__seedrandom(const uint8* seed, int32 seed_length)
 static double _rsa_internal__random(void)
 {
     double n;
-    double d = 281474976710656.0;            // 256^6
+    double d = 281474976710656.0; // 256^6
     uint32 x = 0;
     int32 i;
 
@@ -149,14 +149,14 @@ static double _rsa_internal__random(void)
         n = n * 256.0 + (double)_rsa_internal__arc4_byte();
     }
 
-    while (n < 4503599627370496.0)           // 2^52
+    while (n < 4503599627370496.0) // 2^52
     {
         n = (n + x) * 256.0;
         d = d * 256.0;
         x = _rsa_internal__arc4_byte();
     }
 
-    while (n >= 9007199254740992.0)          // 2^53
+    while (n >= 9007199254740992.0) // 2^53
     {
         n = n / 2.0;
         d = d / 2.0;
@@ -184,7 +184,7 @@ static uint32 _rsa_internal__random_byte(void)
 
 typedef struct
 {
-    int32 used;                 // limbs in use. 0 means the value 0
+    int32 used; // limbs in use. 0 means the value 0
     uint32 limb[BN_LIMBS];
 } bignum;
 
@@ -195,7 +195,7 @@ typedef struct
  *
  * @return void
  */
-static void _rsa_internal__bn_zero(bignum* a)
+static void _rsa_internal__bn_zero(bignum *a)
 {
     int32 i;
     for (i = 0; i < BN_LIMBS; i++)
@@ -212,7 +212,7 @@ static void _rsa_internal__bn_zero(bignum* a)
  *
  * @return void
  */
-static void _rsa_internal__bn_trim(bignum* a)
+static void _rsa_internal__bn_trim(bignum *a)
 {
     while (a->used > 0 && a->limb[a->used - 1] == 0)
     {
@@ -228,7 +228,7 @@ static void _rsa_internal__bn_trim(bignum* a)
  *
  * @return void
  */
-static void _rsa_internal__bn_copy(bignum* out, const bignum* a)
+static void _rsa_internal__bn_copy(bignum *out, const bignum *a)
 {
     int32 i;
     for (i = 0; i < a->used; i++)
@@ -250,7 +250,7 @@ static void _rsa_internal__bn_copy(bignum* out, const bignum* a)
  *
  * @return void
  */
-static void _rsa_internal__bn_set_word(bignum* a, uint32 w)
+static void _rsa_internal__bn_set_word(bignum *a, uint32 w)
 {
     _rsa_internal__bn_zero(a);
     if (w > 0)
@@ -268,16 +268,14 @@ static void _rsa_internal__bn_set_word(bignum* a, uint32 w)
  *
  * @return int32 -> minus one, zero or one according to numeric order
  */
-static int32 _rsa_internal__bn_compare(const bignum* a, const bignum* b)
+static int32 _rsa_internal__bn_compare(const bignum *a, const bignum *b)
 {
     int32 i;
 
     if (a->used != b->used)
 
     {
-
         return (a->used > b->used) ? 1 : -1;
-
     }
     for (i = a->used - 1; i >= 0; i--)
     {
@@ -297,7 +295,7 @@ static int32 _rsa_internal__bn_compare(const bignum* a, const bignum* b)
  *
  * @return boole -> true when the values match
  */
-static boole _rsa_internal__bn_is_word(const bignum* a, uint32 w)
+static boole _rsa_internal__bn_is_word(const bignum *a, uint32 w)
 {
     if (w == 0)
     {
@@ -313,7 +311,7 @@ static boole _rsa_internal__bn_is_word(const bignum* a, uint32 w)
  *
  * @return int32 -> bit count, or zero for zero
  */
-static int32 _rsa_internal__bn_bit_length(const bignum* a)
+static int32 _rsa_internal__bn_bit_length(const bignum *a)
 {
     uint32 top;
     int32 bits;
@@ -321,9 +319,7 @@ static int32 _rsa_internal__bn_bit_length(const bignum* a)
     if (a->used == 0)
 
     {
-
         return 0;
-
     }
     top = a->limb[a->used - 1];
     bits = (a->used - 1) * 32;
@@ -343,7 +339,7 @@ static int32 _rsa_internal__bn_bit_length(const bignum* a)
  *
  * @return boole -> true when the bit is set
  */
-static boole _rsa_internal__bn_test_bit(const bignum* a, int32 bit)
+static boole _rsa_internal__bn_test_bit(const bignum *a, int32 bit)
 {
     int32 limb_index = bit >> 5;
     if (limb_index >= a->used)
@@ -361,7 +357,7 @@ static boole _rsa_internal__bn_test_bit(const bignum* a, int32 bit)
  *
  * @return void
  */
-static void _rsa_internal__bn_set_bit(bignum* a, int32 bit)
+static void _rsa_internal__bn_set_bit(bignum *a, int32 bit)
 {
     int32 limb_index = bit >> 5;
     a->limb[limb_index] |= (uint32)1 << (bit & 31);
@@ -380,7 +376,7 @@ static void _rsa_internal__bn_set_bit(bignum* a, int32 bit)
  *
  * @return void
  */
-static void _rsa_internal__bn_add_word(bignum* a, uint32 w)
+static void _rsa_internal__bn_add_word(bignum *a, uint32 w)
 {
     uint64 carry = w;
     int32 i = 0;
@@ -408,7 +404,7 @@ static void _rsa_internal__bn_add_word(bignum* a, uint32 w)
  *
  * @return void
  */
-static void _rsa_internal__bn_sub(bignum* a, const bignum* b)
+static void _rsa_internal__bn_sub(bignum *a, const bignum *b)
 {
     int64 borrow = 0;
     int32 i;
@@ -439,7 +435,7 @@ static void _rsa_internal__bn_sub(bignum* a, const bignum* b)
  *
  * @return void
  */
-static void _rsa_internal__bn_add(bignum* a, const bignum* b)
+static void _rsa_internal__bn_add(bignum *a, const bignum *b)
 {
     uint64 carry = 0;
     int32 i;
@@ -469,7 +465,7 @@ static void _rsa_internal__bn_add(bignum* a, const bignum* b)
  *
  * @return void
  */
-static void _rsa_internal__bn_mul(bignum* out, const bignum* a, const bignum* b)
+static void _rsa_internal__bn_mul(bignum *out, const bignum *a, const bignum *b)
 {
     int32 i, j;
 
@@ -506,7 +502,7 @@ static void _rsa_internal__bn_mul(bignum* out, const bignum* a, const bignum* b)
  *
  * @return uint32 -> remainder after division
  */
-static uint32 _rsa_internal__bn_mod_word(const bignum* a, uint32 m)
+static uint32 _rsa_internal__bn_mod_word(const bignum *a, uint32 m)
 {
     uint64 r = 0;
     int32 i;
@@ -527,7 +523,7 @@ static uint32 _rsa_internal__bn_mod_word(const bignum* a, uint32 m)
  *
  * @return void
  */
-static void _rsa_internal__bn_div_word(bignum* a, uint32 m)
+static void _rsa_internal__bn_div_word(bignum *a, uint32 m)
 {
     uint64 r = 0;
     int32 i;
@@ -549,7 +545,7 @@ static void _rsa_internal__bn_div_word(bignum* a, uint32 m)
  *
  * @return void
  */
-static void _rsa_internal__bn_shl1(bignum* a)
+static void _rsa_internal__bn_shl1(bignum *a)
 {
     uint32 carry = 0;
     int32 i;
@@ -575,7 +571,7 @@ static void _rsa_internal__bn_shl1(bignum* a)
  *
  * @return void
  */
-static void _rsa_internal__bn_shr1(bignum* a)
+static void _rsa_internal__bn_shr1(bignum *a)
 {
     int32 i;
 
@@ -599,7 +595,7 @@ static bignum g_secret_bn_mod_shifted;
  *
  * @return void
  */
-static void _rsa_internal__bn_mod(bignum* out, const bignum* a, const bignum* m)
+static void _rsa_internal__bn_mod(bignum *out, const bignum *a, const bignum *m)
 {
     int32 diff;
 
@@ -639,8 +635,8 @@ static void _rsa_internal__bn_mod(bignum* out, const bignum* a, const bignum* m)
 
 static bignum g_mont_modulus;
 static int32 g_mont_len;
-static uint32 g_mont_n0;         // -modulus^-1 mod 2^32
-static bignum g_mont_r2;         // R^2 mod modulus, R = 2^(32*len)
+static uint32 g_mont_n0; // -modulus^-1 mod 2^32
+static bignum g_mont_r2; // R^2 mod modulus, R = 2^(32*len)
 
 // -modulus^-1 mod 2^32, the one helper constant montgomery reduction needs
 /**
@@ -652,7 +648,7 @@ static bignum g_mont_r2;         // R^2 mod modulus, R = 2^(32*len)
  */
 static uint32 _rsa_internal__mont_n0_of(uint32 odd)
 {
-    uint32 x = odd;              // 3-bit start, doubles correct bits each round
+    uint32 x = odd; // 3-bit start, doubles correct bits each round
     x *= 2 - odd * x;
     x *= 2 - odd * x;
     x *= 2 - odd * x;
@@ -672,7 +668,7 @@ static uint32 g_secret_mont_mul_t[BN_LIMBS + 2];
  *
  * @return void
  */
-static void _rsa_internal__mont_mul(bignum* out, const bignum* a, const bignum* b)
+static void _rsa_internal__mont_mul(bignum *out, const bignum *a, const bignum *b)
 {
     int32 i, j;
     int32 len = g_mont_len;
@@ -680,9 +676,7 @@ static void _rsa_internal__mont_mul(bignum* out, const bignum* a, const bignum* 
     for (i = 0; i <= len + 1; i++)
 
     {
-
         g_secret_mont_mul_t[i] = 0;
-
     }
 
     for (i = 0; i < len; i++)
@@ -719,9 +713,7 @@ static void _rsa_internal__mont_mul(bignum* out, const bignum* a, const bignum* 
     for (i = 0; i < len; i++)
 
     {
-
         out->limb[i] = g_secret_mont_mul_t[i];
-
     }
     for (i = len; i < BN_LIMBS; i++)
     {
@@ -750,7 +742,7 @@ static uint32 g_secret_mont_sqr_t[2 * BN_LIMBS + 2];
  *
  * @return void
  */
-static void _rsa_internal__mont_sqr(bignum* out, const bignum* a)
+static void _rsa_internal__mont_sqr(bignum *out, const bignum *a)
 {
     int32 i, j;
     int32 len = g_mont_len;
@@ -760,9 +752,7 @@ static void _rsa_internal__mont_sqr(bignum* out, const bignum* a)
     for (i = 0; i < 2 * len + 2; i++)
 
     {
-
         g_secret_mont_sqr_t[i] = 0;
-
     }
 
     // every cross product a[i] * a[j] with i < j, each counted once for now
@@ -845,9 +835,7 @@ static void _rsa_internal__mont_sqr(bignum* out, const bignum* a)
     for (i = 0; i < len; i++)
 
     {
-
         out->limb[i] = g_secret_mont_sqr_t[len + i];
-
     }
     for (i = len; i < BN_LIMBS; i++)
     {
@@ -874,7 +862,7 @@ static bignum g_secret_mont_setup_t2;
  *
  * @return void
  */
-static void _rsa_internal__mont_setup(const bignum* m)
+static void _rsa_internal__mont_setup(const bignum *m)
 {
     int32 bit;
     int32 target;
@@ -933,16 +921,16 @@ static bignum g_secret_mont_pow_one;
  *
  * @return void
  */
-static void _rsa_internal__mont_pow(bignum* out, const bignum* base, const bignum* exp)
+static void _rsa_internal__mont_pow(bignum *out, const bignum *base, const bignum *exp)
 {
-    bignum* cur = &g_secret_mont_pow_acc;
-    bignum* nxt = &g_secret_mont_pow_tmp;
-    bignum* swap;
+    bignum *cur = &g_secret_mont_pow_acc;
+    bignum *nxt = &g_secret_mont_pow_tmp;
+    bignum *swap;
     int32 chunk_count = (_rsa_internal__bn_bit_length(exp) + 3) >> 2;
     int32 c, i;
     uint32 digit;
 
-    _rsa_internal__mont_mul(&g_secret_mont_pow_table[1], base, &g_mont_r2);  // base into the domain
+    _rsa_internal__mont_mul(&g_secret_mont_pow_table[1], base, &g_mont_r2); // base into the domain
     for (i = 2; i < 16; i++)
     {
         // mont_mul beats mont_sqr here: at these limb counts the separated squaring
@@ -951,11 +939,14 @@ static void _rsa_internal__mont_pow(bignum* out, const bignum* base, const bignu
         {
             _rsa_internal__mont_mul(&g_secret_mont_pow_table[i], &g_secret_mont_pow_table[i >> 1], &g_secret_mont_pow_table[i >> 1]);
         }
-        else { _rsa_internal__mont_mul(&g_secret_mont_pow_table[i], &g_secret_mont_pow_table[i - 1], &g_secret_mont_pow_table[1]); }
+        else
+        {
+            _rsa_internal__mont_mul(&g_secret_mont_pow_table[i], &g_secret_mont_pow_table[i - 1], &g_secret_mont_pow_table[1]);
+        }
     }
 
     _rsa_internal__bn_set_word(&g_secret_mont_pow_one, 1);
-    _rsa_internal__mont_mul(cur, &g_secret_mont_pow_one, &g_mont_r2);        // 1 into the domain = R mod m
+    _rsa_internal__mont_mul(cur, &g_secret_mont_pow_one, &g_mont_r2); // 1 into the domain = R mod m
 
     for (c = chunk_count - 1; c >= 0; c--)
     {
@@ -964,7 +955,9 @@ static void _rsa_internal__mont_pow(bignum* out, const bignum* base, const bignu
             for (i = 0; i < 4; i++)
             {
                 _rsa_internal__mont_mul(nxt, cur, cur);
-                swap = cur; cur = nxt; nxt = swap;
+                swap = cur;
+                cur = nxt;
+                nxt = swap;
             }
         }
 
@@ -976,11 +969,13 @@ static void _rsa_internal__mont_pow(bignum* out, const bignum* base, const bignu
         if (digit != 0)
         {
             _rsa_internal__mont_mul(nxt, cur, &g_secret_mont_pow_table[digit]);
-            swap = cur; cur = nxt; nxt = swap;
+            swap = cur;
+            cur = nxt;
+            nxt = swap;
         }
     }
 
-    _rsa_internal__mont_mul(out, cur, &g_secret_mont_pow_one);               // back out of the domain
+    _rsa_internal__mont_mul(out, cur, &g_secret_mont_pow_one); // back out of the domain
 }
 
 // ---------------------------------------------------------------------------
@@ -993,17 +988,7 @@ static void _rsa_internal__mont_pow(bignum* out, const bignum* base, const bignu
 static const bignum g_bn_one = { .used = 1, .limb = { 1 } };
 
 // the 168 primes below 1000, the same table jsbn uses for trial division and witnesses
-static const uint32 g_lowprimes[] = {
-    2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89,
-    97, 101, 103, 107, 109, 113, 127, 131, 137, 139, 149, 151, 157, 163, 167, 173, 179, 181, 191,
-    193, 197, 199, 211, 223, 227, 229, 233, 239, 241, 251, 257, 263, 269, 271, 277, 281, 283, 293,
-    307, 311, 313, 317, 331, 337, 347, 349, 353, 359, 367, 373, 379, 383, 389, 397, 401, 409, 419,
-    421, 431, 433, 439, 443, 449, 457, 461, 463, 467, 479, 487, 491, 499, 503, 509, 521, 523, 541,
-    547, 557, 563, 569, 571, 577, 587, 593, 599, 601, 607, 613, 617, 619, 631, 641, 643, 647, 653,
-    659, 661, 673, 677, 683, 691, 701, 709, 719, 727, 733, 739, 743, 751, 757, 761, 769, 773, 787,
-    797, 809, 811, 821, 823, 827, 829, 839, 853, 857, 859, 863, 877, 881, 883, 887, 907, 911, 919,
-    929, 937, 941, 947, 953, 967, 971, 977, 983, 991, 997
-};
+static const uint32 g_lowprimes[] = { 2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97, 101, 103, 107, 109, 113, 127, 131, 137, 139, 149, 151, 157, 163, 167, 173, 179, 181, 191, 193, 197, 199, 211, 223, 227, 229, 233, 239, 241, 251, 257, 263, 269, 271, 277, 281, 283, 293, 307, 311, 313, 317, 331, 337, 347, 349, 353, 359, 367, 373, 379, 383, 389, 397, 401, 409, 419, 421, 431, 433, 439, 443, 449, 457, 461, 463, 467, 479, 487, 491, 499, 503, 509, 521, 523, 541, 547, 557, 563, 569, 571, 577, 587, 593, 599, 601, 607, 613, 617, 619, 631, 641, 643, 647, 653, 659, 661, 673, 677, 683, 691, 701, 709, 719, 727, 733, 739, 743, 751, 757, 761, 769, 773, 787, 797, 809, 811, 821, 823, 827, 829, 839, 853, 857, 859, 863, 877, 881, 883, 887, 907, 911, 919, 929, 937, 941, 947, 953, 967, 971, 977, 983, 991, 997 };
 #define LOWPRIMES_COUNT 168
 
 // miller-rabin: writes x-1 as 2^k * r with r odd, then for t rounds raises a random
@@ -1021,7 +1006,7 @@ static bignum g_secret_miller_rabin_tmp;
  *
  * @return boole -> true when all selected witnesses pass
  */
-static boole _rsa_internal__miller_rabin(const bignum* x, int32 t)
+static boole _rsa_internal__miller_rabin(const bignum *x, int32 t)
 {
     int32 k, i, j;
     uint32 witness_index;
@@ -1090,16 +1075,14 @@ static boole _rsa_internal__miller_rabin(const bignum* x, int32 t)
  *
  * @return boole -> true when the candidate passes both tests
  */
-static boole _rsa_internal__is_probable_prime(const bignum* x, int32 t)
+static boole _rsa_internal__is_probable_prime(const bignum *x, int32 t)
 {
     int32 i;
 
     if (x->used > 0 && (x->limb[0] & 1) == 0)
 
     {
-
         return FALSE;
-
     }
 
     // trial division, same verdicts as jsbn's batched modInt version
@@ -1130,7 +1113,7 @@ static uint8 g_secret_draw_candidate_bytes[1032];
  *
  * @return void
  */
-static void _rsa_internal__draw_candidate(bignum* out, int32 bits)
+static void _rsa_internal__draw_candidate(bignum *out, int32 bits)
 {
     int32 count = (bits >> 3) + 1;
     int32 top_bits = bits & 7;
@@ -1144,16 +1127,17 @@ static void _rsa_internal__draw_candidate(bignum* out, int32 bits)
     if (top_bits > 0)
 
     {
-
         g_secret_draw_candidate_bytes[0] &= (uint8)((1 << top_bits) - 1);
-
     }
-    else { g_secret_draw_candidate_bytes[0] = 0; }
+    else
+    {
+        g_secret_draw_candidate_bytes[0] = 0;
+    }
 
     _rsa_internal__bn_zero(out);
     for (i = 0; i < count; i++)
     {
-        int32 pos = count - 1 - i;             // byte position from the least significant end
+        int32 pos = count - 1 - i; // byte position from the least significant end
         out->limb[pos >> 2] |= (uint32)g_secret_draw_candidate_bytes[i] << ((pos & 3) * 8);
     }
     out->used = (count + 3) >> 2;
@@ -1178,7 +1162,7 @@ static bignum g_secret_random_prime_half;
  *
  * @return void
  */
-static void _rsa_internal__random_prime(bignum* out, int32 bits, int32 certainty)
+static void _rsa_internal__random_prime(bignum *out, int32 bits, int32 certainty)
 {
     int32 i;
     boole composite;
@@ -1218,9 +1202,7 @@ static void _rsa_internal__random_prime(bignum* out, int32 bits, int32 certainty
         if (composite == FALSE && _rsa_internal__miller_rabin(out, certainty) == TRUE)
 
         {
-
             break;
-
         }
 
         _rsa_internal__bn_add_word(out, 2);
@@ -1264,9 +1246,8 @@ static bignum g_secret_bn_mod_inverse_odd_x2;
  *
  * @return void
  */
-static void _rsa_internal__bn_mod_inverse_odd(bignum* out, const bignum* a, const bignum* m)
+static void _rsa_internal__bn_mod_inverse_odd(bignum *out, const bignum *a, const bignum *m)
 {
-
     _rsa_internal__bn_mod(&g_secret_bn_mod_inverse_odd_u, a, m);
     _rsa_internal__bn_copy(&g_secret_bn_mod_inverse_odd_v, m);
     _rsa_internal__bn_set_word(&g_secret_bn_mod_inverse_odd_x1, 1);
@@ -1331,11 +1312,12 @@ static void _rsa_internal__bn_mod_inverse_odd(bignum* out, const bignum* a, cons
     if (_rsa_internal__bn_is_word(&g_secret_bn_mod_inverse_odd_u, 1) == TRUE)
 
     {
-
         _rsa_internal__bn_mod(out, &g_secret_bn_mod_inverse_odd_x1, m);
-
     }
-    else { _rsa_internal__bn_mod(out, &g_secret_bn_mod_inverse_odd_x2, m); }
+    else
+    {
+        _rsa_internal__bn_mod(out, &g_secret_bn_mod_inverse_odd_x2, m);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1358,7 +1340,7 @@ static uint8 g_results[RESULT_COUNT][RESULT_HEX_MAX];
  *
  * @return void
  */
-static void _rsa_internal__bn_to_hex(const bignum* a, uint8* out)
+static void _rsa_internal__bn_to_hex(const bignum *a, uint8 *out)
 {
     static const char digits[] = "0123456789abcdef";
     int32 started = FALSE;
@@ -1393,8 +1375,7 @@ static void _rsa_internal__bn_to_hex(const bignum* a, uint8* out)
  *
  * @return uint8* -> writable seed buffer with capacity for 256 bytes
  */
-__attribute__((export_name("rsa_keygen__get_seed_buffer")))
-uint8* rsa_keygen__get_seed_buffer(void)
+__attribute__((export_name("rsa_keygen__get_seed_buffer"))) uint8 *rsa_keygen__get_seed_buffer(void)
 {
     return g_seed_buffer;
 }
@@ -1406,8 +1387,7 @@ uint8* rsa_keygen__get_seed_buffer(void)
  *
  * @return uint8* -> component buffer, or the n buffer for an invalid index
  */
-__attribute__((export_name("rsa_keygen__get_result")))
-uint8* rsa_keygen__get_result(int32 index)
+__attribute__((export_name("rsa_keygen__get_result"))) uint8 *rsa_keygen__get_result(int32 index)
 {
     if (index < 0 || index >= RESULT_COUNT)
     {
@@ -1437,8 +1417,7 @@ static bignum g_secret_rsa_keygen__generate_tmp;
  *
  * @return int32 -> one after writing all eight result components, zero for invalid input
  */
-__attribute__((export_name("rsa_keygen__generate")))
-int32 rsa_keygen__generate(int32 bits, int32 seed_length)
+__attribute__((export_name("rsa_keygen__generate"))) int32 rsa_keygen__generate(int32 bits, int32 seed_length)
 {
     int32 qs = bits >> 1;
     uint32 k;
@@ -1446,9 +1425,7 @@ int32 rsa_keygen__generate(int32 bits, int32 seed_length)
     if (bits < 256 || bits > 8192 || seed_length <= 0 || seed_length > 256)
 
     {
-
         return 0;
-
     }
 
     _rsa_internal__seedrandom(g_seed_buffer, seed_length);
@@ -1549,7 +1526,7 @@ static uint8 g_modpow_result[RESULT_HEX_MAX];
  *
  * @return boole -> true for nonempty input within the supported length
  */
-static boole _rsa_internal__bn_from_hex(bignum* out, const uint8* hex)
+static boole _rsa_internal__bn_from_hex(bignum *out, const uint8 *hex)
 {
     int32 length = 0;
     int32 i;
@@ -1557,9 +1534,7 @@ static boole _rsa_internal__bn_from_hex(bignum* out, const uint8* hex)
     while (hex[length] != 0 && length < RESULT_HEX_MAX)
 
     {
-
         length++;
-
     }
     if (length == 0 || length >= RESULT_HEX_MAX)
     {
@@ -1575,13 +1550,20 @@ static boole _rsa_internal__bn_from_hex(bignum* out, const uint8* hex)
         if (ch >= '0' && ch <= '9')
 
         {
-
             nibble = (uint32)(ch - '0');
-
         }
-        else if (ch >= 'a' && ch <= 'f') { nibble = (uint32)(ch - 'a' + 10); }
-        else if (ch >= 'A' && ch <= 'F') { nibble = (uint32)(ch - 'A' + 10); }
-        else { return FALSE; }
+        else if (ch >= 'a' && ch <= 'f')
+        {
+            nibble = (uint32)(ch - 'a' + 10);
+        }
+        else if (ch >= 'A' && ch <= 'F')
+        {
+            nibble = (uint32)(ch - 'A' + 10);
+        }
+        else
+        {
+            return FALSE;
+        }
 
         out->limb[i >> 3] |= nibble << ((i & 7) * 4);
     }
@@ -1597,8 +1579,7 @@ static boole _rsa_internal__bn_from_hex(bignum* out, const uint8* hex)
  *
  * @return uint8* -> input buffer, or the base buffer for an invalid index
  */
-__attribute__((export_name("rsa_keygen__get_modpow_buffer")))
-uint8* rsa_keygen__get_modpow_buffer(int32 index)
+__attribute__((export_name("rsa_keygen__get_modpow_buffer"))) uint8 *rsa_keygen__get_modpow_buffer(int32 index)
 {
     if (index < 0 || index >= MODPOW_BUFFERS)
     {
@@ -1612,8 +1593,7 @@ uint8* rsa_keygen__get_modpow_buffer(int32 index)
  *
  * @return uint8* -> null terminated hexadecimal result buffer
  */
-__attribute__((export_name("rsa_keygen__get_modpow_result")))
-uint8* rsa_keygen__get_modpow_result(void)
+__attribute__((export_name("rsa_keygen__get_modpow_result"))) uint8 *rsa_keygen__get_modpow_result(void)
 {
     return g_modpow_result;
 }
@@ -1630,16 +1610,12 @@ static bignum g_secret_rsa_keygen__modpow_result;
  *
  * @return int32 -> one after writing the result, zero when an input is rejected
  */
-__attribute__((export_name("rsa_keygen__modpow")))
-int32 rsa_keygen__modpow(void)
+__attribute__((export_name("rsa_keygen__modpow"))) int32 rsa_keygen__modpow(void)
 {
-
     if (_rsa_internal__bn_from_hex(&g_secret_rsa_keygen__modpow_base, g_modpow_input[0]) == FALSE)
 
     {
-
         return 0;
-
     }
     if (_rsa_internal__bn_from_hex(&g_secret_rsa_keygen__modpow_exp, g_modpow_input[1]) == FALSE)
     {
@@ -1653,9 +1629,7 @@ int32 rsa_keygen__modpow(void)
     if (g_secret_rsa_keygen__modpow_modulus.used == 0 || (g_secret_rsa_keygen__modpow_modulus.limb[0] & 1) == 0)
 
     {
-
         return 0;
-
     }
     if (g_secret_rsa_keygen__modpow_modulus.used > BN_LIMBS / 2)
     {
@@ -1685,9 +1659,9 @@ int32 rsa_keygen__modpow(void)
  *
  * @return void
  */
-static void _rsa_internal__wipe(void* pointer, uint32 size)
+static void _rsa_internal__wipe(void *pointer, uint32 size)
 {
-    volatile uint8* bytes = pointer;
+    volatile uint8 *bytes = pointer;
     while (size > 0)
     {
         *bytes++ = 0;
@@ -1700,8 +1674,7 @@ static void _rsa_internal__wipe(void* pointer, uint32 size)
  *
  * @return void
  */
-__attribute__((export_name("rsa_keygen__clear_sensitive")))
-void rsa_keygen__clear_sensitive(void)
+__attribute__((export_name("rsa_keygen__clear_sensitive"))) void rsa_keygen__clear_sensitive(void)
 {
     _rsa_internal__wipe(&g_secret_rsa_keygen__modpow_base, sizeof(g_secret_rsa_keygen__modpow_base));
     _rsa_internal__wipe(&g_secret_rsa_keygen__modpow_exp, sizeof(g_secret_rsa_keygen__modpow_exp));

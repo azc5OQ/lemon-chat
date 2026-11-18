@@ -83,13 +83,14 @@ The desktop client and server maintain their own implementations separately.
 From this `client-webassemblies` directory, run on Windows:
 
 ```bat
-..\build.bat --unminified
+..\build-windows.bat --unminified
 ```
 
 On Linux or macOS:
 
 ```sh
-sh ../build.sh --unminified
+sh ../build-linux.sh --unminified   # Linux
+sh ../build-mac.sh --unminified     # macOS
 ```
 
 `--unminified` keeps the assembled JavaScript and CSS readable. Use `--minified`

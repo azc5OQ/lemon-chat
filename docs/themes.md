@@ -116,13 +116,14 @@ Open a terminal in `client-source-code/client-development/browser`.
 On Windows, run:
 
 ```powershell
-.\build.bat --unminified
+.\build-windows.bat --unminified
 ```
 
 On Linux or macOS, run:
 
 ```sh
-sh build.sh --unminified
+sh build-linux.sh --unminified   # Linux
+sh build-mac.sh --unminified     # macOS
 ```
 
 The scripts offer to download missing build tools. `--unminified` keeps the generated page readable. The result is `client-source-code/client.html`; the builder also updates `buildresult/client.html` when that output directory exists. See [Building](building.md#browser-client) for the other build options.

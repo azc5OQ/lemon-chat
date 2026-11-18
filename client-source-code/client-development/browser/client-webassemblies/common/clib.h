@@ -14,7 +14,7 @@
  *
  * @return void
  */
-static inline void clib__copy_memory(const void* source, void* destination, size_t length, size_t capacity)
+static inline void clib__copy_memory(const void *source, void *destination, size_t length, size_t capacity)
 {
     if (source == NULL || destination == NULL)
     {

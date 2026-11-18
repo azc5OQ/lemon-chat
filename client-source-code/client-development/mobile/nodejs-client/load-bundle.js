@@ -1,5 +1,6 @@
-// loads the shared bundle in a browser style global scope
-// vendor libraries must initialize globals instead of CommonJS exports
+// this file runs bundle.js, the chat client, in Node.js the way a browser runs a page script.
+// in a browser all scripts share one set of global names, while Node.js gives each file its own. so this file runs
+// bundle.js with one shared set of global names, and the libraries in it create their global objects as in a browser
 
 const fs = require("fs");
 const path = require("path");

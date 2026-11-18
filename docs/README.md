@@ -20,7 +20,8 @@ Start with the guide for what you are trying to do. Screenshots use demonstratio
 ## Build or integrate Lemon Chat
 
 - [Building](building.md): choose the correct build script, install its tools and find the output.
+- [Committing](committing.md) lists the step that is required before every commit and the formatting rules.
 - [JSON messages](messages.md): find complete request and response bodies, examples and field rules.
 - [Permission reference](permission-reference.md): find every permission field, power, protection value and saved format.
 
-For installation and hosting, read the [project README](../README.md) and the [self-hosting guide](../selfhosting-tools/README.md).
+For installation and hosting, read the [project README](../README.md) and the [self-hosting guide](../tools/selfhosting-tools/README.md).

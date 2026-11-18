@@ -4,7 +4,7 @@ if(NOT ANDROID)
     message(FATAL_ERROR "Use the Android NDK toolchain (or build through Gradle).")
 endif()
 
-get_filename_component(SERVER "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
+get_filename_component(SERVER "${CMAKE_CURRENT_LIST_DIR}/../../main-server" ABSOLUTE)
 set(THIRD "${SERVER}/third-party")
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(BUILD_SHARED_DEPS_LIBS OFF CACHE BOOL "" FORCE)

@@ -15,6 +15,7 @@ DESKTOP = 'client-source-code/client-development/desktop'
 BROWSER = 'client-source-code/client-development/browser'
 WASM = BROWSER + '/client-webassemblies'
 SERVER = 'server-source-code'
+MAIN_SERVER = SERVER + '/main-server'
 SCOPES = ('client-source-code', SERVER, 'buildresult', 'build', 'tests', '.audio-test-runtime')
 SKIP_DIRECTORIES = {'.git', '.idea', '.build-tools', 'build-tools', 'node_modules', '.venv', 'venv'}
 DEPENDENCY_DIRECTORIES = {
@@ -38,7 +39,7 @@ WINDOWS_SERVER_LIBRARIES = (
     'theldus-websocket', 'libviolet-0.5.4', 'libmaxminddb-1.12.2', 'libopus-1.6.1',
 )
 WINDOWS_SERVER_OUTPUTS = {'chat-server.exe', 'chat-server.pdb', 'libdatachannel.dll'}
-STUNNEL = SERVER + '/third-party/stunnel'
+STUNNEL = MAIN_SERVER + '/third-party/stunnel'
 WINDOWS_PACKAGE_FILES = {
     'libdatachannel-0.24.2/LibDataChannelConfig.cmake',
     'libdatachannel-0.24.2/LibDataChannelConfigVersion.cmake',
@@ -91,7 +92,7 @@ def build_directory(path):
     parent = path.parent
     owner = relative(parent)
     name = path.name
-    owners = {DESKTOP, BROWSER, WASM, SERVER, '.', 'tests'}
+    owners = {DESKTOP, BROWSER, WASM, SERVER, MAIN_SERVER, '.', 'tests'}
     owners.update(WASM + '/' + project for project in ('connection-crypto', 'rsa-keygen', 'libopusjs', 'mp3-to-pcm'))
     owners.update(('client-source-code/client-development/mobile/android',
                    'client-source-code/client-development/mobile/android/app',
@@ -168,9 +169,9 @@ def copied_asset(path):
     if path.name == 'client.html':
         return unchanged_copy(path, ROOT / 'client-source-code/client.html')
     if path.name == 'start_server.sh':
-        return same_file(path, ROOT / SERVER / 'main/unix_start_template')
+        return same_file(path, ROOT / MAIN_SERVER / 'templates/unix_start_template')
     if path.suffix == '.mmdb':
-        return same_file(path, ROOT / SERVER / 'third-party/libmaxminddb-1.12.2' / path.name)
+        return same_file(path, ROOT / MAIN_SERVER / 'third-party/libmaxminddb-1.12.2' / path.name)
     return False
 
 
@@ -204,9 +205,6 @@ def generated_file(path, in_build, in_cache):
 
 def windows_server_path(path, include_stunnel):
     rel = relative(path)
-    linkage = SERVER + '/main/linkage-files/'
-    if rel.startswith(linkage) and rel != linkage + 'windows' and not rel.startswith(linkage + 'windows/'):
-        return False
     if rel.startswith('buildresult/'):
         outputs = WINDOWS_SERVER_OUTPUTS | ({'stunnel.exe', 'tstunnel.exe'} if include_stunnel else set())
         return path.parent == ROOT / 'buildresult' and path.name in outputs
@@ -260,8 +258,8 @@ def plan(tracked, scope='all', include_stunnel=False):
                 rel.startswith(STUNNEL + '/win-build/')
                 or rel.startswith(STUNNEL + '/stunnel-5.75/obj/MGW32/')
                 or rel.startswith(STUNNEL + '/stunnel-5.75/bin/MGW32/')
-                or rel in {SERVER + '/third-party/' + name for name in WINDOWS_PACKAGE_FILES}
-                or (rel.startswith(SERVER + '/third-party/') and path.suffix == '.d'))
+                or rel in {MAIN_SERVER + '/third-party/' + name for name in WINDOWS_PACKAGE_FILES}
+                or (rel.startswith(MAIN_SERVER + '/third-party/') and path.suffix == '.d'))
             if windows_generated or generated_file(path, in_build, in_cache):
                 selected.append(path)
             elif in_build or in_cache:
@@ -269,8 +267,8 @@ def plan(tracked, scope='all', include_stunnel=False):
 
     scopes = SCOPES
     if scope == 'server-windows':
-        scopes = (SERVER + '/main', SERVER + '/build/windows', 'buildresult')
-        scopes += tuple(SERVER + '/third-party/' + name for name in WINDOWS_SERVER_LIBRARIES)
+        scopes = (MAIN_SERVER + '/main', MAIN_SERVER + '/build/windows', MAIN_SERVER + '/build/linkage-files/windows', 'buildresult')
+        scopes += tuple(MAIN_SERVER + '/third-party/' + name for name in WINDOWS_SERVER_LIBRARIES)
         if include_stunnel:
             scopes += (STUNNEL + '/win-build', STUNNEL + '/stunnel-5.75/obj/MGW32',
                        STUNNEL + '/stunnel-5.75/bin/MGW32')
@@ -303,7 +301,7 @@ def main():
     args = parser.parse_args()
     if args.include_stunnel and args.scope != 'server-windows':
         parser.error('--include-stunnel requires --scope server-windows')
-    sentinels = (SERVER + '/main/CMakeLists.txt',)
+    sentinels = (MAIN_SERVER + '/main/CMakeLists.txt',)
     if args.scope == 'all':
         sentinels += (DESKTOP + '/CMakeLists.txt', BROWSER + '/build.cjs')
     for sentinel in sentinels:

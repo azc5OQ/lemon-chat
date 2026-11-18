@@ -1,0 +1,11 @@
+#!/bin/sh
+# Start script of client-electron-amd64.AppImage, client-electron-arm64.AppImage and client-electron-armhf.AppImage.
+# The Chromium sandbox of Electron needs unprivileged user namespaces. Where the system does not allow them (for
+# example Ubuntu 24.04 and newer by default), the app is started with --no-sandbox, because the sandbox helper
+# cannot be set up inside an AppImage.
+here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+if unshare --user --map-root-user true >/dev/null 2>&1
+then
+    exec "$here/lemon-chat/lemon-chat" "$@"
+fi
+exec "$here/lemon-chat/lemon-chat" --no-sandbox "$@"

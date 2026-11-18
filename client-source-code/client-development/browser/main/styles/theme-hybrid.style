@@ -3619,3 +3619,19 @@ body:not(.android-app) #container-2
 {
     order: -4;
 }
+
+/* The import and export identity windows keep their 56 pixel title bar here. This theme sets every title bar to a
+   smaller height, which would put the bar's bottom line through the window title. */
+:root :is(#identity-string-use-container-enter, #secret-identity-string-container-enter).identity-dialog > #menu-bar-container
+{
+    height: 56px !important;
+    min-height: 56px !important;
+}
+
+/* The buttons of the identity windows use white text on the accent colour. This theme gives every .button-1 dark
+   text, which cannot be read on the accent colour. */
+:root :is(#identity-string-use-container-enter, #secret-identity-string-container-enter).identity-dialog .button-1
+{
+    background: var(--set-accent) !important;
+    color: #ffffff !important;
+}

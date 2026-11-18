@@ -90,6 +90,8 @@ function voice__process_start_sending_audio()
 
     if (g_last_sent_value_microphone_usage == true)
     {
+        // still sending
+        voice__show_local_talking(true);
         return;
     }
     if (g_local_audio_stream == null)
@@ -110,16 +112,20 @@ function voice__process_start_sending_audio()
 
     g_local_audio_stream.getTracks()[0].enabled = true;
 
-    try {
+    try
+    {
         g_audio_recorder_gain_node.connect(g_microphone_recorder);
-    } catch (e) {
+    }
+    catch (e)
+    {
         console.log("audio_recorder_gain_node.connect" + e.message);
     }
     // g_microphone_recorder.connect(audio_context.destination);
 
     g_is_microphone_active = true;
     let message_object = {
-        message: {
+        message:
+        {
             type: "microphone_usage",
             value: 1,
         }
@@ -127,6 +133,36 @@ function voice__process_start_sending_audio()
 
     connection__send_message_object(message_object);
     g_last_sent_value_microphone_usage = 1;
+
+    // own indicator now
+    voice__show_local_talking(true);
+}
+
+/**
+ * @brief shows the local user's talking state on the own indicator at once, without waiting for the state the
+ *        server sends back one round trip later. When that state arrives, voice__process_audio_state_of_single_client
+ *        replaces it with the state of this client, which talks while it sends and the talk key is not released.
+ *        States that only the server knows, such as a blocked microphone, are shown as received.
+ *
+ * @param boolean is_talking -> true while the local user talks
+ *
+ * @return void
+ */
+function voice__show_local_talking(is_talking)
+{
+    // own row exists
+    if (G_HAS_DOM == false || document.getElementById("client-audio-state-" + g_local_client_id) == null)
+    {
+        return;
+    }
+
+    // shown at once
+    voice__process_audio_state_of_single_client(
+    {
+        client_id: g_local_client_id,
+        audio_state: is_talking ? G_AUDIO_STATE.PUSH_TO_TALK_ACTIVE : G_AUDIO_STATE.PUSH_TO_TALK_ENABLED,
+        is_local_update: true
+    });
 }
 
 /**
@@ -168,6 +204,12 @@ function voice__process_stop_sending_audio()
     if (ptt_pending_stop_timer != null)
     {
         clearTimeout(ptt_pending_stop_timer);
+    }
+
+    // own indicator now
+    if (g_last_sent_value_microphone_usage === 1)
+    {
+        voice__show_local_talking(false);
     }
 
     ptt_pending_stop_timer = setTimeout(function()
@@ -221,7 +263,8 @@ function voice__process_stop_sending_audio_now()
 
     g_is_microphone_active = false;
     let message_object = {
-        message: {
+        message:
+        {
             type: "microphone_usage",
             value: 2,
         }
@@ -229,6 +272,9 @@ function voice__process_stop_sending_audio_now()
 
     connection__send_message_object(message_object);
     g_last_sent_value_microphone_usage = 2;
+
+    // own indicator now
+    voice__show_local_talking(false);
 
     // discard partial encoder input before the next transmission
     g_opus_encoder_worker.postMessage({ type: "clear_opus_encoder_buffer" });
@@ -328,7 +374,8 @@ async function voice__webrtc_datachannel_connection_check(is_this_reconnect = fa
                 voice__create_new_peer_connection_object_for_use(is_this_reconnect);
 
                 let message_object = {
-                    message: {
+                    message:
+                    {
                         type: "create_new_webrtc_datachannel_connection",
                     }
                 };
@@ -379,12 +426,12 @@ async function voice__webrtc_datachannel_connection_check(is_this_reconnect = fa
 function voice__send_sdp_answer_to_server(value)
 {
     let message_object = {
-        message: {
+        message:
+        {
             type: "sdp_answer",
             value: value
         }
     };
-
 
     connection__send_message_object(message_object);
 }
@@ -435,8 +482,8 @@ function voice__create_new_peer_connection_object_for_use(is_this_reconnect = fa
     {
         let turn_server = {
             urls: [
-                "turn:"+g_host+":3478?transport=udp",
-                "turn:"+g_host+":3478?transport=tcp"
+                "turn:" + g_host + ":3478?transport=udp",
+                "turn:" + g_host + ":3478?transport=tcp"
             ],
             username: "usweger123",
             credential: "pw1wegweg23Q"
@@ -513,100 +560,103 @@ function voice__activate_microphone()
     }
 
     navigator.mediaDevices.getUserMedia(microphone_constraints)
-    .then(
-        function (stream)
-        {
-            if (g_alert_push_to_talk_key_shown_once == false)
+        .then(
+            function(stream)
             {
-                // only display the alert if touch device is not used
-                if (!g_is_client_running_under_touch_device)
+                if (g_alert_push_to_talk_key_shown_once == false)
                 {
-                    utils__custom_alert("press Q to talk");
+                    // only display the alert if touch device is not used
+                    if (!g_is_client_running_under_touch_device)
+                    {
+                        utils__custom_alert("press Q to talk");
+                    }
+                    g_alert_push_to_talk_key_shown_once = true;
                 }
-                g_alert_push_to_talk_key_shown_once = true;
-            }
 
-            document.getElementById("play-pause-song-container").style.visibility = "visible";
-            document.getElementById("stop-song").style.display = "none";
-            document.getElementById("custom-file-upload-button-song").style.visibility = "visible";
-            document.getElementById("custom-file-upload-button-song").style.display = "block";
+                document.getElementById("play-pause-song-container").style.visibility = "visible";
+                document.getElementById("stop-song").style.display = "none";
+                document.getElementById("custom-file-upload-button-song").style.visibility = "visible";
+                document.getElementById("custom-file-upload-button-song").style.display = "block";
 
-            // only do this once
-            if (g_microphone_recorder == null)
-            {
-                g_opus_encoder_worker.postMessage({
-                    type: "init",
-                    sampleRate: g_audio_context.sampleRate
-                });
-
-                stream.getTracks()[0].enabled = false;
-
-                g_local_audio_stream = stream;
-                g_audio_input = g_audio_context.createMediaStreamSource(stream);
-                g_audio_recorder_gain_node = g_audio_context.createGain();
-
-                // create worklet capture when available, otherwise use ScriptProcessorNode
-                // connect microphone, gain, capture and destination
-                audio__create_microphone_capture_node();
-
-                const audioTracks = stream.getAudioTracks();
-
-                utils__custom_log('Using audio device: ' + audioTracks[0].label);
-                stream.oninactive = function ()
+                // only do this once
+                if (g_microphone_recorder == null)
                 {
-                    utils__custom_log('Stream ended');
+                    g_opus_encoder_worker.postMessage(
+                    {
+                        type: "init",
+                        sampleRate: g_audio_context.sampleRate
+                    });
+
+                    stream.getTracks()[0].enabled = false;
+
+                    g_local_audio_stream = stream;
+                    g_audio_input = g_audio_context.createMediaStreamSource(stream);
+                    g_audio_recorder_gain_node = g_audio_context.createGain();
+
+                    // create worklet capture when available, otherwise use ScriptProcessorNode
+                    // connect microphone, gain, capture and destination
+                    audio__create_microphone_capture_node();
+
+                    const audioTracks = stream.getAudioTracks();
+
+                    utils__custom_log('Using audio device: ' + audioTracks[0].label);
+                    stream.oninactive = function()
+                    {
+                        utils__custom_log('Stream ended');
+                    };
+                }
+
+                if (!g_is_microphone_enabled)
+                {
+                    sounds__play("microphone_activated");
+                }
+                g_is_microphone_enabled = true;
+
+                document.getElementById("play-pause-song-container").style.visibility = "visible";
+                document.getElementById("toggle-microphone-label").style.backgroundImage = "url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAE30lEQVR4Xu2ae+jfUxjHX2MyImxJ5hKSrLX5T/xpNZeUkcsfiCSstTFrbRTij03mtpFEolzKJffLpqTUUlptjBqR27BFsdxyp3c7nzy/0/f3+5znfM75RPuc/z7f33Oe5znv53p+55lEv+twYB5wOnAEcGgQ/wXwKfAS8DywtS+1JvUk6BDgBuBSYPcWmX8BTwPLAihVVewDgDOBR4B9nCf5AbgQeMG5z0VeG4CrgDuA3Vxa/Ussb7gauCtzf+u2mgDI8nLl3MM3yguEs2p5Qi0AlNy2ZLj9eBZTOBwLfNVqUidBLQAeBC5x6tJG/gBwWRuR9+81AFCp+zgh23t1/TOUTpXMYqsGAFcCa4ppOJbRQuCekrxrALAWOLWkkobXK6GJKsa+BgAfAkcX03Asow9CMizGvgYAytjepif1QD8C+6YSp9DVAODvFMEdaIrqXJRZONQAQAfrpmwtarSizAYP2InAEAIpftyBpqjXFmU2hMAQAkMOGJLgUAV2gTIY1/m4kvTdB7TpM2HFzSmDbQIHADo0OSlb2zzOZVQX8TiNTptCKYfy0LTJc53JRTwAMLrTa7OIx7optG3yXEZ1EQ8e8N/zgMnA75HbuIzqIg6CfgP2MEKnAL+a75r/FP0e2M/IOjh6LpNue6bEUUOTA8B3wP5GyEHA1+Zb/7o+xqOEg/Z9YIahnw28Y76/BaY5+JEDwHvATCPkBOAt893nw4heoJ81st8FBEryygFAAiW4WVcA95tvPV/dnayBj3ABcK/ZshrQDEKzngHO9rDMAeBaYKUR8hRwnvk+DPikwuPoH8CRgH0cfRs4zsheDqyqDcCJwJtGiBLTdOAn85uesjUPVHLdB8w3DBWGcnlrxOOBDR6hOR6giQ9NcenQ44WBhqI0IFHqGUsga0Bim5EpQC433/IMPc27LmM5AEimJr5uMsI1D6DsrDLUrNOAFwuEgkZklHPEq1kqfx8Be5vfrgNWeKwv2lwApgKfRY+g1wC3RApoVuDODnNCOvziEUn1SeBcI0u9h6y/oy8AJOd2YIkRqGZIMbg5UuIM4NGMcJDbXxCGJy1LDVo+F8m4NcwVes+f7QESpGZIh1XWb5amPZUkt0eaHAjIRVXG1L5OtGT1xwBldBvz2jMLeAM4wDD4MvyuBs29ckOgETQXeDUKJYFyyggQtEfTY82orEqaHZVVHnk5jMONmgM6ClgPKP6bpYR3MvCa++RhQ1cAxEYxrji1S4c5B9iUq1i0bw7wOCBPskuybRi6xZUAQLO/DwPnR9J/AW4MANnq4FFyL2BpqDpx6ChMLgY0PZa9SgAg4VJOCtmOsFFK5eq2MC/8c6KmKm8XAddH/Uaz/YmQIDsdXsxKAdCAoDosi40aj9V8jy5KrwMbQzP1Tbi+aqZIOUEXGY3SK7fI+vFSglSrK2DUGndeJQFolFG8ajrcdoqdFQ1Xbrn8uhLMGh41ABBv3cmVnBZl1P/4fOoHdLvU1Lnu+0VXLQAaJdUx6rqquWHbL6Qc4nPgoTAqX/zgtT0gPqCAVpd4EnBzy+l13Vae0K3OdbFJQXWUYjn7uuxpO1Rtrxyje6/CguQBgBb36dUovQobPGAnAkMIDCEwMQK9hmWvwnaVHNAW4116CO0tarSizBItPADQEYGiRivK7P/oAf8Ae0zZQdfLrKYAAAAASUVORK5CYII=)";
+
+                let message_object = {
+                    message:
+                    {
+                        type: "microphone_usage",
+                        value: 2,
+                    }
                 };
-            }
 
-            if (!g_is_microphone_enabled)
-            {
-                sounds__play("microphone_activated");
-            }
-            g_is_microphone_enabled = true;
+                let message_json_string = connection__process_message_before_sending(message_object);
+                let data = keys__encrypt_all_message_data_and_convert_to_base64(message_json_string);
 
-            document.getElementById("play-pause-song-container").style.visibility = "visible";
-            document.getElementById("toggle-microphone-label").style.backgroundImage = "url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAE30lEQVR4Xu2ae+jfUxjHX2MyImxJ5hKSrLX5T/xpNZeUkcsfiCSstTFrbRTij03mtpFEolzKJffLpqTUUlptjBqR27BFsdxyp3c7nzy/0/f3+5znfM75RPuc/z7f33Oe5znv53p+55lEv+twYB5wOnAEcGgQ/wXwKfAS8DywtS+1JvUk6BDgBuBSYPcWmX8BTwPLAihVVewDgDOBR4B9nCf5AbgQeMG5z0VeG4CrgDuA3Vxa/Ussb7gauCtzf+u2mgDI8nLl3MM3yguEs2p5Qi0AlNy2ZLj9eBZTOBwLfNVqUidBLQAeBC5x6tJG/gBwWRuR9+81AFCp+zgh23t1/TOUTpXMYqsGAFcCa4ppOJbRQuCekrxrALAWOLWkkobXK6GJKsa+BgAfAkcX03Asow9CMizGvgYAytjepif1QD8C+6YSp9DVAODvFMEdaIrqXJRZONQAQAfrpmwtarSizAYP2InAEAIpftyBpqjXFmU2hMAQAkMOGJLgUAV2gTIY1/m4kvTdB7TpM2HFzSmDbQIHADo0OSlb2zzOZVQX8TiNTptCKYfy0LTJc53JRTwAMLrTa7OIx7optG3yXEZ1EQ8e8N/zgMnA75HbuIzqIg6CfgP2MEKnAL+a75r/FP0e2M/IOjh6LpNue6bEUUOTA8B3wP5GyEHA1+Zb/7o+xqOEg/Z9YIahnw28Y76/BaY5+JEDwHvATCPkBOAt893nw4heoJ81st8FBEryygFAAiW4WVcA95tvPV/dnayBj3ABcK/ZshrQDEKzngHO9rDMAeBaYKUR8hRwnvk+DPikwuPoH8CRgH0cfRs4zsheDqyqDcCJwJtGiBLTdOAn85uesjUPVHLdB8w3DBWGcnlrxOOBDR6hOR6giQ9NcenQ44WBhqI0IFHqGUsga0Bim5EpQC433/IMPc27LmM5AEimJr5uMsI1D6DsrDLUrNOAFwuEgkZklHPEq1kqfx8Be5vfrgNWeKwv2lwApgKfRY+g1wC3RApoVuDODnNCOvziEUn1SeBcI0u9h6y/oy8AJOd2YIkRqGZIMbg5UuIM4NGMcJDbXxCGJy1LDVo+F8m4NcwVes+f7QESpGZIh1XWb5amPZUkt0eaHAjIRVXG1L5OtGT1xwBldBvz2jMLeAM4wDD4MvyuBs29ckOgETQXeDUKJYFyyggQtEfTY82orEqaHZVVHnk5jMONmgM6ClgPKP6bpYR3MvCa++RhQ1cAxEYxrji1S4c5B9iUq1i0bw7wOCBPskuybRi6xZUAQLO/DwPnR9J/AW4MANnq4FFyL2BpqDpx6ChMLgY0PZa9SgAg4VJOCtmOsFFK5eq2MC/8c6KmKm8XAddH/Uaz/YmQIDsdXsxKAdCAoDosi40aj9V8jy5KrwMbQzP1Tbi+aqZIOUEXGY3SK7fI+vFSglSrK2DUGndeJQFolFG8ajrcdoqdFQ1Xbrn8uhLMGh41ABBv3cmVnBZl1P/4fOoHdLvU1Lnu+0VXLQAaJdUx6rqquWHbL6Qc4nPgoTAqX/zgtT0gPqCAVpd4EnBzy+l13Vae0K3OdbFJQXWUYjn7uuxpO1Rtrxyje6/CguQBgBb36dUovQobPGAnAkMIDCEwMQK9hmWvwnaVHNAW4116CO0tarSizBItPADQEYGiRivK7P/oAf8Ae0zZQdfLrKYAAAAASUVORK5CYII=)";
+                connection__websocket_worker_send(data);
 
-            let message_object = {
-                message: {
-                    type: "microphone_usage",
-                    value: 2,
+                g_last_sent_value_microphone_usage = 2;
+
+                if (g_is_client_running_under_touch_device)
+                {
+                    g_is_microphone_enabled_on_touch_device = true;
                 }
-            };
 
-            let message_json_string = connection__process_message_before_sending(message_object);
-            let data = keys__encrypt_all_message_data_and_convert_to_base64(message_json_string);
+                // continuous mode still requires a tap before transmission starts
 
-            connection__websocket_worker_send(data);
+                // apply a pending continuous transmission request after microphone permission succeeds
+                if (g_is_continuous_transmission_active == true)
+                {
+                    voice__process_start_sending_audio();
+                }
 
-            g_last_sent_value_microphone_usage = 2;
-
-            if (g_is_client_running_under_touch_device)
+            },
+            function(fail)
             {
-                g_is_microphone_enabled_on_touch_device = true;
+                console.log("voice__activate_microphone is acting weird");
+                console.log(fail);
             }
-
-            // continuous mode still requires a tap before transmission starts
-
-            // apply a pending continuous transmission request after microphone permission succeeds
-            if (g_is_continuous_transmission_active == true)
-            {
-                voice__process_start_sending_audio();
-            }
-
-        },
-        function (fail) {
-            console.log("voice__activate_microphone is acting weird");
-            console.log(fail);
-        }
-    )
-    .catch(function (error)
-    {
-        const errorMessage = 'navigator.MediaDevices.getUserMedia error: ' + error.message + ' ' + error.name;
-        console.log(errorMessage);
-        sounds__play("error");
-        document.getElementById("toggle-microphone").checked = false;
-    });
+        )
+        .catch(function(error)
+        {
+            const errorMessage = 'navigator.MediaDevices.getUserMedia error: ' + error.message + ' ' + error.name;
+            console.log(errorMessage);
+            sounds__play("error");
+            document.getElementById("toggle-microphone").checked = false;
+        });
 }
 
 /**
@@ -618,6 +668,13 @@ function voice__activate_microphone()
  */
 function voice__process_audio_state_of_single_client(client)
 {
+    // own state locally
+    if (client.is_local_update !== true && client.client_id == g_local_client_id
+        && (client.audio_state == G_AUDIO_STATE.PUSH_TO_TALK_ACTIVE || client.audio_state == G_AUDIO_STATE.PUSH_TO_TALK_ENABLED))
+    {
+        let is_talking = (g_last_sent_value_microphone_usage === 1 && ptt_pending_stop_timer == null);
+        client = Object.assign({}, client, { audio_state: is_talking ? G_AUDIO_STATE.PUSH_TO_TALK_ACTIVE : G_AUDIO_STATE.PUSH_TO_TALK_ENABLED });
+    }
 
     let target_element = document.getElementById("client-audio-state-" + client.client_id);
 
@@ -802,7 +859,8 @@ async function voice__stream_local_mp3_file_to_other_clients(pcm, mp3_sample_rat
         }
 
         // send to encoder
-        g_opus_encoder_worker.postMessage({
+        g_opus_encoder_worker.postMessage(
+        {
             type: "encode_mp3_chunk",
             value: chunk,
             mp3_sample_rate: mp3_sample_rate
@@ -824,7 +882,8 @@ async function voice__stream_local_mp3_file_to_other_clients(pcm, mp3_sample_rat
                 g_last_sent_value_microphone_usage = 2;
 
                 let message_object2 = {
-                    message: {
+                    message:
+                    {
                         type: "microphone_usage",
                         value: 2,
                     }
@@ -860,7 +919,8 @@ async function voice__stream_local_mp3_file_to_other_clients(pcm, mp3_sample_rat
     g_last_sent_value_microphone_usage = 2;
 
     let message_object3 = {
-        message: {
+        message:
+        {
             type: "microphone_usage",
             value: 2,
         }

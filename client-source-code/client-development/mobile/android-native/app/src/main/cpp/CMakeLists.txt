@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 get_filename_component(LEMON_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../../../.." ABSOLUTE)
 
-if(NOT EXISTS "${LEMON_ROOT}/client-source-code/client-development/desktop/main/crypto/crypto_session.c" OR NOT EXISTS "${LEMON_ROOT}/server-source-code/third-party/libopus-1.6.1/CMakeLists.txt")
+if(NOT EXISTS "${LEMON_ROOT}/client-source-code/client-development/desktop/main/crypto/crypto_session.c" OR NOT EXISTS "${LEMON_ROOT}/server-source-code/main-server/third-party/libopus-1.6.1/CMakeLists.txt")
     message(FATAL_ERROR "Open android-native inside the complete lemon-chat checkout. Shared crypto and Opus sources are required and are built automatically.")
 endif()
 

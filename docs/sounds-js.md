@@ -26,7 +26,7 @@ The browser recordings are in `sounds.js`.
    that prefix too if your replacement is MP3. Base64 does not convert audio formats.
 
 3. Save the file. From `client-source-code/client-development/browser`, run
-   `.\build.bat` on Windows or `sh build.sh` on Linux/macOS. Open the rebuilt
+   `.\build-windows.bat` on Windows, `sh build-linux.sh` on Linux or `sh build-mac.sh` on macOS. Open the rebuilt
    `client-source-code/client.html` to use the new sounds.
 
 ## Native desktop client

@@ -2,7 +2,7 @@
 
 You have started a Lemon Chat server and can connect to it. Now you want to choose what users can do, create channels that stay after a restart, and give a trusted person moderation rights. These controls are available inside the connected client after you obtain admin access.
 
-This guide starts with the admin password chosen during server setup. If the server is not running yet, follow the [selfhosting guide](../selfhosting-tools/README.md) first. The [server settings reference](server-settings.md) explains the individual options in more detail.
+This guide starts with the admin password chosen during server setup. If the server is not running yet, follow the [selfhosting guide](../tools/selfhosting-tools/README.md) first. The [server settings reference](server-settings.md) explains the individual options in more detail.
 
 ## Which password to use
 
@@ -247,7 +247,7 @@ Before updating the server or editing startup-only options:
 
 The settings file includes more than switches: it also contains saved channels, groups, icons, emojis, bans and identity records according to the enabled storage options. Replacing the whole file with a small example can discard that saved state. It does not contain the client's secret identity or the in-memory administration log.
 
-Ports, total client slots and enabling the group system are examples of options managed during setup or in this file. They are not controls in the connected administration window. Connection passwords can be changed under **Server administration → Encryption**. See the [selfhosting guide](../selfhosting-tools/README.md) for connection addresses, ports and tunnel configuration.
+Ports, total client slots and enabling the group system are examples of options managed during setup or in this file. They are not controls in the connected administration window. Connection passwords can be changed under **Server administration → Encryption**. See the [selfhosting guide](../tools/selfhosting-tools/README.md) for connection addresses, ports and tunnel configuration.
 
 ## When something does not work
 

@@ -40,7 +40,7 @@ The main WebSocket remains open when WebRTC is active. It carries chat messages,
 
 WebSocket audio uses a separate connection at `/audio`, while video uses `/video`. Both use the same server address and port as the main chat connection. The client requests access through its logged-in chat connection before opening them.
 
-This method works without a separate UDP connection or WebRTC port range. It can also use the HTTP tunnels described in the [self-hosting guide](../selfhosting-tools/README.md).
+This method works without a separate UDP connection or WebRTC port range. It can also use the HTTP tunnels described in the [self-hosting guide](../tools/selfhosting-tools/README.md).
 
 WebSocket uses TCP. When a packet is lost, TCP sends it again before delivering later data. This is reliable, but a delayed packet can also delay live audio or video behind it.
 
@@ -77,7 +77,7 @@ The server uses the included libdatachannel library for WebRTC. Violet supplies 
 
 UDP port 3478 is for STUN. The server also needs reachable UDP ports for its WebRTC DataChannel connections. Opening only the STUN port is not enough.
 
-The project's WireGuard setup uses a configured public address and a fixed UDP port range. Updated clients skip STUN discovery in that mode. The [WireGuard guide](../selfhosting-tools/wireguard/README.md) explains which addresses and ports to configure.
+The project's WireGuard setup uses a configured public address and a fixed UDP port range. Updated clients skip STUN discovery in that mode. The [WireGuard guide](../tools/selfhosting-tools/wireguard/README.md) explains which addresses and ports to configure.
 
 The server currently starts Violet even when **WebSocket only** is selected. A WebSocket-only setup does not need to forward the STUN or WebRTC UDP ports.
 
@@ -93,11 +93,11 @@ The [encryption guide](encryption.md#audio-and-video-connections) explains which
 
 ## Relevant source files
 
-- [Violet STUN startup](../server-source-code/main/main.c)
-- [Server WebRTC connection and audio DataChannel](../server-source-code/main/audio_webrtc.c)
-- [Server video DataChannel](../server-source-code/main/video_webrtc.c)
-- [Audio delivery between clients](../server-source-code/main/core/audio_channel.c)
-- [Video delivery between clients](../server-source-code/main/core/video_channel.c)
+- [Violet STUN startup](../server-source-code/main-server/main/main.c)
+- [Server WebRTC connection and audio DataChannel](../server-source-code/main-server/main/audio_webrtc.c)
+- [Server video DataChannel](../server-source-code/main-server/main/video_webrtc.c)
+- [Audio delivery between clients](../server-source-code/main-server/main/core/audio_channel.c)
+- [Video delivery between clients](../server-source-code/main-server/main/core/video_channel.c)
 - [Browser audio connection choice and retries](../client-source-code/client-development/browser/main/scripts/app/audio/audio-transport.js)
 - [Browser video connection choice](../client-source-code/client-development/browser/main/scripts/app/video/video-transport.js)
 - [Browser STUN configuration](../client-source-code/client-development/browser/main/scripts/app/msg/dispatch.js)

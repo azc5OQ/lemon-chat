@@ -37,7 +37,7 @@ The test starts the real foreground service, stops it, restarts it and prints `A
 The host packet regression compiles the shared server writers and checks root and ordinary channel parents after JSON serialization. From this folder, run:
 
 ```sh
-cc -std=c11 -O1 -ffunction-sections -fdata-sections native/tests/channel-parent-wire-test.c ../main/msg/server/server_msg_channel.c ../third-party/dave-g-json/cJSON.c -Wl,--gc-sections -o /tmp/channel-parent-wire-test
+cc -std=c11 -O1 -ffunction-sections -fdata-sections native/tests/channel-parent-wire-test.c ../main-server/main/msg/server/server_msg_channel.c ../main-server/third-party/dave-g-json/cJSON.c -Wl,--gc-sections -o /tmp/channel-parent-wire-test
 /tmp/channel-parent-wire-test
 ```
 

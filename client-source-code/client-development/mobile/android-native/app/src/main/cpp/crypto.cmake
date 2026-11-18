@@ -7,7 +7,7 @@ set(GEN_FILES OFF CACHE BOOL "" FORCE)
 set(MBEDTLS_FATAL_WARNINGS OFF CACHE BOOL "" FORCE)
 set(USE_SHARED_MBEDTLS_LIBRARY OFF CACHE BOOL "" FORCE)
 set(USE_STATIC_MBEDTLS_LIBRARY ON CACHE BOOL "" FORCE)
-add_subdirectory("${LEMON_ROOT}/server-source-code/third-party/mbedtls-3.6.6" "${CMAKE_CURRENT_BINARY_DIR}/mbedtls")
+add_subdirectory("${LEMON_ROOT}/server-source-code/main-server/third-party/mbedtls-3.6.6" "${CMAKE_CURRENT_BINARY_DIR}/mbedtls")
 
 # mbedtls reads random bytes with the getrandom system call. A kernel older than 3.17 has no getrandom,
 # and mbedtls then reads /dev/random, which blocks on such a kernel until the kernel has collected enough

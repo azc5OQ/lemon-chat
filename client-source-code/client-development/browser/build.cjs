@@ -1,18 +1,18 @@
 #!/usr/bin/env node
-// Compile and test the WebAssembly projects, then assemble one self-contained HTML file.
+ // Compile and test the WebAssembly projects, then assemble one self-contained HTML file.
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const zlib = require('node:zlib');
 const crypto = require('node:crypto');
-const {spawnSync} = require('node:child_process');
+const { spawnSync } = require('node:child_process');
 const readline = require('node:readline/promises');
 
 const sourceDirectory = path.join(__dirname, 'main');
 const defaultOutput = path.resolve(__dirname, '../../client.html');
 const threadMarker = 'var THREAD_NAME = ';
 const exportSeam = '// the export seam for the headless node build:';
-const installHint = 'Use build.bat / sh build.sh to offer tool downloads, or install Node.js, Zig 0.15.2 and optional Terser yourself.';
+const installHint = 'Use build-windows.bat, sh build-linux.sh or sh build-mac.sh to offer tool downloads, or install Node.js, Zig 0.15.2 and optional Terser yourself.';
 const cssTokens = /(?<comment>\/\*[\s\S]*?\*\/)|(?<url>url\(\s*(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|(?:\\.|[^)\\])*)\s*\))|(?<string>"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')|(?<escape>\\[\s\S])|(?<space>\s+)|(?<plain>[^\s])/gi;
 
 function rawElements(html, tag)
@@ -23,9 +23,15 @@ function rawElements(html, tag)
     {
         if (match[2]?.toLowerCase() === tag)
         {
-            elements.push({opening: match.index, start: match.index + match[1].length,
+            elements.push(
+            {
+                opening: match.index,
+                start: match.index + match[1].length,
                 end: match.index + match[1].length + match[3].length,
-                closing: match.index + match[0].length, header: match[1], body: match[3]});
+                closing: match.index + match[0].length,
+                header: match[1],
+                body: match[3]
+            });
         }
     }
     return elements;
@@ -51,12 +57,12 @@ function assemble(wasmDirectory = path.join(sourceDirectory, 'wasm'))
         assemblies++;
         return fs.readFileSync(path.join(wasmDirectory, path.basename(file.trim()))).toString('base64');
     });
-    return {html, includes, assemblies};
+    return { html, includes, assemblies };
 }
 
 function checkScript(source)
 {
-    new vm.Script(source, {filename: 'assembled-browser-script.js'});
+    new vm.Script(source, { filename: 'assembled-browser-script.js' });
     if (source.includes(threadMarker))
     {
         const declaration = /var THREAD_NAME = "( +)"/.exec(source);
@@ -86,9 +92,8 @@ function findMinifier()
 {
     const candidates = [path.join(__dirname, '.build-tools/terser/node_modules/terser'), 'terser'];
     const probe = process.platform === 'win32'
-        ? spawnSync(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', 'npm root -g'],
-            {encoding: 'utf8', windowsHide: true, timeout: 10000})
-        : spawnSync('npm', ['root', '-g'], {encoding: 'utf8', timeout: 10000});
+        ? spawnSync(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', 'npm root -g'], { encoding: 'utf8', windowsHide: true, timeout: 10000 })
+        : spawnSync('npm', ['root', '-g'], { encoding: 'utf8', timeout: 10000 });
     if (probe.status === 0 && probe.stdout.trim())
     {
         candidates.push(path.join(probe.stdout.trim(), 'terser'));
@@ -101,7 +106,7 @@ function findMinifier()
             const version = require(candidate === 'terser' ? 'terser/package.json' : path.join(candidate, 'package.json')).version;
             if (typeof terser.minify === 'function' && Number(version.split('.')[0]) >= 5)
             {
-                return {minify: terser.minify, version};
+                return { minify: terser.minify, version };
             }
         }
         catch (error)
@@ -206,7 +211,7 @@ function fontToWoff(raw)
         {
             throw new Error('Invalid font table checksum');
         }
-        let packed = zlib.deflateSync(data, {level: 9});
+        let packed = zlib.deflateSync(data, { level: 9 });
         if (packed.length >= data.length)
         {
             packed = data;
@@ -215,7 +220,7 @@ function fontToWoff(raw)
         {
             throw new Error('Font compression did not round-trip');
         }
-        tables.push({tag, expected, offset, data, packed});
+        tables.push({ tag, expected, offset, data, packed });
     }
     if (!tags.has('head') || checksum(raw) !== 0xb1b0afba)
     {
@@ -276,8 +281,8 @@ function imageUrl(token)
     const value = urlValue(token);
     const match = /^data:([^;,]+);base64,([A-Za-z0-9+/]*={0,2})$/i.exec(value);
     if (match && (match[1].toLowerCase().startsWith('image/')
-        || (match[1].toLowerCase() === 'application/octet-stream'
-            && Buffer.from(match[2].slice(0, 16), 'base64').subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex')))))
+            || (match[1].toLowerCase() === 'application/octet-stream'
+                && Buffer.from(match[2].slice(0, 16), 'base64').subarray(0, 8).equals(Buffer.from('89504e470d0a1a0a', 'hex')))))
     {
         return value;
     }
@@ -406,24 +411,29 @@ function optimizeStyles(html)
 
 function writeAtomic(file, content)
 {
-    fs.mkdirSync(path.dirname(file), {recursive: true});
+    fs.mkdirSync(path.dirname(file), { recursive: true });
     const temporary = path.join(path.dirname(file), '.lemon-client-' + crypto.randomUUID() + '.tmp');
     try
     {
-        fs.writeFileSync(temporary, content, {encoding: 'utf8', flag: 'wx'});
+        fs.writeFileSync(temporary, content, { encoding: 'utf8', flag: 'wx' });
         fs.renameSync(temporary, file);
     }
     finally
     {
-        fs.rmSync(temporary, {force: true});
+        fs.rmSync(temporary, { force: true });
     }
 }
 
 function options(arguments_)
 {
-    const result = {mode: null, output: null, serverCopy: true, check: false, downloads: 'ask', isWasmTested: false};
-    const modes = {'--minified': 'minified', '--minify-js': 'minified', '--unminified': 'unminified',
-        '--no-optimize': 'unminified', '--no-minify-js': 'assets'};
+    const result = { mode: null, output: null, serverCopy: true, check: false, downloads: 'ask', isWasmTested: false, isElectronBuilt: false };
+    const modes = {
+        '--minified': 'minified',
+        '--minify-js': 'minified',
+        '--unminified': 'unminified',
+        '--no-optimize': 'unminified',
+        '--no-minify-js': 'assets'
+    };
     for (let index = 0; index < arguments_.length; index++)
     {
         const argument = arguments_[index];
@@ -446,6 +456,10 @@ function options(arguments_)
         else if (argument === '--wasm-tests')
         {
             result.isWasmTested = true;
+        }
+        else if (argument === '--electron' || argument === '--no-electron')
+        {
+            result.isElectronBuilt = argument === '--electron';
         }
         else if (argument === '--download-tools' || argument === '--no-download-tools')
         {
@@ -488,7 +502,7 @@ async function chooseMode(tool)
     {
         throw new Error('Use --unminified or --minified for an unattended build.');
     }
-    const prompt = readline.createInterface({input: process.stdin, output: process.stdout});
+    const prompt = readline.createInterface({ input: process.stdin, output: process.stdout });
     try
     {
         for (;;)
@@ -511,8 +525,11 @@ async function main(arguments_ = process.argv.slice(2))
     if (arguments_.includes('--help'))
     {
         console.log('node build.cjs [--minified | --unminified] [--output file] [--no-server-copy]\n'
-            + '  [--download-tools | --no-download-tools] [--wasm-tests]\n'
+            + '  [--download-tools | --no-download-tools] [--wasm-tests] [--electron]\n'
             + 'A build compiles all four WebAssembly modules before embedding.\n'
+            + '--electron also packs client.html as the Electron app with ../electron/package_electron.py, which needs\n'
+            + 'Python 3.8 or newer. It writes the files of this system into buildresult, the .exe files on Windows, the\n'
+            + '.AppImage files on Linux and the .dmg files on macOS.\n'
             + '--wasm-tests also tests them first; the tests take several minutes.\n'
             + 'node build.cjs --check (syntax only; no compilation or downloads)\nnode build.cjs --check-minifier\n' + installHint);
         return;
@@ -545,9 +562,11 @@ async function main(arguments_ = process.argv.slice(2))
     }
     const webassemblies = require('./client-webassemblies/build.cjs');
     let wasmDirectory = path.join(sourceDirectory, 'wasm');
+    let zig = null;
     if (!settings.check)
     {
-        wasmDirectory = webassemblies.build(await setup.ensureZig(settings.downloads), settings.isWasmTested);
+        zig = await setup.ensureZig(settings.downloads);
+        wasmDirectory = webassemblies.build(zig, settings.isWasmTested);
     }
     if (!settings.check)
     {
@@ -588,6 +607,33 @@ async function main(arguments_ = process.argv.slice(2))
     }
     console.log(settings.mode + ': ' + assembled.includes + ' includes + ' + assembled.assemblies + ' WebAssembly modules');
     console.log(Buffer.byteLength(assembled.html) + ' -> ' + Buffer.byteLength(html) + ' bytes; ' + output);
+    if (settings.isElectronBuilt)
+    {
+        packElectron(output, zig, settings.downloads);
+    }
+}
+
+// Pack client.html as the Electron app for this system with ../electron/package_electron.py (Python 3.8 or newer).
+function packElectron(client, zig, downloads)
+{
+    const script = path.resolve(__dirname, '../electron/package_electron.py');
+    const policy = downloads === 'yes' ? ['--download-tools'] : downloads === 'no' ? ['--no-download-tools'] : [];
+    const pythons = process.platform === 'win32' ? [['python'], ['py', '-3'], ['python3']] : [['python3'], ['python']];
+    for (const command of pythons)
+    {
+        const result = spawnSync(command[0], [...command.slice(1), script, '--client', client, '--zig', zig, ...policy], { stdio: 'inherit' });
+        // exit code 9009 comes from the Windows placeholder that only offers Python from the Microsoft Store
+        if ((result.error && result.error.code === 'ENOENT') || result.status === 9009)
+        {
+            continue;
+        }
+        if (result.status !== 0)
+        {
+            throw new Error('Packing the Electron app failed.');
+        }
+        return;
+    }
+    throw new Error('Python 3.8 or newer is needed to pack the Electron app. It is available at https://www.python.org/downloads/');
 }
 
 if (require.main === module)
@@ -599,4 +645,4 @@ if (require.main === module)
     });
 }
 
-module.exports = {assemble, checkHtml, findMinifier, minifyScript, fontToWoff, compactCss, optimizeStyles, options};
+module.exports = { assemble, checkHtml, findMinifier, minifyScript, fontToWoff, compactCss, optimizeStyles, options };

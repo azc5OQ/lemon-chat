@@ -1,15 +1,19 @@
-// starts the embedded Node client in the Android foreground service
+// this is the first file that Node.js runs on the phone.
+// Node.js is a program that runs JavaScript outside a web browser. the Android app starts it in its background
+// service, the part of the app that keeps running while the app window is closed.
+// this file loads the chat client, connects it to the Java part of the app and starts the small server inside the
+// phone that the page in the app window connects to
 
-// keep one rotated log when native settings enable file logging
+// file logging. when it is turned on in the app settings, every console message is also written to node-log.txt in
+// this folder. when the file grows over 1 MB, it is renamed to node-log.txt.old and a new file is started
 
 let fs = require("fs");
 let path = require("path");
 let log_file = path.join(__dirname, "node-log.txt");
 let LOG_CAP_BYTES = 1024 * 1024;
-
-// native settings control file logging
 let is_file_logging_enabled = false;
 
+// the Java part of the app turns file logging on or off with this function, through android-bridge-client.js
 global.lemonchat_set_file_logging = function(is_enabled)
 {
     is_file_logging_enabled = (is_enabled === true);
@@ -32,6 +36,7 @@ function tee_to_file(line)
     {
         fs.appendFileSync(log_file, line + "\n");
 
+        // start a new file
         if (fs.statSync(log_file).size > LOG_CAP_BYTES)
         {
             try
@@ -39,8 +44,7 @@ function tee_to_file(line)
                 fs.unlinkSync(log_file + ".old");
             }
             catch (no_old)
-            {
-            }
+            {}
             fs.renameSync(log_file, log_file + ".old");
         }
     }
@@ -50,6 +54,7 @@ function tee_to_file(line)
     }
 }
 
+// every console.log, console.warn and console.error call also goes to the log file
 ["log", "warn", "error"].forEach(function(name)
 {
     let original = console[name];
@@ -61,7 +66,8 @@ function tee_to_file(line)
     };
 });
 
-// keep the embedded runtime alive after an uncaught callback failure
+// an error that no code handles would end Node.js, and the chat client with it.
+// these two handlers only write the error to the log, so the client keeps running
 
 process.on("uncaughtException", function(error)
 {
@@ -78,6 +84,8 @@ console.log("node " + process.version + " on " + process.platform + "/" + proces
 console.log("cwd " + process.cwd());
 console.log("__dirname " + __dirname);
 
+// bundle.js is the chat client. it holds the JavaScript files of the browser page, joined into one file by
+// build-node.py, without the parts that draw the page. load-bundle.js runs it and returns its functions
 let bundle = null;
 
 try
@@ -93,6 +101,7 @@ catch (error)
 console.log("bundle loaded, exports: " + Object.keys(bundle).join(", "));
 console.log("WebSocket is " + (typeof WebSocket));
 
+// start the client with its helper threads, its regular checks of the server connection and its identity keys
 try
 {
     bundle.init_node_runtime();
@@ -104,7 +113,11 @@ catch (error)
     process.exit(1);
 }
 
-// start native control before opening the page listener
+// android-bridge-client.js connects to the Java part of the app through a network connection inside the phone
+// (127.0.0.1). through it the Java part says which server to join, and the client reports its state.
+// loopback-ui-server.js starts the small server inside the phone that the page in the app window connects to. when it
+// is ready, the Java part receives its port and a random password (a token), so that only this page can connect.
+// the connection to the Java part starts first, because the port and the password are sent through it
 let native_bridge = require("./android-bridge-client.js").start(bundle);
 require("./loopback-ui-server.js").start(bundle, function(port, token)
 {
@@ -114,7 +127,5 @@ require("./loopback-ui-server.js").start(bundle, function(port, token)
 
 console.log("android-main alive, waiting for the bridge to hand over server details");
 
-// keep the service's Node thread active
-setInterval(function()
-{
-}, 60000);
+// Node.js stops when it has nothing left to do. this empty timer keeps it running
+setInterval(function() {}, 60000);

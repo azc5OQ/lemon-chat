@@ -128,14 +128,15 @@ Clone the complete repository, then open `client-source-code/client-development/
 
 ### Guided APK builder
 
-On Windows, **double-click `build.bat`**. Choose a number for **Testing APK**, **Release APK**, **Check installed build tools only**, or **Exit**. For a build, the next menu asks which architecture to include. There are no command-line arguments to remember. The window stays open when the build finishes or encounters an error.
+On Windows, **double-click `build-windows.bat`**. Choose a number for **Testing APK**, **Release APK**, **Check installed build tools only**, or **Exit**. For a build, the next menu asks which architecture to include. There are no command-line arguments to remember. The window stays open when the build finishes or encounters an error.
 
 For example, choose **1** for a testing APK, then **2** for ARMv8 / ARM64. The builder checks your tools and offers to install anything missing. After the build, it prints the full path to `build-output/arm64-v8a/debug/lemon-native-arm64-v8a-debug.apk`. This APK is signed with your local debug key and can be installed on a matching Android device. Choose **All supported architectures** if you want one APK for all three targets.
 
 On Linux or macOS, open a terminal in this project directory and run:
 
 ```sh
-bash build.sh
+bash build-linux.sh   # Linux
+bash build-mac.sh     # macOS
 ```
 
 The shell builder also provides numbered architecture and build-type menus. Both scripts offer these targets:

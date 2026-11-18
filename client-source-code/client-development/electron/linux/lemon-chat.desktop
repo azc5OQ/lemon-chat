@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Lemon Chat
+Comment=Lemon Chat client
+Exec=lemon-chat
+Icon=lemon-chat
+Categories=Network;Chat;
+Terminal=false

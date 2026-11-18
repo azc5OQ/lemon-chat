@@ -1,10 +1,13 @@
-// retains session content until the authenticated page accepts it
-// attaching a page does not connect to the server or mark conversations read
+// this file is the small server inside the phone (127.0.0.1) that the page in the app window connects to.
+// the page shows the chat, but the chat client itself runs here in Node.js, so it stays connected to the chat server
+// while the app window is closed. the page connects with a random password (token), so no other app can connect.
+// messages that arrive while no page is connected are kept and given to the page when it connects.
+// connecting the page does not connect to the chat server and does not mark conversations as read
 const crypto = require("crypto");
 const adapter = require("./websocket-adapter.js");
 const local_transfer = require("./loopback-transfer.js");
 const limits = adapter.limits;
-const retained_types = new Set([ "direct_chat_message", "offline_chat_message", "channel_chat_message", "direct_chat_picture_metadata", "channel_chat_picture_metadata", "direct_chat_picture_decrypted", "channel_chat_picture_decrypted", "direct_chat_file_metadata", "channel_chat_file_metadata", "direct_chat_file_decrypted", "channel_chat_file_decrypted", "file_receive_chunk", "file_receive_completed", "chat_file_decrypt_failed", "chat_picture_decrypt_failed", "chat_message_edit", "chat_message_delete", "file_send_error", "file_send_success", "image_sent_status", "server_chat_message_id_for_local_message_id", "local_transfer_result" ]);
+const retained_types = new Set(["direct_chat_message", "offline_chat_message", "channel_chat_message", "direct_chat_picture_metadata", "channel_chat_picture_metadata", "direct_chat_picture_decrypted", "channel_chat_picture_decrypted", "direct_chat_file_metadata", "channel_chat_file_metadata", "direct_chat_file_decrypted", "channel_chat_file_decrypted", "file_receive_chunk", "file_receive_completed", "chat_file_decrypt_failed", "chat_picture_decrypt_failed", "chat_message_edit", "chat_message_delete", "file_send_error", "file_send_success", "image_sent_status", "server_chat_message_id_for_local_message_id", "local_transfer_result"]);
 
 /**
  * @brief starts the authenticated page listener and retains session delivery state
@@ -78,7 +81,7 @@ function start(bundle, on_ready)
         {
             return null;
         }
-        return {id: String(id), role, kind, prepared: message.type.endsWith("_decrypted")};
+        return { id: String(id), role, kind, prepared: message.type.endsWith("_decrypted") };
     }
 
     /**
@@ -185,9 +188,12 @@ function start(bundle, on_ready)
             }) : null;
         if (client && typeof client.public_key === "string" && client.public_key.length > 0 && client.public_key.length <= 16384 && typeof client.username === "string" && client.username.length <= 512)
         {
-            return {client_id: id, public_key: client.public_key,
+            return {
+                client_id: id,
+                public_key: client.public_key,
                 identity_hash: typeof client.identity_hash === "string" && client.identity_hash.length <= 128 && /^[A-Za-z0-9+/=]+$/.test(client.identity_hash) ? client.identity_hash : "",
-                username: client.username};
+                username: client.username
+            };
         }
         return null;
     }
@@ -309,8 +315,10 @@ function start(bundle, on_ready)
             if (current !== null && current.session_id === entry.session_id && entry.attachment.kind)
             {
                 const picture = entry.attachment.kind === "picture";
-                const message = {type: picture ? "chat_picture_decrypt_failed" : "chat_file_decrypt_failed",
-                    reason: picture ? "could not receive this image" : "could not receive this file"};
+                const message = {
+                    type: picture ? "chat_picture_decrypt_failed" : "chat_file_decrypt_failed",
+                    reason: picture ? "could not receive this image" : "could not receive this file"
+                };
                 const numeric = Number(entry.attachment.id);
                 message[picture ? "picture_id" : "file_id"] = Number.isSafeInteger(numeric) ? numeric : entry.attachment.id;
                 send_message(current, message);
@@ -342,8 +350,13 @@ function start(bundle, on_ready)
         const latest = latest_delivery_by_context.get(context_id);
         if (!latest || entry.sequence >= latest.sequence)
         {
-            latest_delivery_by_context.set(context_id, { id: entry.id, sequence: entry.sequence,
-                session_id: entry.session_id, acknowledged: false });
+            latest_delivery_by_context.set(context_id,
+            {
+                id: entry.id,
+                sequence: entry.sequence,
+                session_id: entry.session_id,
+                acknowledged: false
+            });
         }
         return true;
     }
@@ -646,7 +659,8 @@ function start(bundle, on_ready)
         {
             owner.transfers.close();
         }
-        owner.transfers = local_transfer.create({
+        owner.transfers = local_transfer.create(
+        {
             session_id: owner.session_id,
             send: function(message)
             {
@@ -687,18 +701,29 @@ function start(bundle, on_ready)
                     console.warn("loopback: local content transfer failed (" + reason + ")");
                     if (metadata.content_type === "direct_chat_file_decrypted" || metadata.content_type === "channel_chat_file_decrypted")
                     {
-                        send_message(owner, { type: "chat_file_decrypt_failed", file_id: metadata.file_id,
-                            reason: "could not receive this file" });
+                        send_message(owner,
+                        {
+                            type: "chat_file_decrypt_failed",
+                            file_id: metadata.file_id,
+                            reason: "could not receive this file"
+                        });
                     }
                     else if (metadata.content_type === "direct_chat_picture_decrypted" || metadata.content_type === "channel_chat_picture_decrypted")
                     {
-                        send_message(owner, { type: "chat_picture_decrypt_failed", picture_id: metadata.picture_id,
-                            reason: "could not receive this image" });
+                        send_message(owner,
+                        {
+                            type: "chat_picture_decrypt_failed",
+                            picture_id: metadata.picture_id,
+                            reason: "could not receive this image"
+                        });
                     }
                     else
                     {
-                        send_message(owner, { type: "loopback_status",
-                            value: { state: "error", reason: "A message could not be received on this device." } });
+                        send_message(owner,
+                        {
+                            type: "loopback_status",
+                            value: { state: "error", reason: "A message could not be received on this device." }
+                        });
                     }
                 }
                 setImmediate(function()
@@ -710,7 +735,8 @@ function start(bundle, on_ready)
                 });
             }
         });
-        send_message(owner, Object.assign(peer_state(state), {
+        send_message(owner, Object.assign(peer_state(state),
+        {
             type: "local_session_state",
             session_id: state.session_id,
             public_key_string: state.public_key_string,
@@ -725,7 +751,8 @@ function start(bundle, on_ready)
         {
             if (channel.has_maintainer === true && Number.isSafeInteger(channel.maintainer_id) && channel.maintainer_id >= 0 && Number.isSafeInteger(channel.maintainer_generation) && channel.maintainer_generation >= 0)
             {
-                send_message(owner, {
+                send_message(owner,
+                {
                     type: "channel_maintainer_id",
                     channel_id: channel.channel_id,
                     maintainer_id: channel.maintainer_id,
@@ -735,7 +762,8 @@ function start(bundle, on_ready)
             }
         }
         send_message(owner, { type: "group_list", groups: state.g_groups, access: state.group_access || {}, channel_groups: state.channel_groups || [] });
-        send_message(owner, {
+        send_message(owner,
+        {
             type: "icon_list",
             icons: state.g_icons.map(function(icon)
             {
@@ -775,7 +803,7 @@ function start(bundle, on_ready)
         const attachment = retained ? attachment_details(frame.message) : null;
         if (attachment)
         {
-            const key = attachment_key({session_id, epoch: transport_epoch, attachment});
+            const key = attachment_key({ session_id, epoch: transport_epoch, attachment });
             if (discarded_attachments.has(key))
             {
                 if (attachment.role === "terminal")
@@ -805,12 +833,28 @@ function start(bundle, on_ready)
             bundle.node_fail_delivery("Pending messages exceed this device's queue capacity. Reopen the chat.");
             return null;
         }
-        const entry = { id, sequence: delivery_id, text, bytes, session_id, retained,
+        const entry = {
+            id,
+            sequence: delivery_id,
+            text,
+            bytes,
+            session_id,
+            retained,
             observed_page_id: current !== null && !current.needs_burst ? current.id : 0,
-            frame: session_id === null || deferred ? frame : null, released: !deferred,
-            epoch: transport_epoch, sent_page_id: 0, failed_page_id: 0, transfer_complete: false,
-            transfer_metadata: { delivery_id: id, content_type: frame.message.type,
-                file_id: frame.message.file_id, picture_id: frame.message.picture_id } };
+            frame: session_id === null || deferred ? frame : null,
+            released: !deferred,
+            epoch: transport_epoch,
+            sent_page_id: 0,
+            failed_page_id: 0,
+            transfer_complete: false,
+            transfer_metadata:
+            {
+                delivery_id: id,
+                content_type: frame.message.type,
+                file_id: frame.message.file_id,
+                picture_id: frame.message.picture_id
+            }
+        };
         entry.sender = sender;
         entry.attachment = attachment;
         entry.subject = retained ? delivery_subject(frame.message, sender, attachment) : null;
@@ -892,7 +936,7 @@ function start(bundle, on_ready)
                 bundle.node_fail_delivery("Channel key replay exceeds this device's queue capacity.");
                 return false;
             }
-            cached_channel_keys.set(id, {text: json_string, bytes});
+            cached_channel_keys.set(id, { text: json_string, bytes });
             cached_channel_key_bytes = total;
         }
         return true;
@@ -1238,8 +1282,17 @@ function start(bundle, on_ready)
 
     server.on("connection", function(socket)
     {
-        const owner = { socket, id: ++page_connection_id, session_id: "", needs_burst: true, revoked: false,
-            pending_upload: false, requests: [], request_bytes: 0, request_scheduled: false };
+        const owner = {
+            socket,
+            id: ++page_connection_id,
+            session_id: "",
+            needs_burst: true,
+            revoked: false,
+            pending_upload: false,
+            requests: [],
+            request_bytes: 0,
+            request_scheduled: false
+        };
         let authenticated = false;
         socket.on("message", function(data, binary)
         {

@@ -28,8 +28,8 @@ def main():
         entries[kind] = [json.loads('[' + line.strip()[10:-2] + ']') for line in body.splitlines() if line.strip().startswith('new Field(') and line.strip().endswith('),')]
         last = [line.strip() for line in body.splitlines() if line.strip().startswith('new Field(') and line.strip().endswith(')')]
         entries[kind].extend(json.loads('[' + line[10:-1] + ']') for line in last)
-    server_source = (repo / 'server-source-code/main/core/permissions.c').read_text(encoding='utf-8')
-    channel_source = (repo / 'server-source-code/main/core/channel_groups.c').read_text(encoding='utf-8')
+    server_source = (repo / 'server-source-code/main-server/main/core/permissions.c').read_text(encoding='utf-8')
+    channel_source = (repo / 'server-source-code/main-server/main/core/channel_groups.c').read_text(encoding='utf-8')
     server_names = []
     for symbol in ['g_permission_names', 'g_permission_power_names']:
         body = re.search(re.escape(symbol) + r'\[[^]]+\]\s*=\s*\{([^}]+)\}', server_source).group(1)

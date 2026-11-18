@@ -47,10 +47,10 @@ See the [documentation index](docs/README.md) for all guides.
 ## Clean build files
 
 To reclaim space after building, close the running clients, server and build tools,
-then run `clean.bat` on Windows or `sh clean.sh` on Linux/macOS from the repository
+then run `tools\clean.bat` on Windows or `sh tools/clean.sh` on Linux/macOS from the repository
 root. Python 3 and Git must be installed. Both scripts use the same cleanup rules.
 
-Preview the files first with `clean.bat --dry-run` or `sh clean.sh --dry-run`.
+Preview the files first with `tools\clean.bat --dry-run` or `sh tools/clean.sh --dry-run`.
 For example, a compiled WebAssembly file in a project's `build` directory is
 removed, but its source, published module and `prebuilt-backup` copy are kept.
 The next browser build can compile it again from source.
@@ -61,6 +61,49 @@ tools, dependencies, settings, keys and saved music remain. Modified live themes
 fonts and sounds are kept; unknown files in build folders are listed as `KEEP`.
 Directory links are never followed. This deliberately preserves files that cannot
 be identified safely as build output.
+
+## Code formatting
+
+The C and C++ sources are formatted with clang-format 23.1.5, the JavaScript sources
+with js-beautify 2.0.3. The scripts are in the `tools` folder and need Python 3. When a
+tool is missing, they offer to download it for Windows, Linux or macOS.
+`tools\install-clang-format.bat` and `sh tools/install-clang-format.sh` only download
+clang-format.
+
+**Before every commit, run `tools\format-before-commit.bat` on Windows or
+`sh tools/format-before-commit.sh` on Linux and macOS.** It formats the changed C, C++
+and JavaScript files with the project rules in `tools/before-commit.clang-format` and
+`tools/before-commit.jsbeautifyrc`, so that the commit keeps the project style and
+contains no formatting changes. Add the changed files again with `git add` afterwards.
+Do not change the two rules files. The script reads them as they are in the last commit
+and only uses these tool versions, so the result is the same on every system. The steps
+and the JavaScript rules are in [docs/committing.md](docs/committing.md).
+
+To work in your own style, change `tools/.clang-format` and run
+`tools\format-codebase.bat` or `sh tools/format-codebase.sh`. It asks whether to format
+`server-source-code`, `client-source-code` or both. Folders named `third-party` and
+other bundled libraries are skipped. Run the format before commit afterwards, as
+described above.
+
+These are the C and C++ project rules.
+
+- Indentation with 4 spaces, no tabs.
+- Every opening brace on its own line, after functions, `if`, `else`, loops, `switch`,
+  `case` labels, structures, unions and enumerations. `else` starts a new line.
+- Braces around every body of `if`, `else` and loops, also around a single statement.
+- No function, block, `if`, loop or `case` on a single line.
+- Column limit 2000. A statement stays on one line, and a call wrapped by hand is
+  joined into one line.
+- `case` labels at the indentation of their `switch`. Preprocessor directives and
+  `goto` labels are not indented.
+- `*` next to the name, as in `char *name`.
+- A space between `if`, `for`, `while` or `switch` and the parenthesis. No space
+  between a function name and its parenthesis, after a cast or inside parentheses
+  and brackets.
+- One space before a comment at the end of a line. Such comments, assignments and
+  declarations are not aligned with the lines around them.
+- At most one empty line in a row, and no empty line at the start of a block.
+- Include order, comments and string literals stay as written.
 
 
 <br>
@@ -172,7 +215,7 @@ cvector -> https://github.com/eteran/c-vector
 <br>
 log.c -> https://github.com/rxi/log
 <br>
-SHA-256 by ITH -> [source](server-source-code/third-party/ITH-sha/sha256.c)
+SHA-256 by ITH -> [source](server-source-code/main-server/third-party/ITH-sha/sha256.c)
 <br>
 Base64 by zhicheng -> https://github.com/zhicheng/base64
 

@@ -23,7 +23,7 @@ currently supports Windows games using Direct3D 11.
 Run:
 
 ```bat
-build.bat
+build-windows.bat
 ```
 
 The script detects the number of processor cores and uses that many build jobs.
@@ -41,11 +41,11 @@ Keep the DLL files, `assets` and `fonts` beside the executable.
 Useful options:
 
 ```bat
-build.bat Debug
-build.bat Release
-build.bat --clean
-build.bat --keep-build
-build.bat --no-download
+build-windows.bat Debug
+build-windows.bat Release
+build-windows.bat --clean
+build-windows.bat --keep-build
+build-windows.bat --no-download
 ```
 
 ## Build on Linux or macOS
@@ -53,7 +53,8 @@ build.bat --no-download
 Run:
 
 ```sh
-sh build.sh
+sh build-linux.sh   # Linux
+sh build-mac.sh     # macOS
 ```
 
 Linux needs a C compiler, CMake, libcurl with WebSocket support, pkg-config and

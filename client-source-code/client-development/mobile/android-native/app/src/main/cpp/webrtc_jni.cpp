@@ -24,7 +24,7 @@ struct Peer
     std::shared_ptr<rtc::DataChannel> audio;
     std::deque<Event> events;
     size_t queuedBytes = 0;
-    std::atomic<bool> closed{false};
+    std::atomic<bool> closed{ false };
     bool overflow = false;
 
     void push(unsigned char type, const unsigned char *value, size_t size, const std::string &detail = "")
@@ -39,7 +39,7 @@ struct Peer
             overflow = true;
             return;
         }
-        Event event{type, {}, detail};
+        Event event{ type, {}, detail };
         if (size != 0)
         {
             event.value.assign(value, value + size);
@@ -55,7 +55,7 @@ struct Peer
 };
 
 std::mutex registryMutex;
-std::map<jlong, std::shared_ptr<Peer>> registry;
+std::map<jlong, std::shared_ptr<Peer> > registry;
 jlong nextHandle = 1;
 
 std::shared_ptr<Peer> findPeer(jlong handle)
@@ -106,43 +106,40 @@ void setChannel(const std::weak_ptr<Peer> &weak, std::shared_ptr<rtc::DataChanne
         channel->close();
         return;
     }
-    channel->onOpen([weak]()
-    {
+    channel->onOpen([weak]() {
         if (auto active = weak.lock())
         {
             active->push(3);
         }
     });
-    channel->onClosed([weak]()
-    {
+    channel->onClosed([weak]() {
         if (auto active = weak.lock())
         {
             active->push(5);
         }
     });
-    channel->onError([weak](std::string)
-    {
+    channel->onError([weak](std::string) {
         if (auto active = weak.lock())
         {
             active->push(5);
         }
     });
-    channel->onMessage([weak](rtc::binary bytes)
-    {
-        if (auto active = weak.lock())
-        {
-            if (bytes.size() <= 3869)
+    channel->onMessage(
+        [weak](rtc::binary bytes) {
+            if (auto active = weak.lock())
             {
-                active->push(4, reinterpret_cast<const unsigned char *>(bytes.data()), bytes.size());
+                if (bytes.size() <= 3869)
+                {
+                    active->push(4, reinterpret_cast<const unsigned char *>(bytes.data()), bytes.size());
+                }
             }
-        }
-    }, [weak](std::string)
-    {
-        if (auto active = weak.lock())
-        {
-            active->push(5);
-        }
-    });
+        },
+        [weak](std::string) {
+            if (auto active = weak.lock())
+            {
+                active->push(5);
+            }
+        });
     if (channel->isOpen())
     {
         peer->push(3);
@@ -150,8 +147,7 @@ void setChannel(const std::weak_ptr<Peer> &weak, std::shared_ptr<rtc::DataChanne
 }
 }
 
-extern "C"
-{
+extern "C" {
 /**
  * @brief creates one bounded server data channel peer
  *
@@ -186,26 +182,20 @@ JNIEXPORT jlong JNICALL Java_com_lemonchat_audio_WebRtcTransport_nativeCreate(JN
         }
         peer->connection = std::make_shared<rtc::PeerConnection>(configuration);
         std::weak_ptr<Peer> weak = peer;
-        peer->connection->onLocalDescription([weak](rtc::Description description)
-        {
+        peer->connection->onLocalDescription([weak](rtc::Description description) {
             if (auto active = weak.lock())
             {
                 active->push(1, std::string(description), description.typeString());
             }
         });
-        peer->connection->onLocalCandidate([weak](rtc::Candidate candidate)
-        {
+        peer->connection->onLocalCandidate([weak](rtc::Candidate candidate) {
             if (auto active = weak.lock())
             {
                 active->push(2, candidate.candidate(), candidate.mid());
             }
         });
-        peer->connection->onDataChannel([weak](std::shared_ptr<rtc::DataChannel> channel)
-        {
-            setChannel(weak, channel);
-        });
-        peer->connection->onStateChange([weak](rtc::PeerConnection::State state)
-        {
+        peer->connection->onDataChannel([weak](std::shared_ptr<rtc::DataChannel> channel) { setChannel(weak, channel); });
+        peer->connection->onStateChange([weak](rtc::PeerConnection::State state) {
             if (state == rtc::PeerConnection::State::Failed || state == rtc::PeerConnection::State::Closed || state == rtc::PeerConnection::State::Disconnected)
             {
                 if (auto active = weak.lock())
@@ -316,7 +306,7 @@ JNIEXPORT jobjectArray JNICALL Java_com_lemonchat_audio_WebRtcTransport_nativePo
                 peer->overflow = false;
                 peer->events.clear();
                 peer->queuedBytes = 0;
-                event = Event{5, {}, {}};
+                event = Event{ 5, {}, {} };
             }
             else if (!peer->events.empty())
             {
@@ -340,8 +330,8 @@ JNIEXPORT jobjectArray JNICALL Java_com_lemonchat_audio_WebRtcTransport_nativePo
         {
             return nullptr;
         }
-        const unsigned char *values[] = {&event.type, event.value.data(), reinterpret_cast<const unsigned char *>(event.detail.data())};
-        size_t sizes[] = {1, event.value.size(), event.detail.size()};
+        const unsigned char *values[] = { &event.type, event.value.data(), reinterpret_cast<const unsigned char *>(event.detail.data()) };
+        size_t sizes[] = { 1, event.value.size(), event.detail.size() };
         for (int index = 0; index < 3; index++)
         {
             jbyteArray bytes = env->NewByteArray(static_cast<jsize>(sizes[index]));

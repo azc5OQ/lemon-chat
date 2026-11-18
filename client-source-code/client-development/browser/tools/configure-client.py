@@ -208,7 +208,7 @@ def ask_files(settings):
     while True:
         settings.input = ask_text("Page to configure", default_input)
         if not os.path.isfile(settings.input):
-            say("warn", "That file does not exist. Build the client first (build.bat or sh build.sh) or enter another path.")
+            say("warn", "That file does not exist. Build the client first (build-windows.bat, sh build-linux.sh or sh build-mac.sh) or enter another path.")
             continue
         with open(settings.input, "rb") as file:
             page = file.read()
@@ -510,7 +510,7 @@ def main(arguments):
 
     # read the page
     if not os.path.isfile(settings.input):
-        raise ConfigureError("Cannot find " + settings.input + ". Build the client first (build.bat or sh build.sh) or pass --input.")
+        raise ConfigureError("Cannot find " + settings.input + ". Build the client first (build-windows.bat, sh build-linux.sh or sh build-mac.sh) or pass --input.")
     with open(settings.input, "rb") as file:
         page = file.read()
     themes = read_themes(page)

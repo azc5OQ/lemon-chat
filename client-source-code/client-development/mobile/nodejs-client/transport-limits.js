@@ -1,8 +1,10 @@
-// bound control, socket and retained delivery buffers
-// allow complete encrypted file frames within the socket limits
+// this file holds the size and time limits of the connections inside the phone, between Node.js, the Java part of
+// the app and the page in the app window. a limit stops one connection from using too much memory or waiting forever.
+// the message limits are large enough for one whole encrypted file part
 const MiB = 1024 * 1024;
 
-module.exports = Object.freeze({
+module.exports = Object.freeze(
+{
     controlLineBytes: MiB,
     controlQueueBytes: 2 * MiB,
     controlWriteTimeoutMs: 10000,

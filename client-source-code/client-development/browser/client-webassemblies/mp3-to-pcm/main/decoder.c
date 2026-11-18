@@ -298,8 +298,7 @@ double decoder_current_time()
  *
  * @return void
  */
-static void seek_internal(const uint8_t *mp3, size_t mp3_bytes, double target_duration_in_seconds,
-                          decode_results_t *results, size_t *num_bytes, double *actual_duration)
+static void seek_internal(const uint8_t *mp3, size_t mp3_bytes, double target_duration_in_seconds, decode_results_t *results, size_t *num_bytes, double *actual_duration)
 {
     memset(results, 0, sizeof(decode_results_t));
     *num_bytes = 0;
@@ -311,8 +310,7 @@ static void seek_internal(const uint8_t *mp3, size_t mp3_bytes, double target_du
 
     while (*num_bytes < mp3_bytes)
     {
-        samples =
-            mp3dec_decode_frame(&g_decoder.mp3d, mp3 + *num_bytes, mp3_bytes - *num_bytes, NULL, &frame);
+        samples = mp3dec_decode_frame(&g_decoder.mp3d, mp3 + *num_bytes, mp3_bytes - *num_bytes, NULL, &frame);
         if (frame.frame_bytes < 0 || (size_t)frame.frame_bytes > mp3_bytes - *num_bytes)
         {
             __builtin_trap();
@@ -344,14 +342,11 @@ static void seek_internal(const uint8_t *mp3, size_t mp3_bytes, double target_du
         }
 
         double advance_in_seconds = (double)samples / (double)frame.hz;
-        if (target_duration_in_seconds >= 0.0 &&
-            *actual_duration + advance_in_seconds >= target_duration_in_seconds)
+        if (target_duration_in_seconds >= 0.0 && *actual_duration + advance_in_seconds >= target_duration_in_seconds)
         {
             break;
         }
-        if (frame.frame_bytes <= 0 || (size_t)frame.frame_bytes > mp3_bytes - *num_bytes
-            || samples < 0 || samples > MINIMP3_MAX_SAMPLES_PER_FRAME || frame.channels < 1 || frame.channels > 2
-            || (size_t)results->num_samples + (size_t)samples * frame.channels > (DECODER_MAX_WORKING_BYTES - DECODER_MAX_INPUT_BYTES - 8) / sizeof(mp3d_sample_t))
+        if (frame.frame_bytes <= 0 || (size_t)frame.frame_bytes > mp3_bytes - *num_bytes || samples < 0 || samples > MINIMP3_MAX_SAMPLES_PER_FRAME || frame.channels < 1 || frame.channels > 2 || (size_t)results->num_samples + (size_t)samples * frame.channels > (DECODER_MAX_WORKING_BYTES - DECODER_MAX_INPUT_BYTES - 8) / sizeof(mp3d_sample_t))
         {
             __builtin_trap();
         }
@@ -406,11 +401,8 @@ static void decode_internal(const uint8_t *mp3, size_t mp3_bytes, decode_results
 
     while (num_bytes < mp3_bytes && num_samples < results->num_samples)
     {
-        samples = mp3dec_decode_frame(&g_decoder.mp3d, mp3 + num_bytes, mp3_bytes - num_bytes,
-                                      frame_pcm, &frame);
-        if (frame.frame_bytes <= 0 || (size_t)frame.frame_bytes > mp3_bytes - num_bytes
-            || samples < 0 || frame.channels < 0 || frame.channels > 2
-            || samples * frame.channels > results->num_samples - num_samples)
+        samples = mp3dec_decode_frame(&g_decoder.mp3d, mp3 + num_bytes, mp3_bytes - num_bytes, frame_pcm, &frame);
+        if (frame.frame_bytes <= 0 || (size_t)frame.frame_bytes > mp3_bytes - num_bytes || samples < 0 || frame.channels < 0 || frame.channels > 2 || samples * frame.channels > results->num_samples - num_samples)
         {
             __builtin_trap();
         }

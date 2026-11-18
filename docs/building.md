@@ -8,12 +8,14 @@ Paths start at the Lemon Chat project directory.
 
 | What you want to build | Folder | Command |
 | --- | --- | --- |
-| Server on Windows | `server-source-code` | `.\windows_build_script.bat` |
-| Server on Linux | `server-source-code` | `bash linux_build_script.sh` |
-| Server on macOS | `server-source-code` | `bash macos_build_script.sh` |
-| Browser client | `client-source-code/client-development/browser` | Windows: `.\build.bat`; Linux/macOS: `sh build.sh` |
-| Native desktop client | `client-source-code/client-development/desktop` | Windows: `.\build.bat`; Linux/macOS: `sh build.sh` |
+| Server on Windows | `server-source-code/main-server` | `.\build-windows.bat` |
+| Server on Linux | `server-source-code/main-server` | `bash build-linux.sh` |
+| Server on macOS | `server-source-code/main-server` | `bash build-mac.sh` |
+| Browser client | `client-source-code/client-development/browser` | Windows: `.\build-windows.bat`; Linux: `sh build-linux.sh`; macOS: `sh build-mac.sh` |
+| Native desktop client | `client-source-code/client-development/desktop` | Windows: `.\build-windows.bat`; Linux: `sh build-linux.sh`; macOS: `sh build-mac.sh` |
+| Electron desktop app | `client-source-code/client-development/electron` | Windows: `.\build-windows.bat`; Linux: `sh build-linux.sh`; macOS: `sh build-mac.sh` |
 | Android client APK | `client-source-code/client-development/mobile/android` | Windows: `.\gradlew.bat :app:assembleDebug`; Linux/macOS: `sh ./gradlew :app:assembleDebug` |
+| Native Android client APK | `client-source-code/client-development/mobile/android-native` | Windows: `.\build-windows.bat`; Linux: `bash build-linux.sh`; macOS: `bash build-mac.sh` |
 | Android server APK | `server-source-code/android-server-app` | Windows: `.\gradlew.bat :app:assembleDebug`; Linux/macOS: `sh ./gradlew :app:assembleDebug` |
 
 If you want to host a chat, build the server. When Node.js is installed, the server build also rebuilds the browser client's `client.html`.
@@ -29,7 +31,7 @@ If you build the server on a machine without Node.js, the scripts warn and skip 
 ### Opus and CPU optimizations
 
 The server uses Opus 1.6.1 to encode music bots' audio. It has its own copy in
-`server-source-code/third-party/libopus-1.6.1`. Voice packets from clients are
+`server-source-code/main-server/third-party/libopus-1.6.1`. Voice packets from clients are
 forwarded without re-encoding them.
 
 Use a Release build for normal use. Debug builds leave compiler optimization
@@ -50,10 +52,10 @@ performance warnings.
 
 ### Windows
 
-Open a terminal in `server-source-code`, then run:
+Open a terminal in `server-source-code/main-server`, then run:
 
 ```bat
-windows_build_script.bat
+build-windows.bat
 ```
 
 The script can download w64devkit, CMake, Ninja and Python when they are missing. It reuses installed tools when possible. The result is `buildresult/chat-server.exe` with its supporting files. Keep those files together.
@@ -74,21 +76,21 @@ Add `--include-stunnel` to preview the optional stunnel cleanup too. The preview
 
 ### Linux
 
-Install GCC, G++, CMake, Ninja, Make, pkg-config, Python 3, Perl, curl, tar, autoconf, automake and libtool. From `server-source-code`, run `bash linux_build_script.sh`.
+Install GCC, G++, CMake, Ninja, Make, pkg-config, Python 3, Perl, curl, tar, autoconf, automake and libtool. From `server-source-code/main-server`, run `bash build-linux.sh`.
 
 The result is `buildresult/chat-server.bin` with its supporting files and `start_server.sh`. The script also builds stunnel. Use `--wsl` when building a Linux executable under Windows Subsystem for Linux.
 
 ### macOS
 
-Install the Xcode command-line tools, CMake, Ninja, pkg-config and Python 3. The stunnel build also uses Make and Perl. From `server-source-code`, run `bash macos_build_script.sh`.
+Install the Xcode command-line tools, CMake, Ninja, pkg-config and Python 3. The stunnel build also uses Make and Perl. From `server-source-code/main-server`, run `bash build-mac.sh`.
 
 The result is `buildresult/chat-server.bin` with its supporting files and `start_server.sh`. The script builds for the compiler's selected architecture.
 
-For hosting and public access after building, read the [self-hosting guide](../selfhosting-tools/README.md).
+For hosting and public access after building, read the [self-hosting guide](../tools/selfhosting-tools/README.md).
 
 ## Browser client
 
-Open `client-source-code/client-development/browser`, then run `build.bat` on Windows or `sh build.sh` on Linux and macOS. The result is `client-source-code/client.html`.
+Open `client-source-code/client-development/browser`, then run `build-windows.bat` on Windows, `sh build-linux.sh` on Linux or `sh build-mac.sh` on macOS. The result is `client-source-code/client.html`.
 
 The wrappers offer to download missing Node.js and Zig tools locally. Node.js runs the build script; Zig 0.15.2 compiles all four WebAssembly projects from their own browser sources. The builder tests them, then assembles the page, embeds their bytes and validates JavaScript. This is separate from the Android runtime: opening the finished `client.html` in a browser does not require Node.js.
 
@@ -132,11 +134,9 @@ The Windows server and desktop build for x86-64 with the supplied w64devkit setu
 
 ## Source formatting
 
-To format the server sources on Windows, run `server-source-code/main/windows_clangformat_script.bat`. For the desktop client, run `client-source-code/client-development/desktop/main/windows_clangformat_script.bat`.
+Before every commit, run `tools\format-before-commit.bat` on Windows or `sh tools/format-before-commit.sh` on Linux and macOS. It formats the changed C, C++, Java and JavaScript files with the project rules in `tools/before-commit.clang-format` (clang-format 23.1.5) and `tools/before-commit.jsbeautifyrc` (js-beautify 2.0.3), which it offers to download. [Committing](committing.md) describes the steps. `tools\format-codebase.bat` and `sh tools/format-codebase.sh` format `server-source-code`, `client-source-code` or both with the own rules in `tools/.clang-format`. Both skip folders named `third-party`, other bundled libraries, build directories and directory links. The [project README](../README.md#code-formatting) lists the rules and describes the workflow.
 
-Both scripts use the bundled `tools/clang-format.exe` and the `.clang-format` file in their own `main` directory. They apply Allman braces and explicit conditional and loop bodies. Run either script from any working directory; it formats only that application's source tree and skips build directories, bundled dependencies and directory links.
-
-Formatting changes source files in place. To check formatting without changing files, add `-Check` after the script name. The scripts stop and return an error if formatting or checking fails. Formatting is separate from building and is not required for a build.
+Formatting changes source files in place. To check formatting without changing files, add `--check` after the script name. The scripts stop and return an error if formatting or checking fails. Formatting is separate from building and is not required for a build.
 
 ## Rebuilding browser WebAssembly
 

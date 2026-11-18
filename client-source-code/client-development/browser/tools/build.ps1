@@ -44,7 +44,7 @@ if (-not $node)
     }
     if (-not $download)
     {
-        Write-Host 'Install Node.js 20 or newer from https://nodejs.org/ or run build.bat --download-tools.'
+        Write-Host 'Install Node.js 20 or newer from https://nodejs.org/ or run build-windows.bat --download-tools.'
         exit 1
     }
     New-Item -ItemType Directory -Force -Path $toolsDirectory | Out-Null
@@ -70,6 +70,39 @@ if (-not $node)
 if ($node -eq $cached)
 {
     $env:PATH = (Split-Path -Parent $cached) + ';' + $env:PATH
+}
+
+# client.html only, or also the Electron app, chosen by --electron, --no-electron, LEMON_CLIENT_BUILD_TARGET=html
+# or electron, or else by the question below
+$electronChoice = $null
+if ($buildArguments -contains '--electron')
+{
+    $electronChoice = 'electron'
+}
+elseif ($buildArguments -contains '--no-electron')
+{
+    $electronChoice = 'html'
+}
+elseif ($env:LEMON_CLIENT_BUILD_TARGET)
+{
+    $electronChoice = $env:LEMON_CLIENT_BUILD_TARGET.Trim().ToLowerInvariant()
+}
+elseif (-not [Console]::IsInputRedirected)
+{
+    Write-Host ''
+    Write-Host '1. client.html only'
+    Write-Host '2. client.html and the Electron app, client-electron-amd64.exe, client-electron-arm64.exe and client-electron-i386.exe in buildresult'
+    do
+    {
+        $answer = Read-Host 'Choose [1/2]'
+    }
+    while ($answer -ne '1' -and $answer -ne '2')
+    $electronChoice = if ($answer -eq '2') { 'electron' } else { 'html' }
+}
+$buildArguments = @($buildArguments | Where-Object { $_ -ne '--electron' -and $_ -ne '--no-electron' })
+if ($electronChoice -eq 'electron')
+{
+    $buildArguments += '--electron'
 }
 & $node (Join-Path $browserDirectory 'build.cjs') @buildArguments
 exit $LASTEXITCODE

@@ -1,0 +1,615 @@
+// this file accepts chat WebSocket connections, receives and decrypts messages,
+// and passes them to base.c to choose the request handler. It also checks connection
+// timeouts. client_session.c manages the client's record, which can stay in use
+// when a reconnect replaces the WebSocket connection
+#include "chat_websocket.h"
+#include "integrations/tailscale.h"
+
+#include "core/client_session.h"
+#include "core/administration.h"
+#include "definitions.h"
+#include "../third-party/dave-g-json/cJSON.h"
+#include "../third-party/rxi-log/log.h"
+#include "../third-party/eteran-cvector/cvector.h"
+#include "base.h"
+#include "msg/client/client_msg.h"
+
+#include "memory_manager.h"
+#include "clib/clib.h"
+#include "util.h"
+#include "crypto/crypto_metadata.h"
+#include "audio_websocket.h"
+#include "video_websocket.h"
+#include "core/server_logs.h"
+#include "ip_tools.h"
+
+// declarations
+static int64 _chat_websocket_internal__get_client_index(ws_cli_conn_t *p_ws_connection);
+static void _chat_websocket_internal__onopen(ws_cli_conn_t *client);
+static void _chat_websocket_internal__onclose(ws_cli_conn_t *websocket);
+static void _chat_websocket_internal__onmessage(ws_cli_conn_t *websocket, ubyte *base64_to_process_and_decrypt, uint64 size, int type);
+static void _chat_websocket_internal__onmessage_long(ws_cli_conn_t *websocket, ubyte *data, unsigned long size, int type);
+static boole _chat_websocket_internal__has_connection_timed_out(client_t *client, uint64 now);
+
+/**
+ * @brief finds which slot of g_clients_array holds a given websocket connection
+ *
+ * @param ws_cli_conn_t* p_ws_connection -> websocket connection pointer to look up in the clients array
+ *
+ * @note takes the clients read lock itself, so it must not be called with that lock already held
+ *
+ * @return int64 -> the client's index, or -1 when the pointer is null or matches no connected client
+ */
+static int64 _chat_websocket_internal__get_client_index(ws_cli_conn_t *p_ws_connection)
+{
+    uint64 i = 0;
+    int64 result = -1;
+
+    // check the connection
+    if (p_ws_connection == NULL_POINTER)
+    {
+        return result;
+    }
+
+    // find the client slot
+    clib__read_lock(&g_clients_global_rwlock_guard);
+
+    for (i = 0; i < g_server_settings.max_client_count; i++)
+    {
+        if (g_clients_array[i].p_ws_connection == p_ws_connection)
+        {
+            result = i;
+            break;
+        }
+    }
+
+    clib__unlock(&g_clients_global_rwlock_guard);
+
+    return result;
+}
+
+/**
+ * @brief gets called by an individual websocket thread
+ *
+ * @param ws_cli_conn_t* client -> websocket client structure
+ *
+ * @return void
+ *
+ * @attention _chat_websocket_internal__onopen is called by different thread everytime
+ */
+static void _chat_websocket_internal__onopen(ws_cli_conn_t *client)
+{
+    uint64 started_ms = 0;
+    uint64 acquired_ms = 0;
+    char *ip_address = NULL_POINTER;
+    int64 index = 0;
+
+    // call the audio code
+    if (ws_media_purpose(client) == WS_MEDIA_PURPOSE_AUDIO)
+    {
+        audio_websocket__onopen(client);
+        return;
+    }
+
+    // call the video code
+    if (ws_media_purpose(client) == WS_MEDIA_PURPOSE_VIDEO)
+    {
+        video_websocket__onopen(client);
+        return;
+    }
+
+    // lock the clients
+    started_ms = util__get_timestamp_ms();
+    clib__write_lock(&g_clients_global_rwlock_guard);
+    acquired_ms = util__get_timestamp_ms();
+
+    // increase the client count
+    g_server_settings.client_count = g_server_settings.client_count + 1;
+
+    // log_info("%s %d", "client_count , ", g_server_settings.client_count);
+    DBG_AUTHENTICATION log_info("%s %p %s", "client connected , ", client, "\n");
+
+    // find a free slot
+    index = client_session__get_new_index_for_client();
+
+    if (index == -1)
+    {
+        DBG_AUTHENTICATION log_info("%s", "client_session__get_new_index_for_client returned -1, closing socket");
+        ws_close_client(client);
+        goto label_onopen_end;
+    }
+
+    // read the ip address
+    ip_address = ws_getaddress(client);
+    if (ip_address == NULL_POINTER)
+    {
+        DBG_AUTHENTICATION log_info("%s", "failed to get ip address of a client");
+        ws_close_client(client);
+        goto label_onopen_end;
+    }
+
+    // every socket, before any check is applied: this is the only log entry a bot leaves
+    server_logs__socket_opened(ip_address);
+
+    // drop banned ips right away, before any client slot is set up
+    if (server_admin__is_ip_banned(ip_address) == TRUE)
+    {
+        DBG_AUTHENTICATION log_info("%s", "ip address is banned, closing socket");
+        server_logs__join_refused("banned ip", ip_address);
+        ws_close_client(client);
+        goto label_onopen_end;
+    }
+
+    // with same-ip off, a second session from an ip is checked once its identity is proven (a returning
+    // client's own earlier session must not block it), so only a second unfinished handshake is refused this early
+    if (g_server_settings.is_same_ip_address_allowed == FALSE)
+    {
+        if (client_session__is_there_an_unfinished_handshake_from_same_ip_address(ip_address) == TRUE)
+        {
+            DBG_AUTHENTICATION log_info("%s", "another handshake from this ip is still in progress, closing socket");
+            server_logs__join_refused("same ip already connected", ip_address);
+            ws_close_client(client);
+            goto label_onopen_end;
+        }
+    }
+
+    DBG_AUTHENTICATION log_info("%s%lld", "[i] _chat_websocket_internal__onopen : new client id: ", index);
+
+    // copy the password keys
+    g_clients_array[index].password_keys = crypto_metadata__snapshot_passwords(g_server_settings.keys, g_server_settings.keys_count);
+    if (g_clients_array[index].password_keys == NULL_POINTER)
+    {
+        ws_abort_client(client);
+        goto label_onopen_end;
+    }
+
+    // set the client fields
+    g_clients_array[index].is_authenticated = FALSE;
+    g_clients_array[index].block_direct_chat_pictures = FALSE;
+    g_clients_array[index].block_direct_chat_files = FALSE;
+    g_clients_array[index].block_channel_chat_pictures = FALSE;
+    g_clients_array[index].block_channel_chat_files = FALSE;
+    g_clients_array[index].timestamp_connected = util__get_timestamp_ms();
+    g_clients_array[index].p_ws_connection = client;
+    g_clients_array[index].is_existing = TRUE;
+    g_clients_array[index].client_id = index;
+    g_clients_array[index].audio_state = AUDIO_STATE__AUDIO_COMPLETELY_DISABLED;
+    clib__string_copy(g_clients_array[index].ip_address, sizeof(g_clients_array[index].ip_address), ip_address);
+
+label_onopen_end:
+    // unlock the clients
+    clib__unlock(&g_clients_global_rwlock_guard);
+    DBG_CONNECTION_PROGRESS log_info("[connection] _chat_websocket_internal__onopen client=%lld wait_ms=%llu work_ms=%llu", (int64)index, (uint64)(acquired_ms - started_ms), (uint64)(util__get_timestamp_ms() - acquired_ms));
+}
+
+/**
+ * @brief websocket callback for a closed connection: drops the client count and tears the client
+ *        down through client_session__process_client_disconnect. an unknown socket is ignored
+ *
+ * @param ws_cli_conn_t* websocket -> websocket connection of the client that disconnected
+ *
+ * @note holds the clients AND channels write locks for the whole teardown
+ *
+ * @return void
+ */
+static void _chat_websocket_internal__onclose(ws_cli_conn_t *websocket)
+{
+    uint64 started_ms = 0;
+    uint64 acquired_ms = 0;
+    uint64 i = 0;
+    int64 client_index = -1;
+
+    // call the audio code
+    if (ws_media_purpose(websocket) == WS_MEDIA_PURPOSE_AUDIO)
+    {
+        audio_websocket__onclose(websocket);
+        return;
+    }
+
+    // call the video code
+    if (ws_media_purpose(websocket) == WS_MEDIA_PURPOSE_VIDEO)
+    {
+        video_websocket__onclose(websocket);
+        return;
+    }
+
+    // lock clients and channels
+    started_ms = util__get_timestamp_ms();
+    clib__write_lock(&g_clients_global_rwlock_guard);
+    acquired_ms = util__get_timestamp_ms();
+    clib__write_lock(&g_channels_global_rwlock_guard);
+
+    // decrease the client count
+    g_server_settings.client_count = g_server_settings.client_count - 1;
+
+    // log_info("%s %d", "client_count , ", g_server_settings.client_count);
+
+    // find the client
+    for (i = 0; i < g_server_settings.max_client_count; i++)
+    {
+        if (g_clients_array[i].p_ws_connection == websocket)
+        {
+            client_index = i;
+            break;
+        }
+    }
+
+    DBG_AUTHENTICATION log_info("%s %d %s", "_chat_websocket_internal__onclose", client_index, "\n");
+
+    // the socket log needs the address and name before the slot is cleared; a socket that never got
+    // a slot (refused at open) still has its address in the library until this callback returns
+    if (client_index != -1)
+    {
+        server_logs__socket_closed(g_clients_array[client_index].ip_address, (g_clients_array[client_index].is_authenticated == TRUE) ? g_clients_array[client_index].username : NULL_POINTER);
+    }
+    else
+    {
+        server_logs__socket_closed(ws_getaddress(websocket), NULL_POINTER);
+    }
+
+    // skip unknown sockets
+    if (client_index == -1)
+    {
+        goto label_onclose_end;
+    }
+
+    // disconnect the client
+    server_logs__client_disconnect_reason(&g_clients_array[client_index], (char *)ws_get_close_reason(websocket));
+    client_session__process_client_disconnect(client_index);
+
+label_onclose_end:
+    // unlock channels and clients
+    clib__unlock(&g_channels_global_rwlock_guard);
+    clib__unlock(&g_clients_global_rwlock_guard);
+    DBG_CONNECTION_PROGRESS log_info("[connection] _chat_websocket_internal__onclose client=%lld wait_ms=%llu work_ms=%llu", (int64)client_index, (uint64)(acquired_ms - started_ms), (uint64)(util__get_timestamp_ms() - acquired_ms));
+}
+
+/**
+ * @brief websocket callback for an incoming frame: decodes and decrypts the payload, then routes it
+ *        to the authenticated or the not-yet-authenticated message handler
+ *
+ * @param ws_cli_conn_t* websocket -> websocket connection of the client that sent the message
+ * @param ubyte* base64_to_process_and_decrypt -> received base64 payload to decode and decrypt
+ * @param uint64 size -> length in bytes of the received payload
+ * @param int type -> websocket frame type of the received message
+ *
+ * @return void
+ */
+static void _chat_websocket_internal__onmessage(ws_cli_conn_t *websocket, ubyte *base64_to_process_and_decrypt, uint64 size, int type)
+{
+    boole is_authenticated = FALSE;
+    boole is_existing = FALSE;
+    int64 client_index = 0;
+    uint64 started_ms = 0;
+    uint64 found_ms = 0;
+    uint64 decrypted_ms = 0;
+    uint64 finished_ms = 0;
+    char *decrypted_metadata_cstring = NULL_POINTER;
+    client_request_context_t previous_request;
+
+    // call the audio code
+    if (ws_media_purpose(websocket) == WS_MEDIA_PURPOSE_AUDIO)
+    {
+        audio_websocket__onmessage(websocket, base64_to_process_and_decrypt, size, type);
+        return;
+    }
+
+    // call the video code
+    if (ws_media_purpose(websocket) == WS_MEDIA_PURPOSE_VIDEO)
+    {
+        video_websocket__onmessage(websocket, base64_to_process_and_decrypt, size, type);
+        return;
+    }
+
+    // these timings report delays without recording the message or its keys
+    started_ms = util__get_timestamp_ms();
+    client_index = _chat_websocket_internal__get_client_index(websocket);
+    if (client_index == -1)
+    {
+        return;
+    }
+
+    // store the lookup time
+    found_ms = util__get_timestamp_ms();
+
+    DBG_ONMESSAGE log_info("%s %d %s", "_chat_websocket_internal__onmessage() : ", client_index, "\n");
+
+    DBG_ONMESSAGE log_info("%s %llu %s", "_chat_websocket_internal__onmessage received websocket data size is : ", size, "\n");
+
+    // reject oversized messages before allocating a decryption buffer
+    if (size > g_server_settings.websocket_message_max_length)
+    {
+        ws_close_client(websocket);
+        return;
+    }
+
+    // reject empty messages; they cannot contain an encrypted request
+    if (size == 0)
+    {
+        ws_close_client(websocket);
+        return;
+    }
+
+    // reserve space for the decrypted request
+    decrypted_metadata_cstring = (char *)(ubyte *)memorymanager__allocate(size, MEMALLOC_TYPE_DECRYPT);
+
+    if (decrypted_metadata_cstring == NULL_POINTER)
+    {
+        DBG_ONMESSAGE log_info("%s %d %s", "_chat_websocket_internal__onmessage decrypted_metadata_cstring is NULL", client_index, "\n");
+        return;
+    }
+
+    // just a simple readlock, nothing expensive
+
+    clib__read_lock(&g_clients_global_rwlock_guard);
+
+    // the index lookup and decryption are separate lock scopes. a disconnect or
+    // session takeover between them must never select the replacement's keys
+    if (client_index < 0 || (uint64)client_index >= (uint64)g_server_settings.max_client_count || g_clients_array[client_index].is_existing == FALSE || g_clients_array[client_index].p_ws_connection != websocket)
+    {
+        clib__unlock(&g_clients_global_rwlock_guard);
+        memorymanager__free((nuint)decrypted_metadata_cstring);
+        return;
+    }
+
+    // copy the client flags
+    is_authenticated = g_clients_array[client_index].is_authenticated;
+    is_existing = g_clients_array[client_index].is_existing;
+
+    // decrypt the message
+    if (crypto_metadata__decrypt_from_client(&g_clients_array[client_index], (const char *)base64_to_process_and_decrypt, (ubyte *)decrypted_metadata_cstring, size) == FALSE)
+    {
+        clib__unlock(&g_clients_global_rwlock_guard);
+        memorymanager__free((nuint)decrypted_metadata_cstring);
+        return;
+    }
+
+    // start the client request
+    base__begin_client_request(websocket, (uint64)client_index, is_authenticated, &previous_request);
+    clib__unlock(&g_clients_global_rwlock_guard);
+
+    decrypted_ms = util__get_timestamp_ms();
+
+    // call the message function
+    if (is_existing == TRUE)
+    {
+        if (is_authenticated == TRUE)
+        {
+            base__process_authenticated_client_message(websocket, client_index, decrypted_metadata_cstring);
+        }
+        else
+        {
+            base__process_not_authenticated_client_message(websocket, client_index, decrypted_metadata_cstring);
+        }
+    }
+
+    // end the client request
+    base__end_client_request(&previous_request);
+    memorymanager__free((nuint)decrypted_metadata_cstring);
+    decrypted_metadata_cstring = 0;
+
+    // log slow requests
+    finished_ms = util__get_timestamp_ms();
+    if (finished_ms - started_ms >= 250)
+    {
+        DBG_CONNECTION_PROGRESS log_info("[connection] slow request client=%lld bytes=%llu authenticated=%d lookup_ms=%llu decrypt_ms=%llu handler_ms=%llu", (int64)client_index, (uint64)size, (int)is_authenticated, (uint64)(found_ms - started_ms), (uint64)(decrypted_ms - found_ms), (uint64)(finished_ms - decrypted_ms));
+    }
+}
+
+// some platforms declare the WebSocket library's 64-bit callback size as
+// unsigned long. Keep that boundary exact, then use uint64 inside the server
+/**
+ * @brief adapts the websocket callback length to the shared message handler
+ *
+ * @param ws_cli_conn_t * websocket -> socket delivering the frame
+ * @param ubyte * data -> received bytes
+ * @param unsigned long size -> received byte count
+ * @param int type -> websocket frame type
+ *
+ * @return void
+ */
+static void _chat_websocket_internal__onmessage_long(ws_cli_conn_t *websocket, ubyte *data, unsigned long size, int type)
+{
+    _chat_websocket_internal__onmessage(websocket, data, (uint64)size, type);
+}
+
+/**
+ * @brief this is function used that is used as an entry point for websocket thread
+ *
+ * this function calls theldus internal function that handles incoming websocket connections and that takes it from here
+ *
+ * @param void* argument -> unused thread argument
+ *
+ * @return void* -> NULL_POINTER when the thread finishes
+ *
+ */
+void *chat_websocket__listen_thread(void *argument)
+{
+    struct ws_events evs;
+
+    (void)argument;
+
+    // choose forwarded ip mode
+    if (g_server_settings.is_tailscale_funnel_enabled == TRUE && tailscale__is_ready() == TRUE)
+    {
+        ws_set_forwarded_ip_mode(WS_FORWARDED_IP_FUNNEL);
+    }
+    else if (g_server_settings.is_stunnel_enabled == TRUE)
+    {
+        ws_set_forwarded_ip_mode(WS_FORWARDED_IP_STUNNEL);
+    }
+    else
+    {
+        ws_set_forwarded_ip_mode(WS_FORWARDED_IP_NONE);
+    }
+
+    // set the callbacks
+    evs.onopen = &_chat_websocket_internal__onopen;
+    evs.onclose = &_chat_websocket_internal__onclose;
+    evs.onmessage = _Generic(evs.onmessage, void (*)(ws_cli_conn_t *, ubyte *, unsigned long, int): &_chat_websocket_internal__onmessage_long, default: &_chat_websocket_internal__onmessage);
+
+    // start the listener
+    if (ws_socket(&evs, g_server_settings.websocket_port, 1, 2000) != 0)
+    {
+        exit(EXIT_FAILURE);
+    }
+#ifdef __ANDROID__
+    // the wrapper must not report hosting until the listener actually exists
+    puts("LEMON_ANDROID_READY");
+    fflush(stdout);
+#endif
+    return NULL_POINTER;
+}
+
+/**
+ * @brief checks the login deadline and enabled inactivity timeout
+ *
+ * @param client_t* client -> client slot to inspect under the clients lock
+ * @param uint64 now -> current value from util__get_timestamp_ms
+ *
+ * @return boole -> TRUE if the connection has timed out, otherwise FALSE
+ * @attention recheck under the write lock before disconnecting the client
+ */
+static boole _chat_websocket_internal__has_connection_timed_out(client_t *client, uint64 now)
+{
+    uint64 maintain_limit_ms = 0;
+
+    // skip empty slots
+    if (client->is_existing == FALSE && client->timestamp_connected == 0)
+    {
+        return FALSE;
+    }
+
+    // check authenticated clients
+    if (client->is_authenticated == TRUE)
+    {
+        if (g_server_settings.is_connection_check_enforced == FALSE || client->is_music_bot == TRUE)
+        {
+            return FALSE;
+        }
+
+        // every valid authenticated message refreshes liveness, including upload chunks
+        // idle clients may wait 120 seconds; active clients send heartbeats every 10 seconds
+        maintain_limit_ms = (g_server_settings.is_idle_mode_allowed == TRUE) ? 150000 : 80000;
+        return client->timestamp_last_maintain_connection_message_received + maintain_limit_ms < now;
+    }
+
+    // waiting for a login slot has its own time limit. once admitted, the
+    // connection gets 60 seconds to finish authentication, as before
+    return client->is_waiting_for_login_slot == FALSE && client->timestamp_connected + 60000 < now;
+}
+
+/**
+ * @brief runs the thread that disconnects clients whose login or keep-alive time limit has expired
+ *        it reads the current settings on each pass so an administrator can enable or disable
+ *        keep-alive timeout checks while the server is running
+ *
+ * @param void* argument -> unused thread argument
+ *
+ * @return void* -> NULL_POINTER when the thread finishes
+ */
+void *chat_websocket__check_connections_thread(void *argument)
+{
+    uint64 upload_now = 0;
+    uint64 timestamp_now = 0;
+    uint64 i = 0;
+    int64 *marked_client_ids_for_disconnect = NULL_POINTER;
+    int64 number_of_marked_clients = 0;
+    boole send_websocket_ping = FALSE;
+    client_t *client = NULL_POINTER;
+
+    (void)argument;
+
+    // allocate the id list
+    marked_client_ids_for_disconnect = (int64 *)memorymanager__allocate(sizeof(int64) * g_server_settings.max_client_count, MEMALLOC_MARKED_CLIENT_INDICES);
+    if (marked_client_ids_for_disconnect == NULL_POINTER)
+    {
+        fprintf(stderr, "Unable to reserve heartbeat storage; reduce server_slots.\n");
+        exit(EXIT_FAILURE);
+    }
+
+    // repeat every 15 seconds
+    for (;;)
+    {
+        // read the time
+        timestamp_now = util__get_timestamp_ms();
+
+        DBG_CONNECTION_CHECK_THREAD log_info("%s", "chat_websocket__check_connections_thread tick");
+
+        // ws-level liveness, off by default and switched in the settings tab: a client 4 pings
+        // behind gets its socket shut down (ws.c send_ping_close) and its reader thread runs _chat_websocket_internal__onclose
+        clib__read_lock(&g_clients_global_rwlock_guard);
+        send_websocket_ping = g_server_settings.is_websocket_ping_active;
+        clib__unlock(&g_clients_global_rwlock_guard);
+
+        // send websocket pings
+        if (send_websocket_ping == TRUE)
+        {
+            ws_ping(0, 3);
+        }
+
+        // clib__null_memory(marked_client_ids_for_disconnect, sizeof(int) * g_server_settings.max_client_count);
+        number_of_marked_clients = 0;
+
+        // mark timed out clients
+        clib__read_lock(&g_clients_global_rwlock_guard);
+
+        for (i = 0; i < g_server_settings.max_client_count; i++)
+        {
+            if (_chat_websocket_internal__has_connection_timed_out(&g_clients_array[i], timestamp_now) == TRUE)
+            {
+                marked_client_ids_for_disconnect[number_of_marked_clients] = i;
+                number_of_marked_clients++;
+            }
+        }
+
+        clib__unlock(&g_clients_global_rwlock_guard);
+
+        // disconnect marked clients
+        if (number_of_marked_clients > 0)
+        {
+            // lock clients and channels
+            clib__write_lock(&g_clients_global_rwlock_guard);
+            clib__write_lock(&g_channels_global_rwlock_guard);
+
+            // check each marked client
+            for (i = 0; i < number_of_marked_clients; i++)
+            {
+                client = &g_clients_array[marked_client_ids_for_disconnect[i]];
+
+                // a message, new login, or settings change may have happened while
+                // the read lock was released. only close a connection still overdue
+                if (_chat_websocket_internal__has_connection_timed_out(client, util__get_timestamp_ms()) == FALSE)
+                {
+                    continue;
+                }
+
+                // the socket itself: without this only the entry went away and the closed connection
+                // kept its reader thread and ws slot forever (the ws ping used to reap those)
+                server_logs__client_disconnect_reason(client, client->is_authenticated == TRUE ? "client inactivity timeout" : "authentication timeout");
+                client_session__close_websocket_connection(marked_client_ids_for_disconnect[i], FALSE);
+                client_session__process_client_disconnect(marked_client_ids_for_disconnect[i]);
+            }
+
+            // unlock channels and clients
+            clib__unlock(&g_channels_global_rwlock_guard);
+            clib__unlock(&g_clients_global_rwlock_guard);
+        }
+
+        // remove expired uploads
+        upload_now = 0;
+        util__get_monotonic_ms(&upload_now);
+        clib__write_lock(&g_clients_global_rwlock_guard);
+        for (i = 0; i < g_server_settings.max_client_count; i++)
+        {
+            client_msg__attachments__expire_upload(&g_clients_array[i], upload_now);
+        }
+        clib__unlock(&g_clients_global_rwlock_guard);
+
+        // rate-limited inside to one purge per day
+        server_logs__purge_tick();
+
+        // check again after 15 seconds on every platform
+        sleep(15);
+    }
+}

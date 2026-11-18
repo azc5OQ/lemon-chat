@@ -9,7 +9,7 @@ Source workspace for the chat client. The shipped client is a single
 ```text
 client-development/browser/
     build.cjs                  # compiles/tests wasm, then assembles ../../client.html
-    build.bat / build.sh       # build launchers
+    build-windows.bat / build-linux.sh / build-mac.sh   # build launchers
     client-webassemblies/      # independent WebAssembly source projects
         connection-crypto/     # symmetric ciphers and session key derivation
         rsa-keygen/            # identity and RSA operations
@@ -143,7 +143,7 @@ their source locations and build commands.
 
 ### Start the build and obtain tools
 
-From this directory, run `build.bat` on Windows or `sh build.sh` on Linux/macOS.
+From this directory, run `build-windows.bat` on Windows, `sh build-linux.sh` on Linux or `sh build-mac.sh` on macOS.
 The wrappers look for Node.js 20 or newer. If it is missing, they offer to
 download portable Node.js 24.14.0. The Node builder then looks for **Zig 0.15.2**,
 the C compiler used for all four modules, and offers to download it if missing.
@@ -180,7 +180,7 @@ HTML runs in a browser without Node.js or Zig.
 
 ### What one normal build does
 
-For example, run `build.bat --unminified` after editing the chat label:
+For example, run `build-windows.bat --unminified` after editing the chat label:
 
 1. Locate the required tools, offering downloads when running interactively.
 2. Compile Opus/Speex, minimp3, RSA and connection crypto into a temporary
@@ -216,8 +216,9 @@ invoked; normal builds do not silently reuse the shipped wasm files.
 
 ```sh
 # Allow missing tools to be downloaded without an interactive prompt:
-sh build.sh --unminified --download-tools
-# Windows equivalent: build.bat --unminified --download-tools
+sh build-linux.sh --unminified --download-tools   # Linux
+sh build-mac.sh --unminified --download-tools     # macOS
+# Windows equivalent: build-windows.bat --unminified --download-tools
 
 # With tools already installed; no network access or download prompts:
 node build.cjs --minified --no-download-tools

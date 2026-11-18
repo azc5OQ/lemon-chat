@@ -1,4 +1,6 @@
-// use the same JavaScript socket implementation in Android and desktop tests
+// this file adapts the WebSocket library in vendor/ws to the chat client. a WebSocket is a lasting two-way connection
+// between two programs. the chat client was written for the WebSocket of a web browser, so this file gives it the same
+// functions and events in Node.js. the same code is used on Android and in the tests on a computer
 
 process.env.WS_NO_BUFFER_UTIL = "1";
 process.env.WS_NO_UTF_8_VALIDATE = "1";
@@ -10,7 +12,8 @@ const limits = require("./transport-limits.js");
 const ErrorEvent = require("./vendor/ws/lib/event-target.js").ErrorEvent;
 
 // expose the socket error code expected by shared worker handlers
-Object.defineProperty(ErrorEvent.prototype, "code", {
+Object.defineProperty(ErrorEvent.prototype, "code",
+{
     configurable: true,
     get: function()
     {
@@ -75,7 +78,8 @@ class WebSocketClient extends WebSocket
      */
     constructor(url, protocols)
     {
-        super(url, protocols, {
+        super(url, protocols,
+        {
             perMessageDeflate: false,
             maxPayload: limits.messageBytes,
             maxHeaderSize: limits.headerBytes,
@@ -125,7 +129,8 @@ class WebSocketServer extends EventEmitter
         this.http_server.headersTimeout = limits.handshakeTimeoutMs;
         this.http_server.requestTimeout = limits.handshakeTimeoutMs;
         this.http_server.maxHeadersCount = 32;
-        this.websocket_server = new WebSocket.WebSocketServer({
+        this.websocket_server = new WebSocket.WebSocketServer(
+        {
             noServer: true,
             perMessageDeflate: false,
             maxPayload: limits.tokenFrameBytes,

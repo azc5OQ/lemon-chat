@@ -1,0 +1,8 @@
+{
+  "name": "lemon-chat",
+  "productName": "Lemon Chat",
+  "version": "1.0.0",
+  "description": "Lemon Chat client.html in an Electron window, with push-to-talk while another program is in front",
+  "main": "main.js",
+  "private": true
+}

@@ -81,8 +81,8 @@ __pycache__/
 
 # ---- Project notes (local, not tracked) ----
 notes/
-!/server-source-code/third-party/libtom/libtomcrypt/notes/
-!/server-source-code/third-party/libtom/libtomcrypt/notes/**
+!/server-source-code/main-server/third-party/libtom/libtomcrypt/notes/
+!/server-source-code/main-server/third-party/libtom/libtomcrypt/notes/**
 buildresult/
 
 # gradle
@@ -110,11 +110,11 @@ client-source-code/client-development/mobile/nodejs-client/node-log.txt*
 # gradle native build output (regenerated from src/main/cpp/CMakeLists.txt on every build)
 client-source-code/client-development/mobile/android/app/.cxx/
 
-# selfhosting-tools/wireguard/ setup: saved answers, key pairs and the tunnel config of this machine
-selfhosting-tools/wireguard/answers.json
-selfhosting-tools/wireguard/keys/
-selfhosting-tools/wireguard/ssh/
-selfhosting-tools/wireguard/lemon-wg0.conf
+# tools/selfhosting-tools/wireguard/ setup: saved answers, key pairs and the tunnel config of this machine
+tools/selfhosting-tools/wireguard/answers.json
+tools/selfhosting-tools/wireguard/keys/
+tools/selfhosting-tools/wireguard/ssh/
+tools/selfhosting-tools/wireguard/lemon-wg0.conf
 
 # written by tests/server/audio-websocket-test.js on every run
 .audio-test-runtime/
@@ -123,8 +123,8 @@ selfhosting-tools/wireguard/lemon-wg0.conf
 /tests/
 
 # Reuse the extracted OpenSSL sources locally; do not commit the build cache.
-/server-source-code/third-party/stunnel/win-build/
-/server-source-code/build/
+/server-source-code/main-server/third-party/stunnel/win-build/
+/server-source-code/main-server/build/
 
 # ---- Native desktop client ----
 # Local checks and their fixtures are intentionally kept out of Git.
@@ -191,9 +191,12 @@ selfhosting-tools/wireguard/lemon-wg0.conf
 /client-source-code/client-development/mobile/nodejs-client/__pycache__/
 
 # Browser-local downloaded tools and WebAssembly build output.
-!/tools/clang-format.exe
 /client-source-code/client-development/browser/.build-tools/
 /client-source-code/client-development/browser/client-webassemblies/**/build/
+
+# Downloaded Electron archives (over 100 MB each) and the packaging folder of package_electron.py.
+/client-source-code/client-development/electron/.downloads/
+/client-source-code/client-development/electron/.build/
 
 # FreeType ships required platform sources in builds/; these are not build output.
 !/client-source-code/client-development/desktop/third-party/freetype-2.15.0/builds/
@@ -204,51 +207,51 @@ selfhosting-tools/wireguard/lemon-wg0.conf
 /client-source-code/client-development/desktop/third-party/freetype-2.15.0/docs/reference/
 
 # Generated Opus configuration; keep cmake/ sources and *.in templates tracked.
-/server-source-code/third-party/libopus-1.6.1/CPackConfig.cmake
-/server-source-code/third-party/libopus-1.6.1/CPackSourceConfig.cmake
-/server-source-code/third-party/libopus-1.6.1/OpusConfig.cmake
-/server-source-code/third-party/libopus-1.6.1/OpusConfigVersion.cmake
-/server-source-code/third-party/libopus-1.6.1/config.h
-/server-source-code/third-party/libopus-1.6.1/opus.pc
+/server-source-code/main-server/third-party/libopus-1.6.1/CPackConfig.cmake
+/server-source-code/main-server/third-party/libopus-1.6.1/CPackSourceConfig.cmake
+/server-source-code/main-server/third-party/libopus-1.6.1/OpusConfig.cmake
+/server-source-code/main-server/third-party/libopus-1.6.1/OpusConfigVersion.cmake
+/server-source-code/main-server/third-party/libopus-1.6.1/config.h
+/server-source-code/main-server/third-party/libopus-1.6.1/opus.pc
 
 # Local Autotools output from bundled server dependencies.
-/server-source-code/third-party/libmaxminddb-1.12.2/autom4te.cache/
-/server-source-code/third-party/libmaxminddb-1.12.2/**/.deps/
-/server-source-code/third-party/libmaxminddb-1.12.2/config.h
-/server-source-code/third-party/libmaxminddb-1.12.2/config.log
-/server-source-code/third-party/libmaxminddb-1.12.2/config.status
-/server-source-code/third-party/libmaxminddb-1.12.2/libtool
-/server-source-code/third-party/libmaxminddb-1.12.2/stamp-h1
-/server-source-code/third-party/libmaxminddb-1.12.2/include/stamp-h2
-/server-source-code/third-party/libmaxminddb-1.12.2/t/maxminddb_test_helper.lo
-/server-source-code/third-party/stunnel/stunnel-5.75/config.log
-/server-source-code/third-party/stunnel/stunnel-5.75/config.status
-/server-source-code/third-party/stunnel/stunnel-5.75/libtool
-/server-source-code/third-party/stunnel/stunnel-5.75/src/.deps/
-/server-source-code/third-party/stunnel/stunnel-5.75/src/.libs/
-/server-source-code/third-party/stunnel/stunnel-5.75/src/config.h
-/server-source-code/third-party/stunnel/stunnel-5.75/src/stamp-h1
-/server-source-code/third-party/stunnel/stunnel-5.75/src/env.lo
-/server-source-code/third-party/stunnel/stunnel-5.75/src/libstunnel.la
-/server-source-code/third-party/stunnel/stunnel-5.75/src/stunnel
-/server-source-code/third-party/libdatachannel-0.24.2/LibDataChannelConfigVersion.cmake
-/server-source-code/third-party/libdatachannel-0.24.2/LibDataChannelConfig.cmake
-/server-source-code/third-party/libdatachannel-0.24.2/LibJuiceConfigVersion.cmake
-/server-source-code/third-party/libdatachannel-0.24.2/LibJuiceConfig.cmake
-/server-source-code/third-party/libdatachannel-0.24.2/deps/usrsctp/usrsctplib/usrsctp.pc
-/server-source-code/third-party/libviolet-0.5.4/LibJuiceConfigVersion.cmake
-/server-source-code/third-party/libviolet-0.5.4/LibJuiceConfig.cmake
-/server-source-code/third-party/libtom/libtommath/CPackConfig.cmake
-/server-source-code/third-party/libtom/libtommath/CPackSourceConfig.cmake
-/server-source-code/third-party/libtom/libtommath/libtommath-config.cmake
-/server-source-code/third-party/libtom/libtommath/libtommath-config-version.cmake
-/server-source-code/third-party/libmaxminddb-1.12.2/cmake_uninstall.cmake
-/server-source-code/third-party/libmaxminddb-1.12.2/generated/
-/server-source-code/third-party/libmaxminddb-1.12.2/include/maxminddb_config.h
-/server-source-code/third-party/libmaxminddb-1.12.2/src/libmaxminddb.pc
-/server-source-code/third-party/mbedtls-3.6.6/cmake/MbedTLSConfig.cmake
-/server-source-code/third-party/mbedtls-3.6.6/cmake/MbedTLSConfigVersion.cmake
-/server-source-code/third-party/mbedtls-3.6.6/cmake/MbedTLSTargets.cmake
+/server-source-code/main-server/third-party/libmaxminddb-1.12.2/autom4te.cache/
+/server-source-code/main-server/third-party/libmaxminddb-1.12.2/**/.deps/
+/server-source-code/main-server/third-party/libmaxminddb-1.12.2/config.h
+/server-source-code/main-server/third-party/libmaxminddb-1.12.2/config.log
+/server-source-code/main-server/third-party/libmaxminddb-1.12.2/config.status
+/server-source-code/main-server/third-party/libmaxminddb-1.12.2/libtool
+/server-source-code/main-server/third-party/libmaxminddb-1.12.2/stamp-h1
+/server-source-code/main-server/third-party/libmaxminddb-1.12.2/include/stamp-h2
+/server-source-code/main-server/third-party/libmaxminddb-1.12.2/t/maxminddb_test_helper.lo
+/server-source-code/main-server/third-party/stunnel/stunnel-5.75/config.log
+/server-source-code/main-server/third-party/stunnel/stunnel-5.75/config.status
+/server-source-code/main-server/third-party/stunnel/stunnel-5.75/libtool
+/server-source-code/main-server/third-party/stunnel/stunnel-5.75/src/.deps/
+/server-source-code/main-server/third-party/stunnel/stunnel-5.75/src/.libs/
+/server-source-code/main-server/third-party/stunnel/stunnel-5.75/src/config.h
+/server-source-code/main-server/third-party/stunnel/stunnel-5.75/src/stamp-h1
+/server-source-code/main-server/third-party/stunnel/stunnel-5.75/src/env.lo
+/server-source-code/main-server/third-party/stunnel/stunnel-5.75/src/libstunnel.la
+/server-source-code/main-server/third-party/stunnel/stunnel-5.75/src/stunnel
+/server-source-code/main-server/third-party/libdatachannel-0.24.2/LibDataChannelConfigVersion.cmake
+/server-source-code/main-server/third-party/libdatachannel-0.24.2/LibDataChannelConfig.cmake
+/server-source-code/main-server/third-party/libdatachannel-0.24.2/LibJuiceConfigVersion.cmake
+/server-source-code/main-server/third-party/libdatachannel-0.24.2/LibJuiceConfig.cmake
+/server-source-code/main-server/third-party/libdatachannel-0.24.2/deps/usrsctp/usrsctplib/usrsctp.pc
+/server-source-code/main-server/third-party/libviolet-0.5.4/LibJuiceConfigVersion.cmake
+/server-source-code/main-server/third-party/libviolet-0.5.4/LibJuiceConfig.cmake
+/server-source-code/main-server/third-party/libtom/libtommath/CPackConfig.cmake
+/server-source-code/main-server/third-party/libtom/libtommath/CPackSourceConfig.cmake
+/server-source-code/main-server/third-party/libtom/libtommath/libtommath-config.cmake
+/server-source-code/main-server/third-party/libtom/libtommath/libtommath-config-version.cmake
+/server-source-code/main-server/third-party/libmaxminddb-1.12.2/cmake_uninstall.cmake
+/server-source-code/main-server/third-party/libmaxminddb-1.12.2/generated/
+/server-source-code/main-server/third-party/libmaxminddb-1.12.2/include/maxminddb_config.h
+/server-source-code/main-server/third-party/libmaxminddb-1.12.2/src/libmaxminddb.pc
+/server-source-code/main-server/third-party/mbedtls-3.6.6/cmake/MbedTLSConfig.cmake
+/server-source-code/main-server/third-party/mbedtls-3.6.6/cmake/MbedTLSConfigVersion.cmake
+/server-source-code/main-server/third-party/mbedtls-3.6.6/cmake/MbedTLSTargets.cmake
 /client-source-code/client-development/desktop/third-party/freetype-2.15.0/docs/oldlogs/
 /client-source-code/client-development/desktop/third-party/freetype-2.15.0/tests/
 
@@ -256,3 +259,7 @@ selfhosting-tools/wireguard/lemon-wg0.conf
 proposals/
 proposal/
 log/
+
+# clang-format and js-beautify downloaded by tools/format_codebase.py.
+/tools/clang-format-*/
+/tools/js-beautify-*/

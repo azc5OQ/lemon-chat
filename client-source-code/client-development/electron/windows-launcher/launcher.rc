@@ -1,0 +1,3 @@
+// program icon of client-electron-amd64.exe, client-electron-arm64.exe and client-electron-i386.exe.
+// package_electron.py copies lemon.ico from the desktop client assets.
+1 ICON "lemon.ico"

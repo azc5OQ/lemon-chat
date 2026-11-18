@@ -37,7 +37,7 @@ same protocol replayed; Node holds the one real connection, permanently.
 - `loopback-ui-server.js` - the loopback websocket the ui connects to instead of the real server.
 - `loopback-transfer.js` - scoped download admission, chunk window, acknowledgements and expiry.
 - `fetch-nodejs-mobile.py` + `nodejs-mobile-runtime.json` - download and verify the pinned Node 24 mobile runtime, its matching headers, and license notice
-- `build.bat` - wraps build-node.py.
+- `build-windows.bat` - wraps build-node.py.
 - `test/` - transport and shared bridge regressions. Run `node test/run.cjs` from this directory.
   The browser FileReader test requires Playwright and Node 20 or newer; Node 18 reports that browser-only
   harness as skipped while running the application runtime tests.

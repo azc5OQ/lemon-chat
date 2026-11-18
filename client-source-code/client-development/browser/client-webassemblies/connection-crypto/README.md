@@ -16,7 +16,7 @@ the server. Those projects own their separate implementations.
 ## Build
 
 The normal browser build compiles and tests this project automatically before
-embedding it. Run `../../build.bat` or `sh ../../build.sh` from this directory.
+embedding it. Run `../../build-windows.bat`, `sh ../../build-linux.sh` or `sh ../../build-mac.sh` from this directory.
 
 For an isolated compile, run `node build.cjs` with Zig 0.15.2 on PATH or `ZIG`
 pointing to its executable, then `node test/ciphers.cjs`. The output is
