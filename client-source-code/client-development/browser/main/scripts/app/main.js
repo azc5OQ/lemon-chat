@@ -413,6 +413,28 @@ function main__tree_mouse_on_touch_device(event)
 }
 
 /**
+ * @brief checks whether an element is a field the user types text into: a textarea, an editable element or an input
+ *        that takes text. A right-click there keeps the menu of the browser with cut, copy and paste
+ *
+ * @param object element -> the element under the pointer
+ *
+ * @return boolean true for a text field
+ */
+function main__is_text_field(element)
+{
+    // element kind
+    if (element == null || element.nodeType !== 1)
+    {
+        return false;
+    }
+    if (element.isContentEditable || element.tagName === "TEXTAREA")
+    {
+        return true;
+    }
+    return element.tagName === "INPUT" && ["", "text", "search", "url", "email", "password", "number", "tel"].includes(element.type);
+}
+
+/**
  * @brief applies the local setting for a custom theme cursor
  *
  * @return void
@@ -1994,6 +2016,11 @@ async function main__window_onload()
     document.querySelector("a-toast").onclick = UI.a_toast_onclick;
     document.addEventListener("contextmenu", e =>
     {
+        // text fields keep the menu of the browser with cut, copy and paste
+        if (main__is_text_field(e.target))
+        {
+            return;
+        }
         e.preventDefault();
     });
 

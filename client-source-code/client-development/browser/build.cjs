@@ -351,7 +351,7 @@ function compactCss(css, images = new Map())
             }
             value = '/**/';
         }
-        if (pendingSpace && output.length && !'{};'.includes(output.at(-1).slice(-1)) && !'{};'.includes(value[0]))
+        if (pendingSpace && output.length && !'{};,:'.includes(output.at(-1).slice(-1)) && !'{};'.includes(value[0]))
         {
             output.push(' ');
         }
@@ -407,6 +407,39 @@ function optimizeStyles(html)
         html = html.slice(0, elements[0].opening) + shared + html.slice(elements[0].opening);
     }
     return html;
+}
+
+/**
+ * @brief removes the html comments and replaces each line break, with the spaces around it, by one space.
+ *        script and style elements are copied unchanged
+ *
+ * @param html the page
+ *
+ * @return the page without comments and line breaks in its markup
+ */
+function minifyMarkup(html)
+{
+    const pattern = /<!--[\s\S]*?-->|<(script|style)\b(?:[^"'<>]|"[^"]*"|'[^']*')*>[\s\S]*?<\/\1\s*>/gi;
+    const parts = [];
+    let text = '';
+    let position = 0;
+    for (const match of html.matchAll(pattern))
+    {
+        // collect the markup
+        text += html.slice(position, match.index);
+        position = match.index + match[0].length;
+
+        // keep script and style
+        if (!match[0].startsWith('<!--'))
+        {
+            parts.push(text.replace(/\s*\n\s*/g, ' '), match[0]);
+            text = '';
+        }
+    }
+
+    // add the rest
+    parts.push((text + html.slice(position)).replace(/\s*\n\s*/g, ' '));
+    return parts.join('');
 }
 
 function writeAtomic(file, content)
@@ -596,6 +629,9 @@ async function main(arguments_ = process.argv.slice(2))
             html = html.slice(0, script.start) + '\n' + await minifyScript(script.body, tool) + '\n' + html.slice(script.end);
         }
         console.log('JavaScript: external Terser ' + tool.version + '; names and code retained.');
+        html = minifyMarkup(html);
+        checkHtml(html);
+        console.log('HTML: comments and line breaks removed.');
     }
     const output = settings.output || defaultOutput;
     writeAtomic(output, html);

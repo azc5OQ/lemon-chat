@@ -4944,6 +4944,11 @@ var UI = {
 
         else if (event.which == 3)
         {
+            // the message field shows the cut, copy and paste menu instead
+            if (main__is_text_field(event.target))
+            {
+                return;
+            }
             event.stopPropagation();
             UI.delete_contextmenus();
             console.log("test");

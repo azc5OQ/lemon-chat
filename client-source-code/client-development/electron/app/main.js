@@ -305,6 +305,33 @@ async function electron__choose_display_source(request, callback)
 }
 
 /**
+ * @brief shows the right-click menu of a text field that a browser shows: cut, copy, paste and select all. Electron
+ *        shows no right-click menu by itself. Paste also pastes a picture from the clipboard, for example a
+ *        screenshot, in the same way as Ctrl+V. The page lets this event through only in text fields
+ *
+ * @param object params -> the parameters of the context-menu event of Electron
+ *
+ * @return void
+ */
+function electron__show_context_menu(params)
+{
+    // text field only
+    if (!params.isEditable || main_window == null || main_window.isDestroyed())
+    {
+        return;
+    }
+
+    // menu at the pointer
+    Menu.buildFromTemplate([
+        { role: 'cut', enabled: params.editFlags.canCut },
+        { role: 'copy', enabled: params.editFlags.canCopy },
+        { role: 'paste' },
+        { type: 'separator' },
+        { role: 'selectAll' }
+    ]).popup({ window: main_window });
+}
+
+/**
  * @brief opens the client window with client.html. Timers and audio keep running while the window is hidden or
  *        in the background, which a voice chat needs.
  *
@@ -347,6 +374,12 @@ function electron__create_window()
             event.preventDefault();
             electron__open_external(address);
         }
+    });
+
+    // right-click menu
+    main_window.webContents.on('context-menu', function(event, params)
+    {
+        electron__show_context_menu(params);
     });
 
     // last used server
